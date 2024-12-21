@@ -20,7 +20,7 @@ impl HelixGraphEngine {
     pub fn result_to_json(&self, traversal: &TraversalBuilder) {
         let current_step = &traversal.current_step;
         let json_result = json!(current_step);
-        // println!("{}", json_result.to_string());
+        println!("{}", json_result.to_string());
     }
 
     pub fn result_to_pretty_json(&self, traversal: &TraversalBuilder) {
@@ -31,7 +31,8 @@ impl HelixGraphEngine {
 
     pub fn result_to_utf8(&self, traversal: &TraversalBuilder) -> Vec<u8> {
         let current_step = &traversal.current_step;
-        let json_string = serde_json::to_string(current_step).unwrap();
+        let mut json_string = serde_json::to_string(current_step).unwrap();
+        json_string.push_str("\n");
         json_string.into_bytes()
     }
 }

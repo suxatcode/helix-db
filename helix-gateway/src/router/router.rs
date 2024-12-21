@@ -8,11 +8,9 @@
 // returns response
 
 use core::fmt;
-use helix_engine::{graph_core::graph_core::HelixGraphEngine, storage_core::storage_core::HelixGraphStorage};
+use helix_engine::graph_core::graph_core::HelixGraphEngine;
 use std::{
     collections::HashMap,
-    convert::Infallible,
-    ops::Deref,
     sync::{Arc, Mutex},
 };
 

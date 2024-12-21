@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write, net::TcpStream};
+use std::{collections::HashMap, io::Write};
 
 #[derive(Debug)]
 pub struct Response {
@@ -48,7 +48,6 @@ impl Response {
         write!(data_to_write, "Content-Length: {}\r\n", self.body.len())?;
         write!(data_to_write, "\r\n")?;
 
-        println!("BODY: {:?}", String::from_utf8(data_to_write.clone()));
         // write body
         stream.write_all(&data_to_write)?;
         stream.write_all(&self.body)?;

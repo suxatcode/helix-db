@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bincode::{deserialize, serialize};
 use rocksdb::{
-    BlockBasedOptions, Cache, ColumnFamilyDescriptor, Direction, IteratorMode, Options, ReadOptions, WriteBatch, WriteBatchWithTransaction, WriteOptions, DB
+    BlockBasedOptions, Cache, ColumnFamilyDescriptor, IteratorMode, Options, ReadOptions,
+    WriteBatch, WriteBatchWithTransaction, WriteOptions, DB,
 };
 
 use uuid::Uuid;
@@ -465,7 +466,7 @@ impl StorageMethods for HelixGraphStorage {
         batch.put_cf(&cf_edges, Self::in_edge_key(to_node, &edge.id), vec![]);
 
         let mut write_opts = WriteOptions::default();
-        write_opts.set_sync(false); 
+        write_opts.set_sync(false);
         write_opts.disable_wal(true);
 
         self.db.write_opt(batch, &write_opts)?;
@@ -554,9 +555,6 @@ mod tests {
     use crate::props;
     use crate::storage_core::storage_methods::StorageMethods;
     use protocol::Value;
-    use rocksdb::properties;
-    use std::collections::HashMap;
-    use std::iter;
     use tempfile::TempDir;
 
     fn setup_temp_db() -> (HelixGraphStorage, TempDir) {
@@ -570,7 +568,7 @@ mod tests {
     fn test_create_node() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let mut properties = props! {
+        let properties = props! {
             "name" => "test node",
         };
 
@@ -592,7 +590,7 @@ mod tests {
         let node1 = storage.create_node("person", props!()).unwrap();
         let node2 = storage.create_node("person", props!()).unwrap();
 
-        let mut edge_props = props! {
+        let edge_props = props! {
             "age" => 22,
         };
 
@@ -694,7 +692,7 @@ mod tests {
     fn test_node_with_properties() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let mut properties = props! {
+        let properties = props! {
             "name" => "George",
             "age" => 22,
             "active" => true,
@@ -716,6 +714,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn test_get_all_nodes() {
         let (storage, _temp_dir) = setup_temp_db();
         let node1 = storage.create_node("person", props!()).unwrap();

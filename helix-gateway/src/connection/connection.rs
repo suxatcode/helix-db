@@ -1,12 +1,11 @@
 use chrono::{DateTime, Utc};
 use helix_engine::graph_core::graph_core::HelixGraphEngine;
-use helix_engine::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
+use helix_engine::types::GraphError;
 use std::thread::{self, JoinHandle};
 use std::{
     collections::HashMap,
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
-    time::Instant,
 };
 use uuid::Uuid;
 
@@ -14,14 +13,14 @@ use crate::{router::router::HelixRouter, thread_pool::thread_pool::ThreadPool};
 
 pub struct ConnectionHandler {
     pub listener: TcpListener,
-    active_connections: Arc<Mutex<HashMap<String, ClientConnection>>>,
+    pub active_connections: Arc<Mutex<HashMap<String, ClientConnection>>>,
     pub thread_pool: ThreadPool,
 }
 
 pub struct ClientConnection {
-    id: String,
-    stream: TcpStream,
-    last_active: DateTime<Utc>,
+    pub id: String,
+    pub stream: TcpStream,
+    pub last_active: DateTime<Utc>,
 }
 
 impl ConnectionHandler {

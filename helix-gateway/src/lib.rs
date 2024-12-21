@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use connection::connection::ConnectionHandler;
-use helix_engine::{graph_core::graph_core::HelixGraphEngine, storage_core::storage_core::HelixGraphStorage};
+use helix_engine::graph_core::graph_core::HelixGraphEngine;
 use router::router::{HandlerFn, HelixRouter};
 
 pub mod connection;
@@ -31,7 +31,7 @@ impl HelixGateway {
 #[cfg(test)]
 mod tests {
     use connection::connection::ConnectionHandler;
-    use helix_engine::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
+    use helix_engine::types::GraphError;
     use protocol::{request::Request, response::Response};
     use router::router::HelixRouter;
     use std::{

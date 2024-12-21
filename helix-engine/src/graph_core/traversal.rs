@@ -4,10 +4,8 @@ use crate::{
     types::GraphError,
 };
 use protocol::{Edge, Node, Value};
-use rocksdb::properties;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Instant;
 
 use super::traversal_steps::{SourceTraversalSteps, TraversalSteps};
 
@@ -28,7 +26,7 @@ pub struct TraversalBuilder {
 
 impl TraversalBuilder {
     pub fn new(start_nodes: Vec<Node>) -> Self {
-        let mut builder = Self {
+        let builder = Self {
             variables: HashMap::from_iter(props!()),
             current_step: vec![TraversalValue::NodeArray(start_nodes)],
         };
@@ -169,8 +167,6 @@ mod tests {
     use crate::props;
 
     use super::*;
-    use rand::{random, Rng};
-    use std::collections::HashMap;
     use tempfile::TempDir;
 
     fn setup_test_db() -> (HelixGraphStorage, TempDir) {

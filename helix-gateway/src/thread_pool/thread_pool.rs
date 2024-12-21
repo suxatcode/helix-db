@@ -1,19 +1,16 @@
-use flume::{bounded, unbounded, Receiver, Sender};
+use flume::{Receiver, Sender};
 use helix_engine::graph_core::graph_core::HelixGraphEngine;
-use helix_engine::storage_core::storage_core::HelixGraphStorage; // change once transactions in place
-use helix_engine::types::GraphError;
-use std::io::Read;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::router::router::HelixRouter;
 use protocol::request::Request;
 use protocol::response::Response;
-use crate::router::router::HelixRouter;
 
 pub struct Worker {
-    id: usize,
-    thread: thread::JoinHandle<()>,
+    pub id: usize,
+    pub thread: thread::JoinHandle<()>,
     // pub reciever: Arc<Mutex<Receiver<TcpStream>>>,
 }
 
@@ -30,8 +27,27 @@ impl Worker {
                 let mut conn = rx.lock().unwrap().recv().unwrap(); // TODO: Handle error
                 let request = Request::from_stream(&mut conn).unwrap(); // TODO: Handle Error
                 let mut response = Response::new();
-                router.handle(Arc::clone(&graph_access), request, &mut response).unwrap(); // TODO: Handle Error
-                response.send(&mut conn).unwrap();
+                if let Err(e) = router.handle(Arc::clone(&graph_access), request, &mut response) {
+                    eprintln!("Error handling request: {:?}", e);
+                    // Optionally set an error response here
+                    response.status = 500;
+                }
+
+                if let Err(e) = response.send(&mut conn) {
+                    eprintln!("Error sending response: {:?}", e);
+                    // You might want to log additional context
+                    match e.kind() {
+                        std::io::ErrorKind::BrokenPipe => {
+                            eprintln!("Client disconnected before response could be sent");
+                        }
+                        std::io::ErrorKind::ConnectionReset => {
+                            eprintln!("Connection was reset by peer");
+                        }
+                        _ => {
+                            eprintln!("Unexpected error type: {:?}", e);
+                        }
+                    }
+                }
             }),
         })
     }
@@ -45,11 +61,7 @@ pub struct ThreadPool {
 }
 
 impl ThreadPool {
-    pub fn new(
-        size: usize,
-        storage: HelixGraphEngine,
-        router: Arc<HelixRouter>,
-    ) -> Self {
+    pub fn new(size: usize, storage: HelixGraphEngine, router: Arc<HelixRouter>) -> Self {
         assert!(
             size > 0,
             "Expected number of threads in thread pool to be more than 0, got {}",
