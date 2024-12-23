@@ -7,17 +7,8 @@ use protocol::{Edge, Node, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::traversal_steps::{SourceTraversalSteps, TraversalSteps};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum TraversalValue {
-    SingleNode(Node),
-    SingleEdge(Edge),
-    SingleValue(Value),
-    NodeArray(Vec<Node>),
-    EdgeArray(Vec<Edge>),
-    ValueArray(Vec<Value>),
-}
+use super::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps};
+use super::traversal_value::TraversalValue;
 
 pub struct TraversalBuilder {
     pub variables: HashMap<String, TraversalValue>,
@@ -97,10 +88,8 @@ impl SourceTraversalSteps for TraversalBuilder {
 }
 
 impl TraversalSteps for TraversalBuilder {
-
     fn out(&mut self, storage: &HelixGraphStorage, edge_label: &str) -> &mut Self {
-        self.check_is_valid_node_traversal("out")
-            .unwrap(); // TODO: Handle error
+        self.check_is_valid_node_traversal("out").unwrap(); // TODO: Handle error
 
         if let TraversalValue::NodeArray(nodes) = &self.current_step[0] {
             let mut new_current = Vec::with_capacity(nodes.len());
@@ -115,8 +104,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn out_e(&mut self, storage: &HelixGraphStorage, edge_label: &str) -> &mut Self {
-        self.check_is_valid_node_traversal("out_e")
-            .unwrap(); // TODO: Handle error
+        self.check_is_valid_node_traversal("out_e").unwrap(); // TODO: Handle error
         if let TraversalValue::NodeArray(nodes) = &self.current_step[0] {
             let mut new_current: Vec<TraversalValue> = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -129,10 +117,8 @@ impl TraversalSteps for TraversalBuilder {
         self
     }
 
-
     fn in_(&mut self, storage: &HelixGraphStorage, edge_label: &str) -> &mut Self {
-        self.check_is_valid_node_traversal("in_")
-            .unwrap();
+        self.check_is_valid_node_traversal("in_").unwrap();
         if let TraversalValue::NodeArray(nodes) = &self.current_step[0] {
             let mut new_current: Vec<TraversalValue> = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -145,10 +131,8 @@ impl TraversalSteps for TraversalBuilder {
         self
     }
 
-
     fn in_e(&mut self, storage: &HelixGraphStorage, edge_label: &str) -> &mut Self {
-        self.check_is_valid_node_traversal("in_e")
-            .unwrap();
+        self.check_is_valid_node_traversal("in_e").unwrap();
         if let TraversalValue::NodeArray(nodes) = &self.current_step[0] {
             let mut new_current: Vec<TraversalValue> = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -159,6 +143,21 @@ impl TraversalSteps for TraversalBuilder {
             self.current_step = new_current;
         }
         self
+    }
+}
+
+impl TraversalMethods for TraversalBuilder {
+    fn count(&mut self) -> usize {
+        self.current_step.iter().flatten().count()
+    }
+    fn range(&mut self, start: usize, end: usize) -> &mut Self {
+        let elements = self.current_step.iter().flatten().collect::<Vec<_>>();
+        if 0 < elements.len() {
+            self.current_step = elements[start..end].to_vec();
+            self
+        } else {
+            self
+        }
     }
 }
 
@@ -551,5 +550,104 @@ mod tests {
             }
             _ => panic!("Expected NodeArray value"),
         }
+    }
+
+    #[test]
+    fn test_count_single_node() {
+        let (storage, _temp_dir) = setup_test_db();
+        let person = storage.create_node("person", props!()).unwrap();
+
+        let mut traversal = TraversalBuilder::new(vec![person]);
+        assert_eq!(traversal.count(), 1);
+    }
+
+    #[test]
+    fn test_count_node_array() {
+        let (storage, _temp_dir) = setup_test_db();
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        let person3 = storage.create_node("person", props!()).unwrap();
+
+        let mut traversal = TraversalBuilder::new(vec![]);
+        traversal.v(&storage); // Get all nodes
+        assert_eq!(traversal.count(), 3);
+    }
+
+    #[test]
+    fn test_count_mixed_steps() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        // Create a graph with multiple paths
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        let person3 = storage.create_node("person", props!()).unwrap();
+
+        storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+        storage
+            .create_edge("knows", &person1.id, &person3.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(vec![person1.clone()]);
+        traversal.out(&storage, "knows"); // Should have 2 nodes (person2 and person3)
+        assert_eq!(traversal.count(), 2);
+    }
+
+    #[test]
+    fn test_range_subset() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        // Create multiple nodes
+        let nodes: Vec<Node> = (0..5)
+            .map(|_| storage.create_node("person", props!()).unwrap())
+            .collect();
+
+        let mut traversal = TraversalBuilder::new(vec![]);
+        traversal.v(&storage); // Get all nodes
+        traversal.range(1, 3); // Take nodes at index 1 and 2
+
+        assert_eq!(traversal.count(), 2);
+    }
+
+    #[test]
+    fn test_range_chaining() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        // Create graph: (p1)-[knows]->(p2)-[knows]->(p3)-[knows]->(p4)-[knows]->(p5)
+        let nodes: Vec<Node> = (0..5)
+            .map(|_| storage.create_node("person", props!()).unwrap())
+            .collect();
+
+        // Create edges connecting nodes sequentially
+        for i in 0..4 {
+            storage
+                .create_edge("knows", &nodes[i].id, &nodes[i + 1].id, props!())
+                .unwrap();
+        }
+
+        let mut traversal = TraversalBuilder::new(vec![]);
+        traversal
+            .v(&storage) // Get all nodes
+            .range(0, 3) // Take first 3 nodes
+            .out(&storage, "knows"); // Get their outgoing nodes
+
+        assert_eq!(traversal.count(), 3);
+    }
+
+    #[test]
+    fn test_range_empty() {
+        let (storage, _temp_dir) = setup_test_db();
+        let mut traversal = TraversalBuilder::new(vec![]);
+        traversal.v(&storage);
+        traversal.range(0, 0);
+        assert_eq!(traversal.count(), 0);
+    }
+
+    #[test]
+    fn test_count_empty() {
+        let (storage, _temp_dir) = setup_test_db();
+        let mut traversal = TraversalBuilder::new(vec![]);
+        assert_eq!(traversal.count(), 0);
     }
 }

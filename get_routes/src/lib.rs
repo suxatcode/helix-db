@@ -18,7 +18,7 @@ pub fn handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
             ::helix_gateway::router::router::HandlerSubmission(
                 ::helix_gateway::router::router::Handler::new(
                     #fn_name_str,
-                    #fn_name  // No Arc::new needed
+                    #fn_name
                 )
             )
         }
