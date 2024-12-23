@@ -18,19 +18,20 @@ impl HelixGraphEngine {
         Ok(Self { storage })
     }
 
-    pub fn result_to_json(&self, traversal: &TraversalBuilder) {
+    pub fn print_result_as_json(&self, traversal: &TraversalBuilder) {
         let current_step = &traversal.current_step;
         let json_result = json!(current_step);
         println!("{}", json_result.to_string());
     }
 
-    pub fn result_to_pretty_json(&self, traversal: &TraversalBuilder) {
+    pub fn print_result_as_pretty_json(&self, traversal: &TraversalBuilder) {
         let current_step = &traversal.current_step;
         let json_result = json!(current_step);
         println!("{}", serde_json::to_string_pretty(&json_result).unwrap());
     }
 
-    pub fn result_to_utf8(&self, traversal: &TraversalBuilder) -> Vec<u8> {
+    /// implement error for this function
+    pub fn result_to_json(&self, traversal: &TraversalBuilder) -> Vec<u8> {
         let current_step = &traversal.current_step;
         let mut json_string = serde_json::to_string(current_step).unwrap();
         json_string.push_str("\n");

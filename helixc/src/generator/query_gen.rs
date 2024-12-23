@@ -98,8 +98,10 @@ impl<T> TraversalGenerator<T> {
         
         writeln!(
             code,
-            "pub fn {}(storage: &HelixGraphStorage) -> TraversalBuilder {{", self.function_identifier
+            "pub fn {}(input: &HandlerInput, response: &mut Response) ->  Result<(), RouterError> {{", self.function_identifier
         )?;
+
+        writeln!(code, "    let storage = &input.graph.storage;")?;
         writeln!(
             code,
             "    let mut traversal = TraversalBuilder::new(vec![]);"
@@ -109,7 +111,8 @@ impl<T> TraversalGenerator<T> {
             step.generate_code(&mut code)?;
         }
 
-        writeln!(code, "    traversal")?;
+        writeln!(code, "    response.body = input.graph.result_to_json(&traversal);")?;
+        writeln!(code, "    Ok(())")?;
         writeln!(code, "}}")?;
 
         Ok(code)

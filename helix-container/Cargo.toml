@@ -9,7 +9,7 @@ protocol = { path = "../protocol" }
 helix-gateway = { path = "../helix-gateway" }
 helixc = { path = "../helixc" }
 chrono = "0.4"
-inventory = "0.3.15"
+inventory = "0.3.16"
 get_routes = { path = "../get_routes" }
 rand = "0.8.5"
 graph_queries = { path = "../graph_queries" }

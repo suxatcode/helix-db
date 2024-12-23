@@ -48,6 +48,10 @@ impl ProjectGenerator {
         Ok(())
     }
 
+    /// toml
+    /// protocol = { path = "../protocol" }
+    /// helix-gateway = { path = "../helix-gateway" }
+    /// get_routes = { path = "../get_routes" }
     fn generate_cargo_toml(&self, project_dir: &Path) -> std::io::Result<()> {
         let mut cargo_toml = fs::File::create(project_dir.join("Cargo.toml"))?;
 
@@ -58,10 +62,17 @@ impl ProjectGenerator {
         writeln!(cargo_toml)?;
 
         writeln!(cargo_toml, "[dependencies]")?;
+        writeln!(cargo_toml, "inventory = \"0.3.15\"")?;
         writeln!(
             cargo_toml,
             "helix-engine = {{ path = \"../helix-engine\" }}"
         )?;
+        writeln!(
+            cargo_toml,
+            "helix-gateway = {{ path = \"../helix-gateway\" }}"
+        )?;
+        writeln!(cargo_toml, "protocol = {{ path = \"../protocol\" }}")?;
+        writeln!(cargo_toml, "get_routes = {{ path = \"../get_routes\" }}")?;
 
         for (name, version) in &self.dependencies {
             writeln!(cargo_toml, "{} = \"{}\"", name, version)?;
@@ -79,28 +90,8 @@ impl ProjectGenerator {
     fn generate_lib_rs(&self, project_dir: &Path) -> std::io::Result<()> {
         let mut lib_rs = fs::File::create(project_dir.join("src/lib.rs"))?;
 
-        writeln!(lib_rs, "mod traversals;")?;
+        writeln!(lib_rs, "pub mod traversals;")?;
         writeln!(lib_rs)?;
-        let count = self.queries.clone().iter().count();
-
-        let mut routes = Vec::with_capacity(count);
-        if count == 1 {
-            self.queries.iter().for_each(|(fn_id, _)| {
-                writeln!(lib_rs, "pub use traversals::{};", fn_id).unwrap();
-                routes.push(fn_id.clone());
-            })
-        } else {
-            write!(lib_rs, "pub use traversals::{{").unwrap();
-            self.queries.iter().enumerate().for_each(|(i, (fn_id, _))| {
-                if i + 1 == count {
-                    write!(lib_rs, "{}", fn_id).unwrap();
-                } else {
-                    write!(lib_rs, "{}, ", fn_id).unwrap();
-                }
-                routes.push(fn_id.clone());
-            });
-            write!(lib_rs, "}};").unwrap();
-        };
         Ok(())
     }
 
@@ -111,10 +102,13 @@ impl ProjectGenerator {
             "use helix_engine::graph_core::traversal::TraversalBuilder;"
         )?;
         writeln!(traversals_rs, "use helix_engine::graph_core::traversal_steps::{{SourceTraversalSteps, TraversalSteps}};")?;
+        writeln!(traversals_rs, "use get_routes::handler;")?;
         writeln!(
             traversals_rs,
-            "use helix_engine::storage_core::storage_core::HelixGraphStorage;"
+            "use helix_gateway::router::router::{{HandlerInput, RouterError}};"
         )?;
+        writeln!(traversals_rs, "use protocol::response::Response;")?;
+
         writeln!(traversals_rs)?;
         self.queries.iter().for_each(|(_, query)| {
             // match writeln!(traversals_rs, "{}", query_body) {
@@ -138,11 +132,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         let traversal_code = r#"
-            pub fn test_query(storage: &HelixGraphStorage) -> TraversalBuilder {
+            pub fn test_function2(input: &HandlerInput, response: &mut Response) -> Result<(), RouterError> {
+                let storage = &input.graph.storage;
                 let mut traversal = TraversalBuilder::new(vec![]);
                 traversal.v(storage);
                 traversal.out(storage, "knows");
-                traversal
+                response.body = input.graph.result_to_utf8(&traversal);
+                Ok(())
             }
             "#
         .to_string();
