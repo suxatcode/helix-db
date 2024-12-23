@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use connection::connection::ConnectionHandler;
 use helix_engine::graph_core::graph_core::HelixGraphEngine;
@@ -19,7 +19,7 @@ pub struct HelixGateway {
 }
 
 impl HelixGateway {
-    pub fn new(address: &str, graph: HelixGraphEngine, size: usize, routes: Option<HashMap<(String,String), HandlerFn>>) -> HelixGateway {
+    pub fn new(address: &str, graph: Arc<HelixGraphEngine>, size: usize, routes: Option<HashMap<(String,String), HandlerFn>>) -> HelixGateway {
         let router= HelixRouter::new(routes);
         let connection_handler = ConnectionHandler::new(address, graph, size, router).unwrap();
         HelixGateway {
@@ -120,8 +120,8 @@ mod tests {
         let (storage, _) = setup_temp_db();
         let size = 4;
         let router = Arc::new(HelixRouter::new(None));
-
-        let pool = ThreadPool::new(size, storage, router);
+        let graph = Arc::new(storage);
+        let pool = ThreadPool::new(size, graph, router);
 
         assert_eq!(*pool.num_unused_workers.lock().unwrap(), size);
         assert_eq!(*pool.num_used_workers.lock().unwrap(), 0);
@@ -132,8 +132,8 @@ mod tests {
     fn test_thread_pool_zero_size() {
         let (storage, _) = setup_temp_db();
         let router = Arc::new(HelixRouter::new(None));
-
-        ThreadPool::new(0, storage, router);
+        let graph = Arc::new(storage);
+        ThreadPool::new(0, graph, router);
     }
 
     #[test]
@@ -142,8 +142,8 @@ mod tests {
         let address = "127.0.0.1:0";
 
         let router = HelixRouter::new(None);
-
-        let handler = ConnectionHandler::new(address, storage, 4, router)?;
+        let graph = Arc::new(storage);
+        let handler = ConnectionHandler::new(address, graph, 4, router)?;
 
         let addr = handler.listener.local_addr()?;
         let _client = TcpStream::connect(addr)?;
@@ -156,7 +156,7 @@ mod tests {
         let (mut client, mut server) = create_test_connection()?;
         let (storage, _) = setup_temp_db();
         let mut router = HelixRouter::new(None);
-        let graph_storage = Arc::new(Mutex::new(storage));
+        let graph_storage = Arc::new(storage);
 
         // Add route
         router.add_route("GET", "/test", |_, response| {

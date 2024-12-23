@@ -26,7 +26,7 @@ pub struct ClientConnection {
 impl ConnectionHandler {
     pub fn new(
         address: &str,
-        storage: HelixGraphEngine,
+        graph: Arc<HelixGraphEngine>,
         size: usize,
         router: HelixRouter,
     ) -> Result<Self, GraphError> {
@@ -36,7 +36,7 @@ impl ConnectionHandler {
         Ok(Self {
             listener,
             active_connections: Arc::new(Mutex::new(HashMap::new())),
-            thread_pool: ThreadPool::new(size, storage, Arc::new(router)),
+            thread_pool: ThreadPool::new(size, graph, Arc::new(router)),
         })
     }
 
@@ -68,7 +68,7 @@ impl ConnectionHandler {
                 .insert(client.id.clone(), client);
 
             // pass conn to thread in thread pool via channel
-            thread_pool_sender.send(conn).unwrap();
+            thread_pool_sender.send(conn).unwrap(); // TODO: Handle error Causes panic
         })
     }
 }

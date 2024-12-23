@@ -1,6 +1,7 @@
 use crate::types::GraphError;
 use crate::HelixGraphStorage;
 use std::str;
+use std::sync::{Arc, Mutex};
 
 use super::traversal::TraversalBuilder;
 use serde_json::json;

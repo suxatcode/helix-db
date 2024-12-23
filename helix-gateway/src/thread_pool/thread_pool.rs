@@ -17,7 +17,7 @@ pub struct Worker {
 impl Worker {
     fn new(
         id: usize,
-        graph_access: Arc<Mutex<HelixGraphEngine>>,
+        graph_access: Arc<HelixGraphEngine>,
         router: Arc<HelixRouter>,
         rx: Arc<Mutex<Receiver<TcpStream>>>,
     ) -> Arc<Worker> {
@@ -27,15 +27,14 @@ impl Worker {
                 let mut conn = rx.lock().unwrap().recv().unwrap(); // TODO: Handle error
                 let request = Request::from_stream(&mut conn).unwrap(); // TODO: Handle Error
                 let mut response = Response::new();
+                // println!("Worker {} handling request: {:?}", id, request);
                 if let Err(e) = router.handle(Arc::clone(&graph_access), request, &mut response) {
                     eprintln!("Error handling request: {:?}", e);
-                    // Optionally set an error response here
                     response.status = 500;
                 }
 
                 if let Err(e) = response.send(&mut conn) {
                     eprintln!("Error sending response: {:?}", e);
-                    // You might want to log additional context
                     match e.kind() {
                         std::io::ErrorKind::BrokenPipe => {
                             eprintln!("Client disconnected before response could be sent");
@@ -61,7 +60,7 @@ pub struct ThreadPool {
 }
 
 impl ThreadPool {
-    pub fn new(size: usize, storage: HelixGraphEngine, router: Arc<HelixRouter>) -> Self {
+    pub fn new(size: usize, graph: Arc<HelixGraphEngine>, router: Arc<HelixRouter>) -> Self {
         assert!(
             size > 0,
             "Expected number of threads in thread pool to be more than 0, got {}",
@@ -69,7 +68,7 @@ impl ThreadPool {
         );
         let mut workers = Vec::with_capacity(size);
         let (tx, rx) = flume::unbounded::<TcpStream>();
-        let graph = Arc::new(Mutex::new(storage));
+
         let reciever = Arc::new(Mutex::new(rx));
         for id in 0..size {
             workers.push(Worker::new(

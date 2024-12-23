@@ -12,6 +12,7 @@ chrono = "0.4"
 inventory = "0.3.15"
 get_routes = { path = "../get_routes" }
 rand = "0.8.5"
+graph_queries = { path = "../graph_queries" }
 
 [profile.release]
 strip = "debuginfo"

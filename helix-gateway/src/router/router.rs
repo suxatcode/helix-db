@@ -18,7 +18,7 @@ use protocol::{request::Request, response::Response};
 
 pub struct HandlerInput {
     pub request: Request,
-    pub graph: Arc<Mutex<HelixGraphEngine>>,
+    pub graph: Arc<HelixGraphEngine>,
 }
 
 // basic type for function pointer
@@ -51,6 +51,7 @@ pub struct HelixRouter {
 }
 
 impl HelixRouter {
+    /// Create a new router with a set of routes
     pub fn new(routes: Option<HashMap<(String, String), HandlerFn>>) -> Self {
         let rts = match routes {
             Some(routes) => routes,
@@ -59,14 +60,27 @@ impl HelixRouter {
         Self { routes: rts }
     }
 
+    /// Add a route to the router
     pub fn add_route(&mut self, method: &str, path: &str, handler: BasicHandlerFn) {
         self.routes
             .insert((method.to_uppercase(), path.to_string()), Arc::new(handler));
     }
 
+    /// Handle a request by finding the appropriate handler and executing it
+    /// 
+    /// ## Arguments
+    /// 
+    /// * `graph_access` - A reference to the graph engine
+    /// * `request` - The request to handle
+    /// * `response` - The response to write to
+    /// 
+    /// ## Returns
+    /// 
+    /// * `Ok(())` if the request was handled successfully
+    /// * `Err(RouterError)` if there was an error handling the request
     pub fn handle(
         &self,
-        graph_access: Arc<Mutex<HelixGraphEngine>>,
+        graph_access: Arc<HelixGraphEngine>,
         request: Request,
         response: &mut Response,
     ) -> Result<(), RouterError> {

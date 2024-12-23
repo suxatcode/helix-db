@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Read};
+use std::{collections::HashMap, io::{BufRead, BufReader, Read}};
 
 #[derive(Debug)]
 pub struct Request {
@@ -9,48 +9,63 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn from_stream<R: Read>(stream: &mut R) -> std::io::Result<Request> {
-        let mut buf = [0; 4096];
-        // consider using &str to avoid heap allocation
-        let mut request_data = String::new();
+    /// Parse a request from a stream
+    /// 
+    /// # Example
+    /// 
+    /// ```rust 
+    /// use std::io::Cursor;
+    /// use protocol::request::Request;
+    /// 
+    /// let request = Request::from_stream(Cursor::new("GET /test HTTP/1.1\r\n\r\n")).unwrap();
+    /// assert_eq!(request.method, "GET");
+    /// assert_eq!(request.path, "/test");
+    /// ```
+    pub fn from_stream<R: Read>(stream: R) -> std::io::Result<Request> {
+        let mut reader = BufReader::new(stream);
+        let mut first_line = String::new();
+        reader.read_line(&mut first_line)?;
 
-        // read data
-        loop {
-            let bytes = stream.read(&mut buf).unwrap();
-            request_data.push_str(&String::from_utf8_lossy(&buf[..bytes]));
+        // Get method and path
+        let mut parts = first_line.trim().split_whitespace();
+        let method = parts.next()
+            .ok_or_else(|| std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Missing HTTP method"
+            ))?.to_string();
+        let path = parts.next()
+            .ok_or_else(|| std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Missing path"
+            ))?.to_string();
 
-            if request_data.contains("\r\n\r\n") || bytes == 0 {
-                break;
-            }
-        }
-
-        let mut lines = request_data.lines();
-        let first_line = lines.next().unwrap_or("");
-        let mut parts = first_line.split_whitespace();
-
-        let method = parts.next().unwrap_or("GET").to_string();
-        let path = parts.next().unwrap_or("/").to_string();
-
+        // Parse headers
         let mut headers = HashMap::new();
-        for line in lines {
-            if line.is_empty() {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 || line.eq("\r\n") || line.eq("\n") {
                 break;
             }
-            if let Some((key, value)) = line.split_once(": ") {
-                headers.insert(key.to_string(), value.to_string());
+            if let Some((key, value)) = line.trim().split_once(':') {
+                headers.insert(
+                    key.trim().to_lowercase(),
+                    value.trim().to_string()
+                );
             }
         }
 
+        // Read body
         let mut body = Vec::new();
-        if let Some(content_length) = headers.get("Content-Length") {
-            if let Ok(length) = content_length.parse::<usize>() {
+        if let Some(length) = headers.get("content-length") {
+            if let Ok(length) = length.parse::<usize>() {
                 let mut buffer = vec![0; length];
-                stream.read_exact(&mut buffer)?;
+                reader.read_exact(&mut buffer)?;
                 body = buffer;
             }
         }
 
-        // construct request object
         Ok(Request {
             method,
             headers,

@@ -8,6 +8,7 @@ pub struct Response {
 }
 
 impl Response {
+    /// Create a new response
     pub fn new() -> Response {
         let mut headers = HashMap::new();
         // TODO: Change to use router config for headers and default routes
@@ -21,6 +22,27 @@ impl Response {
     }
 
     /// Send response back via stream
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// use std::io::Cursor;
+    /// use protocol::response::Response;
+    /// 
+    /// let mut response = Response::new();
+    /// 
+    /// response.status = 200;
+    /// response.body = b"Hello World".to_vec();
+    /// 
+    /// let mut stream = Cursor::new(Vec::new());
+    /// response.send(&mut stream).unwrap();
+    /// 
+    /// let data = stream.into_inner();
+    /// let data = String::from_utf8(data).unwrap();
+    /// 
+    /// assert!(data.contains("HTTP/1.1 200 OK"));
+    /// assert!(data.contains("Content-Length: 11"));
+    /// assert!(data.contains("Hello World"));
     pub fn send<W: Write>(&mut self, stream: &mut W) -> std::io::Result<()> {
         let status_message = match self.status { 
             200 => "OK",
