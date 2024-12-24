@@ -3,10 +3,10 @@ use std::{iter::once, vec::IntoIter};
 use protocol::{Edge, Node, Value};
 use serde::{Deserialize, Serialize};
 
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 
 pub enum TraversalValue {
+    Empty,
     SingleNode(Node),
     SingleEdge(Edge),
     SingleValue(Value),
@@ -30,6 +30,9 @@ pub struct TraversalValueIterator {
 impl TraversalValue {
     pub fn iter(&self) -> TraversalValueIterator {
         match self {
+            TraversalValue::Empty => TraversalValueIterator {
+                state: IterState::Empty,
+            },
             TraversalValue::SingleNode(node) => TraversalValueIterator {
                 state: IterState::Single(TraversalValue::SingleNode(node.clone())),
             },
@@ -52,7 +55,6 @@ impl TraversalValue {
     }
 }
 
-
 impl<'a> IntoIterator for &'a TraversalValue {
     type Item = TraversalValue;
     type IntoIter = TraversalValueIterator;
@@ -70,33 +72,41 @@ impl Iterator for TraversalValueIterator {
         match std::mem::replace(&mut self.state, IterState::Empty) {
             IterState::Empty => None,
             IterState::Single(value) => Some(value),
-            IterState::Nodes(mut iter) => {
-                match iter.next() {
-                    Some(node) => {
-                        self.state = IterState::Nodes(iter);
-                        Some(TraversalValue::SingleNode(node))
-                    },
-                    None => None,
+            IterState::Nodes(mut iter) => match iter.next() {
+                Some(node) => {
+                    self.state = IterState::Nodes(iter);
+                    Some(TraversalValue::SingleNode(node))
                 }
+                None => None,
             },
-            IterState::Edges(mut iter) => {
-                match iter.next() {
-                    Some(edge) => {
-                        self.state = IterState::Edges(iter);
-                        Some(TraversalValue::SingleEdge(edge))
-                    },
-                    None => None,
+            IterState::Edges(mut iter) => match iter.next() {
+                Some(edge) => {
+                    self.state = IterState::Edges(iter);
+                    Some(TraversalValue::SingleEdge(edge))
                 }
+                None => None,
             },
-            IterState::Values(mut iter) => {
-                match iter.next() {
-                    Some(value) => {
-                        self.state = IterState::Values(iter);
-                        Some(TraversalValue::SingleValue(value))
-                    },
-                    None => None,
+            IterState::Values(mut iter) => match iter.next() {
+                Some(value) => {
+                    self.state = IterState::Values(iter);
+                    Some(TraversalValue::SingleValue(value))
                 }
+                None => None,
             },
+        }
+    }
+}
+
+impl std::fmt::Debug for TraversalValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TraversalValue::Empty => write!(f, "[]"),
+            TraversalValue::SingleNode(node) => node.fmt(f),
+            TraversalValue::SingleEdge(edge) => edge.fmt(f),
+            TraversalValue::SingleValue(value) => value.fmt(f),
+            TraversalValue::NodeArray(nodes) => nodes.fmt(f),
+            TraversalValue::EdgeArray(edges) => edges.fmt(f),
+            TraversalValue::ValueArray(values) => values.fmt(f),
         }
     }
 }

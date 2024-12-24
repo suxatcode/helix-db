@@ -170,7 +170,7 @@ impl StorageMethods for HelixGraphStorage {
             .get_pinned_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found!"))),
+            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
@@ -182,7 +182,7 @@ impl StorageMethods for HelixGraphStorage {
             .get_pinned_cf(&cf_edges, [EDGE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found!"))),
+            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
@@ -194,7 +194,7 @@ impl StorageMethods for HelixGraphStorage {
             .get_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found!"))),
+            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
@@ -205,7 +205,7 @@ impl StorageMethods for HelixGraphStorage {
             .get_cf(&cf_edges, [EDGE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found!"))),
+            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
@@ -405,6 +405,7 @@ impl StorageMethods for HelixGraphStorage {
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         };
+        println!("{:?}", node);
         let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
         let mut new_batch = WriteBatchWithTransaction::default();
 

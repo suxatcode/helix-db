@@ -7,6 +7,8 @@ pub enum GraphError {
     StorageConnectionError(String, std::io::Error),
     StorageError(String),
     TraversalError(String),
+    EdgeNotFound,
+    NodeNotFound,
     New(String)
 }
 
@@ -22,6 +24,8 @@ impl fmt::Display for GraphError {
             },
             GraphError::TraversalError(msg) => write!(f, "Traversal error: {}", msg),
             GraphError::StorageError(msg) => write!(f, "Storage error: {}", msg),
+            GraphError::EdgeNotFound => write!(f, "Edge not found"),
+            GraphError::NodeNotFound => write!(f, "Node not found"),
             GraphError::New(msg) => write!(f, "Graph error: {}", msg),
         }
     }
