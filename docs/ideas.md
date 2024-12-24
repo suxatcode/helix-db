@@ -15,8 +15,13 @@
 - 
 
 
+
 **Range**
 - Will return the first N records
 
-**Range** 
+**Count** 
 - Will flatten everything in the current step and will return the count
+
+
+anon will create an internal traversal which will be used for the sub operation(s) and then the value returned 
+this means the anon will not effect or modify the main traversall step

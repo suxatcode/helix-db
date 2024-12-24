@@ -15,6 +15,16 @@ pub enum TraversalValue {
     ValueArray(Vec<Value>),
 }
 
+pub trait AsTraversalValue {
+    fn as_traversal_value(&self) -> &TraversalValue;
+}
+
+impl AsTraversalValue for TraversalValue {
+    fn as_traversal_value(&self) -> &TraversalValue {
+        self
+    }
+}
+
 enum IterState {
     Empty,
     Single(TraversalValue),

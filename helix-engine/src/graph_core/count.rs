@@ -1,0 +1,67 @@
+#[derive(PartialEq)]
+pub struct Count {
+    value: usize,
+}
+
+impl Count {
+    pub fn new(value: usize) -> Count {
+        Count {
+            value
+        }
+    }
+
+    pub fn gt(&self, cmp: usize) -> bool {
+        self.value > cmp
+    }
+
+    pub fn gte(&self, cmp: usize) -> bool {
+        self.value >= cmp
+    }
+
+    pub fn lt(&self, cmp: usize) -> bool {
+        self.value < cmp
+    }
+
+    pub fn lte(&self, cmp: usize) -> bool {
+        self.value <= cmp
+    }
+
+    pub fn eq(&self, cmp: usize) -> bool {
+        self.value == cmp
+    }
+
+    pub fn neq(&self, cmp: usize) -> bool {
+        self.value != cmp
+    }
+
+    pub fn value(&self) -> usize {
+        self.value
+    }
+}
+
+impl std::fmt::Debug for Count {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+impl std::cmp::PartialEq<usize> for Count {
+    fn eq(&self, other: &usize) -> bool {
+        &self.value == other
+    }
+    fn ne(&self, other: &usize) -> bool {
+       &self.value != other
+    }
+}
+
+impl From<Count> for usize {
+    fn from(value: Count) -> Self {
+        value.value
+    }
+}
+
+impl From<usize> for Count { 
+    fn from(value: usize) -> Self {
+        Count::new(value)
+    }
+}
