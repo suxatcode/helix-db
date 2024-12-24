@@ -21,6 +21,7 @@ pub struct Edge {
     pub properties: HashMap<String, Value>,
 }
 
+// TODO: implement into for Uint handling 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Value {
     String(String),

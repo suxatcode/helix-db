@@ -152,7 +152,10 @@ impl HelixGraphStorage {
 
 impl StorageMethods for HelixGraphStorage {
     fn check_exists(&self, id: &str) -> Result<bool, GraphError> {
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         match self
             .db
             .get_pinned_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
@@ -164,7 +167,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_temp_node(&self, id: &str) -> Result<Node, GraphError> {
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         match self
             .db
             .get_pinned_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
@@ -176,7 +182,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_temp_edge(&self, id: &str) -> Result<Edge, GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         match self
             .db
             .get_pinned_cf(&cf_edges, [EDGE_PREFIX, id.as_bytes()].concat())
@@ -188,7 +197,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_node(&self, id: &str) -> Result<Node, GraphError> {
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         match self
             .db
             .get_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
@@ -199,7 +211,10 @@ impl StorageMethods for HelixGraphStorage {
         }
     }
     fn get_edge(&self, id: &str) -> Result<Edge, GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         match self
             .db
             .get_cf(&cf_edges, [EDGE_PREFIX, id.as_bytes()].concat())
@@ -211,7 +226,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_out_edges(&self, node_id: &str, edge_label: &str) -> Result<Vec<Edge>, GraphError> {
-        let cf_edge_index = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edge_index = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
 
         let mut edges = Vec::new();
 
@@ -234,8 +252,8 @@ impl StorageMethods for HelixGraphStorage {
                 break;
             }
 
-            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec()).unwrap();
-            let edge = self.get_edge(&edge_id).unwrap();
+            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+            let edge = self.get_edge(&edge_id)?;
             if edge.label.as_str() == edge_label {
                 edges.push(edge);
             }
@@ -244,7 +262,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_in_edges(&self, node_id: &str, edge_label: &str) -> Result<Vec<Edge>, GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut edges = Vec::with_capacity(20);
         // get in edges
         let in_prefix = Self::in_edge_key(node_id, "");
@@ -265,8 +286,8 @@ impl StorageMethods for HelixGraphStorage {
                 break;
             }
 
-            let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec()).unwrap();
-            let edge = self.get_edge(&edge_id).unwrap();
+            let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
+            let edge = self.get_edge(&edge_id)?;
             if edge.label.as_str() == edge_label {
                 edges.push(edge);
             }
@@ -275,7 +296,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_out_nodes(&self, node_id: &str, edge_label: &str) -> Result<Vec<Node>, GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut nodes = Vec::with_capacity(20);
 
         // // Prefetch out edges
@@ -309,7 +333,10 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_in_nodes(&self, node_id: &str, edge_label: &str) -> Result<Vec<Node>, GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut nodes = Vec::with_capacity(20);
 
         // Prefetch in edges
@@ -346,8 +373,10 @@ impl StorageMethods for HelixGraphStorage {
         let node_prefix = Self::node_key("");
         let mut nodes = Vec::new();
 
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
-
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut read_opts = ReadOptions::default();
         read_opts.set_verify_checksums(false);
         read_opts.set_readahead_size(2 * 1024 * 1024);
@@ -373,7 +402,10 @@ impl StorageMethods for HelixGraphStorage {
         let edge_prefix = Self::edge_key("");
         let mut edges = Vec::new();
 
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut read_opts = ReadOptions::default();
         read_opts.set_verify_checksums(false);
         read_opts.set_readahead_size(2 * 1024 * 1024);
@@ -405,8 +437,10 @@ impl StorageMethods for HelixGraphStorage {
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         };
-        println!("{:?}", node);
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut new_batch = WriteBatchWithTransaction::default();
 
         new_batch.put_cf(
@@ -450,7 +484,10 @@ impl StorageMethods for HelixGraphStorage {
             to_node: to_node.to_string(),
             properties: HashMap::from_iter(properties),
         };
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut batch = WriteBatch::default();
 
         // new edge
@@ -476,12 +513,18 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn drop_node(&self, id: &str) -> Result<(), GraphError> {
-        let cf_nodes = self.db.cf_handle(CF_NODES).unwrap();
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
 
         let mut read_opts = ReadOptions::default();
         read_opts.set_verify_checksums(false);
         read_opts.set_readahead_size(2 * 1024 * 1024);
         read_opts.set_prefix_same_as_start(true);
+
+        let mut batch = WriteBatch::default();
+
         // get out edges
         let out_prefix = Self::out_edge_key(id, "");
         let iter = self.db.iterator_cf_opt(
@@ -496,11 +539,28 @@ impl StorageMethods for HelixGraphStorage {
                 break;
             }
 
-            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec()).unwrap();
-            self.drop_edge(&edge_id)?;
+            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+            let cf_edges = self
+                .db
+                .cf_handle(CF_EDGES)
+                .ok_or(GraphError::from("Column Family not found"))?;
+            let edge_data = self
+                .db
+                .get_pinned_cf(&cf_edges, Self::edge_key(&edge_id))
+                .map_err(GraphError::from)?
+                .ok_or(GraphError::EdgeNotFound)?;
+
+            let edge: Edge = deserialize(&edge_data).map_err(GraphError::from)?;
+
+            batch.delete_cf(&cf_edges, Self::out_edge_key(&edge.from_node, &edge_id));
+            batch.delete_cf(&cf_edges, Self::in_edge_key(&edge.to_node, &edge_id));
+            batch.delete_cf(&cf_edges, Self::edge_key(&edge_id));
         }
 
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let mut read_opts = ReadOptions::default();
         read_opts.set_verify_checksums(false);
         read_opts.set_readahead_size(2 * 1024 * 1024);
@@ -518,24 +578,43 @@ impl StorageMethods for HelixGraphStorage {
             if !key.starts_with(&in_prefix) {
                 break;
             }
+            
+            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+            let cf_edges = self
+                .db
+                .cf_handle(CF_EDGES)
+                .ok_or(GraphError::from("Column Family not found"))?;
+            let edge_data = self
+                .db
+                .get_pinned_cf(&cf_edges, Self::edge_key(&edge_id))
+                .map_err(GraphError::from)?
+                .ok_or(GraphError::EdgeNotFound)?;
 
-            let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec()).unwrap();
-            self.drop_edge(&edge_id)?;
+            let edge: Edge = deserialize(&edge_data).map_err(GraphError::from)?;
+
+            batch.delete_cf(&cf_edges, Self::out_edge_key(&edge.from_node, &edge_id));
+            batch.delete_cf(&cf_edges, Self::in_edge_key(&edge.to_node, &edge_id));
+            batch.delete_cf(&cf_edges, Self::edge_key(&edge_id));
         }
 
         // delete node
-        self.db.delete_cf(&cf_nodes, Self::node_key(id))?;
+        batch.delete_cf(&cf_nodes, Self::node_key(id));
 
-        Ok(())
+        self.db.write(batch).map_err(GraphError::from)
     }
 
     fn drop_edge(&self, edge_id: &str) -> Result<(), GraphError> {
-        let cf_edges = self.db.cf_handle(CF_EDGES).unwrap();
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
         let edge_data = self
             .db
-            .get_pinned_cf(&cf_edges, Self::edge_key(edge_id))?
-            .unwrap();
-        let edge: Edge = deserialize(&edge_data).unwrap();
+            .get_pinned_cf(&cf_edges, Self::edge_key(edge_id))
+            .map_err(GraphError::from)?
+            .ok_or(GraphError::EdgeNotFound)?;
+
+        let edge: Edge = deserialize(&edge_data).map_err(GraphError::from)?;
 
         let mut batch = WriteBatch::default();
 
@@ -559,9 +638,9 @@ mod tests {
     use tempfile::TempDir;
 
     fn setup_temp_db() -> (HelixGraphStorage, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().to_str().unwrap();
-        let storage = HelixGraphStorage::new(db_path).unwrap();
+        let temp_dir = TempDir::new().unwrap(); // TODO: Handle Error
+        let db_path = temp_dir.path().to_str().unwrap(); // TODO: Handle Error
+        let storage = HelixGraphStorage::new(db_path).unwrap(); // TODO: Handle Error
         (storage, temp_dir)
     }
 
@@ -573,9 +652,9 @@ mod tests {
             "name" => "test node",
         };
 
-        let node = storage.create_node("person", properties).unwrap();
+        let node = storage.create_node("person", properties).unwrap(); // TODO: Handle Error
 
-        let retrieved_node = storage.get_node(&node.id).unwrap();
+        let retrieved_node = storage.get_node(&node.id).unwrap(); // TODO: Handle Error
         assert_eq!(node.id, retrieved_node.id);
         assert_eq!(node.label, "person");
         assert_eq!(
@@ -588,8 +667,8 @@ mod tests {
     fn test_create_edge() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("person", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
         let edge_props = props! {
             "age" => 22,
@@ -597,9 +676,9 @@ mod tests {
 
         let edge = storage
             .create_edge("knows", &node1.id, &node2.id, edge_props)
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
 
-        let retrieved_edge = storage.get_edge(&edge.id).unwrap();
+        let retrieved_edge = storage.get_edge(&edge.id).unwrap(); // TODO: Handle Error
         assert_eq!(edge.id, retrieved_edge.id);
         assert_eq!(edge.label, "knows");
         assert_eq!(edge.from_node, node1.id);
@@ -619,18 +698,18 @@ mod tests {
     fn test_drop_node() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("person", props!()).unwrap();
-        let node3 = storage.create_node("person", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node3 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
         storage
             .create_edge("knows", &node1.id, &node2.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
         storage
             .create_edge("knows", &node3.id, &node1.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
 
-        storage.drop_node(&node1.id).unwrap();
+        storage.drop_node(&node1.id).unwrap(); // TODO: Handle Error
 
         assert!(storage.get_node(&node1.id).is_err());
     }
@@ -639,13 +718,13 @@ mod tests {
     fn test_drop_edge() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("person", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
         let edge = storage
             .create_edge("knows", &node1.id, &node2.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
 
-        storage.drop_edge(&edge.id).unwrap();
+        storage.drop_edge(&edge.id).unwrap(); // TODO: Handle Error
 
         assert!(storage.get_edge(&edge.id).is_err());
     }
@@ -654,7 +733,7 @@ mod tests {
     fn test_check_exists() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node = storage.create_node("person", props!()).unwrap();
+        let node = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
         assert!(storage.check_exists(&node.id).unwrap());
         assert!(!storage.check_exists("nonexistent").unwrap());
     }
@@ -663,9 +742,9 @@ mod tests {
     fn test_get_temp_node() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node = storage.create_node("person", props!()).unwrap();
+        let node = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
-        let temp_node = storage.get_temp_node(&node.id).unwrap();
+        let temp_node = storage.get_temp_node(&node.id).unwrap(); // TODO: Handle Error
 
         assert_eq!(node.id, temp_node.id);
         assert_eq!(node.label, temp_node.label);
@@ -675,15 +754,15 @@ mod tests {
     fn test_multiple_edges_between_nodes() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("person", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
         let edge1 = storage
             .create_edge("knows", &node1.id, &node2.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
         let edge2 = storage
             .create_edge("likes", &node1.id, &node2.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
 
         assert!(storage.get_edge(&edge1.id).is_ok());
         assert!(storage.get_edge(&edge2.id).is_ok());
@@ -698,8 +777,8 @@ mod tests {
             "age" => 22,
             "active" => true,
         };
-        let node = storage.create_node("person", properties).unwrap();
-        let retrieved_node = storage.get_node(&node.id).unwrap();
+        let node = storage.create_node("person", properties).unwrap(); // TODO: Handle Error
+        let retrieved_node = storage.get_node(&node.id).unwrap(); // TODO: Handle Error
 
         assert_eq!(
             retrieved_node.properties.get("name").unwrap(),
@@ -718,11 +797,11 @@ mod tests {
     #[test]
     fn test_get_all_nodes() {
         let (storage, _temp_dir) = setup_temp_db();
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("thing", props!()).unwrap();
-        let node3 = storage.create_node("other", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("thing", props!()).unwrap(); // TODO: Handle Error
+        let node3 = storage.create_node("other", props!()).unwrap(); // TODO: Handle Error
 
-        let nodes = storage.get_all_nodes().unwrap();
+        let nodes = storage.get_all_nodes().unwrap(); // TODO: Handle Error
 
         assert_eq!(nodes.len(), 3);
 
@@ -743,21 +822,21 @@ mod tests {
     fn test_get_all_edges() {
         let (storage, _temp_dir) = setup_temp_db();
 
-        let node1 = storage.create_node("person", props!()).unwrap();
-        let node2 = storage.create_node("person", props!()).unwrap();
-        let node3 = storage.create_node("person", props!()).unwrap();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node3 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
         let edge1 = storage
             .create_edge("knows", &node1.id, &node2.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
         let edge2 = storage
             .create_edge("likes", &node2.id, &node3.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
         let edge3 = storage
             .create_edge("follows", &node1.id, &node3.id, props!())
-            .unwrap();
+            .unwrap(); // TODO: Handle Error
 
-        let edges = storage.get_all_edges().unwrap();
+        let edges = storage.get_all_edges().unwrap(); // TODO: Handle Error
 
         assert_eq!(edges.len(), 3);
 
