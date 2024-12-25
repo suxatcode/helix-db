@@ -242,7 +242,7 @@ impl TraversalMethods for TraversalBuilder {
             .current_step
             .iter()
             .flatten()
-            .filter(|item| predicate(item.as_traversal_value())) // TODO: HANDLE ERROR
+            .filter(|item| predicate(&item)) // TODO: HANDLE ERROR
             .collect::<Vec<_>>();
         self
     }
