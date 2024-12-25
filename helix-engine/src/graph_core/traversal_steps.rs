@@ -2,7 +2,7 @@ use protocol::Node;
 
 use crate::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
 
-use super::{count::Count, traversal_value::{AsTraversalValue, TraversalValue}};
+use super::{count::Count, traversal_value::TraversalValue};
 
 pub trait SourceTraversalSteps {
     /// Adds all nodes in the graph to current traversal step

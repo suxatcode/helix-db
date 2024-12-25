@@ -6,7 +6,7 @@ use crate::{
 use protocol::Node;
 use std::collections::HashMap;
 
-use super::traversal_value::{AsTraversalValue, TraversalValue};
+use super::traversal_value::TraversalValue;
 use super::{
     count::Count,
     traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
