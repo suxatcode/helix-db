@@ -4,3 +4,7 @@ docs/whitepaperV1.md
 /graph_data/
 /testing/
 /dst/
+count.sh
+/queries/
+**/node_modules/
+/hql/

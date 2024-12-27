@@ -26,3 +26,9 @@ impl From<pest::error::Error<Rule>> for ParserError {
         ParserError::ParseError(e.to_string())
     }
 }
+
+impl From<&'static str> for ParserError {
+    fn from(e: &'static str) -> Self {
+        ParserError::LexError(e.to_string())
+    }
+}

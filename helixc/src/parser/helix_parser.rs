@@ -14,6 +14,16 @@ pub struct Source {
     pub queries: Vec<Query>,
 }
 
+impl Source {
+    pub fn new() -> Self {
+        Self {
+            node_schemas: Vec::new(),
+            edge_schemas: Vec::new(),
+            queries: Vec::new(),
+        }
+    }
+}
+
 //Schema stuff
 #[derive(Debug)]
 pub struct NodeSchema {
@@ -75,10 +85,15 @@ impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
         // assert!(false, "string: {:?}", input);
 
-        let pairs = HelixParser::parse(Rule::source, input)
-            .expect("unsuccessful parse")
-            .next()
-            .unwrap();
+        let pairs = match HelixParser::parse(Rule::source, input){
+            Ok(mut pairs) => match pairs.next() {
+                Some(pair) => pair,
+                None => return Err(ParserError::from("No pairs found")),
+            },
+            Err(err) => return Err(ParserError::from(err)),
+        };
+
+
         let mut source = Source {
             node_schemas: Vec::new(),
             edge_schemas: Vec::new(),
