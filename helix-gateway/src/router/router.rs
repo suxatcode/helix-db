@@ -89,6 +89,7 @@ impl HelixRouter {
             Some(handle) => handle,
             None => {
                 response.status = 404;
+                response.body = b"404 - Not Found".to_vec();
                 return Ok(());
             }
         };

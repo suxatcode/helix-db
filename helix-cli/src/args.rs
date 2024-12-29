@@ -17,10 +17,29 @@ pub struct HelixCLI {
 #[derive(Debug, Subcommand)]
 pub enum CommandType {
     /// Compile a Helix project
+    Compile(CompileCommand),
+
+    /// Lint a Helix project
     Lint(LintCommand),
 
     /// Test a Helix project
     Test(TestCommand),
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "compile", about = "Compile a Helix project")]
+pub struct CompileCommand {
+    #[clap(short, long, help = "The path to the project")]
+    pub path: Option<String>,
+
+    // #[clap(short, long, help = "The output path")]
+    // pub output: Option<String>,
+
+    // #[clap(short, long, help = "The target platform")]
+    // pub target: Option<String>,
+
+    // #[clap(short, long, help = "Should compile in release mode")]
+    // pub release: bool,
 }
 
 #[derive(Debug, Args)]

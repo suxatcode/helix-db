@@ -8,11 +8,13 @@ helix-engine = { path = "../helix-engine" }
 protocol = { path = "../protocol" }
 helix-gateway = { path = "../helix-gateway" }
 helixc = { path = "../helixc" }
+get_routes = { path = "../get_routes" }
+graph_queries = { path = "../graph_queries" }
 chrono = "0.4"
 inventory = "0.3.16"
-get_routes = { path = "../get_routes" }
 rand = "0.8.5"
-graph_queries = { path = "../graph_queries" }
+libloading = "0.8.6"
+dirs = "5.0.1"
 
 [profile.release]
 strip = "debuginfo"

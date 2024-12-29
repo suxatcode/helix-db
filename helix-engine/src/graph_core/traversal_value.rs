@@ -4,7 +4,6 @@ use protocol::{Edge, Node, Value};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
-
 pub enum TraversalValue {
     Empty,
     SingleNode(Node),

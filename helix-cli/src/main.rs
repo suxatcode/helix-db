@@ -8,16 +8,73 @@ use runner::RustRunner;
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
+    path,
+    process::Command,
 };
 use tempfile::TempDir;
 
+use std::path::PathBuf;
 pub mod args;
 pub mod runner;
 
 fn main() {
     let args = HelixCLI::parse();
-    let mut source = Source::new();
     match args.command {
+        args::CommandType::Compile(command) => {
+            match command.path {
+                Some(path) => {
+                    // call parser
+                    // let files = match check_and_read_files(&path) {
+                    //     Ok(files) => files,
+                    //     Err(e) => {
+                    //         println!("{}", e);
+                    //         return;
+                    //     }
+                    // };
+
+                    // if files.is_empty() {
+                    //     println!("No queries found, nothing to compile");
+                    //     return;
+                    // }
+
+                    // let numb_of_files = files.len();
+                    // let mut successes = HashMap::new();
+                    // let mut errors = HashMap::new();
+                    // for file in files {
+                    //     let contents = match fs::read_to_string(file.path()) {
+                    //         Ok(contents) => contents,
+                    //         Err(e) => {
+                    //             println!("{}", e);
+                    //             return;
+                    //         }
+                    //     };
+                    //     match HelixParser::parse_source(&contents) {
+                    //         Ok(source) => {
+                    //             successes.insert(
+                    //                 file.file_name().to_string_lossy().into_owned(),
+                    //                 source,
+                    //             );
+                    //             // println!("{:?}", parser);
+                    //         }
+                    //         Err(e) => {
+                    //             errors.insert(file.file_name().to_string_lossy().into_owned(), e);
+                    //         }
+                    //     }
+                    // }
+
+                    // println!("\nCompiled {} files!\n", numb_of_files);
+                    // successes
+                    //     .iter()
+                    //     .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
+                    // errors
+                    //     .iter()
+                    //     .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
+                    // println!();
+                }
+                None => {}
+            };
+        }
+
         args::CommandType::Lint(command) => {
             match command.path {
                 Some(path) => {
@@ -133,16 +190,15 @@ fn main() {
                     };
 
                     let temp_dir = TempDir::new().unwrap();
-                    
+
                     // parse
 
-                    // interpret 
+                    // interpret
 
                     // generate rust code
 
                     // run against rocksdb
-
-                },
+                }
                 None => println!("No path provided"),
             };
 

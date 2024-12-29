@@ -16,4 +16,4 @@ inventory = "0.3.15"
 [lib]
 name = "helix_gateway"
 path = "src/lib.rs"
-
+# crate-type = ["cdylib", "rlib", "staticlib"]
