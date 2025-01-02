@@ -1,59 +1,86 @@
+// Whitespace and comments
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
-COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
-// Basic elements
-identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-string_literal = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\"" }
-number_literal = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-boolean_literal = @{ "true" | "false" }
-literal = _{ string_literal | number_literal | boolean_literal }
+// Main rules
+source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
 
-// Types
-type_def = { "String" | "Number" | "Boolean" }
+node_def = { "N::" ~ identifier_upper ~ node_body }
+edge_def = { "E::" ~ identifier_upper ~ edge_body }
 
-// Parameters
-parameter = { identifier ~ ":" ~ type_def }
-parameter_list = { parameter ~ ("," ~ parameter)* }
-parameters = { "(" ~ parameter_list? ~ ")" }
+node_body = { "{" ~ field_defs ~ "}" }
+edge_body = { "{" ~ "From:" ~ identifier ~ "," ~ "To:" ~ identifier ~ "," ~ properties? ~ "}" }
 
-// Return clauses
-return_items = { identifier ~ ("," ~ identifier)* }
-return_clause = { "RETURN" ~ return_items }
+field_def = { identifier_upper ~ ":" ~ type_name }
+field_defs = { field_def ~ ("," ~ field_def)* }
+properties = { "Properties" ~ "{" ~ field_defs? ~ "}" }
 
-// Traversal expressions
-child_expression = { ("::") ~ identifier }
-traversal_expression = { ("::") ~ identifier ~ ("(" ~ identifier ~ ")")? ~ child_expression* }
-source_traversal = { ("V" | "E") ~ traversal_expression? }
 
-// Relationship traversal
-relationship_direction = { "In" | "Out" }
-relationship_type = { identifier }
-relationship_traversal = { identifier ~ "::" ~ relationship_direction ~ "(" ~ relationship_type ~ ")" }
 
-// Clauses
-traversal_assignment = { identifier ~ "<-" }
-get_clause = { "GET" ~ traversal_assignment? ~ (source_traversal | relationship_traversal) }
 
-// Query body elements
-query_statement = { (get_clause | (traversal_assignment ~ (source_traversal | relationship_traversal))) }
-query_body = { query_statement ~ (query_statement)* ~ return_clause }
+// Query definitions
+param_def = { identifier /* ~ ":" ~ type_name */ }
+params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
+query_def = { "QUERY" ~ identifier ~ params? ~ "=>" ~ get_stmt }
+get_stmt = { "GET" ~ traversal }
 
-// Schema elements
-schema_property = { identifier ~ ":" ~ type_def }
-schema_properties = { schema_property? ~ ((",") ~ schema_property)* }
-edge_property = { 
-    ("From") ~ ":" ~ identifier ~ "," ~ 
-    ("To") ~ ":" ~ identifier ~ "," ~ 
-    ("Properties") ~ "{" ~ 
-    schema_properties ~
-    "}" 
+traversal = { (start_vertex | start_edge) ~ step* }
+
+step = { colon_step | filter_step }
+colon_step = { "::" ~ (vertex_step | edge_step | type_step) }
+//space_step = { filter_step }
+
+// Vertex-related steps
+start_vertex = { "V" ~ ("(" ~ id_arg? ~ ")")? }
+vertex_step = {
+    "Out" ~ ("(" ~ edge_args? ~ ")")? |
+    "In" ~ ("(" ~ edge_args? ~ ")")? |
+    "Both" ~ ("(" ~ edge_args? ~ ")")? |
+    "OutV" |
+    "InV" |
+    "BothV" 
 }
 
-// Schema
-node_schema = { "V::" ~ identifier ~ "{" ~ schema_properties ~ "}" }
-edge_schema = { "E::" ~ identifier ~ "{" ~ edge_property ~ "}" }
+// Edge-related steps
+start_edge = { "E" ~ ("(" ~ id_arg? ~ ")")? }
+edge_step = {
+    "OutE"/*  ~ ("(" ~ vertex_args? ~ ")")? */ |
+    "InE"/*  ~ ("(" ~ vertex_args? ~ ")")? */ |
+    "BothE" /* ~ ("(" ~ vertex_args? ~ ")")? */
+}
 
-// Top level
-query = { "QUERY" ~ identifier ~ parameters? ~ "=>" ~ query_body }
+type_step = { identifier }
+// Filter steps
+filter_step = {
+    has |                             // property filter
+    has_id                             // id filter
+}
+has = { "HAS" ~ has_args }
+has_id = { "HASID" ~ id_arg }
 
-source = { SOI ~ (query | node_schema | edge_schema)* ~ EOI }
+
+
+// Arguments for various steps
+edge_args = { identifier_upper ~ ("," ~ identifier_upper)* }
+has_args = { condition /* ~ ("AND" ~ condition)*  */}
+
+// Basic elements
+id_arg = @{ ASCII_DIGIT+ }
+
+// Values and literals
+value = { string_literal | number | boolean | null }
+string_literal = ${ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!("\"" | "\\") ~ ANY)* }
+boolean = { "true" | "false" }
+null = { "null" }
+type_name = @{ "String" | "Number" | "Boolean" }
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
+number = @{ ASCII_DIGIT+ }
+
+// Conditions
+condition = { identifier ~ comparison_op ~ (value | identifier) }
+comparison_op = @{ ("=" | ">" | "<" | ">=" | "<=" | "!=") }
+
+
+

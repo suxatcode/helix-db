@@ -2,7 +2,7 @@ use core::fmt;
 
 use super::helix_parser::Rule;
 
-pub trait Parser2 {
+pub trait Parser {
     fn parse(&self, input: &str) -> Result<(), String>;
 }
 

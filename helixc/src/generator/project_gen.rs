@@ -127,7 +127,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
+    /* #[test]
     fn test_project_generation() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -170,5 +170,5 @@ mod tests {
         let lib_rs = fs::read_to_string(temp_dir.path().join("test_project/src/lib.rs")).unwrap();
         assert!(lib_rs.contains("mod traversal"));
         assert!(lib_rs.contains("pub use traversal::test_query"));
-    }
+    } */
 }

@@ -1,12 +1,13 @@
-use pest::{iterators::Pair, Parser};
-use pest_derive::Parser;
-
 use super::parser_methods::ParserError;
+use pest::{iterators::Pair, Parser as PestParser};
+use pest_derive::Parser;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
+
 pub struct HelixParser;
 
+// Schema-related structs
 #[derive(Debug)]
 pub struct Source {
     pub node_schemas: Vec<NodeSchema>,
@@ -14,21 +15,10 @@ pub struct Source {
     pub queries: Vec<Query>,
 }
 
-impl Source {
-    pub fn new() -> Self {
-        Self {
-            node_schemas: Vec::new(),
-            edge_schemas: Vec::new(),
-            queries: Vec::new(),
-        }
-    }
-}
-
-//Schema stuff
 #[derive(Debug)]
 pub struct NodeSchema {
     pub name: String,
-    pub properties: Vec<Field>,
+    pub fields: Vec<Field>,
 }
 
 #[derive(Debug)]
@@ -36,63 +26,119 @@ pub struct EdgeSchema {
     pub name: String,
     pub from: String,
     pub to: String,
-    pub properties: Vec<Field>,
+    pub properties: Option<Vec<Field>>,
 }
 
 #[derive(Debug)]
 pub struct Field {
     pub name: String,
-    pub data_type: DataType,
+    pub field_type: FieldType,
 }
 
 #[derive(Debug, Clone)]
-pub enum DataType {
-    Number,
+pub enum FieldType {
     String,
+    Number,
     Boolean,
 }
 
-//Query stuff
+// Query-related structs
 #[derive(Debug)]
 pub struct Query {
     pub name: String,
-    pub parameter: String,
-    pub body: QueryBody,
-    pub return_type: String,
+    pub parameters: Vec<Parameter>,
+    pub traversal: TraversalChain,
 }
 
 #[derive(Debug)]
-pub struct QueryBody {
-    pub assignment: Option<String>,
-    pub element_type: ElementType,
-    pub traversal: TraversalStep,
+pub struct Parameter {
+    pub name: String,
 }
 
 #[derive(Debug)]
-pub struct TraversalStep {
-    pub node: String,
-    pub filter: Option<String>,
-    pub children: Vec<TraversalStep>,
+pub struct TraversalChain {
+    pub start: StartStep,
+    pub steps: Vec<Step>,
 }
 
-#[derive(Debug, Clone)]
-pub enum ElementType {
-    V,
-    E,
+#[derive(Debug)]
+pub enum StartStep {
+    Vertex(Option<String>),
+    Edge(Option<String>),
+}
+
+#[derive(Debug)]
+pub enum Step {
+    Colon(ColonStep),
+    Filter(FilterStep),
+}
+
+#[derive(Debug)]
+pub enum ColonStep {
+    VertexStep(VertexStep),
+    EdgeStep(EdgeStep),
+    TypeStep(String),
+}
+
+#[derive(Debug)]
+pub enum VertexStep {
+    Out(Option<Vec<String>>),
+    In(Option<Vec<String>>),
+    Both(Option<Vec<String>>),
+    OutV,
+    InV,
+    BothV,
+}
+
+#[derive(Debug)]
+pub enum EdgeStep {
+    OutE,
+    InE,
+    BothE,
+}
+
+#[derive(Debug)]
+pub enum FilterStep {
+    Has(Vec<Condition>),
+    HasId(String),
+}
+
+#[derive(Debug)]
+pub struct Condition {
+    pub property: String,
+    pub operator: ComparisonOp,
+    pub value: Value,
+}
+
+#[derive(Debug)]
+pub enum ComparisonOp {
+    Eq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    Neq,
+}
+
+#[derive(Debug)]
+pub enum Value {
+    String(String),
+    Number(i64),
+    Boolean(bool),
+    Null,
+    Identifier(String),
 }
 
 impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
         // assert!(false, "string: {:?}", input);
-
-        let pairs = match HelixParser::parse(Rule::source, input){
+        let pairs = match HelixParser::parse(Rule::source, input) {
             Ok(mut pairs) => match pairs.next() {
                 Some(pair) => pair,
                 None => return Err(ParserError::from("No pairs found")),
             },
             Err(err) => return Err(ParserError::from(err)),
         };
-
 
         let mut source = Source {
             node_schemas: Vec::new(),
@@ -101,14 +147,14 @@ impl HelixParser {
         };
         for pair in pairs.into_inner() {
             match pair.as_rule() {
-                Rule::node_schema => {
-                    source.node_schemas.push(Self::parse_node_schema(pair));
+                Rule::node_def => {
+                    source.node_schemas.push(Self::parse_node_def(pair));
                 }
-                Rule::edge_schema => {
-                    source.edge_schemas.push(Self::parse_edge_schema(pair));
+                Rule::edge_def => {
+                    source.edge_schemas.push(Self::parse_edge_def(pair));
                 }
-                Rule::query => {
-                    source.queries.push(Self::parse_query(pair));
+                Rule::query_def => {
+                    source.queries.push(Self::parse_query_def(pair));
                 }
                 Rule::EOI => (),
                 _ => {
@@ -122,51 +168,35 @@ impl HelixParser {
         Ok(source)
     }
 
-    fn parse_node_schema(pair: Pair<Rule>) -> NodeSchema {
-        let mut name = String::new();
-        let mut properties = Vec::new();
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => name = inner_pair.as_str().to_string(),
-                Rule::schema_properties => {
-                    properties = Self::parse_schema_properties(inner_pair);
-                }
-                _ => {}
-            }
-        }
-
-        NodeSchema { name, properties }
+    fn parse_node_def(pair: Pair<Rule>) -> NodeSchema {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+        let fields = Self::parse_node_body(pairs.next().unwrap());
+        NodeSchema { name, fields }
     }
 
-    fn parse_edge_schema(pair: Pair<Rule>) -> EdgeSchema {
-        let mut name = String::new();
-        let mut from = String::new();
-        let mut to = String::new();
-        let mut properties = Vec::new();
+    fn parse_node_body(pair: Pair<Rule>) -> Vec<Field> {
+        let field_defs = pair
+            .into_inner()
+            .find(|p| p.as_rule() == Rule::field_defs)
+            .expect("Expected field_defs in properties");
 
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => name = inner_pair.as_str().to_string(),
-                Rule::edge_property => {
-                    for prop_pair in inner_pair.into_inner() {
-                        match prop_pair.as_rule() {
-                            Rule::identifier => {
-                                if from.is_empty() {
-                                    from = prop_pair.as_str().to_string();
-                                } else {
-                                    to = prop_pair.as_str().to_string();
-                                }
-                            }
-                            Rule::schema_properties => {
-                                properties = Self::parse_schema_properties(prop_pair);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        // Now parse each individual field_def
+        field_defs
+            .into_inner()
+            .map(|p| Self::parse_field_def(p))
+            .collect()
+    }
+
+    fn parse_edge_def(pair: Pair<Rule>) -> EdgeSchema {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+        let body = pairs.next().unwrap();
+        let mut body_pairs = body.into_inner();
+
+        let from = body_pairs.next().unwrap().as_str().to_string();
+        let to = body_pairs.next().unwrap().as_str().to_string();
+        let properties = body_pairs.next().map(|p| Self::parse_properties(p));
 
         EdgeSchema {
             name,
@@ -176,11 +206,61 @@ impl HelixParser {
         }
     }
 
-    fn parse_schema_properties(pair: Pair<Rule>) -> Vec<Field> {
+    fn parse_field_def(pair: Pair<Rule>) -> Field {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+        let field_type = match pairs.next().unwrap().as_str() {
+            "String" => FieldType::String,
+            "Number" => FieldType::Number,
+            "Boolean" => FieldType::Boolean,
+            _ => unreachable!(),
+        };
+
+        Field { name, field_type }
+    }
+
+    fn parse_properties(pair: Pair<Rule>) -> Vec<Field> {
+        // First get the field_defs rule
+        let field_defs = pair
+            .into_inner()
+            .find(|p| p.as_rule() == Rule::field_defs)
+            .expect("Expected field_defs in properties");
+
+        // Now parse each individual field_def
+        field_defs
+            .into_inner()
+            .map(|p| Self::parse_field_def(p))
+            .collect()
+    }
+
+    fn parse_query_def(pair: Pair<Rule>) -> Query {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+
+        let mut parameters = Vec::new();
+        let mut next = pairs.next().unwrap();
+
+        if next.as_rule() == Rule::params {
+            parameters = Self::parse_params(next);
+            next = pairs.next().unwrap();
+        }
+
+        let traversal = Self::parse_get_stmt(next);
+
+        Query {
+            name,
+            parameters,
+            traversal,
+        }
+    }
+
+    fn parse_params(pair: Pair<Rule>) -> Vec<Parameter> {
         pair.into_inner()
-            .filter_map(|prop_pair| {
-                if prop_pair.as_rule() == Rule::schema_property {
-                    Some(Self::parse_schema_property(prop_pair))
+            .filter_map(|p| {
+                if p.as_rule() == Rule::param_def {
+                    Some(Parameter {
+                        name: p.as_str().to_string(),
+                    })
                 } else {
                     None
                 }
@@ -188,257 +268,242 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_schema_property(pair: Pair<Rule>) -> Field {
-        let mut name = String::new();
-        let mut data_type = DataType::String; // default
-
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => name = inner_pair.as_str().to_string(),
-                Rule::type_def => {
-                    data_type = match inner_pair.as_str() {
-                        "Number" => DataType::Number,
-                        "Boolean" => DataType::Boolean,
-                        _ => DataType::String,
-                    };
-                }
-                _ => {}
-            }
-        }
-
-        Field { name, data_type }
+    fn parse_get_stmt(pair: Pair<Rule>) -> TraversalChain {
+        let traversal = pair.into_inner().next().unwrap();
+        Self::parse_traversal(traversal)
     }
 
-    fn parse_query(pair: Pair<Rule>) -> Query {
-        let mut name = String::new();
-        let mut parameter = String::new();
-        let mut body = QueryBody {
-            assignment: None,
-            element_type: ElementType::V,
-            traversal: TraversalStep {
-                node: String::new(),
-                filter: None,
-                children: Vec::new(),
-            },
-        };
-        let mut return_type = String::new();
-
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => name = inner_pair.as_str().to_string(),
-                Rule::parameters => {
-                    parameter = inner_pair
-                        .into_inner()
-                        .filter_map(|param_pair| {
-                            if param_pair.as_rule() == Rule::parameter {
-                                Some(Self::parse_parameter(param_pair))
-                            } else {
-                                None
-                            }
-                        })
-                        .next()
-                        .map(|field| field.name)
-                        .unwrap_or_default();
-                }
-                Rule::query_body => body = Self::parse_query_body(inner_pair),
-                Rule::return_clause => {
-                    return_type = inner_pair
-                        .into_inner()
-                        .filter_map(|item_pair| {
-                            if item_pair.as_rule() == Rule::identifier {
-                                Some(item_pair.as_str().to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .next()
-                        .unwrap_or_default();
-                }
-                _ => {}
+    fn parse_traversal(pair: Pair<Rule>) -> TraversalChain {
+        let mut pairs = pair.into_inner();
+        let start_pair = pairs.next().unwrap();
+        let start = match start_pair.as_rule() {
+            Rule::start_vertex => {
+                let id = start_pair
+                    .into_inner()
+                    .next()
+                    .map(|p| p.as_str().to_string());
+                StartStep::Vertex(id)
             }
-        }
-
-        Query {
-            name,
-            parameter,
-            body,
-            return_type,
-        }
-    }
-
-    fn parse_parameter(pair: Pair<Rule>) -> Field {
-        let mut name = String::new();
-        let mut data_type = DataType::String; // default
-
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => name = inner_pair.as_str().to_string(),
-                Rule::type_def => {
-                    data_type = match inner_pair.as_str() {
-                        "Number" => DataType::Number,
-                        "Boolean" => DataType::Boolean,
-                        _ => DataType::String,
-                    };
-                }
-                _ => {}
+            Rule::start_edge => {
+                let id = start_pair
+                    .into_inner()
+                    .next()
+                    .map(|p| p.as_str().to_string());
+                StartStep::Edge(id)
             }
-        }
-
-        Field { name, data_type }
-    }
-
-    fn parse_query_body(pair: Pair<Rule>) -> QueryBody {
-        let mut assignment = None;
-        let mut element_type = ElementType::V;
-        let mut traversal = TraversalStep {
-            node: String::new(),
-            filter: None,
-            children: Vec::new(),
+            _ => unreachable!(),
         };
 
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::get_clause => {
-                    for get_inner in inner_pair.into_inner() {
-                        match get_inner.as_rule() {
-                            Rule::traversal_assignment => {
-                                assignment = Some(
-                                    get_inner.into_inner().next().unwrap().as_str().to_string(),
-                                );
-                            }
-                            Rule::source_traversal => {
-                                element_type =
-                                    match get_inner.clone().into_inner().next().unwrap().as_str() {
-                                        "V" => ElementType::V,
-                                        "E" => ElementType::E,
-                                        _ => ElementType::V,
-                                    };
-                                traversal = Self::parse_traversal_expression(get_inner);
-                            }
-                            _ => {}
-                        }
-                    }
+        let steps = pairs
+            .filter_map(|p| {
+                if p.as_rule() == Rule::step {
+                    Some(Self::parse_step(p))
+                } else {
+                    None
                 }
-                _ => {}
-            }
-        }
+            })
+            .collect();
 
-        QueryBody {
-            assignment,
-            element_type,
-            traversal,
+        TraversalChain { start, steps }
+    }
+
+    fn parse_step(pair: Pair<Rule>) -> Step {
+        let inner = pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::colon_step => Step::Colon(Self::parse_colon_step(inner)),
+            Rule::filter_step => Step::Filter(Self::parse_filter_step(inner)),
+            _ => unreachable!(),
         }
     }
 
-    fn parse_traversal_expression(pair: Pair<Rule>) -> TraversalStep {
-        let mut current_step = TraversalStep {
-            node: String::new(),
-            filter: None,
-            children: Vec::new(),
-        };
+    fn parse_colon_step(pair: Pair<Rule>) -> ColonStep {
+        let inner = pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::vertex_step => ColonStep::VertexStep(Self::parse_vertex_step(inner)),
+            Rule::edge_step => ColonStep::EdgeStep(Self::parse_edge_step(inner)),
+            Rule::type_step => ColonStep::TypeStep(inner.as_str().to_string()),
+            _ => unreachable!(),
+        }
+    }
 
-        for inner_pair in pair.into_inner() {
-            match inner_pair.as_rule() {
-                Rule::identifier => {
-                    if current_step.node.is_empty() {
-                        current_step.node = inner_pair.as_str().to_string();
-                    }
-                }
-                Rule::child_expression => {
-                    let child_node = inner_pair.into_inner().next().unwrap().as_str().to_string();
-                    current_step.children.push(TraversalStep {
-                        node: child_node,
-                        filter: None,
-                        children: Vec::new(),
-                    });
-                }
-                _ => {}
+    fn parse_vertex_step(pair: Pair<Rule>) -> VertexStep {
+        let step_str = pair.as_str();
+        let args = pair
+            .into_inner()
+            .next()
+            .map(|p| p.into_inner().map(|arg| arg.as_str().to_string()).collect());
+
+        match step_str {
+            s if s.starts_with("Out(") || s == "Out" => VertexStep::Out(args),
+            s if s.starts_with("In(") || s == "In" => VertexStep::In(args),
+            s if s.starts_with("Both(") || s == "Both" => VertexStep::Both(args),
+            "OutV" => VertexStep::OutV,
+            "InV" => VertexStep::InV,
+            "BothV" => VertexStep::BothV,
+            _ => unreachable!(),
+        }
+    }
+
+    fn parse_edge_step(pair: Pair<Rule>) -> EdgeStep {
+        match pair.as_str() {
+            "OutE" => EdgeStep::OutE,
+            "InE" => EdgeStep::InE,
+            "BothE" => EdgeStep::BothE,
+            _ => unreachable!(),
+        }
+    }
+
+    fn parse_filter_step(pair: Pair<Rule>) -> FilterStep {
+        println!("Debug: Parsing filter step: '{}'", pair.as_str());
+        let inner = pair.into_inner().next().unwrap();
+
+        match inner.as_rule() {
+            Rule::has => {
+                let has_pairs: Vec<_> = inner.into_inner().collect();
+                println!("Debug: Has pairs count: {}", has_pairs.len());
+
+                let conditions = has_pairs
+                    .into_iter()
+                    .map(|p| {
+                        println!("Debug: Processing has condition: '{}'", p.as_str());
+                        Self::parse_condition(p)
+                    })
+                    .collect();
+
+                FilterStep::Has(conditions)
             }
+            Rule::has_id => {
+                let id = inner.into_inner().next().unwrap().as_str().to_string();
+                FilterStep::HasId(id)
+            }
+            _ => unreachable!("Unexpected filter step rule: {:?}", inner.as_rule()),
+        }
+    }
+
+    fn parse_condition(pair: Pair<Rule>) -> Condition {
+        let pairs: Vec<Pair<Rule>> = pair.into_inner().collect();
+        let inner_pairs: Vec<Pair<Rule>> = pairs[0].clone().into_inner().collect();
+
+        // Debug print all pairs
+        for (i, p) in inner_pairs.iter().enumerate() {
+            println!(
+                "Debug: Pair {}: Rule={:?}, Text='{}'",
+                i,
+                p.as_rule(),
+                p.as_str()
+            );
         }
 
-        current_step
+        if inner_pairs.len() < 3 {
+            panic!(
+                "Expected at least 3 parts in condition (property, operator, value), got {}",
+                inner_pairs.len()
+            );
+        }
+
+        let property = inner_pairs[0].as_str().to_string();
+
+        let operator = match inner_pairs[1].as_str() {
+            "=" => ComparisonOp::Eq,
+            ">" => ComparisonOp::Gt,
+            "<" => ComparisonOp::Lt,
+            ">=" => ComparisonOp::Gte,
+            "<=" => ComparisonOp::Lte,
+            "!=" => ComparisonOp::Neq,
+            other => panic!("Invalid operator: '{}'", other),
+        };
+
+        let value = match inner_pairs[2].as_rule() {
+            Rule::identifier => Value::Identifier(inner_pairs[2].as_str().to_string()),
+            Rule::string_literal => {
+                let inner = inner_pairs[2]
+                    .clone()
+                    .into_inner()
+                    .next()
+                    .expect("String literal should have inner value");
+                Value::String(inner.as_str().to_string())
+            }
+            Rule::number => {
+                let num_str = inner_pairs[2].as_str();
+                Value::Number(
+                    num_str
+                        .parse()
+                        .unwrap_or_else(|_| panic!("Invalid number: {}", num_str)),
+                )
+            }
+            Rule::boolean => Value::Boolean(inner_pairs[2].as_str() == "true"),
+            Rule::null => Value::Null,
+            rule => panic!("Unexpected value type: {:?}", rule),
+        };
+
+        Condition {
+            property,
+            operator,
+            value,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::helix_parser::HelixParser;
+    use super::*;
 
     #[test]
-    fn test_input() {
+    fn test_parse_node_schema() {
         let input = r#"
-    V::Person {
-        name: String,
-        age: Number
-    }
-    
-    E::Knows {
-        From: Person,
-        To: Person,
-        Properties {
-            since: Number
+        N::User {
+            Name: String,
+            Age: Number
         }
+        "#;
+
+        let result = HelixParser::parse_source(input).unwrap();
+        assert_eq!(result.node_schemas.len(), 1);
+        assert_eq!(result.node_schemas[0].name, "User");
+        assert_eq!(result.node_schemas[0].fields[0].name, "Name");
+        assert_eq!(result.node_schemas[0].fields[1].name, "Age");
+        assert_eq!(result.node_schemas[0].fields.len(), 2);
     }
-    
-    QUERY findFriends => 
-        GET V::Person 
-        RETURN name
-    "#;
 
-        let parsed = HelixParser::parse_source(input);
-
-        // Output results
-        match parsed {
-            Ok(source) => {
-                println!("Parsed Source:");
-
-                println!("Node Schemas:");
-                for schema in &source.node_schemas {
-                    println!("  Name: {}", schema.name);
-                    println!("  Properties:");
-                    for prop in &schema.properties {
-                        println!("    - {}: {:?}", prop.name, prop.data_type);
-                    }
-                }
-
-                println!("\nEdge Schemas:");
-                for schema in &source.edge_schemas {
-                    println!("  Name: {}", schema.name);
-                    println!("  From: {}", schema.from);
-                    println!("  To: {}", schema.to);
-                    println!("  Properties:");
-                    for prop in &schema.properties {
-                        println!("    - {}: {:?}", prop.name, prop.data_type);
-                    }
-                }
-
-                println!("\nQueries:");
-                for query in &source.queries {
-                    println!("  Name: {}", query.name);
-                    println!("  Parameter: {}", query.parameter);
-                    println!("  Return Type: {}", query.return_type);
-                    println!("  Body:");
-                    println!("    Assignment: {:?}", query.body.assignment);
-                    println!("    Element Type: {:?}", query.body.element_type);
-                    println!("    Traversal:");
-                    println!("      Node: {}", query.body.traversal.node);
-                    println!("      Filter: {:?}", query.body.traversal.filter);
-                }
-
-                // Standard assertions can remain
-                assert_eq!(source.node_schemas.len(), 1);
-                assert_eq!(source.node_schemas[0].name, "Person");
-                assert_eq!(source.node_schemas[0].properties.len(), 2);
-
-                assert_eq!(source.edge_schemas.len(), 1);
-                assert_eq!(source.edge_schemas[0].name, "Knows");
-
-                assert_eq!(source.queries.len(), 1);
-                assert_eq!(source.queries[0].name, "findFriends");
-            }
-            Err(e) => {
-                panic!("Parsing failed: {:?}", e);
+    #[test]
+    fn test_parse_edge_schema() {
+        let input = r#"
+        E::Follows {
+            From: User,
+            To: User,
+            Properties {
+                Since: String,
+                Starting: Number
             }
         }
+        "#;
+
+        let result = HelixParser::parse_source(input).unwrap();
+        assert_eq!(result.edge_schemas.len(), 1);
+        assert_eq!(result.edge_schemas[0].name, "Follows");
+        assert_eq!(result.edge_schemas[0].from, "User");
+        assert_eq!(result.edge_schemas[0].to, "User");
+        assert_eq!(
+            result.edge_schemas[0].properties.as_ref().unwrap()[0].name,
+            "Since"
+        );
+        assert_eq!(
+            result.edge_schemas[0].properties.as_ref().unwrap()[1].name,
+            "Starting"
+        );
+        assert_eq!(result.edge_schemas[0].properties.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_parse_query() {
+        let input = r#"
+        QUERY FindUser(userName) =>
+            GET V::User HAS name = userName
+        "#;
+
+        let result = HelixParser::parse_source(input).unwrap();
+        assert_eq!(result.queries.len(), 1);
+        assert_eq!(result.queries[0].name, "FindUser");
+        assert_eq!(result.queries[0].parameters.len(), 1);
     }
 }
