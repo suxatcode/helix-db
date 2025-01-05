@@ -11,31 +11,31 @@ query_body = { get_stmt* }
 get_stmt = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal = { (start_vertex | start_edge | identifier) ~ step* }
 anonymous_traversal = { "_" ~ step+ }
-step = { "::" ~ (graph_step | props_step | where_step | exists | bool_operations | addfield | count) }
+step = { "::" ~ (graph_step | props_step | where_step | bool_operations | addfield | count) }
 
 // Evaluation rules for different types
-evaluates_to_anything = { 
-    traversal | 
-    identifier | 
-    string_literal | 
-    number | 
-    boolean | 
+evaluates_to_anything = {
     exists |
-    null 
+    traversal |
+    identifier |
+    string_literal |
+    number |
+    boolean |
+    null
 }
 
 evaluates_to_bool = {
+    exists |
     boolean |
     identifier |
     traversal |
-    exists |
     and |
     or
 }
 
-evaluates_to_number = { 
-    number | 
-    identifier | 
+evaluates_to_number = {
+    number |
+    identifier |
     traversal
 }
 
@@ -48,17 +48,16 @@ new_field = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
-
 graph_step = {
     "OutE" ~ ("<" ~ type_args? ~ ">")? |
     "InE" ~ ("<" ~ type_args? ~ ">")? |
     "BothE" ~ ("<" ~ type_args? ~ ">")? |
-    "OutV" |
-    "InV" |
-    "BothV" |
+    "OutV" ~ ("<" ~ type_args? ~ ">")? |
+    "InV" ~ ("<" ~ type_args? ~ ">")? |
+    "BothV" ~ ("<" ~ type_args? ~ ">")? |
     "Out" ~ ("<" ~ type_args? ~ ">")? |
     "In" ~ ("<" ~ type_args? ~ ">")? |
-    "Both" ~ ("<" ~ type_args? ~ ">")? 
+    "Both" ~ ("<" ~ type_args? ~ ">")?
 }
 
 // Edge-related steps
@@ -66,8 +65,7 @@ start_edge = { "E" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
-exists = { "EXISTS" ~ "(" ~ (traversal | anonymous_traversal) ~ ")" }
-    
+exists = { "EXISTS" ~ "(" ~ traversal ~ ")" }
 
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
@@ -80,8 +78,6 @@ props_step = { "Props" ~ "(" ~ identifier ~ ("," ~ identifier)* ~ ")" }
 // Boolean operations
 and = { "AND" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
 or = { "OR" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
-
-
 bool_operations = { GT | GTE | LT | LTE | EQ | NEQ }
 GT = { "GT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
 GTE = { "GTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
@@ -92,7 +88,7 @@ NEQ = { "NEQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
 count = { "COUNT" }
 
 // Schema definitions
-node_def = { "N::" ~ identifier_upper ~ node_body }
+node_def = { "V::" ~ identifier_upper ~ node_body }
 edge_def = { "E::" ~ identifier_upper ~ edge_body }
 node_body = { "{" ~ field_defs ~ "}" }
 edge_body = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }

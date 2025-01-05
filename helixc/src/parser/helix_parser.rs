@@ -265,8 +265,9 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
+        let (l, c) = p.line_col();
         let pair = p.into_inner().next().unwrap();
-        println!("{:?}", pair.as_rule());
+        println!("l: {}, c: {}, Pair: {:?} {:?}", l, c, pair, pair.as_rule());
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
@@ -401,13 +402,29 @@ impl HelixParser {
 
     fn parse_field_additions(pair: Pair<Rule>) -> Result<Vec<FieldAddition>, ParserError> {
         pair.into_inner()
-            .map(|p| {
-                let mut pairs = p.into_inner();
-                let name = pairs.next().unwrap().as_str().to_string();
-                let value = Self::parse_expression(pairs.next().unwrap())?;
-                Ok(FieldAddition { name, value })
-            })
+            .map(|p| Self::parse_new_field(p))
             .collect()
+    }
+
+    fn parse_new_field(pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+        let value_pair = pairs.next().unwrap();
+
+        let value = match value_pair.as_rule() {
+            Rule::evaluates_to_anything => Self::parse_expression(value_pair)?,
+            Rule::anonymous_traversal => {
+                Expression::Traversal(Box::new(Self::parse_traversal(value_pair)?))
+            }
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected field value type: {:?}",
+                    value_pair.as_rule()
+                )))
+            }
+        };
+
+        Ok(FieldAddition { name, value })
     }
 }
 
@@ -419,7 +436,7 @@ mod tests {
     #[test]
     fn test_parse_node_schema() {
         let input = r#"
-        N::User {
+        V::User {
             Name: String,
             Age: Number
         }
@@ -520,7 +537,7 @@ mod tests {
     #[test]
     fn test_node_definition() {
         let input = r#"
-        N::USER {
+        V::USER {
             ID: String,
             Name: String,
             Age: Number
@@ -558,12 +575,12 @@ mod tests {
     #[test]
     fn test_multiple_schemas() {
         let input = r#"
-        N::USER {
+        V::USER {
             ID: String,
             Name: String,
             Email: String
         }
-        N::POST {
+        V::POST {
             ID: String,
             Content: String
         }
@@ -633,7 +650,7 @@ mod tests {
         let input = r#"
     QUERY userExists(id) =>
         user <- V<User>(id)
-        result <- V::EXISTS(_::OutE::InV<User>)
+        result <- EXISTS(user::OutE::InV<User>)
         RETURN result
     "#;
         let result = HelixParser::parse_source(input).unwrap();
