@@ -28,6 +28,7 @@ evaluates_to_bool = {
     boolean |
     identifier |
     traversal |
+    exists |
     and |
     or
 }
@@ -43,7 +44,7 @@ return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)
 
 // Add fields
 addfield = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
-new_field = { identifier ~ ":" ~ evaluates_to_anything | anonymous_traversal }
+new_field = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }

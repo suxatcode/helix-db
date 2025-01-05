@@ -225,7 +225,6 @@ impl HelixParser {
         let name = pairs.next().unwrap().as_str().to_string();
         let parameters = Self::parse_parameters(pairs.next().unwrap());
         let nect = pairs.next().unwrap();
-        println!("{:?}", nect);
         let statements = Self::parse_query_body(nect)?;
         let return_values = Self::parse_return_statement(pairs.next().unwrap())?;
 
@@ -267,10 +266,14 @@ impl HelixParser {
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
         let pair = p.into_inner().next().unwrap();
+        println!("{:?}", pair.as_rule());
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
             )?))),
+            Rule::anonymous_traversal => Ok(Expression::Traversal(Box::new(
+                Self::parse_traversal(pair)?,
+            ))),
             Rule::identifier => Ok(Expression::Identifier(pair.as_str().to_string())),
             Rule::string_literal => Ok(Expression::StringLiteral(Self::parse_string_literal(pair))),
             Rule::number => Ok(Expression::NumberLiteral(pair.as_str().parse().unwrap())),
@@ -288,6 +291,7 @@ impl HelixParser {
     }
 
     fn parse_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
+        println!(" HERE {:?}", pair.as_rule());
         let mut pairs = pair.into_inner();
         let start = Self::parse_start_node(pairs.next().unwrap())?;
         let steps = pairs
@@ -326,15 +330,17 @@ impl HelixParser {
 
     fn parse_step(pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.into_inner().next().unwrap();
+        println!("HELP {:?}", inner.as_rule());
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
-            Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(
-                inner.into_inner().next().unwrap(),
-            )?))),
-            Rule::exists => Ok(Step::Exists(Box::new(Self::parse_traversal(
-                inner.into_inner().next().unwrap(),
-            )?))),
+            Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
+            Rule::exists => {
+                println!("AEHNVOAENVOAENVOUNEQ");
+                Ok(Step::Exists(Box::new(Self::parse_traversal(
+                    inner.into_inner().next().unwrap(),
+                )?)))
+            }
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
@@ -627,7 +633,7 @@ mod tests {
         let input = r#"
     QUERY userExists(id) =>
         user <- V<User>(id)
-        result <- EXISTS(user::OutE)
+        result <- V::EXISTS(_::OutE::InV<User>)
         RETURN result
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -658,7 +664,7 @@ mod tests {
         let input = r#"
     QUERY enrichUserData() =>
         user <- V<USER>(123)
-        enriched <- user::{Name: "name", Age: 25}
+        enriched <- user::{Name: "name", Follows: _::Out<Follows>::Props(Age)}
         RETURN enriched
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -671,7 +677,7 @@ mod tests {
         let input = r#"
     QUERY analyzeNetwork() =>
         user <- V<USER>(789)
-        friends <- user::OutE<FRIENDSHIP>::InV::WHERE()
+        friends <- user::Out<FRIENDSHIP>::InV::WHERE(_::Out)
         friendCount <- activeFriends::COUNT
         RETURN friendCount
     "#;
