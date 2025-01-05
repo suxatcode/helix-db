@@ -11,7 +11,7 @@ query_body = { get_stmt* }
 get_stmt = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal = { (start_vertex | start_edge | identifier) ~ step* }
 anonymous_traversal = { "_" ~ step+ }
-step = { "::" ~ (vertex_step | edge_step | props_step | where_step | exists | bool_operations | addfield | count) }
+step = { "::" ~ (graph_step | props_step | where_step | exists | bool_operations | addfield | count) }
 
 // Evaluation rules for different types
 evaluates_to_anything = { 
@@ -35,8 +35,7 @@ evaluates_to_bool = {
 evaluates_to_number = { 
     number | 
     identifier | 
-    traversal | 
-    exists
+    traversal
 }
 
 // Return statement
@@ -48,22 +47,21 @@ new_field = { identifier ~ ":" ~ evaluates_to_anything | anonymous_traversal }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
-vertex_step = {
-    "Out" ~ ("<" ~ type_args? ~ ">")? |
-    "In" ~ ("<" ~ type_args? ~ ">")? |
-    "Both" ~ ("<" ~ type_args? ~ ">")? |
+
+graph_step = {
+    "OutE" ~ ("<" ~ type_args? ~ ">")? |
+    "InE" ~ ("<" ~ type_args? ~ ">")? |
+    "BothE" ~ ("<" ~ type_args? ~ ">")? |
     "OutV" |
     "InV" |
-    "BothV"
+    "BothV" |
+    "Out" ~ ("<" ~ type_args? ~ ">")? |
+    "In" ~ ("<" ~ type_args? ~ ">")? |
+    "Both" ~ ("<" ~ type_args? ~ ">")? 
 }
 
 // Edge-related steps
 start_edge = { "E" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
-edge_step = {
-    "OutE" ~ ("<" ~ type_args? ~ ">")? |
-    "InE" ~ ("<" ~ type_args? ~ ">")? |
-    "BothE" ~ ("<" ~ type_args? ~ ">")?
-}
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
@@ -73,7 +71,7 @@ exists = { "EXISTS" ~ "(" ~ (traversal | anonymous_traversal) ~ ")" }
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
 id_arg = @{ ASCII_DIGIT+ }
-id_args = { id_arg ~ ("," ~ id_arg)* }
+id_args = { (id_arg | identifier) ~ ("," ~ (id_arg | identifier))* }
 
 // Props step
 props_step = { "Props" ~ "(" ~ identifier ~ ("," ~ identifier)* ~ ")" }

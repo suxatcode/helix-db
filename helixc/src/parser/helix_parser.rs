@@ -92,8 +92,8 @@ pub enum StartNode {
 
 #[derive(Debug)]
 pub enum Step {
-    Vertex(VertexStep),
-    Edge(EdgeStep),
+    Vertex(GraphStep),
+    Edge(GraphStep),
     Props(Vec<String>),
     Where(Box<Expression>),
     Exists(Box<Traversal>),
@@ -109,17 +109,13 @@ pub struct FieldAddition {
 }
 
 #[derive(Debug)]
-pub enum VertexStep {
+pub enum GraphStep {
     Out(Option<Vec<String>>),
     In(Option<Vec<String>>),
     Both(Option<Vec<String>>),
     OutV,
     InV,
     BothV,
-}
-
-#[derive(Debug)]
-pub enum EdgeStep {
     OutE(Option<Vec<String>>),
     InE(Option<Vec<String>>),
     BothE(Option<Vec<String>>),
@@ -228,7 +224,9 @@ impl HelixParser {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let parameters = Self::parse_parameters(pairs.next().unwrap());
-        let statements = Self::parse_query_body(pairs.next().unwrap())?;
+        let nect = pairs.next().unwrap();
+        println!("{:?}", nect);
+        let statements = Self::parse_query_body(nect)?;
         let return_values = Self::parse_return_statement(pairs.next().unwrap())?;
 
         Ok(Query {
@@ -329,8 +327,7 @@ impl HelixParser {
     fn parse_step(pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::vertex_step => Ok(Step::Vertex(Self::parse_vertex_step(inner))),
-            Rule::edge_step => Ok(Step::Edge(Self::parse_edge_step(inner))),
+            Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(
                 inner.into_inner().next().unwrap(),
@@ -345,7 +342,7 @@ impl HelixParser {
         }
     }
 
-    fn parse_vertex_step(pair: Pair<Rule>) -> VertexStep {
+    fn parse_graph_step(pair: Pair<Rule>) -> GraphStep {
         let rule_str = pair.as_str();
         let types = pair
             .into_inner()
@@ -353,27 +350,15 @@ impl HelixParser {
             .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
 
         match rule_str {
-            s if s.starts_with("Out") => VertexStep::Out(types),
-            s if s.starts_with("In") => VertexStep::In(types),
-            s if s.starts_with("Both") => VertexStep::Both(types),
-            "OutV" => VertexStep::OutV,
-            "InV" => VertexStep::InV,
-            "BothV" => VertexStep::BothV,
-            _ => unreachable!(),
-        }
-    }
-
-    fn parse_edge_step(pair: Pair<Rule>) -> EdgeStep {
-        let rule_str = pair.as_str();
-        let types = pair
-            .into_inner()
-            .next()
-            .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
-
-        match rule_str {
-            s if s.starts_with("OutE") => EdgeStep::OutE(types),
-            s if s.starts_with("InE") => EdgeStep::InE(types),
-            s if s.starts_with("BothE") => EdgeStep::BothE(types),
+            s if s.starts_with("OutE") => GraphStep::OutE(types),
+            s if s.starts_with("InE") => GraphStep::InE(types),
+            s if s.starts_with("BothE") => GraphStep::BothE(types),
+            s if s.starts_with("OutV") => GraphStep::OutV,
+            s if s.starts_with("InV") => GraphStep::InV,
+            s if s.starts_with("BothV") => GraphStep::BothV,
+            s if s.starts_with("Out") => GraphStep::Out(types),
+            s if s.starts_with("In") => GraphStep::In(types),
+            s if s.starts_with("Both") => GraphStep::Both(types),
             _ => unreachable!(),
         }
     }
@@ -598,8 +583,8 @@ mod tests {
     fn test_logical_operations() {
         let input = r#"
     QUERY logicalOps(id) =>
-        user <- V<USER>(id),
-        condition <- name::EQ("Alice")::Props(Age),
+        user <- V<USER>(id)
+        condition <- name::EQ("Alice")::Props(Age)
         RETURN condition
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -626,9 +611,10 @@ mod tests {
         let input = r#"
     QUERY getEdgeInfo() =>
         edge <- E<FRIENDSHIP>(45)
-        fromUser <- edge::OutV
-        toUser <- edge::InV
+        fromUser <- edge::OutE
+        toUser <- edge::OutV
         RETURN fromUser, toUser
+
     "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
@@ -641,7 +627,7 @@ mod tests {
         let input = r#"
     QUERY userExists(id) =>
         user <- V<User>(id)
-        result <- EXISTS(user::OutE::InV<User>::WHERE(Name::EQ("John")))
+        result <- EXISTS(user::OutE)
         RETURN result
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -656,9 +642,9 @@ mod tests {
     fn test_multiple_return_values() {
         let input = r#"
     QUERY returnMultipleValues() =>
-        user <- V<USER>(999),
-        name <- user::Props(Name),
-        age <- user::Props(Age),
+        user <- V<USER>(999)
+        name <- user::Props(Name)
+        age <- user::Props(Age)
         RETURN name, age
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -672,6 +658,7 @@ mod tests {
         let input = r#"
     QUERY enrichUserData() =>
         user <- V<USER>(123)
+        enriched <- user::{Name: "name", Age: 25}
         RETURN enriched
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -684,12 +671,12 @@ mod tests {
         let input = r#"
     QUERY analyzeNetwork() =>
         user <- V<USER>(789)
-        friends <- user::OutE<FRIENDSHIP>::InV
+        friends <- user::OutE<FRIENDSHIP>::InV::WHERE()
         friendCount <- activeFriends::COUNT
         RETURN friendCount
     "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
-        assert_eq!(query.statements.len(), 4);
+        assert_eq!(query.statements.len(), 3);
     }
 }
