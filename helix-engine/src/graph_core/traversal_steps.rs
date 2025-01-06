@@ -119,12 +119,12 @@ pub trait TraversalMethods {
     ///  
     /// // Example passing function that takes NO input
     /// let test_calling_function_without_inputs = traversal.v().filter(has_name).count();
-    /// 
+    ///
     /// // Example of chained traversal
     /// let test_chained_traversal = traversal
     ///     .filter(has_name)
     ///     .filter(|val| age_greater_than(val, 27)).count();
-    /// 
+    ///
     /// assert_eq!(test_with_closure, 2);
     /// assert_eq!(test_calling_function_with_inputs, 1);
     /// assert_eq!(test_calling_function_without_inputs, 2);

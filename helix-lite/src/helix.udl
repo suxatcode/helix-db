@@ -7,9 +7,16 @@ enum HelixLiteError {
     "Default"
 };
 
+[Enum]
+interface Input {
+    String(string);
+    Integer(i32);
+    Float(f64);
+};
+
 interface HelixEmbedded {
     [Throws=HelixLiteError]
-    string query(string query_id, string json_body);
+    string query(string query, sequence<Input> input);
     [Throws=HelixLiteError]
     constructor(string user_path);
 };

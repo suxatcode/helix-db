@@ -20,8 +20,7 @@ evaluates_to_anything = {
     identifier |
     string_literal |
     number |
-    boolean |
-    null
+    boolean 
 }
 
 evaluates_to_bool = {
@@ -100,7 +99,6 @@ properties = { "Properties" ~ "{" ~ field_defs? ~ "}" }
 string_literal = ${ "\"" ~ inner_string ~ "\"" }
 inner_string = @{ (!("\"" | "\\") ~ ANY)* }
 boolean = { "true" | "false" }
-null = { "null" }
 type_name = @{ "String" | "Number" | "Boolean" }
 identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }

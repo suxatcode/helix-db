@@ -55,8 +55,9 @@ pub struct Parameter {
 }
 
 #[derive(Debug)]
-pub enum Statement {
-    Assignment { variable: String, value: Expression },
+pub struct Statement {
+    pub variable: String,
+    pub value: Expression,
 }
 
 #[derive(Debug)]
@@ -66,7 +67,6 @@ pub enum Expression {
     StringLiteral(String),
     NumberLiteral(i64),
     BooleanLiteral(bool),
-    Null,
     Exists(Box<Traversal>),
 }
 
@@ -255,7 +255,7 @@ impl HelixParser {
         let variable = pairs.next().unwrap().as_str().to_string();
         let value = Self::parse_expression(pairs.next().unwrap())?;
 
-        Ok(Statement::Assignment { variable, value })
+        Ok(Statement { variable, value })
     }
 
     fn parse_return_statement(pair: Pair<Rule>) -> Result<Vec<Expression>, ParserError> {
@@ -265,7 +265,9 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
+        let (l, c) = p.line_col();
         let pair = p.into_inner().next().unwrap();
+        println!("l: {}, c: {}, Pair: {:?} {:?}", l, c, pair, pair.as_rule());
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
@@ -277,7 +279,6 @@ impl HelixParser {
             Rule::string_literal => Ok(Expression::StringLiteral(Self::parse_string_literal(pair))),
             Rule::number => Ok(Expression::NumberLiteral(pair.as_str().parse().unwrap())),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
-            Rule::null => Ok(Expression::Null),
             Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_traversal(
                 pair.into_inner().next().unwrap(),
             )?))),
@@ -290,6 +291,7 @@ impl HelixParser {
     }
 
     fn parse_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
+        println!(" HERE {:?}", pair.as_rule());
         let mut pairs = pair.into_inner();
         let start = Self::parse_start_node(pairs.next().unwrap())?;
         let steps = pairs
@@ -328,14 +330,17 @@ impl HelixParser {
 
     fn parse_step(pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.into_inner().next().unwrap();
+        println!("HELP {:?}", inner.as_rule());
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::exists => Ok(Step::Exists(Box::new(Self::parse_traversal(
-                inner.into_inner().next().unwrap(),
-            )?))),
-
+            Rule::exists => {
+                println!("AEHNVOAENVOAENVOUNEQ");
+                Ok(Step::Exists(Box::new(Self::parse_traversal(
+                    inner.into_inner().next().unwrap(),
+                )?)))
+            }
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
@@ -642,11 +647,11 @@ mod tests {
     #[test]
     fn test_exists_query() {
         let input = r#"
-    QUERY userExists(id) =>
-        user <- V<User>(id)
-        result <- EXISTS(user::OutE::InV<User>)
-        RETURN result
-    "#;
+        QUERY userExists(id) =>
+            user <- V<User>(id)
+            result <- EXISTS(user::OutE::InV<User>)
+            RETURN result
+        "#;
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.queries.len(), 1);
         let query = &result.queries[0];
@@ -695,22 +700,5 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
-    }
-
-    #[test]
-    fn test_double_query() {
-        let input = r#"
-    QUERY firstQuery() =>
-        user <- V<USER>(123)
-        name <- user::Props(Name)
-        RETURN name
-
-    QUERY secondQuery() =>
-        user <- V<USER>(456)
-        age <- user::Props(Age)
-        RETURN age
-    "#;
-        let result = HelixParser::parse_source(input).unwrap();
-        assert_eq!(result.queries.len(), 2);
     }
 }

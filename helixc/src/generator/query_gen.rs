@@ -10,7 +10,6 @@ pub struct EdgeState;
 #[derive(Debug)]
 pub struct NoState;
 
-
 #[derive(Debug)]
 pub enum Value {
     Integer(i64),
@@ -175,18 +174,11 @@ impl<In: Debug, Out: Debug> TraversalStepGenerator for TraversalStep<In, Out> {
             TraversalStep::Count { .. } => writeln!(f, "    traversal.count();"),
             TraversalStep::Range { start, end, .. } => {
                 writeln!(f, "    traversal.range({}, {});", start, end)
-            },
-            TraversalStep::Filter { condition, .. } => {
-                generate_filter_condition(f, condition)
             }
-           
+            TraversalStep::Filter { condition, .. } => generate_filter_condition(f, condition),
         }
     }
 }
-
-
-
-
 
 impl<T> TraversalGenerator<T> {
     pub fn generate_code(&self) -> Result<String, std::fmt::Error> {
@@ -203,7 +195,7 @@ impl<T> TraversalGenerator<T> {
             "    let mut traversal = TraversalBuilder::new(vec![]);"
         )?;
 
-        for step  in &self.steps{
+        for step in &self.steps {
             step.generate_code(&mut code)?;
         }
 
@@ -299,14 +291,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_gt(mut self, property: &str, value: Value) -> TraversalGenerator<VertexState> {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::GT,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::GT,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -315,14 +308,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_lt(mut self, property: &str, value: Value) -> TraversalGenerator<VertexState> {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::LT,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::LT,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -331,14 +325,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_gte(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::GTE,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::GTE,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -347,14 +342,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_lte(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::LTE,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::LTE,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -363,14 +359,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_eq(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::EQ,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::EQ,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -379,14 +376,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_neq(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::NEQ,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::NEQ,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -395,14 +393,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_contains(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::Contains,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::Contains,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -411,14 +410,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_starts_with(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::StartsWith,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::StartsWith,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -427,14 +427,15 @@ impl TraversalGenerator<VertexState> {
     }
 
     pub fn where_ends_with(mut self, property: &str, value: Value) -> Self {
-        self.steps.push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
-            condition: FilterCondition::PropertyComparison {
-                property: property.to_string(),
-                operator: ComparisonOperator::EndsWith,
-                value,
-            },
-            _marker: PhantomData,
-        }));
+        self.steps
+            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator: ComparisonOperator::EndsWith,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
         TraversalGenerator {
             function_identifier: self.function_identifier,
             steps: self.steps,
@@ -442,7 +443,6 @@ impl TraversalGenerator<VertexState> {
         }
     }
 }
-
 
 // Helper trait for value comparison code generation
 trait ValueComparison {
@@ -465,14 +465,21 @@ impl ValueComparison for &str {
     }
 }
 
-
 fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std::fmt::Result {
     match condition {
-        FilterCondition::PropertyComparison { property, operator, value } => {
+        FilterCondition::PropertyComparison {
+            property,
+            operator,
+            value,
+        } => {
             writeln!(f, "    traversal.filter(|val| {{")?;
             writeln!(f, "        match val {{")?;
             writeln!(f, "            TraversalValue::SingleNode(node) => {{")?;
-            writeln!(f, "                if let Some(prop_val) = node.properties.get(\"{}\") {{", property)?;
+            writeln!(
+                f,
+                "                if let Some(prop_val) = node.properties.get(\"{}\") {{",
+                property
+            )?;
             writeln!(f, "                    match prop_val {{")?;
             generate_value_match(f, operator, value)?;
             writeln!(f, "                        _ => false,")?;
@@ -480,7 +487,11 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
             writeln!(f, "                }} else {{ false }}")?;
             writeln!(f, "            }},")?;
             writeln!(f, "            TraversalValue::SingleEdge(edge) => {{")?;
-            writeln!(f, "                if let Some(prop_val) = edge.properties.get(\"{}\") {{", property)?;
+            writeln!(
+                f,
+                "                if let Some(prop_val) = edge.properties.get(\"{}\") {{",
+                property
+            )?;
             writeln!(f, "                    match prop_val {{")?;
             generate_value_match(f, operator, value)?;
             writeln!(f, "                        _ => false,")?;
@@ -490,18 +501,32 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
             writeln!(f, "            _ => false,")?;
             writeln!(f, "        }}")?;
             writeln!(f, "    }});")?;
-        },
-        FilterCondition::TraversalComparison { traversal, operator, value } => {
+        }
+        FilterCondition::TraversalComparison {
+            traversal,
+            operator,
+            value,
+        } => {
             writeln!(f, "    traversal.filter(|val| {{")?;
-            writeln!(f, "        let mut sub_traversal = TraversalBuilder::new(vec![val.clone()]);")?;
+            writeln!(
+                f,
+                "        let mut sub_traversal = TraversalBuilder::new(vec![val.clone()]);"
+            )?;
             for step in traversal {
                 step.generate_code(f)?;
             }
             writeln!(f, "        let result = sub_traversal.count();")?;
-            writeln!(f, "        {}", generate_numeric_comparison("result", operator, value))?;
+            writeln!(
+                f,
+                "        {}",
+                generate_numeric_comparison("result", operator, value)
+            )?;
             writeln!(f, "    }});")?;
-        },
-        FilterCondition::LogicalCombination { operator, conditions } => {
+        }
+        FilterCondition::LogicalCombination {
+            operator,
+            conditions,
+        } => {
             writeln!(f, "    traversal.filter(|val| {{")?;
             match operator {
                 LogicalOperator::And => {
@@ -511,7 +536,7 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
                         }
                         generate_filter_condition(f, condition)?;
                     }
-                },
+                }
                 LogicalOperator::Or => {
                     for (i, condition) in conditions.iter().enumerate() {
                         if i > 0 {
@@ -519,14 +544,14 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
                         }
                         generate_filter_condition(f, condition)?;
                     }
-                },
+                }
                 LogicalOperator::Not => {
                     write!(f, "!")?;
                     generate_filter_condition(f, &conditions[0])?;
                 }
             }
             writeln!(f, "    }});")?;
-        },
+        }
         FilterCondition::PropertyExists { property } => {
             writeln!(f, "    traversal.filter(|val| {{")?;
             writeln!(f, "        match val {{")?;
@@ -540,25 +565,49 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
     Ok(())
 }
 
-fn generate_value_match(f: &mut String, operator: &ComparisonOperator, value: &Value) -> std::fmt::Result {
+fn generate_value_match(
+    f: &mut String,
+    operator: &ComparisonOperator,
+    value: &Value,
+) -> std::fmt::Result {
     match value {
         Value::Integer(_) => {
-            writeln!(f, "                        Value::Integer(val) => {},", "val".generate_comparison_code(operator, value))?;
-        },
+            writeln!(
+                f,
+                "                        Value::Integer(val) => {},",
+                "val".generate_comparison_code(operator, value)
+            )?;
+        }
         Value::Float(_) => {
-            writeln!(f, "                        Value::Float(val) => {},", "val".generate_comparison_code(operator, value))?;
-        },
+            writeln!(
+                f,
+                "                        Value::Float(val) => {},",
+                "val".generate_comparison_code(operator, value)
+            )?;
+        }
         Value::String(_) => {
-            writeln!(f, "                        Value::String(val) => {},", "val".generate_comparison_code(operator, value))?;
-        },
+            writeln!(
+                f,
+                "                        Value::String(val) => {},",
+                "val".generate_comparison_code(operator, value)
+            )?;
+        }
         Value::Boolean(_) => {
-            writeln!(f, "                        Value::Boolean(val) => {},", "val".generate_comparison_code(operator, value))?;
-        },
+            writeln!(
+                f,
+                "                        Value::Boolean(val) => {},",
+                "val".generate_comparison_code(operator, value)
+            )?;
+        }
     }
     Ok(())
 }
 
-fn generate_numeric_comparison(var_name: &str, operator: &ComparisonOperator, value: &Value) -> String {
+fn generate_numeric_comparison(
+    var_name: &str,
+    operator: &ComparisonOperator,
+    value: &Value,
+) -> String {
     match operator {
         ComparisonOperator::GT => format!("{} > {}", var_name, value),
         ComparisonOperator::LT => format!("{} < {}", var_name, value),
@@ -569,8 +618,6 @@ fn generate_numeric_comparison(var_name: &str, operator: &ComparisonOperator, va
         _ => panic!("Invalid operator for numeric comparison"),
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -587,7 +634,7 @@ mod tests {
         let code = generator.generate_code().unwrap();
 
         assert!(code.contains("pub fn test_function("));
-        assert!(code.contains("traversal.v(storage);"));
+        assert!(code.contains("traversal.v();"));
         assert!(code.contains("traversal.out(\"knows\");"));
         assert!(code.contains("traversal.in_(\"follows\");"));
         assert!(code.contains("traversal.out_e(\"likes\");"));
