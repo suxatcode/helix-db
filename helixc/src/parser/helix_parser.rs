@@ -265,9 +265,7 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
-        let (l, c) = p.line_col();
         let pair = p.into_inner().next().unwrap();
-        println!("l: {}, c: {}, Pair: {:?} {:?}", l, c, pair, pair.as_rule());
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
@@ -292,7 +290,6 @@ impl HelixParser {
     }
 
     fn parse_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
-        println!(" HERE {:?}", pair.as_rule());
         let mut pairs = pair.into_inner();
         let start = Self::parse_start_node(pairs.next().unwrap())?;
         let steps = pairs
@@ -331,17 +328,14 @@ impl HelixParser {
 
     fn parse_step(pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.into_inner().next().unwrap();
-        println!("HELP {:?}", inner.as_rule());
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::exists => {
-                println!("AEHNVOAENVOAENVOUNEQ");
-                Ok(Step::Exists(Box::new(Self::parse_traversal(
-                    inner.into_inner().next().unwrap(),
-                )?)))
-            }
+            Rule::exists => Ok(Step::Exists(Box::new(Self::parse_traversal(
+                inner.into_inner().next().unwrap(),
+            )?))),
+
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
@@ -701,5 +695,22 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
+    }
+
+    #[test]
+    fn test_double_query() {
+        let input = r#"
+    QUERY firstQuery() =>
+        user <- V<USER>(123)
+        name <- user::Props(Name)
+        RETURN name
+
+    QUERY secondQuery() =>
+        user <- V<USER>(456)
+        age <- user::Props(Age)
+        RETURN age
+    "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        assert_eq!(result.queries.len(), 2);
     }
 }
