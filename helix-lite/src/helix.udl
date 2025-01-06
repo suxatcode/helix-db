@@ -1,0 +1,15 @@
+namespace helix_lite {
+    
+};
+
+[Error]
+enum HelixLiteError {
+    "Default"
+};
+
+interface HelixEmbedded {
+    [Throws=HelixLiteError]
+    string query(string query_id, string json_body);
+    [Throws=HelixLiteError]
+    constructor(string user_path);
+};

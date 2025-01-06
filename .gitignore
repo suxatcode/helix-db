@@ -8,5 +8,4 @@ count.sh
 /queries/
 **/node_modules/
 /hql/
-/helix-lite/
 **/*.txt
