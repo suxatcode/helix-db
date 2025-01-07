@@ -105,7 +105,7 @@ impl<'a> SourceTraversalSteps for TraversalBuilder<'a> {
 impl<'a> TraversalSteps for TraversalBuilder<'a> {
     fn out(&mut self, edge_label: &str) -> &mut Self {
         self.check_is_valid_node_traversal("out").unwrap(); // TODO: Handle error
-
+                                                            // let label = match edge_labels { Some(label)=> label, None=> None};
         let mut new_current = Vec::with_capacity(self.current_step.len());
         for element in &self.current_step {
             match element {
@@ -212,6 +212,162 @@ impl<'a> TraversalSteps for TraversalBuilder<'a> {
                         false => new_current.push(TraversalValue::EdgeArray(edges)),
                         true => new_current.push(TraversalValue::Empty),
                     }
+                }
+                _ => unreachable!(),
+            };
+        }
+        self.current_step = new_current;
+        self
+    }
+
+    fn both_e(&mut self, edge_label: &str) -> &mut Self {
+        self.check_is_valid_node_traversal("both").unwrap();
+        let mut new_current = Vec::with_capacity(self.current_step.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::NodeArray(nodes) => {
+                    // let mut new_steps = Vec::with_capacity(nodes.len() * self.current_step.len());
+                    for node in nodes {
+                        let in_edges = self.storage.get_in_edges(&node.id, edge_label).unwrap();
+                        let out_edges = self.storage.get_out_edges(&node.id, edge_label).unwrap();
+                        if in_edges.is_empty() && out_edges.is_empty() {
+                            new_current.push(TraversalValue::Empty);
+                        } else {
+                            if !in_edges.is_empty() {
+                                new_current.push(TraversalValue::EdgeArray(in_edges));
+                            }
+                            if !out_edges.is_empty() {
+                                new_current.push(TraversalValue::EdgeArray(out_edges));
+                            }
+                        }
+                    }
+                }
+                TraversalValue::SingleNode(node) => {
+                    let in_edges = self.storage.get_in_edges(&node.id, edge_label).unwrap();
+                    let out_edges = self.storage.get_out_edges(&node.id, edge_label).unwrap();
+                    if in_edges.is_empty() && out_edges.is_empty() {
+                        new_current.push(TraversalValue::Empty);
+                    } else {
+                        if !in_edges.is_empty() {
+                            new_current.push(TraversalValue::EdgeArray(in_edges));
+                        }
+                        if !out_edges.is_empty() {
+                            new_current.push(TraversalValue::EdgeArray(out_edges));
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            };
+        }
+        self.current_step = new_current;
+        self
+    }
+
+    fn both(&mut self, edge_label: &str) -> &mut Self {
+        self.check_is_valid_node_traversal("in_").unwrap(); // TODO: Handle error
+        let mut new_current = Vec::with_capacity(self.current_step.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::NodeArray(nodes) => {
+                    // let mut new_steps = Vec::with_capacity(nodes.len() * self.current_step.len());
+                    for node in nodes {
+                        let in_nodes = self.storage.get_in_nodes(&node.id, edge_label).unwrap();
+                        let out_nodes = self.storage.get_out_nodes(&node.id, edge_label).unwrap();
+
+                        if in_nodes.is_empty() && out_nodes.is_empty() {
+                            new_current.push(TraversalValue::Empty);
+                        } else {
+                            if !in_nodes.is_empty() {
+                                new_current.push(TraversalValue::NodeArray(in_nodes));
+                            }
+                            if !out_nodes.is_empty() {
+                                new_current.push(TraversalValue::NodeArray(out_nodes));
+                            }
+                        }
+                    }
+                }
+                TraversalValue::SingleNode(node) => {
+                    let in_nodes = self.storage.get_in_nodes(&node.id, edge_label).unwrap();
+                    let out_nodes = self.storage.get_out_nodes(&node.id, edge_label).unwrap();
+
+                    if in_nodes.is_empty() && out_nodes.is_empty() {
+                        new_current.push(TraversalValue::Empty);
+                    } else {
+                        if !in_nodes.is_empty() {
+                            new_current.push(TraversalValue::NodeArray(in_nodes));
+                        }
+                        if !out_nodes.is_empty() {
+                            new_current.push(TraversalValue::NodeArray(out_nodes));
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            };
+        }
+        self.current_step = new_current;
+        self
+    }
+
+    fn out_v(&mut self) -> &mut Self {
+        self.check_is_valid_edge_traversal("out_v").unwrap();
+        let mut new_current = Vec::with_capacity(self.current_step.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::EdgeArray(edges) => {
+                    for edge in edges {
+                        let node = self.storage.get_node(&edge.from_node).unwrap();
+                        new_current.push(TraversalValue::SingleNode(node));
+                    }
+                }
+                TraversalValue::SingleEdge(edge) => {
+                    let node = self.storage.get_node(&edge.from_node).unwrap();
+                    new_current.push(TraversalValue::SingleNode(node));
+                }
+                _ => unreachable!(),
+            };
+        }
+        self.current_step = new_current;
+        self
+    }
+
+    fn in_v(&mut self) -> &mut Self {
+        self.check_is_valid_edge_traversal("out_v").unwrap();
+        let mut new_current = Vec::with_capacity(self.current_step.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::EdgeArray(edges) => {
+                    for edge in edges {
+                        let node = self.storage.get_node(&edge.to_node).unwrap();
+                        new_current.push(TraversalValue::SingleNode(node));
+                    }
+                }
+                TraversalValue::SingleEdge(edge) => {
+                    let node = self.storage.get_node(&edge.to_node).unwrap();
+                    new_current.push(TraversalValue::SingleNode(node));
+                }
+                _ => unreachable!(),
+            };
+        }
+        self.current_step = new_current;
+        self
+    }
+
+    fn both_v(&mut self) -> &mut Self {
+        self.check_is_valid_edge_traversal("out_v").unwrap();
+        let mut new_current = Vec::with_capacity(self.current_step.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::EdgeArray(edges) => {
+                    for edge in edges {
+                        let in_node = self.storage.get_node(&edge.to_node).unwrap();
+                        let out_node = self.storage.get_node(&edge.from_node).unwrap();
+                        new_current.push(TraversalValue::NodeArray(vec![in_node, out_node]));
+                    }
+                }
+                TraversalValue::SingleEdge(edge) => {
+                    let in_node = self.storage.get_node(&edge.to_node).unwrap();
+                    let out_node = self.storage.get_node(&edge.from_node).unwrap();
+                    new_current.push(TraversalValue::NodeArray(vec![in_node, out_node]));
                 }
                 _ => unreachable!(),
             };
@@ -518,13 +674,16 @@ mod tests {
             .unwrap();
 
         let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
-
+        println!("TR {:?}", traversal.current_step);
         // Traverse from person2 to person1
         traversal.in_("knows");
+
+        println!("P2 {:?}", person2);
 
         // Check that current step is at person1
         match &traversal.current_step[0] {
             TraversalValue::NodeArray(nodes) => {
+                println!("NO {:?}", nodes);
                 assert_eq!(nodes.len(), 1);
                 assert_eq!(nodes[0].id, person1.id);
             }
@@ -1111,5 +1270,152 @@ mod tests {
             }
             _ => panic!("Expected Node value"),
         }
+    }
+
+    #[test]
+    fn test_in_v() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        
+        let edge = storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![]);
+        traversal.e_from_id(&edge.id).in_v();
+
+        match &traversal.current_step[0] {
+            TraversalValue::SingleNode(node) => {
+                assert_eq!(node.id, person2.id);
+            }
+            _ => panic!("Expected SingleNode value"),
+        }
+    }
+
+    #[test]
+    fn test_out_v() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        
+        let edge = storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![]);
+        traversal.e_from_id(&edge.id).out_v();
+
+        match &traversal.current_step[0] {
+            TraversalValue::SingleNode(node) => {
+                assert_eq!(node.id, person1.id);
+            }
+            _ => panic!("Expected SingleNode value"),
+        }
+    }
+
+    #[test]
+    fn test_both() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        let person3 = storage.create_node("person", props!()).unwrap();
+
+        storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+        storage
+            .create_edge("knows", &person2.id, &person3.id, props!())
+            .unwrap();
+        storage
+            .create_edge("knows", &person3.id, &person2.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
+        traversal.both("knows");
+
+        let nodes: Vec<String> = match_node_array(&traversal.current_step)
+            .iter()
+            .map(|n| n.id.clone())
+            .collect();
+
+        assert_eq!(nodes.len(), 3);
+        assert!(nodes.contains(&person1.id));
+        assert!(nodes.contains(&person3.id));
+    }
+
+    #[test]
+    fn test_both_e() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        
+        let edge1 = storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+        let edge2 = storage
+            .create_edge("likes", &person2.id, &person1.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
+        traversal.both_e("knows");
+
+        match &traversal.current_step[0] {
+            TraversalValue::EdgeArray(edges) => {
+                assert_eq!(edges.len(), 1);
+                assert_eq!(edges[0].id, edge1.id);
+            }
+            _ => panic!("Expected EdgeArray value"),
+        }
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
+        traversal.both_e("likes");
+
+        match &traversal.current_step[0] {
+            TraversalValue::EdgeArray(edges) => {
+                assert_eq!(edges.len(), 1);
+                assert_eq!(edges[0].id, edge2.id);
+            }
+            _ => panic!("Expected EdgeArray value"),
+        }
+    }
+
+    #[test]
+    fn test_both_v() {
+        let (storage, _temp_dir) = setup_test_db();
+
+        let person1 = storage.create_node("person", props!()).unwrap();
+        let person2 = storage.create_node("person", props!()).unwrap();
+        
+        let edge = storage
+            .create_edge("knows", &person1.id, &person2.id, props!())
+            .unwrap();
+
+        let mut traversal = TraversalBuilder::new(&storage, vec![]);
+        traversal.e_from_id(&edge.id).both_v();
+
+        match &traversal.current_step[0] {
+            TraversalValue::NodeArray(nodes) => {
+                assert_eq!(nodes.len(), 2);
+                let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+                assert!(node_ids.contains(&person1.id));
+                assert!(node_ids.contains(&person2.id));
+            }
+            _ => panic!("Expected NodeArray value"),
+        }
+    }
+
+    fn match_node_array(values: &[TraversalValue]) -> Vec<Node> {
+        values
+            .iter()
+            .flat_map(|value| match value {
+                TraversalValue::NodeArray(nodes) => nodes.clone(),
+                _ => vec![],
+            })
+            .collect()
     }
 }

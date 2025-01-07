@@ -65,7 +65,7 @@ pub enum Expression {
     Traversal(Box<Traversal>),
     Identifier(String),
     StringLiteral(String),
-    NumberLiteral(i64),
+    NumberLiteral(i32),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
 }

@@ -37,4 +37,11 @@ impl HelixGraphEngine {
         json_string.push_str("\n");
         json_string.into_bytes()
     }
+
+    pub fn result_to_json_string(&self, traversal: &TraversalBuilder) -> String {
+        let current_step = &traversal.current_step;
+        let mut json_string = serde_json::to_string(current_step).unwrap();
+        json_string.push_str("\n");
+        json_string
+    }
 }
