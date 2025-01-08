@@ -5,7 +5,7 @@ source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
 query_def = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def = { identifier /* type here in future */ }
-query_body = { get_stmt* }
+query_body = { (get_stmt | AddE | AddV)* }
 
 // Assignments and traversals
 get_stmt = { identifier ~ "<-" ~ evaluates_to_anything }
@@ -107,3 +107,9 @@ number = @{ ASCII_DIGIT+ }
 // Whitespace and comments
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Add edged and vertices
+AddV = { "AddV" ~ ("<" ~ identifier_upper? ~ ">"?) ~ ("(" ~ ("{" ~ field_defs ~ "}")? ~ ")")?}
+AddE = { "AddV" ~ ("<" ~ identifier_upper? ~ ">"?) ~ ("(" ~ ("{" ~ field_defs ~ "}")? ~ ")")? ~ (fromTo | toFrom) }
+fromTo = {"::" ~"From" ~ ("(" ~ id_args ~ ")") ~ "::" ~ "To" ~ "(" ~ id_args ~ ")" }
+toFrom = {"::" ~"To" ~ "(" ~ id_args ~ ")" ~ "::" ~ "From" ~ "(" ~ id_args ~ ")" }

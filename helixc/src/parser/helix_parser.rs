@@ -55,11 +55,17 @@ pub struct Parameter {
 }
 
 #[derive(Debug)]
-pub struct Statement {
+pub enum Statement {
+    Assignment(Assignment),
+    AddVertex(AddVertex),
+    AddEdge(AddEdge),
+}
+
+#[derive(Debug)]
+pub struct Assignment {
     pub variable: String,
     pub value: Expression,
 }
-
 #[derive(Debug)]
 pub enum Expression {
     Traversal(Box<Traversal>),
@@ -133,6 +139,31 @@ pub enum BooleanOp {
     NotEqual(Box<Expression>),
 }
 
+#[derive(Debug)]
+pub struct AddVertex {
+    pub vertex_type: Option<String>,
+    pub fields: Option<Vec<Field>>,
+}
+
+#[derive(Debug)]
+pub struct AddEdge {
+    pub edge_type: Option<String>,
+    pub fields: Option<Vec<Field>>,
+    pub connection: EdgeConnection,
+}
+
+#[derive(Debug)]
+pub enum EdgeConnection {
+    FromTo {
+        from_ids: Vec<String>,
+        to_ids: Vec<String>,
+    },
+    ToFrom {
+        to_ids: Vec<String>,
+        from_ids: Vec<String>,
+    },
+}
+
 impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
         let file = match HelixParser::parse(Rule::source, input) {
@@ -160,6 +191,13 @@ impl HelixParser {
 
         Ok(source)
     }
+
+    fn parse_field_defs(pair: Pair<Rule>) -> Vec<Field> {
+        pair.into_inner()
+            .map(|p| Self::parse_field_def(p))
+            .collect()
+    }
+
     fn parse_node_def(pair: Pair<Rule>) -> NodeSchema {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
@@ -246,16 +284,109 @@ impl HelixParser {
 
     fn parse_query_body(pair: Pair<Rule>) -> Result<Vec<Statement>, ParserError> {
         pair.into_inner()
-            .map(|p| Self::parse_get_statement(p))
+            .map(|p| match p.as_rule() {
+                Rule::get_stmt => Ok(Statement::Assignment(Self::parse_get_statement(p)?)),
+                Rule::AddV => Ok(Statement::AddVertex(Self::parse_add_vertex(p)?)),
+                Rule::AddE => Ok(Statement::AddEdge(Self::parse_add_edge(p)?)),
+                _ => Err(ParserError::from("Unexpected statement type in query body")),
+            })
             .collect()
     }
 
-    fn parse_get_statement(pair: Pair<Rule>) -> Result<Statement, ParserError> {
+    fn parse_add_vertex(pair: Pair<Rule>) -> Result<AddVertex, ParserError> {
+        let mut vertex_type = None;
+        let mut fields = None;
+
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::identifier_upper => {
+                    vertex_type = Some(pair.as_str().to_string());
+                }
+                Rule::field_defs => {
+                    fields = Some(Self::parse_field_defs(pair));
+                }
+                _ => return Err(ParserError::from("Unexpected rule in AddV")),
+            }
+        }
+
+        Ok(AddVertex {
+            vertex_type,
+            fields,
+        })
+    }
+
+    fn parse_add_edge(pair: Pair<Rule>) -> Result<AddEdge, ParserError> {
+        let mut edge_type = None;
+        let mut fields = None;
+        let mut connection = None;
+
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::identifier_upper => {
+                    edge_type = Some(pair.as_str().to_string());
+                }
+                Rule::field_defs => {
+                    fields = Some(Self::parse_field_defs(pair));
+                }
+                Rule::fromTo => {
+                    connection = Some(Self::parse_from_to(pair)?);
+                }
+                Rule::toFrom => {
+                    connection = Some(Self::parse_to_from(pair)?);
+                }
+                _ => return Err(ParserError::from("Unexpected rule in AddE")),
+            }
+        }
+
+        Ok(AddEdge {
+            edge_type,
+            fields,
+            connection: connection.ok_or_else(|| ParserError::from("Missing edge connection"))?,
+        })
+    }
+
+    fn parse_id_args(pair: Pair<Rule>) -> Result<Vec<String>, ParserError> {
+        Ok(pair.into_inner().map(|p| p.as_str().to_string()).collect())
+    }
+
+    fn parse_from_to(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
+        let mut pairs = pair.into_inner();
+        let from_ids = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing from IDs"))?,
+        )?;
+        let to_ids = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
+        )?;
+
+        Ok(EdgeConnection::FromTo { from_ids, to_ids })
+    }
+
+    fn parse_to_from(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
+        let mut pairs = pair.into_inner();
+        let to_ids = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
+        )?;
+        let from_ids = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing from IDs"))?,
+        )?;
+
+        Ok(EdgeConnection::ToFrom { to_ids, from_ids })
+    }
+
+    fn parse_get_statement(pair: Pair<Rule>) -> Result<Assignment, ParserError> {
         let mut pairs = pair.into_inner();
         let variable = pairs.next().unwrap().as_str().to_string();
         let value = Self::parse_expression(pairs.next().unwrap())?;
 
-        Ok(Statement { variable, value })
+        Ok(Assignment { variable, value })
     }
 
     fn parse_return_statement(pair: Pair<Rule>) -> Result<Vec<Expression>, ParserError> {
