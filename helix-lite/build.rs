@@ -15,7 +15,7 @@ fn main() {
 
     napi_build::setup();
 
-    build_dependencies().expect("Failed to build dependencies");
+    // build_dependencies().expect("Failed to build dependencies");
 }
 
 fn build_dependencies() -> Result<(), Box<dyn std::error::Error>> {

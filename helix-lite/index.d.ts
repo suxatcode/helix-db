@@ -6,5 +6,5 @@
 export type HelixJS = HelixJs
 export declare class HelixJs {
   constructor(user: string)
-  query(queryId: string, jsonBody: string): string
+  query(query: string, params: unknown[]): string
 }

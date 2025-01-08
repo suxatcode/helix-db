@@ -19,7 +19,7 @@ pub trait SourceTraversalSteps {
     fn add_e(
         &mut self,
         storage: &HelixGraphStorage,
-        edge_label: &str,
+        edge_labels: &str,
         from_id: &str,
         to_id: &str,
     ) -> &mut Self;
@@ -32,19 +32,36 @@ pub trait SourceTraversalSteps {
 }
 
 pub trait TraversalSteps {
-    /// Adds the nodes at the end of an outgoing edge with a given edge label
-    /// from the current node to the current traversal step
+    /// Adds the nodes at the end of an outgoing edge to the current traversal step that match a given edge label if given one
     fn out(&mut self, edge_label: &str) -> &mut Self;
-    /// Adds the outgoing edges from the current node that match a given edge label
-    /// to the current traversal step
+    /// Adds the outgoing edges from the current node to the current traversal step that match a given edge label if given one
     fn out_e(&mut self, edge_label: &str) -> &mut Self;
 
-    /// Adds the nodes at the start of an incoming edge with a given edge label
-    /// to the current node to the current traversal step
+    /// Adds the nodes at the start of an incoming edge to the current traversal step that match a given edge label if given one
     fn in_(&mut self, edge_label: &str) -> &mut Self;
-    /// Adds the incoming edges from the current node that match a given edge label
-    /// to the current traversal step
+    /// Adds the incoming edges from the current node
+    /// to the current traversal step that match a given edge label if given one
     fn in_e(&mut self, edge_label: &str) -> &mut Self;
+
+    /// Adds the node that recieves the current edge to the current traversal step
+    fn in_v(&mut self) -> &mut Self;
+
+    /// Adds the node that sends the current edge to the current traversal step
+    /// to the current traversal step
+    fn out_v(&mut self) -> &mut Self;
+
+    /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
+    /// that match a given edge label if given one
+    fn both(&mut self, edge_label: &str) -> &mut Self;
+
+    /// Adds both the incoming and outgoing edges from the current node to the current traversal step
+    /// that match a given edge label if given one
+    fn both_e(&mut self, edge_label: &str) -> &mut Self;
+
+    /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
+    fn both_v(&mut self) -> &mut Self;
+
+
 }
 
 pub trait TraversalMethods {

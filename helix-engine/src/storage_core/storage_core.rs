@@ -246,16 +246,35 @@ impl StorageMethods for HelixGraphStorage {
         );
 
         // get edge values
-        for result in iter {
-            let (key, _) = result?;
-            if !key.starts_with(&out_prefix) {
-                break;
-            }
+        match edge_label {
+            "" => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&out_prefix) {
+                        break;
+                    }
 
-            let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
-            let edge = self.get_edge(&edge_id)?;
-            if edge.label.as_str() == edge_label {
-                edges.push(edge);
+                    let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+                    let edge = self.get_edge(&edge_id)?;
+
+                        edges.push(edge);
+                    
+                }
+            }
+            _ => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&out_prefix) {
+                        break;
+                    }
+
+                    let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+                    let edge = self.get_edge(&edge_id)?;
+
+                    if edge.label.as_str() == edge_label {
+                        edges.push(edge);
+                    }
+                }
             }
         }
         Ok(edges)
@@ -280,18 +299,38 @@ impl StorageMethods for HelixGraphStorage {
         );
 
         // get edge values
-        for result in iter {
-            let (key, _) = result?;
-            if !key.starts_with(&in_prefix) {
-                break;
-            }
+        match edge_label {
+            "" => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&in_prefix) {
+                        break;
+                    }
 
-            let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
-            let edge = self.get_edge(&edge_id)?;
-            if edge.label.as_str() == edge_label {
-                edges.push(edge);
+                    let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
+                    let edge = self.get_edge(&edge_id)?;
+
+                        edges.push(edge);
+                    
+                }
+            }
+            _ => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&in_prefix) {
+                        break;
+                    }
+
+                    let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
+                    let edge = self.get_edge(&edge_id)?;
+
+                    if edge.label.as_str() == edge_label {
+                        edges.push(edge);
+                    }
+                }
             }
         }
+
         Ok(edges)
     }
 
@@ -301,6 +340,8 @@ impl StorageMethods for HelixGraphStorage {
             .cf_handle(CF_EDGES)
             .ok_or(GraphError::from("Column Family not found"))?;
         let mut nodes = Vec::with_capacity(20);
+
+        //
 
         // // Prefetch out edges
         let out_prefix = Self::out_edge_key(node_id, "");
@@ -314,17 +355,35 @@ impl StorageMethods for HelixGraphStorage {
             IteratorMode::From(&out_prefix, rocksdb::Direction::Forward),
         );
 
-        for result in iter {
-            let (key, _) = result?;
-            if !key.starts_with(&out_prefix) {
-                break;
-            }
-            let edge =
-                &self.get_temp_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
+        match edge_label {
+            "" => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&out_prefix) {
+                        break;
+                    }
+                    let edge = &self
+                        .get_temp_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
 
-            if edge.label == edge_label {
-                if let Ok(node) = self.get_node(&edge.to_node) {
-                    nodes.push(node);
+                    if let Ok(node) = self.get_node(&edge.to_node) {
+                        nodes.push(node);
+                    }
+                }
+            }
+            _ => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&out_prefix) {
+                        break;
+                    }
+                    let edge = &self
+                        .get_temp_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
+
+                    if edge.label == edge_label {
+                        if let Ok(node) = self.get_node(&edge.to_node) {
+                            nodes.push(node);
+                        }
+                    }
                 }
             }
         }
@@ -351,17 +410,35 @@ impl StorageMethods for HelixGraphStorage {
             IteratorMode::From(&in_prefix, rocksdb::Direction::Forward),
         );
 
-        for result in iter {
-            let (key, _) = result?;
-            if !key.starts_with(&in_prefix) {
-                break;
-            }
-            let edge =
-                &self.get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
+        match edge_label {
+            "" => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&in_prefix) {
+                        break;
+                    }
+                    let edge = &self
+                        .get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
 
-            if edge.label == edge_label {
-                if let Ok(node) = self.get_node(&edge.from_node) {
-                    nodes.push(node);
+                        if let Ok(node) = self.get_node(&edge.from_node) {
+                            nodes.push(node);
+                        }
+                }
+            }
+            _ => {
+                for result in iter {
+                    let (key, _) = result?;
+                    if !key.starts_with(&in_prefix) {
+                        break;
+                    }
+                    let edge = &self
+                        .get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
+
+                        if edge.label == edge_label {
+                            if let Ok(node) = self.get_node(&edge.from_node) {
+                                nodes.push(node);
+                            }
+                        }
                 }
             }
         }
@@ -578,7 +655,7 @@ impl StorageMethods for HelixGraphStorage {
             if !key.starts_with(&in_prefix) {
                 break;
             }
-            
+
             let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
             let cf_edges = self
                 .db
