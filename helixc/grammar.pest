@@ -121,6 +121,6 @@ property_value      = { string_literal | number | boolean }
 
 // Add edged and vertices
 AddV   = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignments ~ "}"? ~ ")")? }
-AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignment ~ ("," ~ property_assignment)* ~ "}"? ~ ")")? ~ (fromTo | toFrom) }
+AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignments ~ "}"? ~ ")")? ~ (fromTo | toFrom) }
 fromTo = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 toFrom = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
