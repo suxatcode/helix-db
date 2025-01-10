@@ -2,61 +2,66 @@
 source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
 
 // Query definitions
-query_def = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
+query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
-param_def = { identifier /* type here in future */ }
-query_body = { (get_stmt | AddE | AddV)* }
+param_def    = {
+    identifier /* type here in future */
+}
+query_body   = { creation | (get_stmt)* }
 
 // Assignments and traversals
-get_stmt = { identifier ~ "<-" ~ evaluates_to_anything }
-traversal = { (start_vertex | start_edge | identifier) ~ step* }
+get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
+traversal           = { (start_vertex | start_edge | identifier) ~ step* }
+creation            = { AddV | AddE }
 anonymous_traversal = { "_" ~ step+ }
-step = { "::" ~ (graph_step | props_step | where_step | bool_operations | addfield | count) }
+step                = { "::" ~ (graph_step | props_step | where_step | bool_operations | addfield | count) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
-    exists |
-    traversal |
-    identifier |
-    string_literal |
-    number |
-    boolean 
+    exists
+  | AddV
+  | AddE
+  | traversal
+  | identifier
+  | string_literal
+  | number
+  | boolean
 }
 
 evaluates_to_bool = {
-    exists |
-    boolean |
-    identifier |
-    traversal |
-    and |
-    or
+    exists
+  | boolean
+  | identifier
+  | traversal
+  | and
+  | or
 }
 
 evaluates_to_number = {
-    number |
-    identifier |
-    traversal
+    number
+  | identifier
+  | traversal
 }
 
 // Return statement
 return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
 
 // Add fields
-addfield = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
+addfield  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
 new_field = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
-graph_step = {
-    "OutE" ~ ("<" ~ type_args? ~ ">")? |
-    "InE" ~ ("<" ~ type_args? ~ ">")? |
-    "BothE" ~ ("<" ~ type_args? ~ ">")? |
-    "OutV" ~ ("<" ~ type_args? ~ ">")? |
-    "InV" ~ ("<" ~ type_args? ~ ">")? |
-    "BothV" ~ ("<" ~ type_args? ~ ">")? |
-    "Out" ~ ("<" ~ type_args? ~ ">")? |
-    "In" ~ ("<" ~ type_args? ~ ">")? |
-    "Both" ~ ("<" ~ type_args? ~ ">")?
+graph_step   = {
+    "OutE" ~ ("<" ~ type_args? ~ ">")?
+  | "InE" ~ ("<" ~ type_args? ~ ">")?
+  | "BothE" ~ ("<" ~ type_args? ~ ">")?
+  | "OutV" ~ ("<" ~ type_args? ~ ">")?
+  | "InV" ~ ("<" ~ type_args? ~ ">")?
+  | "BothV" ~ ("<" ~ type_args? ~ ">")?
+  | "Out" ~ ("<" ~ type_args? ~ ">")?
+  | "In" ~ ("<" ~ type_args? ~ ">")?
+  | "Both" ~ ("<" ~ type_args? ~ ">")?
 }
 
 // Edge-related steps
@@ -64,52 +69,58 @@ start_edge = { "E" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
-exists = { "EXISTS" ~ "(" ~ traversal ~ ")" }
+exists     = { "EXISTS" ~ "(" ~ traversal ~ ")" }
 
 // Arguments for various steps
-type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
-id_arg = @{ ASCII_DIGIT+ }
-id_args = { (id_arg | identifier) ~ ("," ~ (id_arg | identifier))* }
+type_args =  { identifier_upper ~ ("," ~ identifier_upper)* }
+id_arg    = @{ ASCII_DIGIT+ }
+id_args   =  { (id_arg | identifier) ~ ("," ~ (id_arg | identifier))* }
 
 // Props step
 props_step = { "Props" ~ "(" ~ identifier ~ ("," ~ identifier)* ~ ")" }
 
 // Boolean operations
-and = { "AND" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
-or = { "OR" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
+and             = { "AND" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
+or              = { "OR" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
 bool_operations = { GT | GTE | LT | LTE | EQ | NEQ }
-GT = { "GT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
-GTE = { "GTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
-LT = { "LT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
-LTE = { "LTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
-EQ = { "EQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
-NEQ = { "NEQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
-count = { "COUNT" }
+GT              = { "GT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
+GTE             = { "GTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
+LT              = { "LT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
+LTE             = { "LTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
+EQ              = { "EQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
+NEQ             = { "NEQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
+count           = { "COUNT" }
 
 // Schema definitions
-node_def = { "V::" ~ identifier_upper ~ node_body }
-edge_def = { "E::" ~ identifier_upper ~ edge_body }
-node_body = { "{" ~ field_defs ~ "}" }
-edge_body = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
-field_def = { (identifier_upper ~ ":" ~ type_name) }
+node_def   = { "V::" ~ identifier_upper ~ node_body }
+edge_def   = { "E::" ~ identifier_upper ~ edge_body }
+node_body  = { "{" ~ field_defs ~ "}" }
+edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
+field_def  = { (identifier_upper ~ ":" ~ type_name) }
 field_defs = { field_def ~ ("," ~ field_def)* }
 properties = { "Properties" ~ "{" ~ field_defs? ~ "}" }
 
 // Values and literals
-string_literal = ${ "\"" ~ inner_string ~ "\"" }
-inner_string = @{ (!("\"" | "\\") ~ ANY)* }
-boolean = { "true" | "false" }
-type_name = @{ "String" | "Number" | "Boolean" }
-identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+string_literal   = ${ "\"" ~ inner_string ~ "\"" }
+inner_string     = @{ (!("\"" | "\\") ~ ANY)* }
+boolean          =  { "true" | "false" }
+type_name        = @{ "String" | "Number" | "Boolean" }
+identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-number = @{ ASCII_DIGIT+ }
+number           = @{ ASCII_DIGIT+ }
 
 // Whitespace and comments
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
-COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
+
+property_assignments = { property_assignment ~ ("," ~ property_assignment)* }
+property_assignment = { identifier ~ ":" ~ property_value }
+property_value      = { string_literal | number | boolean }
+
+
 
 // Add edged and vertices
-AddV = { "AddV" ~ ("<" ~ identifier_upper? ~ ">"?) ~ ("(" ~ ("{" ~ field_defs ~ "}")? ~ ")")?}
-AddE = { "AddV" ~ ("<" ~ identifier_upper? ~ ">"?) ~ ("(" ~ ("{" ~ field_defs ~ "}")? ~ ")")? ~ (fromTo | toFrom) }
-fromTo = {"::" ~"From" ~ ("(" ~ id_args ~ ")") ~ "::" ~ "To" ~ "(" ~ id_args ~ ")" }
-toFrom = {"::" ~"To" ~ "(" ~ id_args ~ ")" ~ "::" ~ "From" ~ "(" ~ id_args ~ ")" }
+AddV   = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignments ~ "}"? ~ ")")? }
+AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignment ~ ("," ~ property_assignment)* ~ "}"? ~ ")")? ~ (fromTo | toFrom) }
+fromTo = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
+toFrom = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }

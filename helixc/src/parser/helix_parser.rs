@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::parser_methods::ParserError;
 use pest::{iterators::Pair, Parser as PestParser};
 use pest_derive::Parser;
@@ -74,6 +76,8 @@ pub enum Expression {
     NumberLiteral(i32),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
+    AddVertex(AddVertex),
+    AddEdge(AddEdge),
 }
 
 #[derive(Debug)]
@@ -142,26 +146,52 @@ pub enum BooleanOp {
 #[derive(Debug)]
 pub struct AddVertex {
     pub vertex_type: Option<String>,
-    pub fields: Option<Vec<Field>>,
+    pub fields: Option<Vec<(String, FieldValues)>>,
 }
 
 #[derive(Debug)]
 pub struct AddEdge {
     pub edge_type: Option<String>,
-    pub fields: Option<Vec<Field>>,
+    pub fields: Option<Vec<(String, FieldValues)>>,
     pub connection: EdgeConnection,
 }
 
 #[derive(Debug)]
-pub enum EdgeConnection {
-    FromTo {
-        from_ids: Vec<String>,
-        to_ids: Vec<String>,
-    },
-    ToFrom {
-        to_ids: Vec<String>,
-        from_ids: Vec<String>,
-    },
+pub struct EdgeConnection {
+    from_id: String,
+    to_id: String,
+}
+
+#[derive(Debug)]
+pub enum FieldValues {
+    String(String),
+    Integer(i32),
+    Float(f64),
+    Boolean(bool),
+}
+
+impl From<String> for FieldValues {
+    fn from(s: String) -> Self {
+        FieldValues::String(s)
+    }
+}
+
+impl From<i32> for FieldValues {
+    fn from(i: i32) -> Self {
+        FieldValues::Integer(i)
+    }
+}
+
+impl From<f64> for FieldValues {
+    fn from(f: f64) -> Self {
+        FieldValues::Float(f)
+    }
+}
+
+impl From<bool> for FieldValues {
+    fn from(b: bool) -> Self {
+        FieldValues::Boolean(b)
+    }
 }
 
 impl HelixParser {
@@ -297,15 +327,22 @@ impl HelixParser {
         let mut vertex_type = None;
         let mut fields = None;
 
-        for pair in pair.into_inner() {
-            match pair.as_rule() {
+        println!("PAIR: {:?}", pair);
+        for p in pair.into_inner() {
+            match p.as_rule() {
                 Rule::identifier_upper => {
-                    vertex_type = Some(pair.as_str().to_string());
+                    vertex_type = Some(p.as_str().to_string());
                 }
-                Rule::field_defs => {
-                    fields = Some(Self::parse_field_defs(pair));
+                Rule::property_assignments => {
+                    fields = Some(Self::parse_property_assignments(p)?);
                 }
-                _ => return Err(ParserError::from("Unexpected rule in AddV")),
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in AddV: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )))
+                }
             }
         }
 
@@ -313,6 +350,21 @@ impl HelixParser {
             vertex_type,
             fields,
         })
+    }
+
+    fn parse_property_assignments(
+        pair: Pair<Rule>,
+    ) -> Result<Vec<(String, FieldValues)>, ParserError> {
+        Ok(pair
+            .into_inner()
+            .map(|p| {
+                let mut pairs = p.into_inner();
+                let prop_key = pairs.next().unwrap().as_str().to_string();
+                let prop_val = pairs.next().unwrap().as_str().to_string();
+
+                (prop_key, FieldValues::from(prop_val))
+            })
+            .collect::<Vec<(String, FieldValues)>>())
     }
 
     fn parse_add_edge(pair: Pair<Rule>) -> Result<AddEdge, ParserError> {
@@ -326,7 +378,7 @@ impl HelixParser {
                     edge_type = Some(pair.as_str().to_string());
                 }
                 Rule::field_defs => {
-                    fields = Some(Self::parse_field_defs(pair));
+                    fields = Some(Self::parse_property_assignments(pair)?);
                 }
                 Rule::fromTo => {
                     connection = Some(Self::parse_from_to(pair)?);
@@ -345,40 +397,40 @@ impl HelixParser {
         })
     }
 
-    fn parse_id_args(pair: Pair<Rule>) -> Result<Vec<String>, ParserError> {
-        Ok(pair.into_inner().map(|p| p.as_str().to_string()).collect())
+    fn parse_id_args(pair: Pair<Rule>) -> Result<String, ParserError> {
+        Ok(pair.into_inner().as_str().to_string())
     }
 
     fn parse_from_to(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
         let mut pairs = pair.into_inner();
-        let from_ids = Self::parse_id_args(
+        let from_id = Self::parse_id_args(
             pairs
                 .next()
                 .ok_or_else(|| ParserError::from("Missing from IDs"))?,
         )?;
-        let to_ids = Self::parse_id_args(
+        let to_id = Self::parse_id_args(
             pairs
                 .next()
                 .ok_or_else(|| ParserError::from("Missing to IDs"))?,
         )?;
 
-        Ok(EdgeConnection::FromTo { from_ids, to_ids })
+        Ok(EdgeConnection { from_id, to_id })
     }
 
     fn parse_to_from(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
         let mut pairs = pair.into_inner();
-        let to_ids = Self::parse_id_args(
+        let to_id = Self::parse_id_args(
             pairs
                 .next()
                 .ok_or_else(|| ParserError::from("Missing to IDs"))?,
         )?;
-        let from_ids = Self::parse_id_args(
+        let from_id = Self::parse_id_args(
             pairs
                 .next()
                 .ok_or_else(|| ParserError::from("Missing from IDs"))?,
         )?;
 
-        Ok(EdgeConnection::ToFrom { to_ids, from_ids })
+        Ok(EdgeConnection { to_id, from_id })
     }
 
     fn parse_get_statement(pair: Pair<Rule>) -> Result<Assignment, ParserError> {
@@ -413,6 +465,10 @@ impl HelixParser {
             Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_traversal(
                 pair.into_inner().next().unwrap(),
             )?))),
+            Rule::AddV => Ok(Expression::AddVertex(Self::parse_add_vertex(pair)?)),
+            Rule::AddE => Ok(Expression::AddEdge(Self::parse_add_edge(
+                pair.into_inner().next().unwrap(),
+            )?)),
             _ => Err(ParserError::from("Unexpected expression type")),
         }
     }
@@ -832,4 +888,43 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
     }
+
+    #[test]
+    fn test_add_vertex_query() {
+        let input = r#"
+    QUERY analyzeNetwork() =>
+        user <- AddV<User>({Name: "Alice"})
+        RETURN user
+    "#;
+        let result = match HelixParser::parse_source(input) {
+            Ok(result) => result,
+            Err(e) => {
+                println!("{:?}", e);
+                panic!();
+            }
+        };
+        let query = &result.queries[0];
+        println!("{:?}", query);
+        assert_eq!(query.statements.len(), 1);
+    }
+
+    // #[test]
+    // fn test_add_edge_query() {
+    //     let input = r#"
+    // QUERY analyzeNetwork() =>
+    //     edge <- AddE<Rating>({Rating: 5})::To(123)::From(456)
+    //     RETURN edge
+    // "#;
+    //     let result = match HelixParser::parse_source(input) {
+    //         Ok(result) => result,
+    //         Err(e) => {
+    //             println!("{:?}", e);
+    //             panic!();
+    //         }
+    //     };
+    //     let query = &result.queries[0];
+    //     println!("{:?}", query);
+    //     assert_eq!(query.statements.len(), 1);
+    // }
+
 }
