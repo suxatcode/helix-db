@@ -1,3 +1,5 @@
+use protocol::Value;
+
 pub mod macros {
     #[macro_export]
     /// Creates array of pairs which each represent the property key and corresponding value.
@@ -16,7 +18,7 @@ pub mod macros {
     /// ```
     macro_rules! props {
         () => {
-            std::iter::empty()
+            vec![]
         };
         ($($key:expr => $value:expr),* $(,)?) => {
             vec![
@@ -25,6 +27,6 @@ pub mod macros {
                 )*
             ]
         };
-    }
 
+    }
 }

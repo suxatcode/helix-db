@@ -1,7 +1,11 @@
+use protocol::Value;
+
 use crate::storage_core::storage_core::HelixGraphStorage;
 use crate::storage_core::storage_methods::StorageMethods;
 
 use super::{count::Count, traversal_value::TraversalValue};
+
+
 
 pub trait SourceTraversalSteps {
     /// Adds all nodes in the graph to current traversal step
@@ -14,14 +18,14 @@ pub trait SourceTraversalSteps {
     fn e(&mut self) -> &mut Self;
 
     /// Creates a new node in the graph and adds it to current traversal step
-    fn add_v(&mut self, node_label: &str) -> &mut Self;
+    fn add_v(&mut self, node_label: &str, props: Vec<(String, Value)>) -> &mut Self;
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e(
         &mut self,
-        storage: &HelixGraphStorage,
-        edge_labels: &str,
+        edge_label: &str,
         from_id: &str,
         to_id: &str,
+        props: Vec<(String, Value)>,
     ) -> &mut Self;
 
     /// Adds node with specific id to current traversal step
@@ -150,4 +154,8 @@ pub trait TraversalMethods {
     fn filter<F>(&mut self, predicate: F) -> &mut Self
     where
         F: Fn(&TraversalValue) -> bool;
+
+
+    /// Maps the current traversal step to a new traversal step
+    fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;
 }

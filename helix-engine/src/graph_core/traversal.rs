@@ -8,7 +8,7 @@ use crate::{
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
 };
-use protocol::Node;
+use protocol::{Node, Value};
 use std::collections::HashMap;
 
 pub struct TraversalBuilder<'a> {
@@ -18,10 +18,10 @@ pub struct TraversalBuilder<'a> {
 }
 
 impl<'a> TraversalBuilder<'a> {
-    pub fn new(storage: &'a HelixGraphStorage, start_nodes: Vec<Node>) -> Self {
+    pub fn new(storage: &'a HelixGraphStorage, start_nodes: Vec<TraversalValue>) -> Self {
         let builder = Self {
-            variables: HashMap::from_iter(props!()),
-            current_step: vec![TraversalValue::NodeArray(start_nodes)],
+            variables: HashMap::from_iter(std::iter::empty()),
+            current_step: start_nodes,
             storage,
         };
         builder
@@ -69,21 +69,21 @@ impl<'a> SourceTraversalSteps for TraversalBuilder<'a> {
         self
     }
 
-    fn add_v(&mut self, node_label: &str) -> &mut Self {
-        let node = self.storage.create_node(node_label, props!()).unwrap(); // TODO: Handle error
+    fn add_v(&mut self, node_label: &str, props: Vec<(String, Value)>) -> &mut Self {
+        let node = self.storage.create_node(node_label, props).unwrap(); // TODO: Handle error
         self.current_step = vec![TraversalValue::SingleNode(node)];
         self
     }
 
     fn add_e(
         &mut self,
-        storage: &HelixGraphStorage,
         edge_label: &str,
         from_id: &str,
         to_id: &str,
+        props: Vec<(String, Value)>
     ) -> &mut Self {
-        let edge = storage
-            .create_edge(edge_label, from_id, to_id, props!())
+        let edge = self.storage
+            .create_edge(edge_label, from_id, to_id, props)
             .unwrap(); // TODO: Handle error
         self.current_step = vec![TraversalValue::SingleEdge(edge)];
         self
@@ -403,6 +403,49 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
             .collect::<Vec<_>>();
         self
     }
+
+    fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self {
+        let mut new_current: Vec<TraversalValue> = Vec::with_capacity(self.current_step.len()*keys.len());
+        for element in &self.current_step {
+            match element {
+                TraversalValue::SingleNode(node) => {
+                    for key in keys {
+                        if let Some(value) = node.properties.get(key) {
+                            new_current.push(TraversalValue::SingleValue((key.clone(), value.clone())));
+                        }
+                    }
+                }
+                TraversalValue::SingleEdge(edge) => {
+                    for key in keys {
+                        if let Some(value) = edge.properties.get(key) {
+                            new_current.push(TraversalValue::SingleValue((key.clone(), value.clone())));
+                        }
+                    }
+                }
+                TraversalValue::NodeArray(nodes) => {
+                    for node in nodes {
+                        for key in keys {
+                            if let Some(value) = node.properties.get(key) {
+                                new_current.push(TraversalValue::SingleValue((key.clone(), value.clone())));
+                            }
+                        }
+                    }
+                }
+                TraversalValue::EdgeArray(edges) => {
+                    for edge in edges {
+                        for key in keys {
+                            if let Some(value) = edge.properties.get(key) {
+                                new_current.push(TraversalValue::SingleValue((key.clone(), value.clone())));
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        self.current_step = new_current;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -410,7 +453,9 @@ mod tests {
     use super::*;
     use crate::props;
     use protocol::{Node, Value};
+    use rayon::vec;
     use tempfile::TempDir;
+    use crate::graph_core::traversal_value::TraversalValue;
 
     fn setup_test_db() -> (HelixGraphStorage, TempDir) {
         let temp_dir = TempDir::new().unwrap();
@@ -572,7 +617,7 @@ mod tests {
         let (storage, _temp_dir) = setup_test_db();
         let mut traversal = TraversalBuilder::new(&storage, vec![]);
 
-        traversal.add_v("person");
+        traversal.add_v("person", props!{});
 
         // Check that the current step contains a single node
         match &traversal.current_step[0] {
@@ -591,7 +636,7 @@ mod tests {
         let node2 = storage.create_node("person", props!()).unwrap();
 
         let mut traversal = TraversalBuilder::new(&storage, vec![]);
-        traversal.add_e(&storage, "knows", &node1.id, &node2.id);
+        traversal.add_e("knows", &node1.id, &node2.id, props!());
 
         // Check that the current step contains a single edge
         match &traversal.current_step[0] {
@@ -620,7 +665,7 @@ mod tests {
             .create_edge("knows", &person2.id, &person3.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person1.clone()])]);
         // Traverse from person1 to person2
         traversal.out("knows");
 
@@ -646,7 +691,7 @@ mod tests {
             .create_edge("knows", &person1.id, &person2.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person1.clone()])]);
         // Traverse from person1 to person2
         traversal.out_e("knows");
 
@@ -673,7 +718,7 @@ mod tests {
             .create_edge("knows", &person1.id, &person2.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person2.clone()])]);
         println!("TR {:?}", traversal.current_step);
         // Traverse from person2 to person1
         traversal.in_("knows");
@@ -703,7 +748,7 @@ mod tests {
             .create_edge("knows", &person1.id, &person2.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person2.clone()])]);
         // Traverse from person2 to person1
         traversal.in_e("knows");
 
@@ -760,7 +805,7 @@ mod tests {
             .create_edge("follows", &person3.id, &person1.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person1.clone()])]);
 
         // Traverse from person1 to person2
         traversal.out("knows");
@@ -804,7 +849,7 @@ mod tests {
         let (storage, _temp_dir) = setup_test_db();
         let person = storage.create_node("person", props!()).unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::SingleNode(person)]);
         assert_eq!(traversal.count(), 1);
     }
 
@@ -836,7 +881,7 @@ mod tests {
             .create_edge("knows", &person1.id, &person3.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::SingleNode(person1)]);
         traversal.out("knows"); // Should have 2 nodes (person2 and person3)
         assert_eq!(traversal.count(), 2);
     }
@@ -1334,8 +1379,7 @@ mod tests {
             .create_edge("knows", &person3.id, &person2.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
-        traversal.both("knows");
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person2.clone()])]);
 
         let nodes: Vec<String> = match_node_array(&traversal.current_step)
             .iter()
@@ -1361,8 +1405,7 @@ mod tests {
             .create_edge("likes", &person2.id, &person1.id, props!())
             .unwrap();
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person1.clone()]);
-        traversal.both_e("knows");
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person2.clone()])]);
 
         match &traversal.current_step[0] {
             TraversalValue::EdgeArray(edges) => {
@@ -1372,7 +1415,7 @@ mod tests {
             _ => panic!("Expected EdgeArray value"),
         }
 
-        let mut traversal = TraversalBuilder::new(&storage, vec![person2.clone()]);
+        let mut traversal = TraversalBuilder::new(&storage, vec![TraversalValue::NodeArray(vec![person2.clone()])]);
         traversal.both_e("likes");
 
         match &traversal.current_step[0] {

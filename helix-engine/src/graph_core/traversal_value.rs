@@ -8,10 +8,40 @@ pub enum TraversalValue {
     Empty,
     SingleNode(Node),
     SingleEdge(Edge),
-    SingleValue(Value),
+    SingleValue((String, Value)),
     NodeArray(Vec<Node>),
     EdgeArray(Vec<Edge>),
-    ValueArray(Vec<Value>),
+    ValueArray(Vec<(String, Value)>),
+}
+
+impl FromIterator<TraversalValue> for TraversalValue {
+    fn from_iter<T: IntoIterator<Item = TraversalValue>>(iter: T) -> Self {
+        let mut nodes = Vec::with_capacity(10);
+        let mut edges = Vec::with_capacity(10);
+        let mut values = Vec::with_capacity(10);
+
+        for value in iter {
+            match value {
+                TraversalValue::SingleNode(node) => nodes.push(node),
+                TraversalValue::SingleEdge(edge) => edges.push(edge),
+                TraversalValue::SingleValue(value) => values.push(value),
+                TraversalValue::NodeArray(mut node_vec) => nodes.append(&mut node_vec),
+                TraversalValue::EdgeArray(mut edge_vec) => edges.append(&mut edge_vec),
+                TraversalValue::ValueArray(mut value_vec) => values.append(&mut value_vec),
+                TraversalValue::Empty => (),
+            }
+        }
+
+        if !nodes.is_empty() {
+            TraversalValue::NodeArray(nodes)
+        } else if !edges.is_empty() {
+            TraversalValue::EdgeArray(edges)
+        } else if !values.is_empty() {
+            TraversalValue::ValueArray(values)
+        } else {
+            TraversalValue::Empty
+        }
+    }
 }
 
 enum IterState {
@@ -19,7 +49,7 @@ enum IterState {
     Single(TraversalValue),
     Nodes(std::vec::IntoIter<Node>),
     Edges(std::vec::IntoIter<Edge>),
-    Values(std::vec::IntoIter<Value>),
+    Values(std::vec::IntoIter<(String,Value)>),
 }
 
 pub struct TraversalValueIterator {

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::parser_methods::ParserError;
 use pest::{iterators::Pair, Parser as PestParser};
 use pest_derive::Parser;
+use protocol::Value;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -146,52 +147,20 @@ pub enum BooleanOp {
 #[derive(Debug)]
 pub struct AddVertex {
     pub vertex_type: Option<String>,
-    pub fields: Option<Vec<(String, FieldValues)>>,
+    pub fields: Option<Vec<(String, Value)>>,
 }
 
 #[derive(Debug)]
 pub struct AddEdge {
     pub edge_type: Option<String>,
-    pub fields: Option<Vec<(String, FieldValues)>>,
+    pub fields: Option<Vec<(String, Value)>>,
     pub connection: EdgeConnection,
 }
 
 #[derive(Debug)]
 pub struct EdgeConnection {
-    from_id: String,
-    to_id: String,
-}
-
-#[derive(Debug)]
-pub enum FieldValues {
-    String(String),
-    Integer(i32),
-    Float(f64),
-    Boolean(bool),
-}
-
-impl From<String> for FieldValues {
-    fn from(s: String) -> Self {
-        FieldValues::String(s)
-    }
-}
-
-impl From<i32> for FieldValues {
-    fn from(i: i32) -> Self {
-        FieldValues::Integer(i)
-    }
-}
-
-impl From<f64> for FieldValues {
-    fn from(f: f64) -> Self {
-        FieldValues::Float(f)
-    }
-}
-
-impl From<bool> for FieldValues {
-    fn from(b: bool) -> Self {
-        FieldValues::Boolean(b)
-    }
+    pub from_id: String,
+    pub to_id: String,
 }
 
 impl HelixParser {
@@ -354,7 +323,7 @@ impl HelixParser {
 
     fn parse_property_assignments(
         pair: Pair<Rule>,
-    ) -> Result<Vec<(String, FieldValues)>, ParserError> {
+    ) -> Result<Vec<(String, Value)>, ParserError> {
         Ok(pair
             .into_inner()
             .map(|p| {
@@ -362,9 +331,9 @@ impl HelixParser {
                 let prop_key = pairs.next().unwrap().as_str().to_string();
                 let prop_val = pairs.next().unwrap().as_str().to_string();
 
-                (prop_key, FieldValues::from(prop_val))
+                (prop_key, Value::from(prop_val))
             })
-            .collect::<Vec<(String, FieldValues)>>())
+            .collect::<Vec<(String, Value)>>())
     }
 
     fn parse_add_edge(pair: Pair<Rule>) -> Result<AddEdge, ParserError> {

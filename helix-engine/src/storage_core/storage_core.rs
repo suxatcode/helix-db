@@ -257,8 +257,7 @@ impl StorageMethods for HelixGraphStorage {
                     let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
                     let edge = self.get_edge(&edge_id)?;
 
-                        edges.push(edge);
-                    
+                    edges.push(edge);
                 }
             }
             _ => {
@@ -310,8 +309,7 @@ impl StorageMethods for HelixGraphStorage {
                     let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
                     let edge = self.get_edge(&edge_id)?;
 
-                        edges.push(edge);
-                    
+                    edges.push(edge);
                 }
             }
             _ => {
@@ -420,9 +418,9 @@ impl StorageMethods for HelixGraphStorage {
                     let edge = &self
                         .get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
 
-                        if let Ok(node) = self.get_node(&edge.from_node) {
-                            nodes.push(node);
-                        }
+                    if let Ok(node) = self.get_node(&edge.from_node) {
+                        nodes.push(node);
+                    }
                 }
             }
             _ => {
@@ -434,11 +432,11 @@ impl StorageMethods for HelixGraphStorage {
                     let edge = &self
                         .get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
 
-                        if edge.label == edge_label {
-                            if let Ok(node) = self.get_node(&edge.from_node) {
-                                nodes.push(node);
-                            }
+                    if edge.label == edge_label {
+                        if let Ok(node) = self.get_node(&edge.from_node) {
+                            nodes.push(node);
                         }
+                    }
                 }
             }
         }
@@ -549,10 +547,22 @@ impl StorageMethods for HelixGraphStorage {
         //         "One or both nodes do not exist".to_string(),
         //     ));
         // }
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or(GraphError::from("Column Family not found"))?;
 
-        if !self.get_node(from_node).is_ok() || !self.get_node(to_node).is_ok() {
+        if !self
+            .db
+            .get_pinned_cf(&cf_nodes, Self::node_key(from_node))
+            .is_ok()
+            || !self
+                .db
+                .get_pinned_cf(&cf_nodes, Self::node_key(from_node))
+                .is_ok()
+        {
             return Err(GraphError::New(format!("One or both nodes do not exist")));
-        }
+        } // LOOK INTO BETTER WAY OF DOING THIS
 
         let edge = Edge {
             id: Uuid::new_v4().to_string(),
