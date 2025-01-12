@@ -10,20 +10,20 @@ use protocol::Value;
 pub struct HelixParser;
 
 // AST Structures
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Source {
     pub node_schemas: Vec<NodeSchema>,
     pub edge_schemas: Vec<EdgeSchema>,
     pub queries: Vec<Query>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NodeSchema {
     pub name: String,
     pub fields: Vec<Field>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EdgeSchema {
     pub name: String,
     pub from: String,
@@ -31,7 +31,7 @@ pub struct EdgeSchema {
     pub properties: Option<Vec<Field>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
     pub field_type: FieldType,
@@ -40,11 +40,12 @@ pub struct Field {
 #[derive(Debug, Clone)]
 pub enum FieldType {
     String,
-    Number,
+    Integer,
+    Float,
     Boolean,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Query {
     pub name: String,
     pub parameters: Vec<Parameter>,
@@ -52,42 +53,43 @@ pub struct Query {
     pub return_values: Vec<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Assignment(Assignment),
     AddVertex(AddVertex),
     AddEdge(AddEdge),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Assignment {
     pub variable: String,
     pub value: Expression,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Traversal(Box<Traversal>),
     Identifier(String),
     StringLiteral(String),
-    NumberLiteral(i32),
+    IntegerLiteral(i32),
+    FloatLiteral(f64),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
     AddVertex(AddVertex),
     AddEdge(AddEdge),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Traversal {
     pub start: StartNode,
     pub steps: Vec<Step>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StartNode {
     Vertex {
         types: Option<Vec<String>>,
@@ -101,7 +103,7 @@ pub enum StartNode {
     Anonymous,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Step {
     Vertex(GraphStep),
     Edge(GraphStep),
@@ -113,13 +115,13 @@ pub enum Step {
     Count,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldAddition {
     pub name: String,
     pub value: Expression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum GraphStep {
     Out(Option<Vec<String>>),
     In(Option<Vec<String>>),
@@ -132,7 +134,7 @@ pub enum GraphStep {
     BothE(Option<Vec<String>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BooleanOp {
     And(Vec<Expression>),
     Or(Vec<Expression>),
@@ -144,20 +146,20 @@ pub enum BooleanOp {
     NotEqual(Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddVertex {
     pub vertex_type: Option<String>,
     pub fields: Option<Vec<(String, Value)>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddEdge {
     pub edge_type: Option<String>,
     pub fields: Option<Vec<(String, Value)>>,
     pub connection: EdgeConnection,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EdgeConnection {
     pub from_id: String,
     pub to_id: String,
@@ -221,7 +223,8 @@ impl HelixParser {
         let name = pairs.next().unwrap().as_str().to_string();
         let field_type = match pairs.next().unwrap().as_str() {
             "String" => FieldType::String,
-            "Number" => FieldType::Number,
+            "Integer" => FieldType::Integer,
+            "Float" => FieldType::Float,
             "Boolean" => FieldType::Boolean,
             _ => unreachable!(),
         };
@@ -296,7 +299,6 @@ impl HelixParser {
         let mut vertex_type = None;
         let mut fields = None;
 
-        println!("PAIR: {:?}", pair);
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -321,17 +323,32 @@ impl HelixParser {
         })
     }
 
-    fn parse_property_assignments(
-        pair: Pair<Rule>,
-    ) -> Result<Vec<(String, Value)>, ParserError> {
+    fn parse_property_assignments(pair: Pair<Rule>) -> Result<Vec<(String, Value)>, ParserError> {
         Ok(pair
             .into_inner()
             .map(|p| {
                 let mut pairs = p.into_inner();
                 let prop_key = pairs.next().unwrap().as_str().to_string();
-                let prop_val = pairs.next().unwrap().as_str().to_string();
+                let prop_val = match pairs.next() {
+                    Some(p) => {
+                        let p = p.into_inner().next().unwrap();
+                        println!("{:?}. {:?}", prop_key, Value::from(p.as_str()));
+                        match p.as_rule() {
+                            Rule::string_literal => Value::from(p.as_str().to_string()),
+                            Rule::integer => {
+                                Value::Integer(p.as_str().parse().unwrap())
+                            }
+                            Rule::float => {
+                                Value::Float(p.as_str().parse().unwrap())
+                            }
+                            Rule::boolean => Value::Boolean(p.as_str() == "true"),
+                            _ => unreachable!(),
+                        }
+                    }
+                    None => Value::Empty,
+                };
 
-                (prop_key, Value::from(prop_val))
+                (prop_key, prop_val)
             })
             .collect::<Vec<(String, Value)>>())
     }
@@ -352,7 +369,12 @@ impl HelixParser {
                 Rule::toFrom => {
                     connection = Some(Self::parse_to_from(p)?);
                 }
-                _ => return Err(ParserError::from(format!("Unexpected rule in AddE: {:?}", p.as_rule()))),
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in AddE: {:?}",
+                        p.as_rule()
+                    )))
+                }
             }
         }
 
@@ -369,7 +391,6 @@ impl HelixParser {
 
     fn parse_to_from(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
         let mut pairs = pair.into_inner();
-        println!("TO FROM {:?}", pairs);
         let to_id = Self::parse_id_args(
             pairs
                 .next()
@@ -401,7 +422,6 @@ impl HelixParser {
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
         let (l, c) = p.line_col();
         let pair = p.into_inner().next().unwrap();
-        println!("l: {}, c: {}, Pair: {:?} {:?}", l, c, pair, pair.as_rule());
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
@@ -411,7 +431,7 @@ impl HelixParser {
             ))),
             Rule::identifier => Ok(Expression::Identifier(pair.as_str().to_string())),
             Rule::string_literal => Ok(Expression::StringLiteral(Self::parse_string_literal(pair))),
-            Rule::number => Ok(Expression::NumberLiteral(pair.as_str().parse().unwrap())),
+            Rule::integer => Ok(Expression::IntegerLiteral(pair.as_str().parse().unwrap())),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_traversal(
                 pair.into_inner().next().unwrap(),
@@ -423,11 +443,12 @@ impl HelixParser {
     }
 
     fn parse_string_literal(pair: Pair<Rule>) -> String {
-        pair.into_inner().next().unwrap().as_str().to_string()
+        let mut literal = pair.into_inner().next().unwrap().as_str().to_string();
+        literal.retain(|c| c != '"');
+        literal
     }
 
     fn parse_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
-        println!(" HERE {:?}", pair.as_rule());
         let mut pairs = pair.into_inner();
         let start = Self::parse_start_node(pairs.next().unwrap())?;
         let steps = pairs
@@ -466,17 +487,13 @@ impl HelixParser {
 
     fn parse_step(pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.into_inner().next().unwrap();
-        println!("HELP {:?}", inner.as_rule());
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::exists => {
-                println!("AEHNVOAENVOAENVOUNEQ");
-                Ok(Step::Exists(Box::new(Self::parse_traversal(
-                    inner.into_inner().next().unwrap(),
-                )?)))
-            }
+            Rule::exists => Ok(Step::Exists(Box::new(Self::parse_traversal(
+                inner.into_inner().next().unwrap(),
+            )?))),
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
@@ -573,7 +590,7 @@ mod tests {
         let input = r#"
         V::User {
             Name: String,
-            Age: Number
+            Age: Integer
         }
         "#;
 
@@ -592,7 +609,7 @@ mod tests {
             From: User,
             To: User,
             Properties {
-                Since: Number
+                Since: Float
             }
         }
         "#;
@@ -607,7 +624,7 @@ mod tests {
         let properties = schema.properties.as_ref().unwrap();
         assert_eq!(properties.len(), 1);
         assert_eq!(properties[0].name, "Since");
-        matches!(properties[0].field_type, FieldType::Number);
+        matches!(properties[0].field_type, FieldType::Float);
     }
 
     #[test]
@@ -675,7 +692,7 @@ mod tests {
         V::USER {
             ID: String,
             Name: String,
-            Age: Number
+            Age: Integer
         }
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -693,7 +710,7 @@ mod tests {
             To: USER,
             Properties {
                 Since: String,
-                Strength: Number
+                Strength: Integer
             }
         }
         "#;
@@ -829,7 +846,7 @@ mod tests {
         let input = r#"
     QUERY analyzeNetwork() =>
         user <- V<USER>(789)
-        friends <- user::Out<FRIENDSHIP>::InV::WHERE(_::Out)
+        friends <- user::Out<FRIENDSHIP>::InV::WHERE(_::Out::COUNT::GT(0))
         friendCount <- activeFriends::COUNT
         RETURN friendCount
     "#;

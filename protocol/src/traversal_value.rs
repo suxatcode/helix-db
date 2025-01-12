@@ -1,11 +1,10 @@
-use std::{iter::once, vec::IntoIter};
-
-use protocol::{Edge, Node, Value};
+use crate::{count::Count, Edge, Node, Value};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub enum TraversalValue {
     Empty,
+    Count(Count),
     SingleNode(Node),
     SingleEdge(Edge),
     SingleValue((String, Value)),
@@ -22,6 +21,7 @@ impl FromIterator<TraversalValue> for TraversalValue {
 
         for value in iter {
             match value {
+                TraversalValue::Count(count) => return TraversalValue::Count(count),
                 TraversalValue::SingleNode(node) => nodes.push(node),
                 TraversalValue::SingleEdge(edge) => edges.push(edge),
                 TraversalValue::SingleValue(value) => values.push(value),
@@ -59,6 +59,9 @@ pub struct TraversalValueIterator {
 impl TraversalValue {
     pub fn iter(&self) -> TraversalValueIterator {
         match self {
+            TraversalValue::Count(count) => TraversalValueIterator {
+                state: IterState::Single(TraversalValue::Count(count.clone())),
+            },
             TraversalValue::Empty => TraversalValueIterator {
                 state: IterState::Empty,
             },
@@ -129,6 +132,7 @@ impl Iterator for TraversalValueIterator {
 impl std::fmt::Debug for TraversalValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            TraversalValue::Count(count) => write!(f, "Count: {:?}", count.value()),
             TraversalValue::Empty => write!(f, "[]"),
             TraversalValue::SingleNode(node) => node.fmt(f),
             TraversalValue::SingleEdge(edge) => edge.fmt(f),
@@ -136,6 +140,24 @@ impl std::fmt::Debug for TraversalValue {
             TraversalValue::NodeArray(nodes) => nodes.fmt(f),
             TraversalValue::EdgeArray(edges) => edges.fmt(f),
             TraversalValue::ValueArray(values) => values.fmt(f),
+        }
+    }
+}
+
+impl Serialize for TraversalValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            TraversalValue::Empty => serializer.serialize_none(),
+            TraversalValue::Count(count) => count.serialize(serializer),
+            TraversalValue::SingleNode(node) => node.serialize(serializer),
+            TraversalValue::SingleEdge(edge) => edge.serialize(serializer),
+            TraversalValue::SingleValue(value) => value.serialize(serializer),
+            TraversalValue::NodeArray(nodes) => nodes.serialize(serializer),
+            TraversalValue::EdgeArray(edges) => edges.serialize(serializer),
+            TraversalValue::ValueArray(values) => values.serialize(serializer),
         }
     }
 }

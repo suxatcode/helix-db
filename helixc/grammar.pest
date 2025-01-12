@@ -18,13 +18,13 @@ step                = { "::" ~ (graph_step | props_step | where_step | bool_oper
 
 // Evaluation rules for different types
 evaluates_to_anything = {
-    exists
-  | AddV
+    AddV
   | AddE
+  | exists
   | traversal
   | identifier
   | string_literal
-  | number
+  | integer | float
   | boolean
 }
 
@@ -38,7 +38,7 @@ evaluates_to_bool = {
 }
 
 evaluates_to_number = {
-    number
+    integer | float
   | identifier
   | traversal
 }
@@ -104,23 +104,22 @@ properties = { "Properties" ~ "{" ~ field_defs? ~ "}" }
 string_literal   = ${ "\"" ~ inner_string ~ "\"" }
 inner_string     = @{ (!("\"" | "\\") ~ ANY)* }
 boolean          =  { "true" | "false" }
-type_name        = @{ "String" | "Number" | "Boolean" }
+type_name        = @{ "String" | "Integer" | "Float" | "Boolean" }
 identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-number           = @{ ASCII_DIGIT+ }
+integer        = @{ ASCII_DIGIT+ }
+float            = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 
 // Whitespace and comments
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
 property_assignments = { property_assignment ~ ("," ~ property_assignment)* }
-property_assignment = { identifier ~ ":" ~ property_value }
-property_value      = { string_literal | number | boolean }
-
-
+property_assignment  = { identifier ~ ":" ~ property_value }
+property_value       = { string_literal | integer | float | boolean }
 
 // Add edged and vertices
-AddV   = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignments ~ "}"? ~ ")")? }
-AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ "{" ~ property_assignments ~ "}"? ~ ")")? ~ (fromTo | toFrom) }
+AddV   = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") }
+AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") ~ (fromTo | toFrom) }
 fromTo = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 toFrom = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }

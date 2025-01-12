@@ -4,6 +4,8 @@ use std::str;
 use std::sync::{Arc, Mutex};
 
 use super::traversal::TraversalBuilder;
+use super::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps};
+use helixc::parser::helix_parser::Source;
 use serde_json::json;
 pub struct HelixGraphEngine {
     pub storage: HelixGraphStorage,
@@ -44,4 +46,15 @@ impl HelixGraphEngine {
         json_string.push_str("\n");
         json_string
     }
+
+    // pub fn query<T>(&self, ast: Source) -> T 
+    // where T: SourceTraversalSteps + TraversalSteps +TraversalMethods
+    // {   
+
+    //     let mut return_vals: HashMap<String, String> = HashMap::new();
+    //     let mut vars: HashMap<String, Vec<TraversalValue>> = HashMap::new();
+
+        
+        
+    // }
 }

@@ -1,7 +1,11 @@
-#[derive(PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(PartialEq, Deserialize, Clone)]
 pub struct Count {
     value: usize,
 }
+
+
 
 impl Count {
     pub fn new(value: usize) -> Count {
@@ -63,5 +67,14 @@ impl From<Count> for usize {
 impl From<usize> for Count { 
     fn from(value: usize) -> Self {
         Count::new(value)
+    }
+}
+
+impl Serialize for Count {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        self.value.serialize(serializer)
     }
 }

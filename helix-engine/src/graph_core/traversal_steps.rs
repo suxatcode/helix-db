@@ -1,11 +1,6 @@
-use protocol::Value;
+use protocol::{traversal_value::TraversalValue, count::Count, Value};
 
-use crate::storage_core::storage_core::HelixGraphStorage;
-use crate::storage_core::storage_methods::StorageMethods;
-
-use super::{count::Count, traversal_value::TraversalValue};
-
-
+use crate::types::GraphError;
 
 pub trait SourceTraversalSteps {
     /// Adds all nodes in the graph to current traversal step
@@ -64,13 +59,11 @@ pub trait TraversalSteps {
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
     fn both_v(&mut self) -> &mut Self;
-
-
 }
 
 pub trait TraversalMethods {
     /// Flattens everything in the current traversal step and counts how many items there are.
-    fn count(&mut self) -> Count;
+    fn count(&mut self) -> &mut Self;
 
     /// Flattens everything in the current traversal step and updates the current traversal step to be a slice of itself.
     fn range(&mut self, start: usize, end: usize) -> &mut Self;
@@ -153,8 +146,7 @@ pub trait TraversalMethods {
     /// ```
     fn filter<F>(&mut self, predicate: F) -> &mut Self
     where
-        F: Fn(&TraversalValue) -> bool;
-
+        F: Fn(&TraversalValue) -> Result<bool, GraphError>;
 
     /// Maps the current traversal step to a new traversal step
     fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;
