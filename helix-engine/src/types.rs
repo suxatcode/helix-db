@@ -48,6 +48,12 @@ impl From<std::io::Error> for GraphError {
     }
 }
 
+impl From<serde_json::Error> for GraphError {
+    fn from(error: serde_json::Error) -> Self {
+        GraphError::ConversionError(error.to_string())
+    }
+}
+
 impl From<FromUtf8Error> for GraphError {
     fn from(error: FromUtf8Error) -> Self {
         GraphError::ConversionError(error.to_string())

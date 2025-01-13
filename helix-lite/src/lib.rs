@@ -16,14 +16,14 @@ use helix_gateway::{
 };
 use inventory;
 use protocol::{
-    count::Count, request::Request, response::Response, traversal_value::TraversalValue,
+    count::Count, request::Request, response::Response, traversal_value::TraversalValue, Node,
     ReturnValue, Value,
 };
 use rand::Rng;
 use serde_json::json;
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock}, time::Instant,
 };
 
 use helixc::{
@@ -67,6 +67,7 @@ impl HelixEmbedded {
             Arc::new(RwLock::new(HashMap::new()));
         // let mut results = Vec::with_capacity(return_vals.len());
 
+
         for query in ast.queries {
             for stmt in query.statements {
                 match stmt {
@@ -76,11 +77,17 @@ impl HelixEmbedded {
                                 // build traversal based on steps with traversal builder
                                 // initialise from start node
                                 // step through all steps and execute.
-                                self.evaluate_traversal(tr, Arc::clone(&vars), vec![])?
+                                self.evaluate_traversal(
+                                    tr,
+                                    Arc::clone(&vars),
+                                    TraversalValue::Empty,
+                                )?
                             }
                             Expression::AddVertex(add_v) => {
-                                let mut tr_builder =
-                                    TraversalBuilder::new(&self.graph.storage, vec![]);
+                                let mut tr_builder = TraversalBuilder::new(
+                                    &self.graph.storage,
+                                    TraversalValue::Empty,
+                                );
                                 let label = match add_v.vertex_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -93,8 +100,10 @@ impl HelixEmbedded {
                                 ReturnValue::TraversalValues(tr_builder.current_step)
                             }
                             Expression::AddEdge(add_e) => {
-                                let mut tr_builder =
-                                    TraversalBuilder::new(&self.graph.storage, vec![]);
+                                let mut tr_builder = TraversalBuilder::new(
+                                    &self.graph.storage,
+                                    TraversalValue::Empty,
+                                );
                                 let label = match add_e.edge_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -113,38 +122,33 @@ impl HelixEmbedded {
                             }
                             _ => {
                                 // insert variable to hashmap
-                                let var = match ass.value {
-                                    Expression::StringLiteral(value) => {
-                                        TraversalValue::SingleValue((
+                                let var =
+                                    match ass.value {
+                                        Expression::StringLiteral(value) => TraversalValue::from((
                                             ass.variable.clone(),
                                             Value::String(value),
-                                        ))
-                                    }
-                                    Expression::IntegerLiteral(value) => {
-                                        TraversalValue::SingleValue((
+                                        )),
+                                        Expression::IntegerLiteral(value) => TraversalValue::from(
+                                            (ass.variable.clone(), Value::Integer(value)),
+                                        ),
+                                        Expression::FloatLiteral(value) => TraversalValue::from((
                                             ass.variable.clone(),
-                                            Value::Integer(value),
-                                        ))
-                                    }
-                                    Expression::FloatLiteral(value) => TraversalValue::SingleValue(
-                                        (ass.variable.clone(), Value::Float(value)),
-                                    ),
-                                    Expression::BooleanLiteral(value) => {
-                                        TraversalValue::SingleValue((
-                                            ass.variable.clone(),
-                                            Value::Boolean(value),
-                                        ))
-                                    }
-                                    _ => unreachable!(),
-                                };
-                                ReturnValue::TraversalValues(vec![var])
+                                            Value::Float(value),
+                                        )),
+                                        Expression::BooleanLiteral(value) => TraversalValue::from(
+                                            (ass.variable.clone(), Value::Boolean(value)),
+                                        ),
+                                        _ => unreachable!(),
+                                    };
+                                ReturnValue::TraversalValues(var)
                             }
                         };
 
                         vars.write().unwrap().insert(ass.variable, value);
                     }
                     Statement::AddVertex(add_v) => {
-                        let mut tr_builder = TraversalBuilder::new(&self.graph.storage, vec![]);
+                        let mut tr_builder =
+                            TraversalBuilder::new(&self.graph.storage, TraversalValue::Empty);
                         let label = match add_v.vertex_type {
                             Some(l) => l,
                             None => String::new(),
@@ -156,7 +160,8 @@ impl HelixEmbedded {
                         tr_builder.add_v(label.as_str(), props);
                     }
                     Statement::AddEdge(add_e) => {
-                        let mut tr_builder = TraversalBuilder::new(&self.graph.storage, vec![]);
+                        let mut tr_builder =
+                            TraversalBuilder::new(&self.graph.storage, TraversalValue::Empty);
                         let label = match add_e.edge_type {
                             Some(l) => l,
                             None => String::new(),
@@ -201,6 +206,7 @@ impl HelixEmbedded {
             }
         }
 
+
         let json_string = serde_json::to_string_pretty(&return_vals).unwrap();
         Ok(json_string)
     }
@@ -209,9 +215,9 @@ impl HelixEmbedded {
         &self,
         tr: Box<Traversal>,
         vars: Arc<RwLock<HashMap<String, ReturnValue>>>,
-        anon_start: Vec<TraversalValue>,
+        anon_start: TraversalValue,
     ) -> Result<ReturnValue, HelixLiteError> {
-        let start_nodes = match tr.start {
+        let start_nodes: TraversalValue = match tr.start {
             StartNode::Vertex { types, ids } | StartNode::Edge { types, ids } => {
                 let types = match types {
                     Some(types) => types,
@@ -223,16 +229,20 @@ impl HelixEmbedded {
                 };
 
                 match ids.len() {
-                    0 => vec![TraversalValue::NodeArray(
-                        self.graph.storage.get_all_nodes()?,
-                    )],
-                    _ => ids
-                        .iter()
-                        .map(|id| match self.graph.storage.get_node(id) {
-                            Ok(n) => TraversalValue::SingleNode(n),
-                            Err(_) => TraversalValue::Empty,
-                        })
-                        .collect::<Vec<TraversalValue>>(),
+                    0 => TraversalValue::NodeArray(self.graph.storage.get_all_nodes()?),
+                    _ => TraversalValue::NodeArray(
+                        ids.iter()
+                            .map(|id| match self.graph.storage.get_node(id) {
+                                Ok(n) => Ok(n),
+                                Err(_) => {
+                                    return Err(HelixLiteError::from(format!(
+                                        "Node with id: {} not found!",
+                                        id
+                                    )))
+                                }
+                            })
+                            .collect::<Result<Vec<Node>, HelixLiteError>>()?,
+                    ),
                 }
             }
             StartNode::Variable(var_name) => match vars.read().unwrap().get(&var_name) {
@@ -358,43 +368,90 @@ impl HelixEmbedded {
                 Step::Where(expression) => {
                     match &**expression {
                         Expression::Traversal(anon_tr) => match anon_tr.start {
-                            StartNode::Anonymous => {
-                                tr_builder.filter(|val| {
-                                    match self.evaluate_traversal(
-                                        anon_tr.clone(),
-                                        Arc::clone(&vars),
-                                        vec![val.clone()],
-                                    )? {
-                                        ReturnValue::Boolean(val) => Ok(val),
-                                        _ => {
-                                            return Err(GraphError::from(
-                                                "Where clause must evaluate to a boolean!",
-                                            ));
+                            StartNode::Anonymous => match tr_builder.current_step {
+                                TraversalValue::NodeArray(_) => {
+                                    tr_builder.filter_nodes(|val| {
+                                        match self.evaluate_traversal(
+                                            anon_tr.clone(),
+                                            Arc::clone(&vars),
+                                            TraversalValue::from(val),
+                                        )? {
+                                            ReturnValue::Boolean(val) => Ok(val),
+                                            _ => {
+                                                return Err(GraphError::from(
+                                                    "Where clause must evaluate to a boolean!",
+                                                ));
+                                            }
                                         }
-                                    }
-                                });
-                            }
+                                    });
+                                }
+                                TraversalValue::EdgeArray(_) => {
+                                    tr_builder.filter_edges(|val| {
+                                        match self.evaluate_traversal(
+                                            anon_tr.clone(),
+                                            Arc::clone(&vars),
+                                            TraversalValue::from(val),
+                                        )? {
+                                            ReturnValue::Boolean(res) => Ok(res),
+                                            _ => {
+                                                return Err(GraphError::from(
+                                                    "Where clause must evaluate to a boolean!",
+                                                ));
+                                            }
+                                        }
+                                    });
+                                }
+                                _ => {
+                                    return Err(HelixLiteError::from(
+                                        "Exists clause must follow a traversal step!",
+                                    ));
+                                }
+                            },
                             _ => {
                                 return Err(HelixLiteError::from("Where clause must start with an anonymous traversal or exists query!"));
                             }
                         },
+
                         Expression::Exists(anon_tr) => match anon_tr.start {
-                            StartNode::Anonymous => {
-                                tr_builder.filter(|val| {
-                                    match self.evaluate_traversal(
-                                        anon_tr.clone(),
-                                        Arc::clone(&vars),
-                                        vec![val.clone()],
-                                    )? {
-                                        ReturnValue::Boolean(val) => Ok(val),
-                                        _ => {
-                                            return Err(GraphError::from(
-                                                "Where clause must evaluate to a boolean!",
-                                            ));
+                            StartNode::Anonymous => match tr_builder.current_step {
+                                TraversalValue::NodeArray(_) => {
+                                    tr_builder.filter_nodes(|val| {
+                                        match self.evaluate_traversal(
+                                            anon_tr.clone(),
+                                            Arc::clone(&vars),
+                                            TraversalValue::from(val),
+                                        )? {
+                                            ReturnValue::Boolean(val) => Ok(val),
+                                            _ => {
+                                                return Err(GraphError::from(
+                                                    "Where clause must evaluate to a boolean!",
+                                                ));
+                                            }
                                         }
-                                    }
-                                });
-                            }
+                                    });
+                                }
+                                TraversalValue::EdgeArray(_) => {
+                                    tr_builder.filter_edges(|val| {
+                                        match self.evaluate_traversal(
+                                            anon_tr.clone(),
+                                            Arc::clone(&vars),
+                                            TraversalValue::from(val),
+                                        )? {
+                                            ReturnValue::Boolean(res) => Ok(res),
+                                            _ => {
+                                                return Err(GraphError::from(
+                                                    "Where clause must evaluate to a boolean!",
+                                                ));
+                                            }
+                                        }
+                                    });
+                                }
+                                _ => {
+                                    return Err(HelixLiteError::from(
+                                        "Exists clause must follow a traversal step!",
+                                    ));
+                                }
+                            },
                             _ => {
                                 return Err(HelixLiteError::from("Where clause must start with an anonymous traversal or exists query!"));
                             }
@@ -406,22 +463,45 @@ impl HelixEmbedded {
                 }
                 Step::Exists(expression) => {
                     match expression.start {
-                        StartNode::Anonymous => {
-                            tr_builder.filter(|val| {
-                                match self.evaluate_traversal(
-                                    expression.clone(),
-                                    Arc::clone(&vars),
-                                    vec![val.clone()],
-                                )? {
-                                    ReturnValue::Boolean(val) => Ok(val),
-                                    _ => {
-                                        return Err(GraphError::from(
-                                            "Where clause must evaluate to a boolean!",
-                                        ));
+                        StartNode::Anonymous => match tr_builder.current_step {
+                            TraversalValue::NodeArray(_) => {
+                                tr_builder.filter_nodes(|val| {
+                                    match self.evaluate_traversal(
+                                        expression.clone(),
+                                        Arc::clone(&vars),
+                                        TraversalValue::from(val),
+                                    )? {
+                                        ReturnValue::Boolean(val) => Ok(val),
+                                        _ => {
+                                            return Err(GraphError::from(
+                                                "Where clause must evaluate to a boolean!",
+                                            ));
+                                        }
                                     }
-                                }
-                            });
-                        }
+                                });
+                            }
+                            TraversalValue::EdgeArray(_) => {
+                                tr_builder.filter_edges(|val| {
+                                    match self.evaluate_traversal(
+                                        expression.clone(),
+                                        Arc::clone(&vars),
+                                        TraversalValue::from(val),
+                                    )? {
+                                        ReturnValue::Boolean(res) => Ok(res),
+                                        _ => {
+                                            return Err(GraphError::from(
+                                                "Where clause must evaluate to a boolean!",
+                                            ));
+                                        }
+                                    }
+                                });
+                            }
+                            _ => {
+                                return Err(HelixLiteError::from(
+                                    "Exists clause must follow a traversal step!",
+                                ));
+                            }
+                        },
                         _ => {
                             return Err(HelixLiteError::from("Where clause must start with an anonymous traversal or exists query!"));
                         }
@@ -444,18 +524,12 @@ impl HelixEmbedded {
                         }
                     };
 
-                    match tr_builder.current_step.first().unwrap() {
+                    match tr_builder.current_step {
                         TraversalValue::Count(count) => {
                             return Ok(ReturnValue::Boolean(Self::manage_int_bool_exp(
                                 op,
                                 count.value() as i32,
                             )))
-                        }
-                        TraversalValue::SingleValue((_, Value::Integer(val))) => {
-                            return Ok(ReturnValue::Boolean(Self::manage_int_bool_exp(op, *val)))
-                        }
-                        TraversalValue::SingleValue((_, Value::Float(val))) => {
-                            return Ok(ReturnValue::Boolean(Self::manage_float_bool_exp(op, *val)))
                         }
                         // TraversalValue::ValueArray(vals) => {
                         //     let mut res = Vec::with_capacity(vals.len());

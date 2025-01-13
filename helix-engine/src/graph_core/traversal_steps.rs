@@ -1,4 +1,4 @@
-use protocol::{traversal_value::TraversalValue, count::Count, Value};
+use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
 
 use crate::types::GraphError;
 
@@ -144,9 +144,13 @@ pub trait TraversalMethods {
     /// assert_eq!(test_calling_function_without_inputs, 2);
     /// assert_eq!(test_chained_traversal, 1);
     /// ```
-    fn filter<F>(&mut self, predicate: F) -> &mut Self
+    fn filter_nodes<F>(&mut self, predicate: F) -> &mut Self
     where
-        F: Fn(&TraversalValue) -> Result<bool, GraphError>;
+        F: Fn(&Node) -> Result<bool, GraphError>;
+
+    fn filter_edges<F>(&mut self, predicate: F) -> &mut Self
+    where
+        F: Fn(&Edge) -> Result<bool, GraphError>;
 
     /// Maps the current traversal step to a new traversal step
     fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;

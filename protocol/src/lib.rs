@@ -12,7 +12,7 @@ pub mod traversal_value;
 
 #[derive(Deserialize, Debug, Clone)]
 pub enum ReturnValue {
-    TraversalValues(Vec<traversal_value::TraversalValue>),
+    TraversalValues(traversal_value::TraversalValue),
     Count(Count),
     Boolean(bool),
     Empty,
@@ -24,21 +24,13 @@ impl Serialize for ReturnValue {
         S: serde::ser::Serializer,
     {
         match self {
-            ReturnValue::TraversalValues(values) => {
-                let mut seq = serializer.serialize_seq(Some(values.len()))?;
-                for value in values {
-                    seq.serialize_element(value)?;
-                }
-                seq.end()
-            }
+            ReturnValue::TraversalValues(values) => values.serialize(serializer),
             ReturnValue::Count(count) => count.serialize(serializer),
             ReturnValue::Boolean(b) => serializer.serialize_bool(*b),
             ReturnValue::Empty => serializer.serialize_none(),
         }
     }
 }
-
-
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Node {
@@ -66,8 +58,6 @@ impl std::fmt::Debug for Node {
         )
     }
 }
-
-
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Edge {
@@ -199,6 +189,18 @@ impl std::fmt::Debug for Value {
     }
 }
 
+pub trait Filterable {
+    fn check_property(&self, key: &str) -> Option<&Value>;
+}
 
+impl Filterable for Node {
+    fn check_property(&self, key: &str) -> Option<&Value> {
+        self.properties.get(key)
+    }
+}
 
-// }
+impl Filterable for Edge {
+    fn check_property(&self, key: &str) -> Option<&Value> {
+        self.properties.get(key)
+    }
+}

@@ -444,6 +444,7 @@ dependencies = [
  "function_name",
  "helixc",
  "libloading",
+ "memchr",
  "num_cpus",
  "protocol",
  "rand",

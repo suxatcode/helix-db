@@ -17,6 +17,7 @@ num_cpus = "1.0"
 serde_json = "1.0.134"
 libloading = "0.8.6"
 helixc = { path = "../helixc" }
+memchr = "2.6"
 
 [dev-dependencies]
 criterion = "0.5"
