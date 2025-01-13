@@ -26,9 +26,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use helixc::{generator::query_gen::TraversalStep, parser::helix_parser::{
-    BooleanOp, Expression, GraphStep, HelixParser, Source, StartNode, Statement, Step, Traversal,
-}};
+use helixc::{
+    generator::query_gen::TraversalStep,
+    parser::helix_parser::{
+        BooleanOp, Expression, GraphStep, HelixParser, Source, StartNode, Statement, Step,
+        Traversal,
+    },
+};
 
 pub mod bindings;
 
@@ -217,12 +221,19 @@ impl HelixEmbedded {
                     Some(ids) => ids,
                     None => vec![],
                 };
-                ids.iter()
-                    .map(|id| match self.graph.storage.get_node(id) {
-                        Ok(n) => TraversalValue::SingleNode(n),
-                        Err(_) => TraversalValue::Empty,
-                    })
-                    .collect::<Vec<TraversalValue>>()
+
+                match ids.len() {
+                    0 => vec![TraversalValue::NodeArray(
+                        self.graph.storage.get_all_nodes()?,
+                    )],
+                    _ => ids
+                        .iter()
+                        .map(|id| match self.graph.storage.get_node(id) {
+                            Ok(n) => TraversalValue::SingleNode(n),
+                            Err(_) => TraversalValue::Empty,
+                        })
+                        .collect::<Vec<TraversalValue>>(),
+                }
             }
             StartNode::Variable(var_name) => match vars.read().unwrap().get(&var_name) {
                 Some(vals) => match vals.clone() {
@@ -342,7 +353,7 @@ impl HelixEmbedded {
                     tr_builder.count();
                 }
                 Step::Props(property_names) => {
-                    tr_builder.get_properties(&property_names);
+                    tr_builder.get_properties(property_names);
                 }
                 Step::Where(expression) => {
                     match &**expression {
@@ -424,10 +435,8 @@ impl HelixEmbedded {
                     }
                     let previous_step = tr.steps[index - 1].clone();
                     match previous_step {
-                        Step::Count => {
-                        }
-                        Step::Props(_) => {
-                        }
+                        Step::Count => {}
+                        Step::Props(_) => {}
                         _ => {
                             return Err(HelixLiteError::from(
                                 "Boolean operation must follow a traversal step!",
@@ -437,7 +446,10 @@ impl HelixEmbedded {
 
                     match tr_builder.current_step.first().unwrap() {
                         TraversalValue::Count(count) => {
-                           return Ok(ReturnValue::Boolean(Self::manage_int_bool_exp(op, count.value() as i32)))
+                            return Ok(ReturnValue::Boolean(Self::manage_int_bool_exp(
+                                op,
+                                count.value() as i32,
+                            )))
                         }
                         TraversalValue::SingleValue((_, Value::Integer(val))) => {
                             return Ok(ReturnValue::Boolean(Self::manage_int_bool_exp(op, *val)))
@@ -469,9 +481,6 @@ impl HelixEmbedded {
                             ));
                         }
                     };
-
-                    
-                       
                 }
                 _ => unreachable!(),
             }
@@ -483,64 +492,52 @@ impl HelixEmbedded {
 
     fn manage_float_bool_exp(op: &BooleanOp, fl: f64) -> bool {
         match op {
-            BooleanOp::GreaterThan(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl > val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::GreaterThan(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl > val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::GreaterThanOrEqual(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl >= val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::GreaterThanOrEqual(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl >= val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::LessThan(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl < val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::LessThan(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl < val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::LessThanOrEqual(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl <= val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::LessThanOrEqual(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl <= val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::Equal(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl == val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::Equal(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl == val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::NotEqual(expr) => {
-                match **expr {
-                    Expression::FloatLiteral(val) => {
-                        return fl != val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::NotEqual(expr) => match **expr {
+                Expression::FloatLiteral(val) => {
+                    return fl != val;
+                }
+                _ => {
+                    return false;
                 }
             },
             _ => {
@@ -551,64 +548,52 @@ impl HelixEmbedded {
 
     fn manage_int_bool_exp(op: &BooleanOp, i: i32) -> bool {
         match op {
-            BooleanOp::GreaterThan(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i > val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::GreaterThan(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i > val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::GreaterThanOrEqual(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i >= val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::GreaterThanOrEqual(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i >= val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::LessThan(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i < val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::LessThan(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i < val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::LessThanOrEqual(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i <= val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::LessThanOrEqual(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i <= val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::Equal(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i == val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::Equal(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i == val;
+                }
+                _ => {
+                    return false;
                 }
             },
-            BooleanOp::NotEqual(expr) => {
-                match **expr {
-                    Expression::IntegerLiteral(val) => {
-                        return i != val;
-                    }
-                    _ => {
-                        return false;
-                    }
+            BooleanOp::NotEqual(expr) => match **expr {
+                Expression::IntegerLiteral(val) => {
+                    return i != val;
+                }
+                _ => {
+                    return false;
                 }
             },
             _ => {

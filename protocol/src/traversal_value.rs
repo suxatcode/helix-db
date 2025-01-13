@@ -2,6 +2,7 @@ use crate::{count::Count, Edge, Node, Value};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Clone)]
+#[serde(untagged)]
 pub enum TraversalValue {
     Empty,
     Count(Count),

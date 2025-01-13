@@ -68,7 +68,6 @@ impl<'a> SourceTraversalSteps for TraversalBuilder<'a> {
     fn add_v(&mut self, node_label: &str, props: Vec<(String, Value)>) -> &mut Self {
         let node = self.storage.create_node(node_label, props).unwrap(); // TODO: Handle error
         self.current_step = vec![TraversalValue::SingleNode(node)];
-        println!("Node: {:?}", self.current_step);
         self
     }
 
@@ -377,7 +376,6 @@ impl<'a> TraversalSteps for TraversalBuilder<'a> {
 
 impl<'a> TraversalMethods for TraversalBuilder<'a> {
     fn count(&mut self) -> &mut Self {
-        println!("{:?}", self.current_step);
         self.current_step = vec![TraversalValue::Count(Count::new(
             self.current_step.iter().flatten().count(),
         ))];

@@ -332,7 +332,6 @@ impl HelixParser {
                 let prop_val = match pairs.next() {
                     Some(p) => {
                         let p = p.into_inner().next().unwrap();
-                        println!("{:?}. {:?}", prop_key, Value::from(p.as_str()));
                         match p.as_rule() {
                             Rule::string_literal => Value::from(p.as_str().to_string()),
                             Rule::integer => {

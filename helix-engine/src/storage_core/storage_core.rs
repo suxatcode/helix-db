@@ -467,7 +467,21 @@ impl StorageMethods for HelixGraphStorage {
             if !key.starts_with(&node_prefix) {
                 break;
             }
-            nodes.push(deserialize(&value).unwrap());
+
+            match serde_json::from_slice::<Node>(&value) {
+                Ok(node) => {
+                    nodes.push(node);
+                }
+                Err(e) => {
+                    println!(
+                        "Deserialization error for key {:?}: {:?}",
+                        String::from_utf8_lossy(&key),
+                        e
+                    );
+
+                    return Err(GraphError::from(format!("Deserialization error: {:?}", e)));
+                }
+            }
         }
 
         Ok(nodes)
@@ -521,7 +535,7 @@ impl StorageMethods for HelixGraphStorage {
         new_batch.put_cf(
             &cf_nodes,
             Self::node_key(&node.id),
-            serialize(&node).unwrap(),
+            serde_json::to_vec(&node).unwrap(),
         );
         new_batch.put_cf(&cf_nodes, Self::node_label_key(label, &node.id), vec![]);
 
