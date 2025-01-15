@@ -66,7 +66,7 @@ pub enum FilterCondition {
     // Logical combinations
     LogicalCombination {
         operator: LogicalOperator,
-        conditions: Vec<FilterCondition>,
+        conditions: Vec<FilterCondition>, 
     },
     // Exists check
     PropertyExists {
@@ -90,7 +90,7 @@ pub enum TraversalStep<In, Out> {
         _marker: PhantomData<(In, Out)>,
     },
 
-    // Traversal steps
+    // V Traversal Steps
     Out {
         label: String,
         _marker: PhantomData<(In, Out)>,
@@ -107,6 +107,25 @@ pub enum TraversalStep<In, Out> {
         label: String,
         _marker: PhantomData<(In, Out)>,
     },
+    Both {
+        label: String,
+        _marker: PhantomData<(In, Out)>,
+    },
+    BothE {
+        label: String,
+        _marker: PhantomData<(In, Out)>,
+    },
+
+    // E Traversal Steps
+    InV {
+        _marker: PhantomData<(In, Out)>,
+    },
+    OutV {
+        _marker: PhantomData<(In, Out)>,
+    },
+    BothV {
+        _marker: PhantomData<(In, Out)>,
+    },
 
     // Method Steps
     Count {
@@ -117,9 +136,13 @@ pub enum TraversalStep<In, Out> {
         end: usize,
         _marker: PhantomData<(In, Out)>,
     },
-    Filter {
+    FilterNode {
         condition: FilterCondition,
-        _marker: PhantomData<(In, Out)>,
+        _marker: PhantomData<(VertexState, Out)>,
+    },
+    FilterEdge {
+        condition: FilterCondition,
+        _marker: PhantomData<(EdgeState, Out)>,
     },
 }
 
@@ -171,11 +194,27 @@ impl<In: Debug, Out: Debug> TraversalStepGenerator for TraversalStep<In, Out> {
             TraversalStep::InE { label, .. } => {
                 writeln!(f, "    traversal.in_e(\"{}\");", label)
             }
+            TraversalStep::Both { label, .. } => {
+                writeln!(f, "    traversal.both(\"{}\");", label)
+            }
+            TraversalStep::BothE { label, .. } => {
+                writeln!(f, "    traversal.both_e(\"{}\");", label)
+            }
+            TraversalStep::InV { .. } => writeln!(f, "    traversal.in_v();"),
+            TraversalStep::OutV { .. } => writeln!(f, "    traversal.out_v();"),
+            TraversalStep::BothV { .. } => writeln!(f, "    traversal.both_v();"),
+
+
             TraversalStep::Count { .. } => writeln!(f, "    traversal.count();"),
             TraversalStep::Range { start, end, .. } => {
                 writeln!(f, "    traversal.range({}, {});", start, end)
             }
-            TraversalStep::Filter { condition, .. } => generate_filter_condition(f, condition),
+            TraversalStep::FilterNode { condition, .. } => {
+                generate_filter_nodes_condition(f, condition)
+            }
+            TraversalStep::FilterEdge { condition, .. } => {
+                generate_filter_edges_condition(f, condition)
+            }
         }
     }
 }
@@ -248,7 +287,7 @@ impl TraversalGenerator<NoState> {
 impl TraversalGenerator<VertexState> {
     pub fn out(mut self, label: &str) -> TraversalGenerator<VertexState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Out {
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::Out {
                 label: label.to_string(),
                 _marker: PhantomData,
             }));
@@ -257,7 +296,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn out_e(mut self, label: &str) -> TraversalGenerator<EdgeState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, EdgeState>::OutE {
+            .push(Box::new(TraversalStep::<VertexState, EdgeState>::OutE {
                 label: label.to_string(),
                 _marker: PhantomData,
             }));
@@ -270,7 +309,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn in_(mut self, label: &str) -> TraversalGenerator<VertexState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::In {
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::In {
                 label: label.to_string(),
                 _marker: PhantomData,
             }));
@@ -279,7 +318,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn in_e(mut self, label: &str) -> TraversalGenerator<EdgeState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, EdgeState>::InE {
+            .push(Box::new(TraversalStep::<VertexState, EdgeState>::InE {
                 label: label.to_string(),
                 _marker: PhantomData,
             }));
@@ -290,9 +329,174 @@ impl TraversalGenerator<VertexState> {
         }
     }
 
-    pub fn where_gt(mut self, property: &str, value: Value) -> TraversalGenerator<VertexState> {
+    pub fn both(mut self, label: &str) -> TraversalGenerator<VertexState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::Both {
+                label: label.to_string(),
+                _marker: PhantomData,
+            }));
+        self
+    }
+
+    pub fn both_e(mut self, label: &str) -> TraversalGenerator<EdgeState> {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, EdgeState>::BothE {
+                label: label.to_string(),
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn count(mut self) -> TraversalGenerator<VertexState> {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, NoState>::Count {
+                _marker: PhantomData,
+            }));
+        self
+    }
+
+    pub fn range(mut self, start: usize, end: usize) -> TraversalGenerator<VertexState> {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::Range {
+                start,
+                end,
+                _marker: PhantomData,
+            }));
+        self
+    }
+
+    pub fn where_prop(mut self, property: &str, value: Value, operator: ComparisonOperator) -> Self {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::FilterNode {
+                condition: FilterCondition::PropertyComparison {
+                    property: property.to_string(),
+                    operator,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn where_and(mut self, conditions: Vec<FilterCondition>) -> Self {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::FilterNode {
+                condition: FilterCondition::LogicalCombination {
+                    operator: LogicalOperator::And,
+                    conditions,
+                },
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn where_or(mut self, conditions: Vec<FilterCondition>) -> Self {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::FilterNode {
+                condition: FilterCondition::LogicalCombination {
+                    operator: LogicalOperator::Or,
+                    conditions,
+                },
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn where_not(mut self, condition: FilterCondition) -> Self {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::FilterNode {
+                condition: FilterCondition::LogicalCombination {
+                    operator: LogicalOperator::Not,
+                    conditions: vec![condition],
+                },
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    // Nested traversal comparison
+    pub fn where_traversal_gt(
+        mut self,
+        traversal: Vec<Box<dyn TraversalStepGenerator>>,
+        value: Value,
+        operator: ComparisonOperator,
+    ) -> Self {
+        self.steps
+            .push(Box::new(TraversalStep::<VertexState, VertexState>::FilterNode {
+                condition: FilterCondition::TraversalComparison {
+                    traversal,
+                    operator,
+                    value,
+                },
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl TraversalGenerator<EdgeState> {
+    pub fn in_v(mut self) -> TraversalGenerator<VertexState> {
+        self.steps
+            .push(Box::new(TraversalStep::<EdgeState, VertexState>::InV {
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn out_v(mut self) -> TraversalGenerator<VertexState> {
+        self.steps
+            .push(Box::new(TraversalStep::<EdgeState, VertexState>::OutV {
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn both_v(mut self)-> TraversalGenerator<VertexState> {
+        self.steps
+            .push(Box::new(TraversalStep::<EdgeState, VertexState>::BothV {
+                _marker: PhantomData,
+            }));
+        TraversalGenerator {
+            function_identifier: self.function_identifier,
+            steps: self.steps,
+            _marker: PhantomData,
+        }
+
+    pub fn where_gt(mut self, property: &str, value: Value) -> TraversalGenerator<EdgeState> {
+        self.steps
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::GT,
@@ -307,9 +511,9 @@ impl TraversalGenerator<VertexState> {
         }
     }
 
-    pub fn where_lt(mut self, property: &str, value: Value) -> TraversalGenerator<VertexState> {
+    pub fn where_lt(mut self, property: &str, value: Value) -> TraversalGenerator<EdgeState> {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::LT,
@@ -326,7 +530,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_gte(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::GTE,
@@ -343,7 +547,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_lte(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::LTE,
@@ -360,7 +564,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_eq(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::EQ,
@@ -377,7 +581,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_neq(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::NEQ,
@@ -394,7 +598,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_contains(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::Contains,
@@ -411,7 +615,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_starts_with(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::StartsWith,
@@ -428,7 +632,7 @@ impl TraversalGenerator<VertexState> {
 
     pub fn where_ends_with(mut self, property: &str, value: Value) -> Self {
         self.steps
-            .push(Box::new(TraversalStep::<NoState, VertexState>::Filter {
+            .push(Box::new(TraversalStep::<EdgeState, EdgeState>::FilterEdge {
                 condition: FilterCondition::PropertyComparison {
                     property: property.to_string(),
                     operator: ComparisonOperator::EndsWith,
@@ -465,7 +669,10 @@ impl ValueComparison for &str {
     }
 }
 
-fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std::fmt::Result {
+fn generate_filter_nodes_condition(
+    f: &mut String,
+    condition: &FilterCondition,
+) -> std::fmt::Result {
     match condition {
         FilterCondition::PropertyComparison {
             property,
@@ -473,34 +680,16 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
             value,
         } => {
             writeln!(f, "    traversal.filter(|val| {{")?;
-            writeln!(f, "        match val {{")?;
-            writeln!(f, "            TraversalValue::SingleNode(node) => {{")?;
             writeln!(
                 f,
-                "                if let Some(prop_val) = node.properties.get(\"{}\") {{",
+                "               if let Some(value) = val.check_property(\"{}\") {{",
                 property
             )?;
-            writeln!(f, "                    match prop_val {{")?;
+            writeln!(f, "                    match value {{")?;
             generate_value_match(f, operator, value)?;
             writeln!(f, "                        _ => false,")?;
             writeln!(f, "                    }}")?;
-            writeln!(f, "                }} else {{ false }}")?;
-            writeln!(f, "            }},")?;
-            writeln!(f, "            TraversalValue::SingleEdge(edge) => {{")?;
-            writeln!(
-                f,
-                "                if let Some(prop_val) = edge.properties.get(\"{}\") {{",
-                property
-            )?;
-            writeln!(f, "                    match prop_val {{")?;
-            generate_value_match(f, operator, value)?;
-            writeln!(f, "                        _ => false,")?;
-            writeln!(f, "                    }}")?;
-            writeln!(f, "                }} else {{ false }}")?;
-            writeln!(f, "            }},")?;
-            writeln!(f, "            _ => false,")?;
-            writeln!(f, "        }}")?;
-            writeln!(f, "    }});")?;
+            writeln!(f, "               }} else {{ false }}")?;
         }
         FilterCondition::TraversalComparison {
             traversal,
@@ -562,6 +751,15 @@ fn generate_filter_condition(f: &mut String, condition: &FilterCondition) -> std
             writeln!(f, "    }});")?;
         }
     }
+    Ok(())
+}
+
+fn generate_filter_edges_condition(
+    f: &mut String,
+    condition: &FilterCondition,
+) -> std::fmt::Result {
+    // Generate same as node filter condition but using ".filter_edges"
+    //
     Ok(())
 }
 
