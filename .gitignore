@@ -1,1 +1,11 @@
 docs/whitepaperV1.md
+**/target/
+/graph_queries/
+/graph_data/
+/testing/
+/dst/
+count.sh
+/queries/
+**/node_modules/
+/hql/
+**/*.txt

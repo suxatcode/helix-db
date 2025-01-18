@@ -30,9 +30,9 @@ HelixDB is a lightweight graph database with lightning fast startup times, and m
 > #### Time Frame: 3 Months
 
 ### Goals
-- [ ] Implement RocksDB as the storage engine
-- [ ] Implement a basic graph engine that can store and retrieve nodes and edges
-- [ ] Implement a basic code based API for testing in the language of choice
+- [x] Implement RocksDB as the storage engine
+- [x] Implement a basic graph engine that can store and retrieve nodes and edges
+- [x] Implement a basic code based API for testing in the language of choice
 
 
 
@@ -53,8 +53,8 @@ HelixDB is a lightweight graph database with lightning fast startup times, and m
 > #### Time Frame: TBC
 
 ### Goals
-- [ ] Implement HTTP connections to the database.
-- [ ] Implement a basic query language for the database
+- [x] Implement HTTP connections to the database.
+- [x] Implement a basic query language for the database
 
 
 ---
@@ -63,7 +63,7 @@ HelixDB is a lightweight graph database with lightning fast startup times, and m
 > #### Time Frame: TBC
 
 ### Goals
-- [ ] Expand the query language to include more complex queries
+- [x] Expand the query language to include more complex queries
 - [ ] Implement an optimising for the query engine
 
 
