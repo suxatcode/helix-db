@@ -5,7 +5,7 @@ pub trait Parser {
     fn parse(&self, input: &str) -> Result<(), String>;
 }
 
-#[derive(Debug)]
+
 pub enum ParserError {
     ParseError(String),
     LexError(String),
@@ -37,3 +37,13 @@ impl From<&'static str> for ParserError {
         ParserError::LexError(e.to_string())
     }
 }
+
+
+impl std::fmt::Debug for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParserError::ParseError(e) => write!(f, "Parse error: {}", e),
+            ParserError::LexError(e) => write!(f, "Lex error: {}", e),
+        }
+    }
+} 

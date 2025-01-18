@@ -7,12 +7,11 @@ query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = {
     identifier /* type here in future */
 }
-query_body   = { creation | (get_stmt)* }
+query_body   = { (get_stmt | AddV | AddE )* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge | identifier) ~ step* }
-creation            = { AddV | AddE }
 anonymous_traversal = { "_" ~ step+ }
 step                = { "::" ~ (graph_step | props_step | where_step | bool_operations | addfield | count) }
 
@@ -24,7 +23,8 @@ evaluates_to_anything = {
   | traversal
   | identifier
   | string_literal
-  | integer | float
+  | integer
+  | float
   | boolean
 }
 
@@ -38,7 +38,8 @@ evaluates_to_bool = {
 }
 
 evaluates_to_number = {
-    integer | float
+    integer
+  | float
   | identifier
   | traversal
 }
@@ -72,9 +73,9 @@ where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 exists     = { "EXISTS" ~ "(" ~ traversal ~ ")" }
 
 // Arguments for various steps
-type_args =  { identifier_upper ~ ("," ~ identifier_upper)* }
-id_arg    = @{ ASCII_DIGIT+ }
-id_args   =  { (id_arg | identifier) ~ ("," ~ (id_arg | identifier))* }
+type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
+id_arg    = { (identifier | string_literal ) }
+id_args   = { (id_arg) ~ ("," ~ id_arg)* }
 
 // Props step
 props_step = { "Props" ~ "(" ~ identifier ~ ("," ~ identifier)* ~ ")" }
@@ -107,7 +108,7 @@ boolean          =  { "true" | "false" }
 type_name        = @{ "String" | "Integer" | "Float" | "Boolean" }
 identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-integer        = @{ ASCII_DIGIT+ }
+integer          = @{ ASCII_DIGIT+ }
 float            = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 
 // Whitespace and comments
@@ -116,10 +117,10 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
 property_assignments = { property_assignment ~ ("," ~ property_assignment)* }
 property_assignment  = { identifier ~ ":" ~ property_value }
-property_value       = { string_literal | integer | float | boolean }
+property_value       = { (string_literal | integer | float | boolean )}
 
 // Add edged and vertices
 AddV   = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") }
-AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") ~ (fromTo | toFrom) }
-fromTo = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
-toFrom = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
+AddE   = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") ~ (from_to | to_from) }
+from_to = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
+to_from = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }

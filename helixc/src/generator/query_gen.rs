@@ -510,6 +510,7 @@ impl TraversalGenerator<EdgeState> {
             _marker: PhantomData,
         }
     }
+}
 
     pub fn where_lt(mut self, property: &str, value: Value) -> TraversalGenerator<EdgeState> {
         self.steps

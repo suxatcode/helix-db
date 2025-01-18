@@ -47,14 +47,12 @@ impl HelixGraphEngine {
         json_string
     }
 
-    // pub fn query<T>(&self, ast: Source) -> T 
+    // pub fn query<T>(&self, ast: Source) -> T
     // where T: SourceTraversalSteps + TraversalSteps +TraversalMethods
-    // {   
+    // {
 
     //     let mut return_vals: HashMap<String, String> = HashMap::new();
     //     let mut vars: HashMap<String, Vec<TraversalValue>> = HashMap::new();
 
-        
-        
     // }
 }

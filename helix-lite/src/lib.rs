@@ -23,15 +23,13 @@ use rand::Rng;
 use serde_json::json;
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock}, time::Instant,
+    sync::{Arc, RwLock},
+    time::Instant,
 };
 
-use helixc::{
-    generator::query_gen::TraversalStep,
-    parser::helix_parser::{
-        BooleanOp, Expression, GraphStep, HelixParser, Source, StartNode, Statement, Step,
-        Traversal,
-    },
+use helixc::parser::helix_parser::{
+    BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
+    Traversal,
 };
 
 pub mod bindings;
@@ -60,13 +58,56 @@ impl HelixEmbedded {
         Ok(Self { graph })
     }
 
+    fn id_type_to_id(
+        id_type: IdType,
+        vars: Arc<RwLock<HashMap<String, ReturnValue>>>,
+    ) -> Result<String, HelixLiteError> {
+        match id_type {
+            IdType::Literal(s) => Ok(s),
+            IdType::Identifier(s) => {
+                let reader = vars.read().unwrap();
+                let vals = reader.get(&s).unwrap();
+                match vals {
+                    ReturnValue::TraversalValues(tr) => {
+                        match tr {
+                            TraversalValue::NodeArray(arr) => {
+                                if arr.len() != 1 {
+                                    // throw err
+                                    return Err(HelixLiteError::from(format!(
+                                        "Node array too long, expected length 1 but got length {}",
+                                        arr.len()
+                                    )));
+                                };
+                                // get first and get id
+                                let node = arr.first().unwrap();
+                                Ok(node.id.clone())
+                            }
+                            TraversalValue::EdgeArray(arr) => {
+                                if arr.len() != 1 {
+                                    // throw error
+                                    return Err(HelixLiteError::from(format!(
+                                        "Edge array too long, expected length 1 but got length {}",
+                                        arr.len()
+                                    )));
+                                };
+                                let edge = arr.first().unwrap();
+                                Ok(edge.id.clone())
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
     pub fn query(&self, query: String, params: Vec<QueryInput>) -> Result<String, HelixLiteError> {
         let ast: Source = HelixParser::parse_source(query.as_str()).unwrap();
         let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
         let mut vars: Arc<RwLock<HashMap<String, ReturnValue>>> =
             Arc::new(RwLock::new(HashMap::new()));
         // let mut results = Vec::with_capacity(return_vals.len());
-
 
         for query in ast.queries {
             for stmt in query.statements {
@@ -114,8 +155,14 @@ impl HelixEmbedded {
                                 };
                                 tr_builder.add_e(
                                     label.as_str(),
-                                    &add_e.connection.from_id,
-                                    &add_e.connection.to_id,
+                                    &Self::id_type_to_id(
+                                        add_e.connection.from_id,
+                                        Arc::clone(&vars),
+                                    )?,
+                                    &Self::id_type_to_id(
+                                        add_e.connection.to_id,
+                                        Arc::clone(&vars),
+                                    )?,
                                     props,
                                 );
                                 ReturnValue::TraversalValues(tr_builder.current_step)
@@ -149,31 +196,22 @@ impl HelixEmbedded {
                     Statement::AddVertex(add_v) => {
                         let mut tr_builder =
                             TraversalBuilder::new(&self.graph.storage, TraversalValue::Empty);
-                        let label = match add_v.vertex_type {
-                            Some(l) => l,
-                            None => String::new(),
-                        };
-                        let props = match add_v.fields {
-                            Some(p) => p,
-                            None => props! {},
-                        };
+                        let label = add_v.vertex_type.unwrap_or_default();
+                        let props = add_v.fields.unwrap_or_default();
+
                         tr_builder.add_v(label.as_str(), props);
                     }
                     Statement::AddEdge(add_e) => {
                         let mut tr_builder =
                             TraversalBuilder::new(&self.graph.storage, TraversalValue::Empty);
-                        let label = match add_e.edge_type {
-                            Some(l) => l,
-                            None => String::new(),
-                        };
-                        let props = match add_e.fields {
-                            Some(p) => p,
-                            None => props! {},
-                        };
+
+                        let label = add_e.edge_type.unwrap_or_default();
+                        let props = add_e.fields.unwrap_or_default();
+
                         tr_builder.add_e(
                             label.as_str(),
-                            &add_e.connection.from_id,
-                            &add_e.connection.to_id,
+                            &Self::id_type_to_id(add_e.connection.from_id, Arc::clone(&vars))?,
+                            &Self::id_type_to_id(add_e.connection.to_id, Arc::clone(&vars))?,
                             props,
                         );
                     }
@@ -205,7 +243,6 @@ impl HelixEmbedded {
                 }
             }
         }
-
 
         let json_string = serde_json::to_string_pretty(&return_vals).unwrap();
         Ok(json_string)

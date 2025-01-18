@@ -161,8 +161,23 @@ pub struct AddEdge {
 
 #[derive(Debug, Clone)]
 pub struct EdgeConnection {
-    pub from_id: String,
-    pub to_id: String,
+    pub from_id: IdType,
+    pub to_id: IdType,
+}
+
+#[derive(Debug, Clone)]
+pub enum IdType {
+    Literal(String),
+    Identifier(String),
+}
+
+impl From<IdType> for String {
+    fn from(id_type: IdType) -> String {
+        match id_type {
+            IdType::Literal(s) => s,
+            IdType::Identifier(s) => s,
+        }
+    }
 }
 
 impl HelixParser {
@@ -290,7 +305,10 @@ impl HelixParser {
                 Rule::get_stmt => Ok(Statement::Assignment(Self::parse_get_statement(p)?)),
                 Rule::AddV => Ok(Statement::AddVertex(Self::parse_add_vertex(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(Self::parse_add_edge(p)?)),
-                _ => Err(ParserError::from("Unexpected statement type in query body")),
+                _ => Err(ParserError::from(format!(
+                    "Unexpected statement type in query body: {:?}",
+                    p.as_rule()
+                ))),
             })
             .collect()
     }
@@ -334,12 +352,8 @@ impl HelixParser {
                         let p = p.into_inner().next().unwrap();
                         match p.as_rule() {
                             Rule::string_literal => Value::from(p.as_str().to_string()),
-                            Rule::integer => {
-                                Value::Integer(p.as_str().parse().unwrap())
-                            }
-                            Rule::float => {
-                                Value::Float(p.as_str().parse().unwrap())
-                            }
+                            Rule::integer => Value::Integer(p.as_str().parse().unwrap()),
+                            Rule::float => Value::Float(p.as_str().parse().unwrap()),
                             Rule::boolean => Value::Boolean(p.as_str() == "true"),
                             _ => unreachable!(),
                         }
@@ -365,8 +379,11 @@ impl HelixParser {
                 Rule::property_assignments => {
                     fields = Some(Self::parse_property_assignments(p)?);
                 }
-                Rule::toFrom => {
+                Rule::to_from => {
                     connection = Some(Self::parse_to_from(p)?);
+                }
+                Rule::from_to => {
+                    connection = Some(Self::parse_from_to(p)?);
                 }
                 _ => {
                     return Err(ParserError::from(format!(
@@ -384,8 +401,19 @@ impl HelixParser {
         })
     }
 
-    fn parse_id_args(pair: Pair<Rule>) -> Result<String, ParserError> {
-        Ok(pair.into_inner().as_str().to_string())
+    fn parse_id_args(pair: Pair<Rule>) -> Result<IdType, ParserError> {
+        let p = pair
+            .into_inner()
+            .next()
+            .ok_or_else(|| ParserError::from("Error getting inner"))?;
+        println!("id pair: {:?}", p);
+        match p.as_rule() {
+            Rule::identifier => Ok(IdType::Identifier(p.as_str().to_string())),
+            Rule::string_literal | Rule::inner_string => {
+                Ok(IdType::Literal(p.as_str().to_string()))
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn parse_to_from(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
@@ -393,15 +421,37 @@ impl HelixParser {
         let to_id = Self::parse_id_args(
             pairs
                 .next()
+                .ok_or_else(|| ParserError::from("Missing to IDs"))?
+                .into_inner()
+                .next()
                 .ok_or_else(|| ParserError::from("Missing to IDs"))?,
         )?;
         let from_id = Self::parse_id_args(
             pairs
                 .next()
-                .ok_or_else(|| ParserError::from("Missing from IDs"))?,
+                .ok_or_else(|| ParserError::from("Missing from IDs"))?
+                .into_inner()
+                .next()
+                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
         )?;
 
         Ok(EdgeConnection { to_id, from_id })
+    }
+
+    fn parse_from_to(pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
+        let mut pairs = pair.into_inner();
+        let from_id = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
+        )?;
+        let to_id = Self::parse_id_args(
+            pairs
+                .next()
+                .ok_or_else(|| ParserError::from("Missing from IDs"))?,
+        )?;
+
+        Ok(EdgeConnection { from_id, to_id })
     }
 
     fn parse_get_statement(pair: Pair<Rule>) -> Result<Assignment, ParserError> {
@@ -671,7 +721,7 @@ mod tests {
     fn test_query_with_parameters() {
         let input = r#"
         QUERY fetchUsers(name, age) =>
-            user <- V<USER>(123)
+            user <- V<USER>("123")
             nameField <- user::Props(Name)
             ageField <- user::Props(Age)
             RETURN nameField, ageField
@@ -784,7 +834,7 @@ mod tests {
     fn test_edge_traversal() {
         let input = r#"
     QUERY getEdgeInfo() =>
-        edge <- E<FRIENDSHIP>(45)
+        edge <- E<FRIENDSHIP>("999")
         fromUser <- edge::OutE
         toUser <- edge::OutV
         RETURN fromUser, toUser
@@ -816,7 +866,7 @@ mod tests {
     fn test_multiple_return_values() {
         let input = r#"
     QUERY returnMultipleValues() =>
-        user <- V<USER>(999)
+        user <- V<USER>("999")
         name <- user::Props(Name)
         age <- user::Props(Age)
         RETURN name, age
@@ -831,7 +881,7 @@ mod tests {
     fn test_add_fields() {
         let input = r#"
     QUERY enrichUserData() =>
-        user <- V<USER>(123)
+        user <- V<USER>("123")
         enriched <- user::{Name: "name", Follows: _::Out<Follows>::Props(Age)}
         RETURN enriched
     "#;
@@ -844,7 +894,7 @@ mod tests {
     fn test_query_with_count() {
         let input = r#"
     QUERY analyzeNetwork() =>
-        user <- V<USER>(789)
+        user <- V<USER>("999")
         friends <- user::Out<FRIENDSHIP>::InV::WHERE(_::Out::COUNT::GT(0))
         friendCount <- activeFriends::COUNT
         RETURN friendCount
@@ -877,7 +927,7 @@ mod tests {
     fn test_add_edge_query() {
         let input = r#"
     QUERY analyzeNetwork() =>
-        edge <- AddE<Rating>({Rating: 5})::To(123)::From(456)
+        edge <- AddE<Rating>({Rating: 5})::To("123")::From("456")
         RETURN edge
     "#;
         let result = match HelixParser::parse_source(input) {
@@ -890,5 +940,28 @@ mod tests {
         let query = &result.queries[0];
         println!("{:?}", query);
         assert_eq!(query.statements.len(), 1);
+    }
+
+    #[test]
+    fn test_adding_with_identifiers() {
+        let input = r#"
+    QUERY addUsers() =>
+        user1 <- AddV<User>({Name: "Alice", Age: 30})
+        user2 <- AddV<User>({Name: "Bob", Age: 25})
+        AddE<Follows>({Since: "1.0"})::From(user1)::To(user2)
+        RETURN user1, user2
+    "#;
+
+        let result = match HelixParser::parse_source(input) {
+            Ok(result) => result,
+            Err(e) => {
+                println!("{:?}", e);
+                panic!();
+            }
+        };
+        println!("{:?}", result);
+        let query = &result.queries[0];
+        println!("{:?}", query);
+        assert_eq!(query.statements.len(), 3);
     }
 }

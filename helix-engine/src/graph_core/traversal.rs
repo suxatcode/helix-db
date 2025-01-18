@@ -73,6 +73,7 @@ impl<'a> SourceTraversalSteps for TraversalBuilder<'a> {
         to_id: &str,
         props: Vec<(String, Value)>,
     ) -> &mut Self {
+        println!("{} -> {}", from_id, to_id);
         let edge = self
             .storage
             .create_edge(edge_label, from_id, to_id, props)
@@ -297,7 +298,7 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
     fn filter_nodes<F>(&mut self, predicate: F) -> &mut Self
     where
         F: Fn(&Node) -> Result<bool, GraphError>,
-    {   
+    {
         if let TraversalValue::NodeArray(nodes) = &mut self.current_step {
             nodes.retain(|node| predicate(node).unwrap());
         }
@@ -305,8 +306,9 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
     }
 
     fn filter_edges<F>(&mut self, predicate: F) -> &mut Self
-        where
-            F: Fn(&Edge) -> Result<bool, GraphError> {
+    where
+        F: Fn(&Edge) -> Result<bool, GraphError>,
+    {
         if let TraversalValue::EdgeArray(edges) = &mut self.current_step {
             edges.retain(|edge| predicate(edge).unwrap());
         }

@@ -73,7 +73,7 @@ enum IterState {
     Single(TraversalValue),
     Nodes(std::vec::IntoIter<Node>),
     Edges(std::vec::IntoIter<Edge>),
-    Values(std::vec::IntoIter<(String,Value)>),
+    Values(std::vec::IntoIter<(String, Value)>),
 }
 
 pub struct TraversalValueIterator {
@@ -102,8 +102,6 @@ impl TraversalValue {
     }
 }
 
-
-
 impl std::fmt::Debug for TraversalValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -130,4 +128,3 @@ impl Serialize for TraversalValue {
         }
     }
 }
-
