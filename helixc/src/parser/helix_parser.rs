@@ -342,28 +342,46 @@ impl HelixParser {
     }
 
     fn parse_property_assignments(pair: Pair<Rule>) -> Result<Vec<(String, Value)>, ParserError> {
-        Ok(pair
-            .into_inner()
+        pair.into_inner()
             .map(|p| {
                 let mut pairs = p.into_inner();
-                let prop_key = pairs.next().unwrap().as_str().to_string();
+                let prop_key = pairs
+                    .next()
+                    .ok_or_else(|| ParserError::from("Missing property key"))?
+                    .as_str()
+                    .to_string();
+
                 let prop_val = match pairs.next() {
                     Some(p) => {
-                        let p = p.into_inner().next().unwrap();
-                        match p.as_rule() {
-                            Rule::string_literal => Value::from(p.as_str().to_string()),
-                            Rule::integer => Value::Integer(p.as_str().parse().unwrap()),
-                            Rule::float => Value::Float(p.as_str().parse().unwrap()),
-                            Rule::boolean => Value::Boolean(p.as_str() == "true"),
-                            _ => unreachable!(),
-                        }
+                        let value_pair = p
+                            .into_inner()
+                            .next()
+                            .ok_or_else(|| ParserError::from("Empty property value"))?;
+
+                        match value_pair.as_rule() {
+                            Rule::string_literal => {
+                                Ok(Value::from(value_pair.as_str().to_string()))
+                            }
+                            Rule::integer => value_pair
+                                .as_str()
+                                .parse()
+                                .map(Value::Integer)
+                                .map_err(|_| ParserError::from("Invalid integer value")),
+                            Rule::float => value_pair
+                                .as_str()
+                                .parse()
+                                .map(Value::Float)
+                                .map_err(|_| ParserError::from("Invalid float value")),
+                            Rule::boolean => Ok(Value::Boolean(value_pair.as_str() == "true")),
+                            _ => Err(ParserError::from("Invalid property value type")),
+                        }?
                     }
                     None => Value::Empty,
                 };
 
-                (prop_key, prop_val)
+                Ok((prop_key, prop_val))
             })
-            .collect::<Vec<(String, Value)>>())
+            .collect()
     }
 
     fn parse_add_edge(pair: Pair<Rule>) -> Result<AddEdge, ParserError> {
@@ -405,8 +423,7 @@ impl HelixParser {
         let p = pair
             .into_inner()
             .next()
-            .ok_or_else(|| ParserError::from("Error getting inner"))?;
-        println!("id pair: {:?}", p);
+            .ok_or_else(|| ParserError::from("Missing ID"))?;
         match p.as_rule() {
             Rule::identifier => Ok(IdType::Identifier(p.as_str().to_string())),
             Rule::string_literal | Rule::inner_string => {
@@ -469,37 +486,69 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
-        let (l, c) = p.line_col();
-        let pair = p.into_inner().next().unwrap();
+        let pair = p
+            .into_inner()
+            .next()
+            .ok_or_else(|| ParserError::from("Empty expression"))?;
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
             )?))),
             Rule::anonymous_traversal => Ok(Expression::Traversal(Box::new(
-                Self::parse_traversal(pair)?,
+                Self::parse_anon_traversal(pair)?,
             ))),
             Rule::identifier => Ok(Expression::Identifier(pair.as_str().to_string())),
-            Rule::string_literal => Ok(Expression::StringLiteral(Self::parse_string_literal(pair))),
-            Rule::integer => Ok(Expression::IntegerLiteral(pair.as_str().parse().unwrap())),
+            Rule::string_literal => {
+                Ok(Expression::StringLiteral(Self::parse_string_literal(pair)?))
+            }
+            Rule::integer => pair
+                .as_str()
+                .parse()
+                .map(Expression::IntegerLiteral)
+                .map_err(|_| ParserError::from("Invalid integer literal")),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
-            Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_traversal(
-                pair.into_inner().next().unwrap(),
-            )?))),
+            Rule::exists => {
+                let traversal = pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParserError::from("Missing exists traversal"))?;
+                Ok(Expression::Exists(Box::new(Self::parse_traversal(
+                    traversal,
+                )?)))
+            }
             Rule::AddV => Ok(Expression::AddVertex(Self::parse_add_vertex(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(Self::parse_add_edge(pair)?)),
-            _ => Err(ParserError::from("Unexpected expression type")),
+            _ => Err(ParserError::from(format!(
+                "Unexpected expression type: {:?}",
+                pair.as_rule()
+            ))),
         }
     }
 
-    fn parse_string_literal(pair: Pair<Rule>) -> String {
-        let mut literal = pair.into_inner().next().unwrap().as_str().to_string();
+    fn parse_string_literal(pair: Pair<Rule>) -> Result<String, ParserError> {
+        let inner = pair
+            .into_inner()
+            .next()
+            .ok_or_else(|| ParserError::from("Empty string literal"))?;
+
+        let mut literal = inner.as_str().to_string();
         literal.retain(|c| c != '"');
-        literal
+        Ok(literal)
     }
 
     fn parse_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
         let mut pairs = pair.into_inner();
         let start = Self::parse_start_node(pairs.next().unwrap())?;
+        let steps = pairs
+            .map(|p| Self::parse_step(p))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Traversal { start, steps })
+    }
+
+    fn parse_anon_traversal(pair: Pair<Rule>) -> Result<Traversal, ParserError> {
+        let pairs = pair.into_inner();
+        let start = StartNode::Anonymous;
         let steps = pairs
             .map(|p| Self::parse_step(p))
             .collect::<Result<Vec<_>, _>>()?;
@@ -963,5 +1012,26 @@ mod tests {
         let query = &result.queries[0];
         println!("{:?}", query);
         assert_eq!(query.statements.len(), 3);
+    }
+
+    #[test]
+    fn test_where_with_props() {
+        let input = r#"
+    QUERY getFollows() =>
+        user <- V<User>()::WHERE(_::Props(Age)::GT(26))
+        follows <- user::Out<Follows>
+        RETURN user, follows
+        "#;
+        let result = match HelixParser::parse_source(input) {
+            Ok(result) => result,
+            Err(e) => {
+                println!("{:?}", e);
+                panic!();
+            }
+        };
+        println!("{:?}", result);
+        let query = &result.queries[0];
+        println!("{:?}", query);
+        assert_eq!(query.statements.len(), 1398374);
     }
 }

@@ -461,7 +461,7 @@ impl StorageMethods for HelixGraphStorage {
             .ok_or_else(|| GraphError::from("Column Family not found"))?;
 
         // Pre-allocate with expected capacity
-        let mut nodes = Vec::with_capacity(20000);
+        let mut nodes = Vec::with_capacity(200);
         let node_prefix = Self::node_key("");
 
         let mut read_opts = ReadOptions::default();
@@ -482,7 +482,10 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter.take_while(|r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &node_prefix).is_some())) {
             let (_, value) = result?;
             match serde_json::from_slice(&value) {
-                Ok(node) => nodes.push(node),
+                Ok(node) => {
+                    println!("NODE: {:?}", node);
+                    nodes.push(node)
+                },
                 Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e)))
             }
         }

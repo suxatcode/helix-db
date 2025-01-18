@@ -27,9 +27,12 @@ use std::{
     time::Instant,
 };
 
-use helixc::parser::helix_parser::{
-    BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
-    Traversal,
+use helixc::parser::{
+    helix_parser::{
+        BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
+        Traversal,
+    },
+    parser_methods::ParserError,
 };
 
 pub mod bindings;
@@ -48,13 +51,17 @@ pub enum QueryInput {
 }
 
 impl HelixEmbedded {
-    pub fn new(user: String) -> Result<Self, GraphError> {
-        let home_dir = dirs::home_dir().ok_or(GraphError::New(
+    pub fn new(user: String) -> Result<Self, HelixLiteError> {
+        let home_dir = dirs::home_dir().ok_or(HelixLiteError::Default(
             "Unable to determine home directory".to_string(),
         ))?;
         let path = format!("{}/.helix/graph_data/{}", home_dir.display(), user);
         println!("Path: {:?}", path);
-        let graph = Arc::new(HelixGraphEngine::new(path.as_str()).unwrap());
+        let storage = match HelixGraphEngine::new(path.as_str()) {
+            Ok(helix) => helix,
+            Err(err) => return Err(HelixLiteError::from(err)),
+        };
+        let graph = Arc::new(storage);
         Ok(Self { graph })
     }
 
@@ -103,10 +110,12 @@ impl HelixEmbedded {
     }
 
     pub fn query(&self, query: String, params: Vec<QueryInput>) -> Result<String, HelixLiteError> {
-        let ast: Source = HelixParser::parse_source(query.as_str()).unwrap();
+        let ast: Source = match HelixParser::parse_source(query.as_str()) {
+            Ok(src) => src,
+            Err(err) => return Err(HelixLiteError::from(err)),
+        };
         let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        let mut vars: Arc<RwLock<HashMap<String, ReturnValue>>> =
-            Arc::new(RwLock::new(HashMap::new()));
+        let vars: Arc<RwLock<HashMap<String, ReturnValue>>> = Arc::new(RwLock::new(HashMap::new()));
         // let mut results = Vec::with_capacity(return_vals.len());
 
         for query in ast.queries {
@@ -254,6 +263,7 @@ impl HelixEmbedded {
         vars: Arc<RwLock<HashMap<String, ReturnValue>>>,
         anon_start: TraversalValue,
     ) -> Result<ReturnValue, HelixLiteError> {
+        let printable = tr.clone();
         let start_nodes: TraversalValue = match tr.start {
             StartNode::Vertex { types, ids } | StartNode::Edge { types, ids } => {
                 let types = match types {
@@ -400,6 +410,7 @@ impl HelixEmbedded {
                     tr_builder.count();
                 }
                 Step::Props(property_names) => {
+                    assert!(property_names.len() > 0, "Property names must be provided!");
                     tr_builder.get_properties(property_names);
                 }
                 Step::Where(expression) => {
@@ -440,7 +451,7 @@ impl HelixEmbedded {
                                 }
                                 _ => {
                                     return Err(HelixLiteError::from(
-                                        "Exists clause must follow a traversal step!",
+                                        format!("Exists clause must follow a traversal step! Got step: {:?}", anon_tr.start ),
                                     ));
                                 }
                             },
@@ -545,21 +556,18 @@ impl HelixEmbedded {
                     }
                 }
                 Step::BooleanOperation(op) => {
-                    if index == 0 {
-                        return Err(HelixLiteError::from(
-                            "Boolean operation must follow a traversal step!",
-                        ));
-                    }
-                    let previous_step = tr.steps[index - 1].clone();
-                    match previous_step {
-                        Step::Count => {}
-                        Step::Props(_) => {}
-                        _ => {
-                            return Err(HelixLiteError::from(
-                                "Boolean operation must follow a traversal step!",
-                            ));
-                        }
-                    };
+
+                    // let previous_step = tr.steps[index - 1].clone();
+                    // match previous_step {
+                    //     Step::Count => {}
+                    //     Step::Props(_) => {}
+                    //     _ => {
+                    //         return Err(HelixLiteError::from(format!(
+                    //             "Boolean operation must follow a traversal step! Got step: {:?}",
+                    //             previous_step
+                    //         )));
+                    //     }
+                    // };
 
                     match tr_builder.current_step {
                         TraversalValue::Count(count) => {
@@ -568,27 +576,28 @@ impl HelixEmbedded {
                                 count.value() as i32,
                             )))
                         }
-                        // TraversalValue::ValueArray(vals) => {
-                        //     let mut res = Vec::with_capacity(vals.len());
-                        //     for (_, val) in vals {
-                        //         match val {
-                        //             Value::Integer(val) => {
-                        //                 res.push(Self::manage_int_bool_exp(op, *val));
-                        //             }
-                        //             Value::Float(val) => {
-                        //                 res.push(Self::manage_float_bool_exp(op, *val));
-                        //             }
-                        //             _ => {
-                        //                 return Err(HelixLiteError::from(
-                        //                     "Expression should resolve to a number!",
-                        //                 ));
-                        //             }
-                        //         }
-                        //     }
-                        // }
+                        TraversalValue::ValueArray(ref vals) => {
+                            let mut res = Vec::with_capacity(vals.len());
+                            for (_, val) in vals {
+                                match val {
+                                    Value::Integer(val) => {
+                                        res.push(Self::manage_int_bool_exp(op, val.clone()));
+                                    }
+                                    Value::Float(val) => {
+                                        res.push(Self::manage_float_bool_exp(op, val.clone()));
+                                    }
+                                    _ => {
+                                        return Err(HelixLiteError::from(
+                                            "Expression should resolve to a number!",
+                                        ));
+                                    }
+                                }
+                            }
+                            return Ok(ReturnValue::Boolean(res.iter().all(|&x| x)));
+                        }
                         _ => {
                             return Err(HelixLiteError::from(
-                                "Boolean operation must follow a traversal step!",
+                                format!("Boolean operation must follow a count or numerical property step! Got step: {:?} for traversal {:?}", tr_builder.current_step, step),
                             ));
                         }
                     };
@@ -754,5 +763,11 @@ impl From<&'static str> for HelixLiteError {
 impl From<String> for HelixLiteError {
     fn from(error: String) -> Self {
         HelixLiteError::Default(error)
+    }
+}
+
+impl From<ParserError> for HelixLiteError {
+    fn from(error: ParserError) -> Self {
+        HelixLiteError::Default(error.to_string())
     }
 }
