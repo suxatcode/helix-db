@@ -42,10 +42,9 @@ fn main() {
             .collect::<Vec<((String, String), HandlerFn)>>(),
     );
 
-    println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "127.0.0.1:1234",
+        "127.0.0.1:3001",
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),

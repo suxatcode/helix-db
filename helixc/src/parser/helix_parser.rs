@@ -174,9 +174,20 @@ pub enum IdType {
 impl From<IdType> for String {
     fn from(id_type: IdType) -> String {
         match id_type {
-            IdType::Literal(s) => s,
+            IdType::Literal(mut s) => {
+                s.retain(|c| c != '"');
+                s
+            },
             IdType::Identifier(s) => s,
         }
+    }
+}
+
+/// Use From for literals to remove '"'
+impl From<String> for IdType {
+    fn from(mut s: String) -> IdType {
+        s.retain(|c| c != '"');
+        IdType::Literal(s)
     }
 }
 
@@ -427,7 +438,7 @@ impl HelixParser {
         match p.as_rule() {
             Rule::identifier => Ok(IdType::Identifier(p.as_str().to_string())),
             Rule::string_literal | Rule::inner_string => {
-                Ok(IdType::Literal(p.as_str().to_string()))
+                Ok(IdType::from(p.as_str().to_string()))
             }
             _ => unreachable!(),
         }
