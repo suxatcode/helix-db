@@ -38,6 +38,8 @@ pub trait StorageMethods {
     /// Returns all edges in the graph
     fn get_all_edges(&self) -> Result<Vec<Edge>, GraphError>;
 
+    fn get_nodes_by_types(&self, labels:  &[String]) -> Result<Vec<Node>, GraphError>;
+
     /// Creates a node entry
     fn create_node(
         &self,

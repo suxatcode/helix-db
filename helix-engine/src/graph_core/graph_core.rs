@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::traversal::TraversalBuilder;
 use super::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps};
-use helixc::parser::helix_parser::{BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step, Traversal};
+use helixc::parser::helix_parser::{
+    BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
+    Traversal,
+};
 use protocol::traversal_value::TraversalValue;
 use protocol::{Node, ReturnValue, Value};
 use serde_json::json;
@@ -85,10 +88,8 @@ impl HelixGraphEngine {
                                 )?
                             }
                             Expression::AddVertex(add_v) => {
-                                let mut tr_builder = TraversalBuilder::new(
-                                    &self.storage,
-                                    TraversalValue::Empty,
-                                );
+                                let mut tr_builder =
+                                    TraversalBuilder::new(&self.storage, TraversalValue::Empty);
                                 let label = match add_v.vertex_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -101,10 +102,8 @@ impl HelixGraphEngine {
                                 ReturnValue::TraversalValues(tr_builder.current_step)
                             }
                             Expression::AddEdge(add_e) => {
-                                let mut tr_builder = TraversalBuilder::new(
-                                    &self.storage,
-                                    TraversalValue::Empty,
-                                );
+                                let mut tr_builder =
+                                    TraversalBuilder::new(&self.storage, TraversalValue::Empty);
                                 let label = match add_e.edge_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -188,9 +187,7 @@ impl HelixGraphEngine {
                         let var_name = match tr.start {
                             StartNode::Variable(var_name) => var_name,
                             _ => {
-                                return Err(GraphError::from(
-                                    "Return value must be a variable!",
-                                ));
+                                return Err(GraphError::from("Return value must be a variable!"));
                             }
                         };
                         if let Some(val) = vars.read().unwrap().get(&var_name) {
@@ -226,7 +223,12 @@ impl HelixGraphEngine {
                 };
 
                 match ids.len() {
-                    0 => TraversalValue::NodeArray(self.storage.get_all_nodes()?),
+                    0 => match types.len() {
+                        0 => TraversalValue::NodeArray(self.storage.get_all_nodes()?),
+                        _ => {
+                            TraversalValue::NodeArray(self.storage.get_nodes_by_types(&types)?)
+                        }
+                    },
                     _ => TraversalValue::NodeArray(
                         ids.iter()
                             .map(|id| match self.storage.get_node(id) {
@@ -506,7 +508,6 @@ impl HelixGraphEngine {
                     }
                 }
                 Step::BooleanOperation(op) => {
-
                     // let previous_step = tr.steps[index - 1].clone();
                     // match previous_step {
                     //     Step::Count => {}

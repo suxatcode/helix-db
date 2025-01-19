@@ -460,18 +460,16 @@ impl StorageMethods for HelixGraphStorage {
             .cf_handle(CF_NODES)
             .ok_or_else(|| GraphError::from("Column Family not found"))?;
 
-        // Pre-allocate with expected capacity
         let mut nodes = Vec::with_capacity(200);
         let node_prefix = Self::node_key("");
 
         let mut read_opts = ReadOptions::default();
         read_opts.set_verify_checksums(false);
-        read_opts.set_readahead_size(8 * 1024 * 1024); 
+        read_opts.set_readahead_size(8 * 1024 * 1024);
         read_opts.set_prefix_same_as_start(true);
-        read_opts.set_async_io(true); 
-        read_opts.set_tailing(true); 
+        read_opts.set_async_io(true);
+        read_opts.set_tailing(true);
         read_opts.fill_cache(false);
-
 
         let iter = self.db.iterator_cf_opt(
             &cf_nodes,
@@ -479,17 +477,56 @@ impl StorageMethods for HelixGraphStorage {
             IteratorMode::From(&node_prefix, rocksdb::Direction::Forward),
         );
 
-        for result in iter.take_while(|r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &node_prefix).is_some())) {
+        for result in iter.take_while(
+            |r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &node_prefix).is_some()),
+        ) {
             let (_, value) = result?;
             match serde_json::from_slice(&value) {
                 Ok(node) => {
                     println!("NODE: {:?}", node);
                     nodes.push(node)
-                },
-                Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e)))
+                }
+                Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e))),
             }
         }
-    
+
+        Ok(nodes)
+    }
+
+    fn get_nodes_by_types(&self, types: &[String]) -> Result<Vec<Node>, GraphError> {
+        let cf_nodes = self
+            .db
+            .cf_handle(CF_NODES)
+            .ok_or_else(|| GraphError::from("Column Family not found"))?;
+
+        // Pre-allocate with expected capacity
+        let mut nodes = Vec::with_capacity(200);
+
+        for label in types {
+            let node_label_key = [NODE_LABEL_PREFIX, label.as_bytes(), b":"].concat();
+            let mut read_opts = ReadOptions::default();
+            read_opts.set_verify_checksums(false);
+            read_opts.set_readahead_size(2 * 1024 * 1024);
+            read_opts.set_prefix_same_as_start(true);
+            read_opts.set_async_io(true);
+            read_opts.set_tailing(true);
+            read_opts.fill_cache(false);
+            let iter = self.db.iterator_cf_opt(
+                &cf_nodes,
+                read_opts,
+                IteratorMode::From(&node_label_key, rocksdb::Direction::Forward),
+            );
+
+            for result in iter.take_while(
+                |r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &node_label_key).is_some()),
+            ) {
+                let (key, _) = result?;
+                let node_id = String::from_utf8(key[node_label_key.len()..].to_vec())?;
+                let node = self.get_node(&node_id)?;
+                nodes.push(node);
+            }
+        }
+
         Ok(nodes)
     }
 
@@ -945,6 +982,24 @@ mod tests {
         assert!(labels.contains(&"person".to_string()));
         assert!(labels.contains(&"thing".to_string()));
         assert!(labels.contains(&"other".to_string()));
+    }
+
+    #[test]
+    fn test_get_all_node_by_types() {
+        let (storage, _temp_dir) = setup_temp_db();
+        let node1 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+        let node2 = storage.create_node("thing", props!()).unwrap(); // TODO: Handle Error
+        let node3 = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
+
+        let nodes = storage.get_nodes_by_types(&["person".to_string()]).unwrap(); // TODO: Handle Error
+
+        assert_eq!(nodes.len(), 2);
+
+        let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+
+        assert!(node_ids.contains(&node1.id));
+        assert!(!node_ids.contains(&node2.id));
+        assert!(node_ids.contains(&node3.id));
     }
 
     #[test]
