@@ -1,3 +1,4 @@
+extern crate graph_queries;
 use chrono::Utc;
 use helix_engine::{
     graph_core::graph_core::HelixGraphEngine,
@@ -11,26 +12,28 @@ use helix_gateway::{
 use inventory;
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc};
-use graph_queries::traversals::*;
+
+mod traversals;
+use traversals::*;  
 
 fn main() {
-    let path = format!("../graph_data/{}", Utc::now());
-    let graph = Arc::new(HelixGraphEngine::new(path.as_str()).unwrap());
+    let path = "~/.helix/user";
+    let graph = Arc::new(HelixGraphEngine::new(path).unwrap());
     create_test_graph(Arc::clone(&graph), 100, 10);
 
     // generates routes from handler proc macro
+    println!("Starting route collection...");
+    let submissions: Vec<_> = inventory::iter::<HandlerSubmission>.into_iter().collect();
+    println!("Found {} submissions", submissions.len());
+
     let routes = HashMap::from_iter(
-        inventory::iter::<HandlerSubmission>
+        submissions
             .into_iter()
             .map(|submission| {
-                // get the handler from the submission
+                println!("Processing submission for handler: {}", submission.0.name);
                 let handler = &submission.0;
-
-                // create a new handler function that wraps the collected basic handler function
                 let func: HandlerFn =
                     Arc::new(move |input, response| (handler.func)(input, response));
-
-                // return tuple of method, path, and handler function
                 (
                     (
                         "post".to_ascii_uppercase().to_string(),
@@ -42,6 +45,8 @@ fn main() {
             .collect::<Vec<((String, String), HandlerFn)>>(),
     );
 
+
+    println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
         "127.0.0.1:3001",

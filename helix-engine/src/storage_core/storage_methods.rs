@@ -62,3 +62,9 @@ pub trait StorageMethods {
     /// Deletes an edge entry
     fn drop_edge(&self, id: &str)  -> Result<(), GraphError>;
 }
+
+
+pub trait SearchMethods {
+    /// Find shortest path between two nodes
+    fn shortest_path(&self, from_id: &str, to_id: &str) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
+}

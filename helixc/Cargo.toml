@@ -14,6 +14,3 @@ name = "helixc"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "helixc"
-path = "src/main.rs"

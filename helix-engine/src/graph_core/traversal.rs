@@ -59,6 +59,7 @@ impl<'a> SourceTraversalSteps for TraversalBuilder<'a> {
     fn v(&mut self) -> &mut Self {
         match self.storage.get_all_nodes() {
             Ok(nodes) => {
+                println!("NODES: {:?}", nodes);
                 self.current_step = TraversalValue::NodeArray(nodes);
             }
             Err(err) => {
@@ -363,7 +364,7 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
             TraversalValue::NodeArray(nodes) => nodes.len(),
             TraversalValue::EdgeArray(edges) => edges.len(),
             TraversalValue::Empty => 0,
-            _ => panic!("Invalid traversal step for count"),
+            _ => panic!("Invalid traversal step for count {:?}", &self.current_step),
         }));
         self
     }
@@ -377,7 +378,8 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
                 let new_current = edges[start..end].to_vec();
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
-            _ => panic!("Invalid traversal step for range"),
+            TraversalValue::Empty => {}
+            _ => panic!("Invalid traversal step for range {:?}", &self.current_step),
         }
         self
     }
@@ -445,6 +447,8 @@ impl<'a> TraversalMethods for TraversalBuilder<'a> {
     }
 }
 
+
+
 #[cfg(test)]
 mod tests {
     use super::{TraversalBuilder, TraversalMethods, TraversalSteps};
@@ -475,7 +479,7 @@ mod tests {
 
         let mut traversal = TraversalBuilder::new(&storage, TraversalValue::Empty);
         traversal.v();
-
+        println!("NODE ARRAY: {:?}", traversal.current_step);
         // Check that the node array contains all nodes
         match &traversal.current_step {
             TraversalValue::NodeArray(nodes) => {
@@ -491,7 +495,7 @@ mod tests {
                 assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
                 assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
             }
-            _ => panic!("Expected NodeArray value"),
+            _ => panic!("Expected NodeArray value {:?}", &traversal.current_step),
         }
     }
 

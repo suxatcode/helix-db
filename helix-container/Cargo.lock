@@ -434,6 +434,8 @@ dependencies = [
  "libloading",
  "protocol",
  "rand",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

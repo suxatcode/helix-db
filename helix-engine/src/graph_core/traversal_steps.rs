@@ -76,14 +76,17 @@ pub trait TraversalMethods {
     /// ## Example
     /// ```rust
     ///
-    /// use helix_engine::graph_core::traversal::TraversalBuilder;
-    /// use helix_engine::graph_core::traversal_value::TraversalValue;
-    /// use helix_engine::graph_core::graph_core::HelixGraphEngine;
-    /// use helix_engine::storage_core::storage_core::HelixGraphStorage;
-    /// use helix_engine::storage_core::storage_methods::StorageMethods;
-    /// use helix_engine::graph_core::traversal_steps::*;
-    /// use helix_engine::props;
-    /// use protocol::Value;
+    /// use helix_engine::{
+    ///     graph_core::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
+    ///     graph_core::graph_core::HelixGraphEngine, 
+    ///     graph_core::traversal::TraversalBuilder,
+    ///     props,
+    ///     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+    ///     types::GraphError,
+    ///     
+    /// };
+    /// use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
+    /// use std::collections::HashMap;
     /// use tempfile::TempDir;
     ///
     /// let temp_dir = TempDir::new().unwrap();
@@ -100,49 +103,74 @@ pub trait TraversalMethods {
     ///     .create_node("person", props! { "age" => 35 })
     ///     .unwrap();
     ///
-    /// let mut traversal = TraversalBuilder::new(&engine.storage, vec![]);
     ///
-    /// fn age_greater_than(val: &TraversalValue, min_age: i32) -> bool {
-    ///     if let TraversalValue::SingleNode(node) = val {
-    ///         if let Some(Value::Integer(age)) = node.properties.get("age") {
-    ///             return *age > min_age;
+    /// fn age_greater_than(val: &Node, min_age: i32) -> Result<bool, GraphError> {
+    ///     if let Some(value) = val.check_property("age") {
+    ///         match value {
+    ///             Value::Float(age) => Ok(*age > min_age as f64),
+    ///             Value::Integer(age) => Ok(*age > min_age),
+    ///             _ => Err(GraphError::TraversalError("Invalid type".to_string())),
     ///         }
+    ///     } else {
+    ///         Err(GraphError::TraversalError("Invalid node".to_string()))
     ///     }
-    ///     false
     /// }
     ///
-    /// fn has_name(val: &TraversalValue) -> bool {
-    ///     if let TraversalValue::SingleNode(node) = val {
-    ///         return node.properties.contains_key("name");
-    ///     }
-    ///     false
+    /// fn has_name(val: &Node) -> Result<bool, GraphError> {
+    ///     return Ok(val.check_property("name").is_some());
     /// }
     ///
     /// // Example With Closure
-    /// let test_with_closure = traversal.v().filter(|val| {
-    ///     if let TraversalValue::SingleNode(node) = val {
-    ///         if let Some(Value::Integer(age)) = node.properties.get("age") {
-    ///             return *age > 25;
+    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let test_with_closure = traversal.v().filter_nodes(|val| {
+    ///     if let Some(value) = val.check_property("age") {
+    ///         match value {
+    ///             Value::Float(age) => Ok(*age > 25.0),
+    ///             Value::Integer(age) => Ok(*age > 25),
+    ///             _ => Err(GraphError::TraversalError("Invalid type".to_string())),
     ///         }
+    ///     } else {
+    ///         Err(GraphError::TraversalError("No age property".to_string()))
     ///     }
-    ///     false
     /// }).count();
+    /// if let TraversalValue::Count(count) = &test_with_closure.current_step {
+    ///     assert_eq!(count.value(), 2, "Closure");
+    /// } else {
+    ///     panic!("Expected Count value");
+    /// }
     ///    
     /// // Example passing function that takes input
-    /// let test_calling_function_with_inputs = traversal.v().filter(|node| age_greater_than(node, 30)).count();
+    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let test_calling_function_with_inputs = traversal.v().filter_nodes(|node| age_greater_than(node, 30)).count();
+    /// if let TraversalValue::Count(count) = &test_calling_function_with_inputs.current_step {
+    ///     assert_eq!(count.value(), 1, "W input");
+    /// } else {
+    ///     panic!("Expected Count value");
+    /// }
     ///  
     /// // Example passing function that takes NO input
-    /// let test_calling_function_without_inputs = traversal.v().filter(has_name).count();
+    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let test_calling_function_without_inputs = traversal.v().filter_nodes(has_name).count();
+    /// if let TraversalValue::Count(count) = &test_calling_function_without_inputs.current_step {
+    ///     assert_eq!(count.value(), 2, "WO input");
+    /// } else {
+    ///     panic!("Expected Count value");
+    /// }
+    /// 
     ///
     /// // Example of chained traversal
-    /// let test_chained_traversal = traversal
-    ///     .filter(has_name)
-    ///     .filter(|val| age_greater_than(val, 27)).count();
-    ///
-    /// assert_eq!(test_with_closure, 2);
-    /// assert_eq!(test_calling_function_with_inputs, 1);
-    /// assert_eq!(test_calling_function_without_inputs, 2);
-    /// assert_eq!(test_chained_traversal, 1);
+    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let test_chained_traversal = traversal.v()
+    ///     .filter_nodes(has_name)
+    ///     .filter_nodes(|val| age_greater_than(val, 27)).count();
+    /// if let TraversalValue::Count(count) = &test_chained_traversal.current_step {
+    ///     assert_eq!(count.value(), 1, "Chained");
+    /// } else {
+    ///     panic!("Expected Count value");
+    /// }
+    /// 
+    /// 
+    /// 
     /// ```
     fn filter_nodes<F>(&mut self, predicate: F) -> &mut Self
     where

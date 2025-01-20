@@ -8,7 +8,7 @@
 // returns response
 
 use core::fmt;
-use helix_engine::graph_core::graph_core::HelixGraphEngine;
+use helix_engine::{graph_core::graph_core::HelixGraphEngine, types::GraphError};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -22,11 +22,11 @@ pub struct HandlerInput {
 }
 
 // basic type for function pointer
-pub type BasicHandlerFn = fn(&HandlerInput, &mut Response) -> Result<(), RouterError>;
+pub type BasicHandlerFn = fn(&HandlerInput, &mut Response) -> Result<(), GraphError>;
 
 // thread safe type for multi threaded use
 pub type HandlerFn =
-    Arc<dyn Fn(&HandlerInput, &mut Response) -> Result<(), RouterError> + Send + Sync>;
+    Arc<dyn Fn(&HandlerInput, &mut Response) -> Result<(), GraphError> + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub struct HandlerSubmission(pub Handler);
@@ -83,7 +83,7 @@ impl HelixRouter {
         graph_access: Arc<HelixGraphEngine>,
         request: Request,
         response: &mut Response,
-    ) -> Result<(), RouterError> {
+    ) -> Result<(), GraphError> {
         let route_key = (request.method.clone(), request.path.clone());
         let handler = match self.routes.get(&route_key) {
             Some(handle) => handle,
@@ -114,5 +114,11 @@ impl fmt::Display for RouterError {
             RouterError::Io(e) => write!(f, "IO error: {}", e),
             RouterError::New(msg) => write!(f, "Graph error: {}", msg),
         }
+    }
+}
+
+impl From<String> for RouterError {
+    fn from(error: String) -> Self {
+        RouterError::New(error)
     }
 }

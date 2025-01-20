@@ -3,11 +3,12 @@ use rocksdb::{
     BlockBasedOptions, Cache, ColumnFamilyDescriptor, IteratorMode, Options, ReadOptions,
     WriteBatch, WriteBatchWithTransaction, WriteOptions, DB,
 };
-use std::collections::HashMap;
+
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use uuid::Uuid;
 
-use crate::storage_core::storage_methods::StorageMethods;
+use crate::storage_core::storage_methods::{SearchMethods, StorageMethods};
 use crate::types::GraphError;
 use protocol::{Edge, Node, Value};
 use rayon::*;
@@ -30,17 +31,13 @@ pub struct HelixGraphStorage {
     db: DB,
 }
 
-// const path: &str = "./data/graph_data";
-
 impl HelixGraphStorage {
     /// HelixGraphStorage struct constructor
     pub fn new(path: &str) -> Result<HelixGraphStorage, GraphError> {
         let mut opts = Options::default();
         opts.create_if_missing(true);
-        // set cache
         let mut opts = Options::default();
 
-        // Basic options
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
         opts.increase_parallelism(num_cpus::get() as i32);
@@ -198,7 +195,6 @@ impl StorageMethods for HelixGraphStorage {
                 //     Err(e) => Err(GraphError::from(e)),
                 // }
                 let b = deserialize(&data).unwrap();
-                println!("Edge data: {:?}", b);
                 Ok(b)
             }
             Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
@@ -481,15 +477,18 @@ impl StorageMethods for HelixGraphStorage {
             |r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &node_prefix).is_some()),
         ) {
             let (_, value) = result?;
-            match serde_json::from_slice(&value) {
+            if value.is_empty() {
+                continue;
+            }
+            match serde_json::from_slice::<Node>(&value) {
                 Ok(node) => {
-                    println!("NODE: {:?}", node);
-                    nodes.push(node)
+                    nodes.push(node);
                 }
-                Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e))),
+                Err(e) => {
+                    return Err(GraphError::from(format!("Deserialization error: {:?}", e)));
+                }
             }
         }
-
         Ok(nodes)
     }
 
@@ -650,6 +649,7 @@ impl StorageMethods for HelixGraphStorage {
             .db
             .cf_handle(CF_EDGES)
             .ok_or(GraphError::from("Column Family not found"))?;
+
         let mut batch = WriteBatch::default();
 
         // new edge
@@ -753,7 +753,6 @@ impl StorageMethods for HelixGraphStorage {
                 .ok_or(GraphError::EdgeNotFound)?;
 
             let edge = serde_json::from_slice::<Edge>(&edge_data).unwrap();
-            println!("Edge: {:?}", edge);
 
             batch.delete_cf(&cf_edges, Self::out_edge_key(&edge.from_node, &edge_id));
             batch.delete_cf(&cf_edges, Self::in_edge_key(&edge.to_node, &edge_id));
@@ -789,6 +788,90 @@ impl StorageMethods for HelixGraphStorage {
             Ok(_) => Ok(()),
             Err(err) => Err(GraphError::from(err)),
         }
+    }
+}
+
+impl SearchMethods for HelixGraphStorage {
+    fn shortest_path(
+        &self,
+        from_id: &str,
+        to_id: &str,
+    ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+        let cf_edges = self
+            .db
+            .cf_handle(CF_EDGES)
+            .ok_or(GraphError::from("Column Family not found"))?;
+
+        let mut queue = VecDeque::new();
+        let mut visited = HashSet::with_capacity(48);
+        let mut parent: HashMap<String, (String, String)> = HashMap::with_capacity(8);
+
+        queue.push_back(from_id.to_string());
+        visited.insert(from_id.to_string());
+
+        let reconstruct_path = |parent: &HashMap<String, (String, String)>,
+                                start_id: &str,
+                                end_id: &str|
+         -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+            let mut nodes = Vec::with_capacity(parent.len());
+            let mut edges = Vec::with_capacity(parent.len() - 1);
+            let mut current = end_id.to_string();
+
+            while current != start_id {
+                nodes.push(self.get_node(&current)?);
+                let c = &parent[&current];
+                edges.push(self.get_edge(&c.1)?);
+                current = c.0.clone();
+            }
+            nodes.push(self.get_node(start_id)?);
+
+            Ok((nodes, edges))
+        };
+
+        while let Some(current_id) = queue.pop_front() {
+            let mut read_opts = ReadOptions::default();
+            read_opts.set_verify_checksums(false);
+            read_opts.set_readahead_size(2 * 1024 * 1024);
+            read_opts.set_prefix_same_as_start(true);
+            read_opts.set_async_io(true);
+            read_opts.set_tailing(true);
+            read_opts.fill_cache(false);
+
+            let out_prefix = Self::out_edge_key(&current_id, "");
+            let iter = self.db.iterator_cf_opt(
+                &cf_edges,
+                read_opts,
+                IteratorMode::From(&out_prefix, rocksdb::Direction::Forward),
+            );
+            for result in iter.take_while(
+                |r| matches!(r, Ok((k, _)) if memchr::memmem::find(k, &out_prefix).is_some()),
+            ) {
+                let (key, _) = result?;
+                if !key.starts_with(&out_prefix) {
+                    break;
+                }
+                let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
+                let edge = self.get_edge(&edge_id)?;
+                let in_v_id = edge.to_node.clone();
+                let out_v_id = edge.from_node.clone();
+                if !visited.insert(in_v_id.clone()) {
+                    continue;
+                }
+
+                parent.insert(in_v_id.clone(), (out_v_id.clone(), edge_id.clone()));
+
+                if in_v_id == to_id {
+                    return reconstruct_path(&parent, from_id, to_id);
+                }
+
+                queue.push_back(in_v_id);
+            }
+        }
+
+        Err(GraphError::from(format!(
+            "No path found between {} and {}",
+            from_id, to_id
+        )))
     }
 }
 
@@ -853,8 +936,6 @@ mod tests {
         let (storage, _temp_dir) = setup_temp_db();
 
         let result = storage.create_edge("knows", "nonexistent1", "nonexistent2", props!());
-
-        println!("{:?}", result);
 
         assert!(result.is_err());
     }
@@ -1044,5 +1125,33 @@ mod tests {
         assert!(connections.contains(&(node1.id.clone(), node2.id.clone())));
         assert!(connections.contains(&(node2.id.clone(), node3.id.clone())));
         assert!(connections.contains(&(node1.id.clone(), node3.id.clone())));
+    }
+
+    #[test]
+    fn test_shortest_path() {
+        let (storage, _temp_dir) = setup_temp_db();
+        let mut nodes = Vec::new();
+        for _ in 0..6 {
+            let node = storage.create_node("person", props!()).unwrap();
+            nodes.push(node);
+        }
+
+        storage.create_edge("knows", &nodes[0].id, &nodes[1].id, props!()).unwrap();
+        storage.create_edge("knows", &nodes[0].id, &nodes[2].id, props!()).unwrap();
+
+        storage.create_edge("knows", &nodes[1].id, &nodes[3].id, props!()).unwrap();
+        storage.create_edge("knows", &nodes[1].id, &nodes[2].id, props!()).unwrap();
+
+        storage.create_edge("knows", &nodes[2].id, &nodes[1].id, props!()).unwrap();
+        storage.create_edge("knows", &nodes[2].id, &nodes[3].id, props!()).unwrap();
+        storage.create_edge("knows", &nodes[2].id, &nodes[4].id, props!()).unwrap();
+
+        storage.create_edge("knows", &nodes[4].id, &nodes[3].id, props!()).unwrap();
+        storage.create_edge("knows", &nodes[4].id, &nodes[5].id, props!()).unwrap();
+
+        let shortest_path1 = storage.shortest_path(&nodes[0].id, &nodes[5].id).unwrap().1.len();
+        let shortest_path2 = storage.shortest_path(&nodes[1].id, &nodes[5].id).unwrap().1.len();
+        assert_eq!(shortest_path1, 3);
+        assert_eq!(shortest_path2, 3);
     }
 }

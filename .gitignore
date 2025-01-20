@@ -9,3 +9,4 @@ count.sh
 **/node_modules/
 /hql/
 **/*.txt
+**/trump-map/

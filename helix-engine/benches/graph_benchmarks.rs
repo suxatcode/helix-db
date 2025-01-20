@@ -10,6 +10,7 @@ use helix_engine::{
 use rand::Rng;
 use std::time::Duration;
 use tempfile::TempDir;
+use protocol::traversal_value::TraversalValue;
 
 fn create_test_graph(
     size: usize,
@@ -72,7 +73,7 @@ fn bench_graph_operations(c: &mut Criterion) {
         // Benchmark simple traversals
         group.bench_function(format!("out_traversal_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(&storage, vec![start_node.clone()]);
+                let mut traversal = TraversalBuilder::new(&storage, TraversalValue::NodeArray(vec![start_node.clone()]));
                 traversal.out("knows");
                 black_box(traversal)
             });
@@ -81,7 +82,7 @@ fn bench_graph_operations(c: &mut Criterion) {
         // Benchmark chained traversals
         group.bench_function(format!("chained_traversal_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(&storage, vec![start_node.clone()]);
+                let mut traversal = TraversalBuilder::new(&storage, TraversalValue::NodeArray(vec![start_node.clone()]));
                 traversal.out("knows").out("knows").out("knows");
                 black_box(traversal)
             });
@@ -90,7 +91,7 @@ fn bench_graph_operations(c: &mut Criterion) {
         // Benchmark full graph scan
         group.bench_function(format!("full_graph_scan_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(&storage, vec![]);
+                let mut traversal = TraversalBuilder::new(&storage, TraversalValue::Empty);
                 traversal.v();
                 black_box(traversal)
             });
@@ -114,7 +115,7 @@ fn bench_complex_queries(c: &mut Criterion) {
     // Benchmark two hop query
     group.bench_function("two_hops_100000", |b| {
         b.iter(|| {
-            let mut traversal = TraversalBuilder::new(&storage, vec![start_node.clone()]);
+            let mut traversal = TraversalBuilder::new(&storage, TraversalValue::NodeArray(vec![start_node.clone()]));
             traversal.out("knows").out("knows");
             black_box(traversal)
         });
@@ -123,7 +124,7 @@ fn bench_complex_queries(c: &mut Criterion) {
     // Benchmark circular traversal
     group.bench_function("circular_traversal_100000", |b| {
         b.iter(|| {
-            let mut traversal = TraversalBuilder::new(&storage, vec![start_node.clone()]);
+            let mut traversal = TraversalBuilder::new(&storage, TraversalValue::NodeArray(vec![start_node.clone()]));
             traversal
                 .out("knows")
                 .out("knows")
