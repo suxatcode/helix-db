@@ -1,8 +1,9 @@
 use count::Count;
 use serde::{
-    ser::{SerializeMap, SerializeSeq}, Deserialize, Deserializer, Serialize
+    de::{value::Error, DeserializeOwned}, ser::{SerializeMap, SerializeSeq}, Serializer
 };
-use std::collections::HashMap;
+use sonic_rs::{Deserialize, Serialize};
+use std::{borrow::Cow, collections::HashMap};
 
 pub mod count;
 pub mod request;
@@ -17,7 +18,7 @@ pub enum ReturnValue {
     Empty,
 }
 
-impl Serialize for ReturnValue {
+impl  Serialize for ReturnValue  {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::ser::Serializer,
@@ -58,7 +59,7 @@ impl std::fmt::Debug for Node {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Edge {
     pub id: String,
     pub label: String,
@@ -88,15 +89,14 @@ impl std::fmt::Debug for Edge {
 }
 
 // TODO: implement into for Uint handling
-#[derive(Serialize, PartialEq, Clone, Debug)]
-#[serde(untagged)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum Value {
     String(String),
     Float(f64),
     Integer(i32),
     Boolean(bool),
     Array(Vec<Value>),
-    Empty,
+    Empty
 }
 
 impl From<&str> for Value {
@@ -140,79 +140,6 @@ impl From<Value> for String {
         match v {
             Value::String(s) => s,
             _ => panic!("Value is not a string"),
-        }
-    }
-}
-
-// impl std::fmt::Display for Value {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//             Value::String(s) => write!(f, "{}", s),
-//             Value::Float(fl) => write!(f, "{}", fl),
-//             Value::Integer(i) => write!(f, "{}", i),
-//             Value::Boolean(b) => write!(f, "{}", b),
-//             Value::Array(arr) => {
-//                 write!(f, "[")?;
-//                 for (i, v) in arr.iter().enumerate() {
-//                     write!(f, "{}", v)?;
-//                     if i < arr.len() - 1 {
-//                         write!(f, ", ")?;
-//                     }
-//                 }
-//                 write!(f, "]")
-//             }
-//             Value::Empty => write!(f, "Empty"),
-//         }
-//     }
-// }
-
-// impl std::fmt::Debug for Value {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//             Value::String(s) => write!(f, "{}", s),
-//             Value::Float(fl) => write!(f, "{}", fl),
-//             Value::Integer(i) => write!(f, "{}", i),
-//             Value::Boolean(b) => write!(f, "{}", b),
-//             Value::Array(arr) => {
-//                 write!(f, "[")?;
-//                 for (i, v) in arr.iter().enumerate() {
-//                     write!(f, "{:?}", v)?;
-//                     if i < arr.len() - 1 {
-//                         write!(f, ", ")?;
-//                     }
-//                 }
-//                 write!(f, "]")
-//             }
-//             Value::Empty => write!(f, "Empty"),
-//         }
-//     }
-// }
-
-impl<'de> Deserialize<'de> for Value {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        match value {
-            serde_json::Value::Number(n) => {
-                if n.is_i64() {
-                    Ok(Value::Integer(n.as_i64().unwrap() as i32))
-                } else {
-                    Ok(Value::Float(n.as_f64().unwrap()))
-                }
-            },
-            serde_json::Value::String(s) => Ok(Value::String(s)),
-            serde_json::Value::Bool(b) => Ok(Value::Boolean(b)),
-            serde_json::Value::Array(arr) => {
-                let mut values = Vec::new();
-                for v in arr {
-                    values.push(Value::deserialize(v).unwrap());
-                }
-                Ok(Value::Array(values))
-            }
-            _ => Ok(Value::Empty),
-
         }
     }
 }

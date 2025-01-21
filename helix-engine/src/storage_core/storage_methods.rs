@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::types::GraphError;
 use protocol::{Node, Edge, Value};
 
@@ -66,5 +68,5 @@ pub trait StorageMethods {
 
 pub trait SearchMethods {
     /// Find shortest path between two nodes
-    fn shortest_path(&self, from_id: &str, to_id: &str) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
+    fn shortest_path(& self, from_id: &str, to_id: &str) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
 }

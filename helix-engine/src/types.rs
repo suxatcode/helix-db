@@ -75,11 +75,11 @@ impl From<String> for GraphError {
 }
 
 
-impl From<Box<bincode::ErrorKind>> for GraphError {
-    fn from(error: Box<bincode::ErrorKind>) -> Self {
-        GraphError::ConversionError(error.to_string())
-    }
-}
+// impl From<Box<bincode::ErrorKind>> for GraphError {
+//     fn from(error: Box<bincode::ErrorKind>) -> Self {
+//         GraphError::ConversionError(error.to_string())
+//     }
+// }
 
 impl From<libloading::Error> for GraphError {
     fn from(error: libloading::Error) -> Self {

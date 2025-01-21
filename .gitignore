@@ -10,3 +10,5 @@ count.sh
 /hql/
 **/*.txt
 **/trump-map/
+**/call.sh
+**/*.json

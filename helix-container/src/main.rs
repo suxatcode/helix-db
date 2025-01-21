@@ -17,9 +17,11 @@ mod traversals;
 use traversals::*;  
 
 fn main() {
-    let path = "~/.helix/user";
-    let graph = Arc::new(HelixGraphEngine::new(path).unwrap());
-    create_test_graph(Arc::clone(&graph), 100, 10);
+    let home_dir = dirs::home_dir().expect("Could not retrieve home directory");
+    let path = home_dir.join(".helix/user234");
+    let path_str = path.to_str().expect("Could not convert path to string");
+    let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
+    // create_test_graph(Arc::clone(&graph), 5000, 500);
 
     // generates routes from handler proc macro
     println!("Starting route collection...");
@@ -62,9 +64,10 @@ fn main() {
 fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: usize) {
     let storage = &graph.storage; //.lock().unwrap();
     let mut node_ids = Vec::with_capacity(size);
-
+    let node = storage.create_node("user", props!{ "screen_name" => "Xav".to_string()}).unwrap();
+    node_ids.push(node.id);
     for _ in 0..size {
-        let node = storage.create_node("person", props!()).unwrap();
+        let node = storage.create_node("user", props!{ "screen_name" => generate_random_name()}).unwrap();
         node_ids.push(node.id);
     }
 
@@ -76,9 +79,30 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
 
             if from_id != to_id {
                 storage
-                    .create_edge("knows", from_id, to_id, props!())
+                    .create_edge("follows", from_id, to_id, props!())
                     .unwrap();
             }
         }
     }
 }
+
+
+use rand::seq::SliceRandom;
+
+pub fn generate_random_name() -> String {
+    let prefixes = ["Ze", "Xa", "Ky", "Ja", "Lu", "Ri", "So", "Ma", "De", "Vi"];
+    let middles = ["ra", "li", "na", "ta", "ri", "ko", "mi", "sa", "do", ""];
+    let suffixes = ["x", "n", "th", "ra", "na", "ka", "ta", "ix", "sa", ""];
+    
+    let mut rng = rand::thread_rng();
+    
+    // Randomly decide if we want to use a middle part
+    let use_middle = rng.gen_bool(0.7); // 70% chance to use middle
+    
+    let prefix = prefixes.choose(&mut rng).unwrap();
+    let middle = if use_middle { middles.choose(&mut rng).unwrap() } else { "" };
+    let suffix = suffixes.choose(&mut rng).unwrap();
+    
+    format!("{}{}{}", prefix, middle, suffix)
+}
+

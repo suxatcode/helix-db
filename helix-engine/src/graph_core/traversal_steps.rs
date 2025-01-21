@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
 
 use crate::types::GraphError;
@@ -78,7 +80,7 @@ pub trait TraversalMethods {
     ///
     /// use helix_engine::{
     ///     graph_core::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
-    ///     graph_core::graph_core::HelixGraphEngine, 
+    ///     graph_core::graph_core::HelixGraphEngine,
     ///     graph_core::traversal::TraversalBuilder,
     ///     props,
     ///     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -156,7 +158,7 @@ pub trait TraversalMethods {
     /// } else {
     ///     panic!("Expected Count value");
     /// }
-    /// 
+    ///
     ///
     /// // Example of chained traversal
     /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
@@ -168,9 +170,9 @@ pub trait TraversalMethods {
     /// } else {
     ///     panic!("Expected Count value");
     /// }
-    /// 
-    /// 
-    /// 
+    ///
+    ///
+    ///
     /// ```
     fn filter_nodes<F>(&mut self, predicate: F) -> &mut Self
     where
@@ -182,4 +184,20 @@ pub trait TraversalMethods {
 
     /// Maps the current traversal step to a new traversal step
     fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;
+}
+
+pub trait TraversalBuilderMethods {
+    /// Finishes the result and returns the final current traversal step
+    fn result(&self) -> &TraversalValue;
+}
+
+pub trait TraversalSearchMethods {
+    /// Finds the shortest path from a given node to the currnet node using BFS
+    fn shortest_path_from(& mut self, from_id: &str) -> &mut Self;
+
+    /// Finds the shortes path from the current node to a given node using BFS
+    fn shortest_path_to(& mut self, to_id: &str) -> &mut Self;
+
+    /// Finds the shortes path between two given nodes using BFS
+    fn shortest_path_between(& mut self, from_id: &str, to_id: &str) -> &mut Self;
 }
