@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::types::GraphError;
-use protocol::{Node, Edge, Value};
+use protocol::{Node, Edge, value::Value};
 
 pub trait StorageMethods {
     /// Checks whether an entry with a given id exists.

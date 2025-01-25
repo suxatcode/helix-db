@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::parser_methods::ParserError;
 use pest::{iterators::Pair, Parser as PestParser};
 use pest_derive::Parser;
-use protocol::Value;
+use protocol::value::Value;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]

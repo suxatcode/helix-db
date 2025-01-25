@@ -8,18 +8,19 @@ use helix_engine::graph_core::traversal::TraversalBuilder;
 use helix_engine::graph_core::traversal_steps::{
     SourceTraversalSteps, TraversalMethods, TraversalSearchMethods, TraversalSteps,
 };
+use helix_engine::props;
 use helix_engine::types::GraphError;
 use helix_gateway::router::router::HandlerInput;
 use protocol::count::Count;
 use protocol::response::Response;
 use protocol::traversal_value::TraversalValue;
-use protocol::{Filterable, ReturnValue, Value};
+use protocol::{filterable::Filterable, value::Value, ReturnValue};
 use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 struct Data {
     user_id: String,
-    screen_name: String,
+    username: String,
     to_id: String,
 }
 
@@ -36,7 +37,7 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         .filter_nodes(|node| {
             if let Some(val) = node.check_property("screen_name") {
                 match val {
-                    Value::String(s) => Ok(*s == data.screen_name),
+                    Value::String(s) => Ok(*s == data.username),
                     _ => unreachable!(),
                 }
             } else {
@@ -66,7 +67,12 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         "time".to_string(),
         ReturnValue::Count(Count::new(end.as_millis() as usize)),
     );
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    response.body = match sonic_rs::to_vec(&return_vals) {
+        Ok(body) => body,
+        Err(e) => {
+            return Err(GraphError::ConversionError(e.to_string()));
+        }
+    };
     Ok(())
 }
 
@@ -82,7 +88,6 @@ pub fn get_all_users(input: &HandlerInput, response: &mut Response) -> Result<()
     let now = Instant::now();
     let db = input.graph.storage.clone();
 
-    // Same thread::scope logic as before for edges_result...
     let edges_result: Result<(TraversalValue, TraversalValue), GraphError> = thread::scope(|s| {
         let edges_handle = s.spawn(|| {
             let now = Instant::now();
@@ -108,25 +113,25 @@ pub fn get_all_users(input: &HandlerInput, response: &mut Response) -> Result<()
     let edges_result = edges_result?;
     let total_time = now.elapsed();
 
-    // 2. Prepare response buffer with estimated capacity
     let estimated_size = estimate_response_size(&edges_result.0, &edges_result.1);
     response.body = Vec::with_capacity(estimated_size);
 
-    // 3. Direct serialization to response buffer
     let now = Instant::now();
-    {
-        let writer = std::io::BufWriter::new(&mut response.body);
-        let mut serializer = sonic_rs::Serializer::new(writer);
+    // {
+    //     let writer = std::io::BufWriter::new(&mut response.body);
+    //     let mut serializer = sonic_rs::Serializer::new(writer);
 
-        // 4. Serialize directly without intermediate HashMap
-        StreamingReturnValues {
-            users: &edges_result.0,
-            edges: &edges_result.1,
-            time: Count::new(total_time.as_millis() as usize),
-        }
-        .serialize(&mut serializer)
-        .unwrap();
-    }
+    //     .serialize(&mut serializer)
+    //     .unwrap();
+
+    // }
+
+    let p = StreamingReturnValues {
+        users: &edges_result.0,
+        edges: &edges_result.1,
+        time: Count::new(total_time.as_millis() as usize),
+    };
+    response.body = sonic_rs::to_vec(&p).unwrap();
 
     let end = now.elapsed();
     println!("TIME SERDE: {:?}", end);
@@ -175,3 +180,149 @@ pub fn get_shortest_path_to_user(
     Ok(())
 }
 
+#[derive(Deserialize)]
+struct AddUser {
+    x_id: String,
+    username: String,
+    url: String,
+    graph_image_url: String,
+    created_at: String,
+    updated_at: String,
+    following_ids: Vec<String>,
+}
+
+#[handler]
+pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(2);
+    let data: AddUser = sonic_rs::from_slice(&input.request.body).unwrap();
+    let now = Instant::now();
+    let mut tr: TraversalBuilder =
+        TraversalBuilder::new(Arc::clone(&input.graph.storage), TraversalValue::Empty);
+    tr.add_v(
+        "user",
+        props! {
+            "x_id" => data.x_id,
+            "username" => data.username,
+            "url" => data.url,
+            "graph_image_url" => data.graph_image_url,
+            "created_at" => data.created_at,
+            "updated_at" => data.updated_at,
+        },
+    );
+    if let TraversalValue::NodeArray(new_user) = tr.current_step.clone() {
+        let user = new_user.first().unwrap();
+        let mut following =
+            TraversalBuilder::new(Arc::clone(&input.graph.storage), TraversalValue::Empty);
+        following.v().for_each_node(|nodes| {
+            if let Some(val) = nodes.check_property("username") {
+                if let Value::String(val) = val {
+                    match data.following_ids.iter().any(|x| x == val) {
+                        true => {
+                            let mut edge = TraversalBuilder::new(
+                                Arc::clone(&input.graph.storage),
+                                TraversalValue::Empty,
+                            );
+                            edge.add_e("follows", &user.id, &nodes.id, props! {});
+                            match edge.current_step {
+                                TraversalValue::EdgeArray(_) => Ok(()),
+                                _ => Err(GraphError::from("Invalid edge".to_string())),
+                            }
+                        }
+                        false => {
+                            // create new node and edge
+                            let mut new_node = TraversalBuilder::new(
+                                Arc::clone(&input.graph.storage),
+                                TraversalValue::Empty,
+                            );
+                            let username = val.clone();
+                            new_node.add_v(
+                                "user",
+                                props! {
+                                    "username" => username,
+                                    "url" => format!("https://twitter.com/{}", val), // TODO: fix this
+                                    "graph_image_url" => "https://twitter.com/".to_string() + val + "/profile_image?size=original", // TODO: fix this
+                                    "created_at" => "2021-01-01".to_string(),
+                                    "updated_at" => "2021-01-01".to_string(),
+                                },
+                            );
+                            if let TraversalValue::NodeArray(new_node) = new_node.current_step {
+                                let new_node = new_node.first().unwrap();
+                                let mut edge = TraversalBuilder::new(
+                                    Arc::clone(&input.graph.storage),
+                                    TraversalValue::Empty,
+                                );
+                                edge.add_e("follows", &user.id, &new_node.id, props! {});
+                                match edge.current_step {
+                                    TraversalValue::EdgeArray(_) => Ok(()),
+                                    _ => Err(GraphError::from("Invalid edge".to_string())),
+                                }
+                            } else {
+                                Err(GraphError::from("Invalid node".to_string()))
+                            }
+                        }
+                    }
+                } else {
+                    Err(GraphError::from("Invalid node".to_string()))
+                }
+            } else {
+                Err(GraphError::from("Invalid node".to_string()))
+            }
+        })
+    } else {
+        return Err(GraphError::from("Invalid node".to_string()));
+    };
+    let end = now.elapsed();
+    return_vals.insert(
+        "new_user".to_string(),
+        ReturnValue::TraversalValues(tr.current_step),
+    );
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[handler]
+pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: Data = sonic_rs::from_slice(&input.request.body).unwrap();
+    let mut return_vals = HashMap::with_capacity(4);
+    let db = input.graph.storage.clone();
+    let mut user = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+
+    let now = Instant::now();
+    user.v_from_id(data.user_id.as_str());
+    // println!("USER: {:?}", user.current_step);
+    const threshold: usize = 500;
+
+    // get 350 out nodes that are mutuals
+    let mut mutuals = TraversalBuilder::new(Arc::clone(&db), user.current_step.clone());
+    mutuals
+        .mutual("follows")
+        .range(0, 300);
+    // println!("MUTUALS: {:?}", mutuals.current_step);
+    // get 200 random nodes
+    let mut random = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    random
+        .v()
+        .range(0, 200);
+
+    let end = now.elapsed();
+
+    return_vals.insert(
+        "user".to_string(),
+        ReturnValue::TraversalValues(user.current_step),
+    );
+    return_vals.insert(
+        "mutuals".to_string(),
+        ReturnValue::TraversalValues(mutuals.current_step),
+    );
+    return_vals.insert(
+        "random".to_string(),
+        ReturnValue::TraversalValues(random.current_step),
+    );
+    response.body = match sonic_rs::to_vec(&return_vals) {
+        Ok(body) => body,
+        Err(e) => {
+            return Err(GraphError::ConversionError(e.to_string()));
+        }
+    };
+    Ok(())
+}

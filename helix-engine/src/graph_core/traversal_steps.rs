@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
+use protocol::{traversal_value::TraversalValue, value::Value, Edge, Node};
 
 use crate::types::GraphError;
 
@@ -59,8 +57,24 @@ pub trait TraversalSteps {
     /// that match a given edge label if given one
     fn both_e(&mut self, edge_label: &str) -> &mut Self;
 
+    fn mutual(&mut self, edge_label: &str) -> &mut Self;
+
+    // fn mutual_e(&mut self, edge_label: &str) -> &mut Self;
+
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
     fn both_v(&mut self) -> &mut Self;
+
+    /// Creates a new edge in the graph between two nodes and adds it to current traversal step
+    fn add_e_to(&mut self, edge_label: &str, to_id: &str, props: Vec<(String, Value)>)
+        -> &mut Self;
+
+    /// Creates a new edge in the graph between two nodes and adds it to current traversal step
+    fn add_e_from(
+        &mut self,
+        edge_label: &str,
+        from_id: &str,
+        props: Vec<(String, Value)>,
+    ) -> &mut Self;
 }
 
 pub trait TraversalMethods {
@@ -87,9 +101,10 @@ pub trait TraversalMethods {
     ///     types::GraphError,
     ///     
     /// };
-    /// use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
+    /// use protocol::{count::Count, traversal_value::TraversalValue, Edge, filterable::Filterable, Node, value::Value};
     /// use std::collections::HashMap;
     /// use tempfile::TempDir;
+    /// use std::sync::Arc;
     ///
     /// let temp_dir = TempDir::new().unwrap();
     /// let db_path = temp_dir.path().to_str().unwrap();
@@ -123,7 +138,7 @@ pub trait TraversalMethods {
     /// }
     ///
     /// // Example With Closure
-    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
     /// let test_with_closure = traversal.v().filter_nodes(|val| {
     ///     if let Some(value) = val.check_property("age") {
     ///         match value {
@@ -142,7 +157,7 @@ pub trait TraversalMethods {
     /// }
     ///    
     /// // Example passing function that takes input
-    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
     /// let test_calling_function_with_inputs = traversal.v().filter_nodes(|node| age_greater_than(node, 30)).count();
     /// if let TraversalValue::Count(count) = &test_calling_function_with_inputs.current_step {
     ///     assert_eq!(count.value(), 1, "W input");
@@ -151,7 +166,7 @@ pub trait TraversalMethods {
     /// }
     ///  
     /// // Example passing function that takes NO input
-    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
     /// let test_calling_function_without_inputs = traversal.v().filter_nodes(has_name).count();
     /// if let TraversalValue::Count(count) = &test_calling_function_without_inputs.current_step {
     ///     assert_eq!(count.value(), 2, "WO input");
@@ -161,7 +176,7 @@ pub trait TraversalMethods {
     ///
     ///
     /// // Example of chained traversal
-    /// let mut traversal = TraversalBuilder::new(&engine.storage, TraversalValue::Empty);
+    /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
     /// let test_chained_traversal = traversal.v()
     ///     .filter_nodes(has_name)
     ///     .filter_nodes(|val| age_greater_than(val, 27)).count();
@@ -184,20 +199,40 @@ pub trait TraversalMethods {
 
     /// Maps the current traversal step to a new traversal step
     fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;
+
+    /// Maps the current traversal step to a new traversal step
+    fn map_nodes<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Node) -> Result<Node, GraphError>;
+
+    /// Maps the current traversal step to a new traversal step
+    fn map_edges<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Edge) -> Result<Edge, GraphError>;
+
+
+    fn for_each_node<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Node) -> Result<(), GraphError>;
+
+    fn for_each_edge<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Edge) -> Result<(), GraphError>;
 }
 
 pub trait TraversalBuilderMethods {
     /// Finishes the result and returns the final current traversal step
+    #[inline]
     fn result(&self) -> &TraversalValue;
 }
 
 pub trait TraversalSearchMethods {
     /// Finds the shortest path from a given node to the currnet node using BFS
-    fn shortest_path_from(& mut self, from_id: &str) -> &mut Self;
+    fn shortest_path_from(&mut self, from_id: &str) -> &mut Self;
 
     /// Finds the shortes path from the current node to a given node using BFS
-    fn shortest_path_to(& mut self, to_id: &str) -> &mut Self;
+    fn shortest_path_to(&mut self, to_id: &str) -> &mut Self;
 
     /// Finds the shortes path between two given nodes using BFS
-    fn shortest_path_between(& mut self, from_id: &str, to_id: &str) -> &mut Self;
+    fn shortest_path_between(&mut self, from_id: &str, to_id: &str) -> &mut Self;
 }

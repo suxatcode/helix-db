@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::storage_core::storage_methods::{SearchMethods, StorageMethods};
 use crate::types::GraphError;
-use protocol::{Edge, Node, Value};
+use protocol::{value::Value, Edge, Node};
 use rayon::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
@@ -37,8 +37,6 @@ const RAH_SMALL: usize = 2 * 1024 * 1024;
 const RAH_MEDIUM: usize = 4 * 1024 * 1024;
 const RAH_LARGE: usize = 8 * 1024 * 1024;
 const RAH_XLARGE: usize = 24 * 1024 * 1024;
-
-
 
 pub struct HelixGraphStorage {
     db: DB,
@@ -136,7 +134,6 @@ impl HelixGraphStorage {
                 ("target_file_size_base", "67108864"), // 64MB
                 ("max_bytes_for_level_base", "536870912"), // 512MB
                 ("write_buffer_size", "67108864"),     // 64MB
-
                 ("max_write_buffer_number", "2"),
             ],
         )?;
@@ -144,7 +141,7 @@ impl HelixGraphStorage {
         drop(cf_edges);
         Ok(Self { db })
     }
-
+    #[inline]
     fn get_optimized_read_options(rah_size: usize) -> ReadOptions {
         let mut opts = ReadOptions::default();
         opts.set_verify_checksums(false);
@@ -158,42 +155,33 @@ impl HelixGraphStorage {
         opts
     }
 
-    fn process_edge_batch(
-        &self,
-        edges: &mut Vec<Edge>,
-        batch: Vec<Vec<u8>>,
-    ) -> Result<(), GraphError> {
-        for value in batch {
-            match deserialize::<Edge>(&value) {
-                Ok(edge) => edges.push(edge),
-                Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e))),
-            }
-        }
-        Ok(())
-    }
-
     /// Creates node key using the prefix and given id
+    #[inline(always)]
     pub fn node_key(id: &str) -> Vec<u8> {
         [NODE_PREFIX, id.as_bytes()].concat()
     }
 
     /// Creates edge key using the prefix and given id
+    #[inline(always)]
     pub fn edge_key(id: &str) -> Vec<u8> {
         [EDGE_PREFIX, id.as_bytes()].concat()
     }
 
     /// Creates node label key using the prefix, the given label, and id
+    #[inline(always)]
     pub fn node_label_key(label: &str, id: &str) -> Vec<u8> {
         [NODE_LABEL_PREFIX, label.as_bytes(), b":", id.as_bytes()].concat()
     }
 
     /// Creates edge label key using the prefix, the given label, and  id
+    #[inline(always)]
     pub fn edge_label_key(label: &str, id: &str) -> Vec<u8> {
         [EDGE_LABEL_PREFIX, label.as_bytes(), b":", id.as_bytes()].concat()
     }
 
     /// Creates key for an outgoing edge using the prefix, source node id, and edge id
-    /// 35 Bytes
+    /// 75 Bytes with edge id, 39 bytes without edge id
+    #[inline(always)]
     pub fn out_edge_key(source_node_id: &str, edge_id: &str) -> Vec<u8> {
         [
             OUT_EDGES_PREFIX,
@@ -203,9 +191,10 @@ impl HelixGraphStorage {
         ]
         .concat()
     }
-
+    
     /// Creates key for an incoming edge using the prefix, sink node id, and edge id
-    /// 35 Bytes
+    /// 75 Bytes with edge id, 39 bytes without edge id
+    #[inline(always)]
     pub fn in_edge_key(sink_node_id: &str, edge_id: &str) -> Vec<u8> {
         [
             IN_EDGES_PREFIX,
@@ -218,6 +207,7 @@ impl HelixGraphStorage {
 }
 
 impl StorageMethods for HelixGraphStorage {
+    #[inline]
     fn check_exists(&self, id: &str) -> Result<bool, GraphError> {
         let cf_nodes = self
             .db
@@ -232,7 +222,7 @@ impl StorageMethods for HelixGraphStorage {
             Err(err) => Err(GraphError::from(err)),
         }
     }
-
+    #[inline]
     fn get_temp_node(&self, id: &str) -> Result<Node, GraphError> {
         let cf_nodes = self
             .db
@@ -243,11 +233,11 @@ impl StorageMethods for HelixGraphStorage {
             .get_pinned_cf(&cf_nodes, [NODE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
+            Ok(None) => Err(GraphError::New(format!("Node not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
-
+    #[inline]
     fn get_temp_edge(&self, id: &str) -> Result<Edge, GraphError> {
         let cf_edges = self
             .db
@@ -258,11 +248,12 @@ impl StorageMethods for HelixGraphStorage {
             .get_pinned_cf(&cf_edges, [EDGE_PREFIX, id.as_bytes()].concat())
         {
             Ok(Some(data)) => Ok(deserialize(&data).unwrap()),
-            Ok(None) => Err(GraphError::New(format!("Item not found: {}", id))),
+            Ok(None) => Err(GraphError::New(format!("Edge not found: {}", id))),
             Err(err) => Err(GraphError::from(err)),
         }
     }
 
+    #[inline]
     fn get_node(&self, id: &str) -> Result<Node, GraphError> {
         let cf_nodes = self
             .db
@@ -277,6 +268,7 @@ impl StorageMethods for HelixGraphStorage {
             Err(err) => Err(GraphError::from(err)),
         }
     }
+    #[inline]
     fn get_edge(&self, id: &str) -> Result<Edge, GraphError> {
         let cf_edges = self
             .db
@@ -300,7 +292,7 @@ impl StorageMethods for HelixGraphStorage {
 
         let mut edges = Vec::new();
 
-        let read_opts = Self::get_optimized_read_options(RAH_SMALL);
+        let read_opts = Self::get_optimized_read_options(RAH_MEDIUM);
 
         let out_prefix = Self::out_edge_key(node_id, "");
         let iter = self.db.iterator_cf_opt(
@@ -319,7 +311,7 @@ impl StorageMethods for HelixGraphStorage {
                     }
 
                     let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
-                    let edge = self.get_edge(&edge_id)?;
+                    let edge = self.get_temp_edge(&edge_id)?;
 
                     edges.push(edge);
                 }
@@ -332,7 +324,7 @@ impl StorageMethods for HelixGraphStorage {
                     }
 
                     let edge_id = String::from_utf8(key[out_prefix.len()..].to_vec())?;
-                    let edge = self.get_edge(&edge_id)?;
+                    let edge = self.get_temp_edge(&edge_id)?;
 
                     if edge.label.deref() == edge_label {
                         edges.push(edge);
@@ -351,7 +343,7 @@ impl StorageMethods for HelixGraphStorage {
         let mut edges = Vec::with_capacity(20);
         // get in edges
         let in_prefix = Self::in_edge_key(node_id, "");
-        let read_opts = Self::get_optimized_read_options(RAH_SMALL);
+        let read_opts = Self::get_optimized_read_options(RAH_MEDIUM);
         let iter = self.db.iterator_cf_opt(
             &cf_indices,
             read_opts,
@@ -368,7 +360,7 @@ impl StorageMethods for HelixGraphStorage {
                     }
 
                     let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
-                    let edge = self.get_edge(&edge_id)?;
+                    let edge = self.get_temp_edge(&edge_id)?;
 
                     edges.push(edge);
                 }
@@ -381,7 +373,7 @@ impl StorageMethods for HelixGraphStorage {
                     }
 
                     let edge_id = String::from_utf8(key[in_prefix.len()..].to_vec())?;
-                    let edge = self.get_edge(&edge_id)?;
+                    let edge = self.get_temp_edge(&edge_id)?;
 
                     if edge.label.deref() == edge_label {
                         edges.push(edge);
@@ -419,9 +411,9 @@ impl StorageMethods for HelixGraphStorage {
                         break;
                     }
                     let edge =
-                        &self.get_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
+                        &self.get_temp_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
 
-                    if let Ok(node) = self.get_node(&edge.to_node) {
+                    if let Ok(node) = self.get_temp_node(&edge.to_node) {
                         nodes.push(node);
                     }
                 }
@@ -433,10 +425,10 @@ impl StorageMethods for HelixGraphStorage {
                         break;
                     }
                     let edge =
-                        &self.get_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
+                        &self.get_temp_edge(&std::str::from_utf8(&key[out_prefix.len()..]).unwrap())?;
 
                     if edge.label == edge_label {
-                        if let Ok(node) = self.get_node(&edge.to_node) {
+                        if let Ok(node) = self.get_temp_node(&edge.to_node) {
                             nodes.push(node);
                         }
                     }
@@ -471,9 +463,9 @@ impl StorageMethods for HelixGraphStorage {
                         break;
                     }
                     let edge =
-                        &self.get_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
+                        &self.get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
 
-                    if let Ok(node) = self.get_node(&edge.from_node) {
+                    if let Ok(node) = self.get_temp_node(&edge.from_node) {
                         nodes.push(node);
                     }
                 }
@@ -485,10 +477,10 @@ impl StorageMethods for HelixGraphStorage {
                         break;
                     }
                     let edge =
-                        &self.get_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
+                        &self.get_temp_edge(&std::str::from_utf8(&key[in_prefix.len()..]).unwrap())?;
 
                     if edge.label == edge_label {
-                        if let Ok(node) = self.get_node(&edge.from_node) {
+                        if let Ok(node) = self.get_temp_node(&edge.from_node) {
                             nodes.push(node);
                         }
                     }
@@ -533,7 +525,7 @@ impl StorageMethods for HelixGraphStorage {
                     nodes.push(node);
                 }
                 Err(e) => {
-                    println!("Error: {:?}", e);
+                    println!("Error Deserializing: {:?}", e);
                     return Err(GraphError::from(format!("Deserialization error: {:?}", e)));
                 }
             }
@@ -568,7 +560,7 @@ impl StorageMethods for HelixGraphStorage {
             ) {
                 let (key, _) = result?;
                 let node_id = String::from_utf8(key[node_label_key.len()..].to_vec())?;
-                let node = self.get_node(&node_id)?;
+                let node = self.get_temp_node(&node_id)?;
                 nodes.push(node);
             }
         }
@@ -623,7 +615,9 @@ impl StorageMethods for HelixGraphStorage {
                 for value in batch {
                     match deserialize::<Edge>(&value) {
                         Ok(edge) => edges.push(edge),
-                        Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e))),
+                        Err(e) => {
+                            return Err(GraphError::from(format!("Deserialization error: {:?}", e)))
+                        }
                     }
                 }
                 batch = Vec::with_capacity(BATCH_SIZE);
@@ -637,7 +631,9 @@ impl StorageMethods for HelixGraphStorage {
             for value in batch {
                 match deserialize::<Edge>(&value) {
                     Ok(edge) => edges.push(edge),
-                    Err(e) => return Err(GraphError::from(format!("Deserialization error: {:?}", e))),
+                    Err(e) => {
+                        return Err(GraphError::from(format!("Deserialization error: {:?}", e)))
+                    }
                 }
             }
         }
@@ -867,7 +863,7 @@ impl StorageMethods for HelixGraphStorage {
 
 impl SearchMethods for HelixGraphStorage {
     fn shortest_path(
-        & self,
+        &self,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
@@ -877,7 +873,7 @@ impl SearchMethods for HelixGraphStorage {
             .ok_or(GraphError::from("Column Family not found"))?;
 
         let mut queue = VecDeque::new();
-        let mut visited= HashSet::with_capacity(48);
+        let mut visited = HashSet::with_capacity(48);
         let mut parent: HashMap<String, (String, Edge)> = HashMap::with_capacity(8);
 
         queue.push_back(from_id.to_string());
@@ -897,7 +893,7 @@ impl SearchMethods for HelixGraphStorage {
                 edges.push(edge.clone());
                 current = prev_node.clone();
             }
-            nodes.push(self.get_node(start_id)?);
+            nodes.push(self.get_temp_node(start_id)?);
 
             Ok((nodes, edges))
         };
@@ -932,7 +928,10 @@ impl SearchMethods for HelixGraphStorage {
                     continue;
                 }
 
-                parent.insert(in_v_id.deref().to_string().clone(), (out_v_id.deref().to_string(), edge));
+                parent.insert(
+                    in_v_id.deref().to_string().clone(),
+                    (out_v_id.deref().to_string(), edge),
+                );
 
                 if in_v_id == to_id {
                     return reconstruct_path(&parent, from_id, to_id);
@@ -954,7 +953,7 @@ mod tests {
     use super::*;
     use crate::props;
     use crate::storage_core::storage_methods::StorageMethods;
-    use protocol::Value;
+    use protocol::value::Value;
     use tempfile::TempDir;
 
     fn setup_temp_db() -> (HelixGraphStorage, TempDir) {
@@ -974,7 +973,7 @@ mod tests {
 
         let node = storage.create_node("person", properties).unwrap(); // TODO: Handle Error
 
-        let retrieved_node = storage.get_node(&node.id).unwrap(); // TODO: Handle Error
+        let retrieved_node = storage.get_temp_node(&node.id).unwrap(); // TODO: Handle Error
         assert_eq!(node.id, retrieved_node.id);
         assert_eq!(node.label, "person");
         assert_eq!(
@@ -998,7 +997,7 @@ mod tests {
             .create_edge("knows", &node1.id, &node2.id, edge_props)
             .unwrap(); // TODO: Handle Error
 
-        let retrieved_edge = storage.get_edge(&edge.id).unwrap(); // TODO: Handle Error
+        let retrieved_edge = storage.get_temp_edge(&edge.id).unwrap(); // TODO: Handle Error
         assert_eq!(edge.id, retrieved_edge.id);
         assert_eq!(edge.label, "knows");
         assert_eq!(edge.from_node, node1.id);
@@ -1031,7 +1030,7 @@ mod tests {
 
         storage.drop_node(&node1.id).unwrap(); // TODO: Handle Error
 
-        assert!(storage.get_node(&node1.id).is_err());
+        assert!(storage.get_temp_node(&node1.id).is_err());
     }
 
     #[test]
@@ -1046,7 +1045,7 @@ mod tests {
 
         storage.drop_edge(&edge.id).unwrap(); // TODO: Handle Error
 
-        assert!(storage.get_edge(&edge.id).is_err());
+        assert!(storage.get_temp_edge(&edge.id).is_err());
     }
 
     #[test]
@@ -1064,7 +1063,7 @@ mod tests {
 
         let node = storage.create_node("person", props!()).unwrap(); // TODO: Handle Error
 
-        let temp_node = storage.get_node(&node.id).unwrap(); // TODO: Handle Error
+        let temp_node = storage.get_temp_node(&node.id).unwrap(); // TODO: Handle Error
 
         assert_eq!(node.id, temp_node.id);
         assert_eq!(node.label, temp_node.label);
@@ -1084,8 +1083,8 @@ mod tests {
             .create_edge("likes", &node1.id, &node2.id, props!())
             .unwrap(); // TODO: Handle Error
 
-        assert!(storage.get_edge(&edge1.id).is_ok());
-        assert!(storage.get_edge(&edge2.id).is_ok());
+        assert!(storage.get_temp_edge(&edge1.id).is_ok());
+        assert!(storage.get_temp_edge(&edge2.id).is_ok());
     }
 
     #[test]
@@ -1098,7 +1097,7 @@ mod tests {
             "active" => true,
         };
         let node = storage.create_node("person", properties).unwrap(); // TODO: Handle Error
-        let retrieved_node = storage.get_node(&node.id).unwrap(); // TODO: Handle Error
+        let retrieved_node = storage.get_temp_node(&node.id).unwrap(); // TODO: Handle Error
 
         assert_eq!(
             retrieved_node.properties.get("name").unwrap(),

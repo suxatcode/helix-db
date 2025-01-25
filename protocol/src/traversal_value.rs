@@ -1,4 +1,4 @@
-use crate::{count::Count, Edge, Filterable, Node, Value};
+use crate::{count::Count, Edge, filterable::Filterable, Node, value::Value};
 use serde::Serializer;
 use sonic_rs::{Deserialize, Serialize};
 use std::borrow::Cow;

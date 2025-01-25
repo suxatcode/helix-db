@@ -10,8 +10,14 @@ use crate::{
     types::GraphError,
 };
 use core::panic;
-use protocol::{count::Count, traversal_value::TraversalValue, Edge, Filterable, Node, Value};
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use protocol::{
+    count::Count, filterable::Filterable, traversal_value::TraversalValue, value::Value, Edge, Node,
+};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use super::traversal_steps::TraversalBuilderMethods;
 
@@ -25,7 +31,7 @@ pub struct TraversalBuilder {
 impl TraversalBuilder {
     pub fn new(storage: Arc<HelixGraphStorage>, start_nodes: TraversalValue) -> Self {
         Self {
-            variables: HashMap::from_iter(std::iter::empty()),
+            variables: HashMap::new(),
             current_step: start_nodes,
             storage,
             error: None,
@@ -54,7 +60,11 @@ impl TraversalBuilder {
         }
     }
 
+    #[inline(always)]
     fn store_error(&mut self, err: GraphError) {
+        if let GraphError::Empty = err {
+            return;
+        }
         if self.error.is_none() {
             self.error = Some(err);
         }
@@ -143,7 +153,7 @@ impl SourceTraversalSteps for TraversalBuilder {
 
 impl TraversalSteps for TraversalBuilder {
     fn out(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -166,7 +176,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn out_e(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -189,7 +199,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn in_(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -212,7 +222,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn in_e(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -235,7 +245,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn both_e(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -267,7 +277,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn both(&mut self, edge_label: &str) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             let mut new_current = Vec::with_capacity(nodes.len());
             for node in nodes {
@@ -299,7 +309,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn out_v(&mut self) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::EdgeArray(edges) = &self.current_step {
             let mut new_current = Vec::with_capacity(edges.len());
             for edge in edges {
@@ -319,7 +329,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn in_v(&mut self) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::EdgeArray(edges) = &self.current_step {
             let mut new_current = Vec::with_capacity(edges.len());
             for edge in edges {
@@ -339,7 +349,7 @@ impl TraversalSteps for TraversalBuilder {
     }
 
     fn both_v(&mut self) -> &mut Self {
-        let mut e = GraphError::Default;
+        let mut e = GraphError::Empty;
         if let TraversalValue::EdgeArray(edges) = &self.current_step {
             let mut new_current = Vec::with_capacity(edges.len() * 2);
             for edge in edges {
@@ -361,6 +371,98 @@ impl TraversalSteps for TraversalBuilder {
         self.store_error(e);
         self
     }
+
+    fn mutual(&mut self, edge_label: &str) -> &mut Self {
+        let mut e: GraphError = GraphError::Empty;
+
+        if let TraversalValue::NodeArray(nodes) = &self.current_step {
+            let result: Vec<Node> = nodes
+                .iter()
+                .filter_map(|node| {
+                    let (out, in_) = rayon::join(
+                        || self.storage.get_out_nodes(&node.id, edge_label),
+                        || self.storage.get_in_nodes(&node.id, edge_label),
+                    );
+
+
+                    match (out, in_) {
+                        (Ok(out), Ok(in_)) => {
+                            let in_set: HashSet<_> = in_.into_iter().map(|n| n.id).collect();
+                            Some(
+                                out.into_iter()
+                                    .filter(|n| in_set.contains(&n.id))
+                                    .collect::<Vec<_>>(),
+                            )
+                        }
+                        (Err(err), _) | (_, Err(err)) => {
+                            e = err;
+
+                            None
+                        }
+                    }
+                })
+                .flatten()
+                .collect();
+
+            self.current_step = TraversalValue::NodeArray(result);
+        }
+        self.store_error(e);
+        self
+    }
+
+    fn add_e_from(
+        &mut self,
+        edge_label: &str,
+        from_id: &str,
+        props: Vec<(String, Value)>,
+    ) -> &mut Self {
+        let mut e = GraphError::Empty;
+        match &self.current_step {
+            TraversalValue::NodeArray(nodes) => {
+                let mut new_current = Vec::with_capacity(nodes.len());
+                for node in nodes {
+                    match self
+                        .storage
+                        .create_edge(edge_label, from_id, &node.id, props.clone())
+                    {
+                        Ok(edge) => new_current.push(edge),
+                        Err(err) => e = err,
+                    }
+                }
+                self.current_step = TraversalValue::EdgeArray(new_current);
+            }
+            _ => panic!("Invalid traversal step for add_e_from"),
+        }
+        self.store_error(e);
+        self
+    }
+
+    fn add_e_to(
+        &mut self,
+        edge_label: &str,
+        to_id: &str,
+        props: Vec<(String, Value)>,
+    ) -> &mut Self {
+        let mut e = GraphError::Empty;
+        match &self.current_step {
+            TraversalValue::NodeArray(nodes) => {
+                let mut new_current = Vec::with_capacity(nodes.len());
+                for node in nodes {
+                    match self
+                        .storage
+                        .create_edge(edge_label, &node.id, to_id, props.clone())
+                    {
+                        Ok(edge) => new_current.push(edge),
+                        Err(err) => e = err,
+                    }
+                }
+                self.current_step = TraversalValue::EdgeArray(new_current);
+            }
+            _ => panic!("Invalid traversal step for add_e_to"),
+        }
+        self.store_error(e);
+        self
+    }
 }
 
 impl TraversalMethods for TraversalBuilder {
@@ -376,12 +478,24 @@ impl TraversalMethods for TraversalBuilder {
     fn range(&mut self, start: usize, end: usize) -> &mut Self {
         match &self.current_step {
             TraversalValue::NodeArray(nodes) => {
-                let new_current = nodes[start..end].to_vec();
-                self.current_step = TraversalValue::NodeArray(new_current);
+                if nodes.len() == 0 {
+                    self.current_step = TraversalValue::Empty;
+                } else if nodes.len() < end {
+                    self.current_step =
+                        TraversalValue::NodeArray(nodes[start..nodes.len() - 1].to_vec());
+                } else {
+                    self.current_step = TraversalValue::NodeArray(nodes[start..end].to_vec());
+                }
             }
             TraversalValue::EdgeArray(edges) => {
-                let new_current = edges[start..end].to_vec();
-                self.current_step = TraversalValue::EdgeArray(new_current);
+                if edges.len() == 0 {
+                    self.current_step = TraversalValue::Empty;
+                } else if edges.len() < end {
+                    self.current_step =
+                        TraversalValue::EdgeArray(edges[start..edges.len() - 1].to_vec());
+                } else {
+                    self.current_step = TraversalValue::EdgeArray(edges[start..end].to_vec());
+                }
             }
             TraversalValue::Empty => {}
             _ => panic!("Invalid traversal step for range {:?}", &self.current_step),
@@ -447,6 +561,52 @@ impl TraversalMethods for TraversalBuilder {
                 self.current_step = TraversalValue::ValueArray(new_props);
             }
             _ => panic!("Invalid traversal step for get_properties"),
+        }
+        self
+    }
+
+    fn map_nodes<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Node) -> Result<Node, GraphError>,
+    {
+        if let TraversalValue::NodeArray(nodes) = &mut self.current_step {
+            let new_nodes = nodes.iter().map(|node| map_fn(node).unwrap()).collect();
+            self.current_step = TraversalValue::NodeArray(new_nodes);
+        }
+        self
+    }
+
+    fn map_edges<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Edge) -> Result<Edge, GraphError>,
+    {
+        if let TraversalValue::EdgeArray(edges) = &mut self.current_step {
+            let new_edges = edges.iter().map(|edge| map_fn(edge).unwrap()).collect();
+            self.current_step = TraversalValue::EdgeArray(new_edges);
+        }
+        self
+    }
+
+    fn for_each_node<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Node) -> Result<(), GraphError>,
+    {
+        if let TraversalValue::NodeArray(nodes) = &self.current_step {
+            for node in nodes {
+                map_fn(node).unwrap();
+            }
+        }
+        self
+    }
+
+    fn for_each_edge<F>(&mut self, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Edge) -> Result<(), GraphError>,
+    {
+        if let TraversalValue::EdgeArray(edges) = &self.current_step {
+            for edge in edges {
+                map_fn(edge).unwrap();
+            }
         }
         self
     }
@@ -522,12 +682,14 @@ mod tests {
 
     use super::{TraversalBuilder, TraversalMethods, TraversalSteps};
     use crate::{
-        graph_core::traversal_steps::{SourceTraversalSteps},
+        graph_core::traversal_steps::SourceTraversalSteps,
         props,
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     };
-    use protocol::{traversal_value::TraversalValue, Edge, Filterable, Node, Value};
+    use protocol::{
+        filterable::Filterable, traversal_value::TraversalValue, value::Value, Edge, Node,
+    };
     use rayon::vec;
     use tempfile::TempDir;
 
@@ -959,8 +1121,15 @@ mod tests {
             .create_edge("knows", &person1.id, &person3.id, props!())
             .unwrap();
 
+        println!(
+            "person1: {:?},\nperson2: {:?},\nperson3: {:?}",
+            person1, person2, person3
+        );
+
         let mut traversal = TraversalBuilder::new(storage, TraversalValue::from(person1));
         traversal.out("knows"); // Should have 2 nodes (person2 and person3)
+
+        println!("Traversal: {:?}", traversal.current_step);
 
         if let TraversalValue::Count(count) = &traversal.count().current_step {
             assert_eq!(count.value(), 2);

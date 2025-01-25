@@ -14,7 +14,8 @@ pub enum GraphError {
     EdgeNotFound,
     NodeNotFound,
     Default,
-    New(String)
+    New(String),
+    Empty,
 }
 
 impl fmt::Display for GraphError {
@@ -33,7 +34,8 @@ impl fmt::Display for GraphError {
             GraphError::EdgeNotFound => write!(f, "Edge not found"),
             GraphError::NodeNotFound => write!(f, "Node not found"),
             GraphError::New(msg) => write!(f, "Graph error: {}", msg),
-            GraphError::Default => write!(f, "Graph error")
+            GraphError::Default => write!(f, "Graph error"),
+            GraphError::Empty => write!(f, "No Error"),
         }
     }
 }
@@ -75,11 +77,11 @@ impl From<String> for GraphError {
 }
 
 
-// impl From<Box<bincode::ErrorKind>> for GraphError {
-//     fn from(error: Box<bincode::ErrorKind>) -> Self {
-//         GraphError::ConversionError(error.to_string())
-//     }
-// }
+impl From<Box<bincode::ErrorKind>> for GraphError {
+    fn from(error: Box<bincode::ErrorKind>) -> Self {
+        GraphError::ConversionError(error.to_string())
+    }
+}
 
 impl From<libloading::Error> for GraphError {
     fn from(error: libloading::Error) -> Self {

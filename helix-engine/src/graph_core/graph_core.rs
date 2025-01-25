@@ -4,7 +4,7 @@ use crate::{props, HelixGraphStorage};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::str;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use super::traversal::TraversalBuilder;
 use super::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps};
@@ -13,7 +13,7 @@ use helixc::parser::helix_parser::{
     Traversal,
 };
 use protocol::traversal_value::TraversalValue;
-use protocol::{Node, ReturnValue, Value};
+use protocol::{value::Value, Node, ReturnValue};
 use serde_json::json;
 
 #[derive(Debug)]
@@ -89,8 +89,10 @@ impl HelixGraphEngine {
                                 )?
                             }
                             Expression::AddVertex(add_v) => {
-                                let mut tr_builder =
-                                    TraversalBuilder::new(Arc::clone(&self.storage), TraversalValue::Empty);
+                                let mut tr_builder = TraversalBuilder::new(
+                                    Arc::clone(&self.storage),
+                                    TraversalValue::Empty,
+                                );
                                 let label = match add_v.vertex_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -103,8 +105,10 @@ impl HelixGraphEngine {
                                 ReturnValue::TraversalValues(tr_builder.current_step)
                             }
                             Expression::AddEdge(add_e) => {
-                                let mut tr_builder =
-                                    TraversalBuilder::new(Arc::clone(&self.storage), TraversalValue::Empty);
+                                let mut tr_builder = TraversalBuilder::new(
+                                    Arc::clone(&self.storage),
+                                    TraversalValue::Empty,
+                                );
                                 let label = match add_e.edge_type {
                                     Some(l) => l,
                                     None => String::new(),
@@ -226,9 +230,9 @@ impl HelixGraphEngine {
                 match ids.len() {
                     0 => match types.len() {
                         0 => TraversalValue::NodeArray(Arc::clone(&self.storage).get_all_nodes()?),
-                        _ => {
-                            TraversalValue::NodeArray(Arc::clone(&self.storage).get_nodes_by_types(&types)?)
-                        }
+                        _ => TraversalValue::NodeArray(
+                            Arc::clone(&self.storage).get_nodes_by_types(&types)?,
+                        ),
                     },
                     _ => TraversalValue::NodeArray(
                         ids.iter()
@@ -262,7 +266,6 @@ impl HelixGraphEngine {
         };
 
         let mut tr_builder = TraversalBuilder::new(Arc::clone(&self.storage), start_nodes);
-        let mut index = 0;
 
         for step in &tr.steps {
             match step {
@@ -556,7 +559,6 @@ impl HelixGraphEngine {
                 }
                 _ => unreachable!(),
             }
-            index += 1;
         }
 
         Ok(ReturnValue::TraversalValues(tr_builder.current_step))
@@ -678,7 +680,6 @@ impl HelixGraphEngine {
         id_type: IdType,
         vars: Arc<RwLock<HashMap<String, ReturnValue>>>,
     ) -> Result<String, GraphError> {
-        println!("ID TYPE: {:?}", id_type);
         match id_type {
             IdType::Literal(s) => Ok(s),
             IdType::Identifier(s) => {

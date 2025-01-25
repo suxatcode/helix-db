@@ -1,39 +1,10 @@
-use bindings::js_binding::HelixJS;
-use chrono::Utc;
 use helix_engine::{
-    graph_core::{
-        graph_core::{HelixGraphEngine, QueryInput},
-        traversal::TraversalBuilder,
-        traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
-    },
-    props,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+    graph_core::graph_core::{HelixGraphEngine, QueryInput},
     types::GraphError,
 };
-use helix_gateway::{
-    router::router::{HandlerFn, HandlerInput, HandlerSubmission, HelixRouter, RouterError},
-    GatewayOpts, HelixGateway,
-};
-use inventory;
-use protocol::{
-    count::Count, request::Request, response::Response, traversal_value::TraversalValue, Node,
-    ReturnValue, Value,
-};
-use rand::Rng;
-use serde_json::json;
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    time::Instant,
-};
-
-use helixc::parser::{
-    helix_parser::{
-        BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
-        Traversal,
-    },
-    parser_methods::ParserError,
-};
+use helix_gateway::router::router::RouterError;
+use helixc::parser::parser_methods::ParserError;
+use std::sync::Arc;
 
 pub mod bindings;
 
@@ -42,15 +13,12 @@ pub struct HelixEmbedded {
     graph: Arc<HelixGraphEngine>,
 }
 
-
-
 impl HelixEmbedded {
     pub fn new(user: String) -> Result<Self, HelixLiteError> {
         let home_dir = dirs::home_dir().ok_or(HelixLiteError::Default(
             "Unable to determine home directory".to_string(),
         ))?;
         let path = format!("{}/.helix/graph_data/{}", home_dir.display(), user);
-        println!("Path: {:?}", path);
         let storage = match HelixGraphEngine::new(path.as_str()) {
             Ok(helix) => helix,
             Err(err) => return Err(HelixLiteError::from(err)),
@@ -59,9 +27,10 @@ impl HelixEmbedded {
         Ok(Self { graph })
     }
 
-
     pub fn query(&self, query: String, params: Vec<QueryInput>) -> Result<String, HelixLiteError> {
-        self.graph.query(query, params).map_err(HelixLiteError::from)
+        self.graph
+            .query(query, params)
+            .map_err(HelixLiteError::from)
     }
 }
 
