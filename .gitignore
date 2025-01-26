@@ -12,3 +12,4 @@ count.sh
 **/trump-map/
 **/call.sh
 **/*.json
+.DS_Store

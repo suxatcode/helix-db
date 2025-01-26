@@ -1,4 +1,3 @@
-extern crate graph_queries;
 use chrono::Utc;
 use helix_engine::{
     graph_core::graph_core::HelixGraphEngine,
