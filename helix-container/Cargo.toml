@@ -15,6 +15,9 @@ inventory = "0.3.16"
 rand = "0.8.5"
 libloading = "0.8.6"
 dirs = "5.0.1"
+serde_json = "1.0.134"
+serde = { version = "1.0", features = ["derive"] }
+sonic-rs = "0.3"
 
 [profile.release]
 strip = "debuginfo"

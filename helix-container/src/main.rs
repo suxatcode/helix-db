@@ -1,3 +1,4 @@
+extern crate graph_queries;
 use chrono::Utc;
 use helix_engine::{
     graph_core::graph_core::HelixGraphEngine,
@@ -11,26 +12,29 @@ use helix_gateway::{
 use inventory;
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc};
-use graph_queries::traversals::*;
+
+mod traversals;
 
 fn main() {
-    let path = format!("../graph_data/{}", Utc::now());
-    let graph = Arc::new(HelixGraphEngine::new(path.as_str()).unwrap());
-    create_test_graph(Arc::clone(&graph), 100, 10);
+    let home_dir = dirs::home_dir().expect("Could not retrieve home directory");
+    let path = home_dir.join(".helix/user");
+    let path_str = path.to_str().expect("Could not convert path to string");
+    let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
+    // create_test_graph(Arc::clone(&graph), 15000, 250);
 
     // generates routes from handler proc macro
+    println!("Starting route collection...");
+    let submissions: Vec<_> = inventory::iter::<HandlerSubmission>.into_iter().collect();
+    println!("Found {} submissions", submissions.len());
+
     let routes = HashMap::from_iter(
-        inventory::iter::<HandlerSubmission>
+        submissions
             .into_iter()
             .map(|submission| {
-                // get the handler from the submission
+                println!("Processing submission for handler: {}", submission.0.name);
                 let handler = &submission.0;
-
-                // create a new handler function that wraps the collected basic handler function
                 let func: HandlerFn =
                     Arc::new(move |input, response| (handler.func)(input, response));
-
-                // return tuple of method, path, and handler function
                 (
                     (
                         "post".to_ascii_uppercase().to_string(),
@@ -45,7 +49,7 @@ fn main() {
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "127.0.0.1:1234",
+        "127.0.0.1:3001",
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),
@@ -57,24 +61,56 @@ fn main() {
 
 fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: usize) {
     let storage = &graph.storage; //.lock().unwrap();
-    let mut node_ids = Vec::with_capacity(size);
-
+    let mut node_ids = Vec::with_capacity(size + 1);
+    let node = storage
+        .create_node("user", props! { "username" => "Xav".to_string()})
+        .unwrap();
+    println!("Node: {:?}", node);
+    node_ids.push(node.id);
     for _ in 0..size {
-        let node = storage.create_node("person", props!()).unwrap();
+        let node = storage
+            .create_node("user", props! { "username" => generate_random_name()})
+            .unwrap();
         node_ids.push(node.id);
     }
 
     let mut rng = rand::thread_rng();
     for from_id in &node_ids {
         for _ in 0..edges_per_node {
-            let to_index = rng.gen_range(0..size);
+            let to_index = rng.gen_range(0..=size);
             let to_id = &node_ids[to_index];
 
             if from_id != to_id {
                 storage
-                    .create_edge("knows", from_id, to_id, props!())
+                    .create_edge("follows", from_id, to_id, props!())
+                    .unwrap();
+                storage
+                    .create_edge("follows", to_id, from_id, props!())
                     .unwrap();
             }
         }
     }
+}
+
+use rand::seq::SliceRandom;
+
+pub fn generate_random_name() -> String {
+    let prefixes = ["Ze", "Xa", "Ky", "Ja", "Lu", "Ri", "So", "Ma", "De", "Vi"];
+    let middles = ["ra", "li", "na", "ta", "ri", "ko", "mi", "sa", "do", ""];
+    let suffixes = ["x", "n", "th", "ra", "na", "ka", "ta", "ix", "sa", ""];
+
+    let mut rng = rand::thread_rng();
+
+    // Randomly decide if we want to use a middle part
+    let use_middle = rng.gen_bool(0.7); // 70% chance to use middle
+
+    let prefix = prefixes.choose(&mut rng).unwrap();
+    let middle = if use_middle {
+        middles.choose(&mut rng).unwrap()
+    } else {
+        ""
+    };
+    let suffix = suffixes.choose(&mut rng).unwrap();
+
+    format!("{}{}{}", prefix, middle, suffix)
 }

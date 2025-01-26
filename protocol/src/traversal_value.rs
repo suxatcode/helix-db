@@ -1,5 +1,7 @@
-use crate::{count::Count, Edge, Filterable, Node, Value};
-use serde::{Deserialize, Serialize};
+use crate::{count::Count, Edge, filterable::Filterable, Node, value::Value};
+use serde::Serializer;
+use sonic_rs::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 #[derive(Deserialize, Clone)]
 #[serde(untagged)]
@@ -9,6 +11,7 @@ pub enum TraversalValue {
     NodeArray(Vec<Node>),
     EdgeArray(Vec<Edge>),
     ValueArray(Vec<(String, Value)>),
+    Paths(Vec<(Vec<Node>, Vec<Edge>)>),
 }
 
 impl FromIterator<TraversalValue> for TraversalValue {
@@ -16,6 +19,7 @@ impl FromIterator<TraversalValue> for TraversalValue {
         let mut nodes = Vec::with_capacity(10);
         let mut edges = Vec::with_capacity(10);
         let mut values = Vec::with_capacity(10);
+        let mut paths = Vec::with_capacity(10);
 
         for value in iter {
             match value {
@@ -23,6 +27,7 @@ impl FromIterator<TraversalValue> for TraversalValue {
                 TraversalValue::NodeArray(mut node_vec) => nodes.append(&mut node_vec),
                 TraversalValue::EdgeArray(mut edge_vec) => edges.append(&mut edge_vec),
                 TraversalValue::ValueArray(mut value_vec) => values.append(&mut value_vec),
+                TraversalValue::Paths(mut path_vecs) => paths.append(&mut path_vecs),
                 TraversalValue::Empty => (),
             }
         }
@@ -39,15 +44,24 @@ impl FromIterator<TraversalValue> for TraversalValue {
     }
 }
 
-impl From<Node> for TraversalValue {
-    fn from(node: Node) -> Self {
-        TraversalValue::NodeArray(vec![node])
-    }
-}
-
+// Implementation for owned Edge
 impl From<Edge> for TraversalValue {
     fn from(edge: Edge) -> Self {
         TraversalValue::EdgeArray(vec![edge])
+    }
+}
+
+// Implementation for Edge reference
+impl From<& Edge> for TraversalValue {
+    fn from(edge: & Edge) -> Self {
+        TraversalValue::EdgeArray(vec![edge.clone()])
+    }
+}
+
+// Implementation for Node (unchanged as Node doesn't have lifetime parameter)
+impl From<Node> for TraversalValue {
+    fn from(node: Node) -> Self {
+        TraversalValue::NodeArray(vec![node])
     }
 }
 
@@ -57,48 +71,9 @@ impl From<&Node> for TraversalValue {
     }
 }
 
-impl From<&Edge> for TraversalValue {
-    fn from(edge: &Edge) -> Self {
-        TraversalValue::EdgeArray(vec![edge.clone()])
-    }
-}
 impl From<(String, Value)> for TraversalValue {
     fn from(value: (String, Value)) -> Self {
         TraversalValue::ValueArray(vec![value])
-    }
-}
-
-enum IterState {
-    Empty,
-    Single(TraversalValue),
-    Nodes(std::vec::IntoIter<Node>),
-    Edges(std::vec::IntoIter<Edge>),
-    Values(std::vec::IntoIter<(String, Value)>),
-}
-
-pub struct TraversalValueIterator {
-    state: IterState,
-}
-
-impl TraversalValue {
-    pub fn iter(&self) -> TraversalValueIterator {
-        match self {
-            TraversalValue::Count(count) => TraversalValueIterator {
-                state: IterState::Single(TraversalValue::Count(count.clone())),
-            },
-            TraversalValue::Empty => TraversalValueIterator {
-                state: IterState::Empty,
-            },
-            TraversalValue::NodeArray(nodes) => TraversalValueIterator {
-                state: IterState::Nodes(nodes.clone().into_iter()),
-            },
-            TraversalValue::EdgeArray(edges) => TraversalValueIterator {
-                state: IterState::Edges(edges.clone().into_iter()),
-            },
-            TraversalValue::ValueArray(values) => TraversalValueIterator {
-                state: IterState::Values(values.clone().into_iter()),
-            },
-        }
     }
 }
 
@@ -110,6 +85,7 @@ impl std::fmt::Debug for TraversalValue {
             TraversalValue::NodeArray(nodes) => nodes.fmt(f),
             TraversalValue::EdgeArray(edges) => edges.fmt(f),
             TraversalValue::ValueArray(values) => values.fmt(f),
+            TraversalValue::Paths(paths) => paths.fmt(f),
         }
     }
 }
@@ -117,7 +93,7 @@ impl std::fmt::Debug for TraversalValue {
 impl Serialize for TraversalValue {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         match self {
             TraversalValue::Empty => serializer.serialize_none(),
@@ -125,6 +101,7 @@ impl Serialize for TraversalValue {
             TraversalValue::NodeArray(nodes) => nodes.serialize(serializer),
             TraversalValue::EdgeArray(edges) => edges.serialize(serializer),
             TraversalValue::ValueArray(values) => values.serialize(serializer),
+            TraversalValue::Paths(paths) => paths.serialize(serializer),
         }
     }
 }

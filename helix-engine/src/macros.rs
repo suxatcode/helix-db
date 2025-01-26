@@ -1,4 +1,4 @@
-use protocol::Value;
+use protocol::value::Value;
 
 pub mod macros {
     #[macro_export]
@@ -7,7 +7,7 @@ pub mod macros {
     /// ## Example Use
     /// ```rust
     /// use helix_engine::props;
-    /// use protocol::Value;
+    /// use protocol::value::Value;
     ///
     /// let properties: Vec<(String, Value)> = props! {
     ///     "name" => "Will",

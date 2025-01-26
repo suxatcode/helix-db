@@ -1,5 +1,7 @@
+use std::borrow::Cow;
+
 use crate::types::GraphError;
-use protocol::{Node, Edge, Value};
+use protocol::{Node, Edge, value::Value};
 
 pub trait StorageMethods {
     /// Checks whether an entry with a given id exists.
@@ -38,6 +40,8 @@ pub trait StorageMethods {
     /// Returns all edges in the graph
     fn get_all_edges(&self) -> Result<Vec<Edge>, GraphError>;
 
+    fn get_nodes_by_types(&self, labels:  &[String]) -> Result<Vec<Node>, GraphError>;
+
     /// Creates a node entry
     fn create_node(
         &self,
@@ -59,4 +63,10 @@ pub trait StorageMethods {
 
     /// Deletes an edge entry
     fn drop_edge(&self, id: &str)  -> Result<(), GraphError>;
+}
+
+
+pub trait SearchMethods {
+    /// Find shortest path between two nodes
+    fn shortest_path(& self, from_id: &str, to_id: &str) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
 }
