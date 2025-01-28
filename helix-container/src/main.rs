@@ -19,7 +19,7 @@ fn main() {
     let path = home_dir.join(".helix/user");
     let path_str = path.to_str().expect("Could not convert path to string");
     let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
-    // create_test_graph(Arc::clone(&graph), 15000, 250);
+    create_test_graph(Arc::clone(&graph), 5000, 250);
 
     // generates routes from handler proc macro
     println!("Starting route collection...");

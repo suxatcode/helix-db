@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 
-rocksdb = { version = "0.23.0", features = ["multi-threaded-cf"] }
+# rocksdb = { version = "0.23.0", features = ["multi-threaded-cf"] }/
+heed3 = "0.21.0"
 serde = { version = "1.0.217", features = ["derive"] }
 uuid = { version = "1.11.0", features = ["v4", "fast-rng"] }
 tempfile = "3.2"
@@ -20,6 +21,7 @@ helixc = { path = "../helixc" }
 memchr = "2.6"
 mimalloc = "0.1.43"
 bincode = "1.3.3"
+lazy_static = "1.4"
 
 [dev-dependencies]
 criterion = "0.5"

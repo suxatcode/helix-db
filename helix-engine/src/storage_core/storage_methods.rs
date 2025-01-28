@@ -1,35 +1,35 @@
 use std::borrow::Cow;
 
 use crate::types::GraphError;
-use protocol::{Node, Edge, value::Value};
+use heed3::RoTxn;
+use protocol::{value::Value, Edge, Node};
 
 pub trait StorageMethods {
     /// Checks whether an entry with a given id exists.
     /// Works for nodes or edges.
     fn check_exists(&self, id: &str) -> Result<bool, GraphError>;
-    /// Gets a node object for a given node id without copying its underlying data. 
-    /// 
+    /// Gets a node object for a given node id without copying its underlying data.
+    ///
     /// This should only used when fetched data is only needed temporarily
     /// as underlying data is pinned.
-    fn get_temp_node(&self, id: &str) -> Result<Node, GraphError>;
+    fn get_temp_node(&self, txn: &RoTxn<'_>, id: &str) -> Result<Node, GraphError>;
 
-    /// Gets a edge object for a given edge id without copying its underlying data. 
-    /// 
+    /// Gets a edge object for a given edge id without copying its underlying data.
+    ///
     /// This should only used when fetched data is only needed temporarily
     /// as underlying data is pinned.
-    fn get_temp_edge(&self, id: &str) -> Result<Edge, GraphError>;
-
+    fn get_temp_edge(&self, txn: &RoTxn<'_>, id: &str) -> Result<Edge, GraphError>;
 
     /// Gets a node object for a given node id
     fn get_node(&self, id: &str) -> Result<Node, GraphError>;
     /// Gets a edge object for a given edge id
     fn get_edge(&self, id: &str) -> Result<Edge, GraphError>;
 
-    /// Returns a list of edge objects of the outgoing edges from a given node 
+    /// Returns a list of edge objects of the outgoing edges from a given node
     fn get_out_edges(&self, node_id: &str, edge_label: &str) -> Result<Vec<Edge>, GraphError>;
     /// Returns a list of edge objects of the incoming edges from a given node
     fn get_in_edges(&self, node_id: &str, edge_label: &str) -> Result<Vec<Edge>, GraphError>;
-    
+
     /// Returns a list of node objects of the outgoing nodes from a given node
     fn get_out_nodes(&self, node_id: &str, edge_label: &str) -> Result<Vec<Node>, GraphError>;
     /// Returns a list of node objects of the incoming nodes from a given node
@@ -40,7 +40,7 @@ pub trait StorageMethods {
     /// Returns all edges in the graph
     fn get_all_edges(&self) -> Result<Vec<Edge>, GraphError>;
 
-    fn get_nodes_by_types(&self, labels:  &[String]) -> Result<Vec<Node>, GraphError>;
+    fn get_nodes_by_types(&self, labels: &[String]) -> Result<Vec<Node>, GraphError>;
 
     /// Creates a node entry
     fn create_node(
@@ -58,15 +58,18 @@ pub trait StorageMethods {
         properties: impl IntoIterator<Item = (String, Value)>,
     ) -> Result<Edge, GraphError>;
 
-    /// Deletes a node entry along with all of its connected edges 
+    /// Deletes a node entry along with all of its connected edges
     fn drop_node(&self, id: &str) -> Result<(), GraphError>;
 
     /// Deletes an edge entry
-    fn drop_edge(&self, id: &str)  -> Result<(), GraphError>;
+    fn drop_edge(&self, id: &str) -> Result<(), GraphError>;
 }
-
 
 pub trait SearchMethods {
     /// Find shortest path between two nodes
-    fn shortest_path(& self, from_id: &str, to_id: &str) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
+    fn shortest_path(
+        &self,
+        from_id: &str,
+        to_id: &str,
+    ) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
 }

@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{str::Utf8Error, string::FromUtf8Error};
 
+use heed3::Error;
 use helixc::parser::parser_methods::ParserError;
 
 #[derive(Debug)]
@@ -40,9 +41,15 @@ impl fmt::Display for GraphError {
     }
 }
 
-impl From<rocksdb::Error> for GraphError {
-    fn from(error: rocksdb::Error) -> Self {
-        GraphError::New(error.into_string())
+// impl From<rocksdb::Error> for GraphError {
+//     fn from(error: rocksdb::Error) -> Self {
+//         GraphError::New(error.into_string())
+//     }
+// }
+
+impl From<Error> for GraphError {
+    fn from(error: Error) -> Self {
+        GraphError::StorageError(error.to_string())
     }
 }
 
@@ -91,6 +98,12 @@ impl From<libloading::Error> for GraphError {
 
 impl From<ParserError> for GraphError {
     fn from(error: ParserError) -> Self {
+        GraphError::ConversionError(error.to_string())
+    }
+}
+
+impl From<Utf8Error> for GraphError {
+    fn from(error: Utf8Error) -> Self {
         GraphError::ConversionError(error.to_string())
     }
 }
