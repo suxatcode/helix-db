@@ -2,15 +2,15 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use helix_engine::{
     graph_core::{
         traversal::TraversalBuilder,
-        traversal_steps::{SourceTraversalSteps, TraversalSteps},
+        traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps},
     },
     props,
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
 };
+use protocol::traversal_value::TraversalValue;
 use rand::Rng;
 use std::{sync::Arc, time::Duration};
 use tempfile::TempDir;
-use protocol::traversal_value::TraversalValue;
 
 fn create_test_graph(
     size: usize,
@@ -21,8 +21,9 @@ fn create_test_graph(
     let storage = HelixGraphStorage::new(db_path).unwrap();
     let mut node_ids = Vec::with_capacity(size);
 
+    let mut txn = storage.env.write_txn().unwrap();
     for _ in 0..size {
-        let node = storage.create_node("person", props!()).unwrap();
+        let node = storage.create_node(&mut txn,"person", props!()).unwrap();
         node_ids.push(node.id);
     }
 
@@ -34,11 +35,12 @@ fn create_test_graph(
 
             if from_id != to_id {
                 storage
-                    .create_edge("knows", from_id, to_id, props!())
+                    .create_edge(&mut txn,"knows", from_id, to_id, props!())
                     .unwrap();
             }
         }
     }
+    txn.commit().unwrap();
 
     (Arc::new(storage), temp_dir, node_ids)
 }
@@ -68,12 +70,20 @@ fn bench_graph_operations(c: &mut Criterion) {
         });
 
         let (storage, _temp_dir, node_ids) = create_test_graph(*size, edges_per_node);
-        let start_node = storage.get_node(&node_ids[0]).unwrap();
+        let txn = storage.env.write_txn().unwrap();
+        let start_node = storage.get_node(&txn, &node_ids[0]).unwrap();
+        txn.commit().unwrap();
 
         // Benchmark simple traversals
         group.bench_function(format!("out_traversal_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::NodeArray(vec![start_node.clone()]));
+                let txn = storage.env.read_txn().unwrap();
+                let mut traversal = TraversalBuilder::new(
+                    Arc::clone(&storage),
+                    TraversalValue::NodeArray(vec![start_node.clone()]),
+                    Some(txn),
+                    None,
+                );
                 traversal.out("knows");
                 black_box(traversal)
             });
@@ -82,7 +92,13 @@ fn bench_graph_operations(c: &mut Criterion) {
         // Benchmark chained traversals
         group.bench_function(format!("chained_traversal_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::NodeArray(vec![start_node.clone()]));
+                let txn = storage.env.read_txn().unwrap();
+                let mut traversal = TraversalBuilder::new(
+                    Arc::clone(&storage),
+                    TraversalValue::NodeArray(vec![start_node.clone()]),
+                    Some(txn),
+                    None,
+                );
                 traversal.out("knows").out("knows").out("knows");
                 black_box(traversal)
             });
@@ -91,7 +107,13 @@ fn bench_graph_operations(c: &mut Criterion) {
         // Benchmark full graph scan
         group.bench_function(format!("full_graph_scan_{}", size), |b| {
             b.iter(|| {
-                let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+                let txn = storage.env.read_txn().unwrap();
+                let mut traversal = TraversalBuilder::new(
+                    Arc::clone(&storage),
+                    TraversalValue::Empty,
+                    Some(txn),
+                    None,
+                );
                 traversal.v();
                 black_box(traversal)
             });
@@ -110,12 +132,19 @@ fn bench_complex_queries(c: &mut Criterion) {
     let edges_per_node = 10;
     let (storage, _temp_dir, node_ids) = create_test_graph(size, edges_per_node);
 
-    let start_node = storage.get_node(&node_ids[0]).unwrap();
-
+    let txn = storage.env.read_txn().unwrap();
+    let start_node = storage.get_node(&txn, &node_ids[0]).unwrap();
+    txn.commit().unwrap();
     // Benchmark two hop query
     group.bench_function("two_hops_100000", |b| {
         b.iter(|| {
-            let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::NodeArray(vec![start_node.clone()]));
+            let txn = storage.env.read_txn().unwrap();
+            let mut traversal = TraversalBuilder::new(
+                Arc::clone(&storage),
+                TraversalValue::NodeArray(vec![start_node.clone()]),
+                Some(txn),
+                None,
+            );
             traversal.out("knows").out("knows");
             black_box(traversal)
         });
@@ -124,7 +153,14 @@ fn bench_complex_queries(c: &mut Criterion) {
     // Benchmark circular traversal
     group.bench_function("circular_traversal_100000", |b| {
         b.iter(|| {
-            let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::NodeArray(vec![start_node.clone()]));
+            let txn = storage.env.read_txn().unwrap();
+
+            let mut traversal = TraversalBuilder::new(
+                Arc::clone(&storage),
+                TraversalValue::NodeArray(vec![start_node.clone()]),
+                Some(txn),
+                None,
+            );
             traversal
                 .out("knows")
                 .out("knows")

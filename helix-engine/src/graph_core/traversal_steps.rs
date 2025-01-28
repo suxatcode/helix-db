@@ -1,3 +1,4 @@
+use heed3::{RoTxn, RwTxn};
 use protocol::{traversal_value::TraversalValue, value::Value, Edge, Node};
 
 use crate::types::GraphError;
@@ -26,8 +27,13 @@ pub trait SourceTraversalSteps {
     /// Adds node with specific id to current traversal step
     fn v_from_id(&mut self, node_id: &str) -> &mut Self;
 
+    fn v_from_ids(&mut self, node_ids: &[String]) -> &mut Self;
     /// Adds edge with specific id to current traversal step
     fn e_from_id(&mut self, edge_id: &str) -> &mut Self;
+
+    fn v_from_types(&mut self, node_labels: &[String]) -> &mut Self;
+
+    // fn e_from_type(&mut self, edge_label: &str) -> &mut Self;
 }
 
 pub trait TraversalSteps {
@@ -51,18 +57,18 @@ pub trait TraversalSteps {
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
     /// that match a given edge label if given one
-    fn both(&mut self, edge_label: &str) -> &mut Self;
+    fn both(&mut self,edge_label: &str) -> &mut Self;
 
     /// Adds both the incoming and outgoing edges from the current node to the current traversal step
     /// that match a given edge label if given one
-    fn both_e(&mut self, edge_label: &str) -> &mut Self;
+    fn both_e(&mut self,edge_label: &str) -> &mut Self;
 
-    fn mutual(&mut self, edge_label: &str) -> &mut Self;
+    fn mutual(&mut self,edge_label: &str) -> &mut Self;
 
     // fn mutual_e(&mut self, edge_label: &str) -> &mut Self;
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
-    fn both_v(&mut self) -> &mut Self;
+    fn both_v(&mut self ) -> &mut Self;
 
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e_to(&mut self, edge_label: &str, to_id: &str, props: Vec<(String, Value)>)
@@ -222,8 +228,9 @@ pub trait TraversalMethods {
 
 pub trait TraversalBuilderMethods {
     /// Finishes the result and returns the final current traversal step
-    #[inline]
-    fn result(&self) -> &TraversalValue;
+    fn result(self) -> Result<TraversalValue, GraphError>;
+
+    fn execute(self) -> Result<(), GraphError>;
 }
 
 pub trait TraversalSearchMethods {

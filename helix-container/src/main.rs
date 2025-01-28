@@ -10,16 +10,16 @@ use helix_gateway::{
 };
 use inventory;
 use rand::Rng;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 mod traversals;
 
 fn main() {
     let home_dir = dirs::home_dir().expect("Could not retrieve home directory");
-    let path = home_dir.join(".helix/user");
+    let path = home_dir.join(".helix/user42");
     let path_str = path.to_str().expect("Could not convert path to string");
     let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
-    create_test_graph(Arc::clone(&graph), 5000, 250);
+    // create_test_graph(Arc::clone(&graph), 15000, 250);
 
     // generates routes from handler proc macro
     println!("Starting route collection...");
@@ -59,16 +59,18 @@ fn main() {
 }
 
 fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: usize) {
+    let now = Instant::now();
     let storage = &graph.storage; //.lock().unwrap();
     let mut node_ids = Vec::with_capacity(size + 1);
+    let mut txn = storage.env.write_txn().unwrap();
     let node = storage
-        .create_node("user", props! { "username" => "Xav".to_string()})
+        .create_node(&mut txn, "user", props! { "username" => "Xav".to_string()})
         .unwrap();
     println!("Node: {:?}", node);
     node_ids.push(node.id);
     for _ in 0..size {
         let node = storage
-            .create_node("user", props! { "username" => generate_random_name()})
+            .create_node(&mut txn, "user", props! { "username" => generate_random_name()})
             .unwrap();
         node_ids.push(node.id);
     }
@@ -81,14 +83,17 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
 
             if from_id != to_id {
                 storage
-                    .create_edge("follows", from_id, to_id, props!())
+                    .create_edge(&mut txn, "follows", from_id, to_id, props!())
                     .unwrap();
                 storage
-                    .create_edge("follows", to_id, from_id, props!())
+                    .create_edge(&mut txn, "follows", to_id, from_id, props!())
                     .unwrap();
             }
         }
     }
+    txn.commit().unwrap();
+    let elapsed = now.elapsed();
+    println!("Graph creation took: {:?}", elapsed);
 }
 
 use rand::seq::SliceRandom;
