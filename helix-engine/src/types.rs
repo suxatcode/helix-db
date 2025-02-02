@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{str::Utf8Error, string::FromUtf8Error};
+use std::{net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
 
 use heed3::Error;
 use helixc::parser::parser_methods::ParserError;
@@ -90,12 +90,6 @@ impl From<Box<bincode::ErrorKind>> for GraphError {
     }
 }
 
-impl From<libloading::Error> for GraphError {
-    fn from(error: libloading::Error) -> Self {
-        GraphError::New(error.to_string())
-    }
-}
-
 impl From<ParserError> for GraphError {
     fn from(error: ParserError) -> Self {
         GraphError::ConversionError(error.to_string())
@@ -104,6 +98,12 @@ impl From<ParserError> for GraphError {
 
 impl From<Utf8Error> for GraphError {
     fn from(error: Utf8Error) -> Self {
+        GraphError::ConversionError(error.to_string())
+    }
+}
+
+impl From<AddrParseError> for GraphError {
+    fn from(error: AddrParseError) -> Self {
         GraphError::ConversionError(error.to_string())
     }
 }

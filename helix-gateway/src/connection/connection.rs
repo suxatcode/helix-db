@@ -1,13 +1,17 @@
 use chrono::{DateTime, Utc};
 use helix_engine::graph_core::graph_core::HelixGraphEngine;
 use helix_engine::types::GraphError;
+use protocol::response::Response;
+use std::net::SocketAddr;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use std::{
     collections::HashMap,
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
 };
 use uuid::Uuid;
+use socket2::{Domain, Socket, Type};
 
 use crate::{router::router::HelixRouter, thread_pool::thread_pool::ThreadPool};
 
@@ -30,22 +34,46 @@ impl ConnectionHandler {
         size: usize,
         router: HelixRouter,
     ) -> Result<Self, GraphError> {
-        let listener = TcpListener::bind(address)
+        let addr: SocketAddr = address.parse()?;
+        
+        // Create the socket with socket2
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
+            .map_err(|e| GraphError::GraphConnectionError("Failed to create socket".to_string(), e))?;
+        
+        // Set socket options
+        socket.set_recv_buffer_size(32 * 1024)
+            .map_err(|e| GraphError::GraphConnectionError("Failed to set recv buffer".to_string(), e))?;
+        socket.set_send_buffer_size(32 * 1024)
+            .map_err(|e| GraphError::GraphConnectionError("Failed to set send buffer".to_string(), e))?;
+        
+        // Enable reuse
+        socket.set_reuse_address(true)
+            .map_err(|e| GraphError::GraphConnectionError("Failed to set reuse address".to_string(), e))?;
+        
+        // Bind and listen
+        socket.bind(&addr.into())
             .map_err(|e| GraphError::GraphConnectionError("Failed to bind".to_string(), e))?;
+        socket.listen(1024)
+            .map_err(|e| GraphError::GraphConnectionError("Failed to listen".to_string(), e))?;
+        
+        // Convert to std TcpListener
+        let listener: TcpListener = socket.into();
 
         Ok(Self {
             listener,
             active_connections: Arc::new(Mutex::new(HashMap::new())),
-            thread_pool: ThreadPool::new(size, graph, Arc::new(router)),
+            thread_pool: ThreadPool::new(size, graph, Arc::new(router))?,
         })
     }
 
     pub fn accept_conns(&self) -> JoinHandle<Result<(), GraphError>> {
         let listener = self.listener.try_clone().unwrap();
+        
+
         let active_connections = Arc::clone(&self.active_connections);
         let thread_pool_sender = self.thread_pool.sender.clone();
         thread::spawn(move || loop {
-            let conn = match listener.accept() {
+            let mut conn = match listener.accept() {
                 Ok((conn, _)) => conn,
                 Err(err) => {
                     return Err(GraphError::GraphConnectionError(
@@ -68,7 +96,15 @@ impl ConnectionHandler {
                 .insert(client.id.clone(), client);
 
             // pass conn to thread in thread pool via channel
-            thread_pool_sender.send(conn).unwrap(); // TODO: Handle error Causes panic
+            match thread_pool_sender.send_timeout(conn.try_clone().unwrap(), Duration::from_secs(1)) {
+                Ok(_) => (), 
+                Err(e) => {
+                    // Send 503 Service Unavailable response
+                    let mut response = Response::new();
+                    response.status = 503;
+                    response.send(&mut conn)?;
+                }
+            }
         })
     }
 }

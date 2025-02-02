@@ -18,12 +18,12 @@ fn create_test_graph(
 ) -> (Arc<HelixGraphStorage>, TempDir, Vec<String>) {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().to_str().unwrap();
-    let storage = HelixGraphStorage::new(db_path).unwrap();
+    let storage = HelixGraphStorage::new(db_path, None).unwrap();
     let mut node_ids = Vec::with_capacity(size);
 
     let mut txn = storage.env.write_txn().unwrap();
     for _ in 0..size {
-        let node = storage.create_node(&mut txn,"person", props!()).unwrap();
+        let node = storage.create_node(&mut txn,"person", props!(), None).unwrap();
         node_ids.push(node.id);
     }
 

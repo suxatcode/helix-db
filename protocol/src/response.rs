@@ -51,11 +51,12 @@ impl Response {
                 "Not Found"
             }
             500 => {
-                self.body = b"500 - Internal Server Error\n".to_vec();
+                // self.body = b"500 - Internal Server Error\n".to_vec();
                 "Internal Server Error"
             }
             _ => "Unknown"
         };
+
 
         let mut data_to_write = Vec::with_capacity(100);
 

@@ -7,11 +7,10 @@ use router::router::{HandlerFn, HelixRouter};
 pub mod connection;
 pub mod router;
 pub mod thread_pool;
-pub struct GatewayOpts {
-}
+pub struct GatewayOpts {}
 
 impl GatewayOpts {
-    pub const DEFAULT_POOL_SIZE: usize = 10;
+    pub const DEFAULT_POOL_SIZE: usize = 100;
 }
 
 pub struct HelixGateway {
@@ -19,12 +18,15 @@ pub struct HelixGateway {
 }
 
 impl HelixGateway {
-    pub fn new(address: &str, graph: Arc<HelixGraphEngine>, size: usize, routes: Option<HashMap<(String,String), HandlerFn>>) -> HelixGateway {
-        let router= HelixRouter::new(routes);
+    pub fn new(
+        address: &str,
+        graph: Arc<HelixGraphEngine>,
+        size: usize,
+        routes: Option<HashMap<(String, String), HandlerFn>>,
+    ) -> HelixGateway {
+        let router = HelixRouter::new(routes);
         let connection_handler = ConnectionHandler::new(address, graph, size, router).unwrap();
-        HelixGateway {
-            connection_handler,
-        }
+        HelixGateway { connection_handler }
     }
 }
 
@@ -37,7 +39,7 @@ mod tests {
     use std::{
         io::{Read, Write},
         net::{TcpListener, TcpStream},
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::Duration,
     };
     use tempfile::TempDir;
@@ -48,7 +50,11 @@ mod tests {
     fn setup_temp_db() -> (HelixGraphEngine, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().to_str().unwrap();
-        let storage = HelixGraphEngine::new(db_path).unwrap();
+        let opts = helix_engine::graph_core::graph_core::HelixGraphEngineOpts{
+           path: db_path.to_string(),
+           secondary_indices: None,
+        };
+        let storage = HelixGraphEngine::new(opts).unwrap();
         (storage, temp_dir)
     }
 
@@ -121,7 +127,7 @@ mod tests {
         let size = 4;
         let router = Arc::new(HelixRouter::new(None));
         let graph = Arc::new(storage);
-        let pool = ThreadPool::new(size, graph, router);
+        let pool = ThreadPool::new(size, graph, router).unwrap();
 
         assert_eq!(*pool.num_unused_workers.lock().unwrap(), size);
         assert_eq!(*pool.num_used_workers.lock().unwrap(), 0);
@@ -133,7 +139,7 @@ mod tests {
         let (storage, _) = setup_temp_db();
         let router = Arc::new(HelixRouter::new(None));
         let graph = Arc::new(storage);
-        ThreadPool::new(0, graph, router);
+        ThreadPool::new(0, graph, router).unwrap();
     }
 
     #[test]

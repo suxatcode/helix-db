@@ -3,84 +3,112 @@ use protocol::{traversal_value::TraversalValue, value::Value, Edge, Node};
 
 use crate::types::GraphError;
 
-pub trait SourceTraversalSteps {
+use super::traversal::TransactionCommit;
+
+pub trait RSourceTraversalSteps {
     /// Adds all nodes in the graph to current traversal step
     ///
     /// Note: This can be a VERY expensive operation
-    fn v(&mut self) -> &mut Self;
+    fn v(&mut self, txn: &RoTxn) -> &mut Self;
     /// Adds all edges in the graph to current traversal step
     ///  
     /// Note: This can be a VERY expensive operation
-    fn e(&mut self) -> &mut Self;
+    fn e(&mut self, txn: &RoTxn) -> &mut Self;
 
+    /// Adds node with specific id to current traversal step
+    fn v_from_id(&mut self, txn: &RoTxn, node_id: &str) -> &mut Self;
+
+    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[String]) -> &mut Self;
+    /// Adds edge with specific id to current traversal step
+    fn e_from_id(&mut self, txn: &RoTxn, edge_id: &str) -> &mut Self;
+
+    fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[String]) -> &mut Self;
+
+    // fn e_from_type(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
+
+    fn v_from_secondary_index(
+        &mut self,
+        txn: &RoTxn,
+        index: &str,
+        value: &Value,
+    ) -> &mut Self;
+}
+
+pub trait WSourceTraversalSteps {
     /// Creates a new node in the graph and adds it to current traversal step
-    fn add_v(&mut self, node_label: &str, props: Vec<(String, Value)>) -> &mut Self;
+    fn add_v(
+        &mut self,
+        txn: &mut RwTxn,
+        node_label: &str,
+        props: Vec<(String, Value)>,
+        secondary_indices: Option<&[String]>,
+    ) -> &mut Self;
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e(
         &mut self,
+        txn: &mut RwTxn,
         edge_label: &str,
         from_id: &str,
         to_id: &str,
         props: Vec<(String, Value)>,
     ) -> &mut Self;
-
-    /// Adds node with specific id to current traversal step
-    fn v_from_id(&mut self, node_id: &str) -> &mut Self;
-
-    fn v_from_ids(&mut self, node_ids: &[String]) -> &mut Self;
-    /// Adds edge with specific id to current traversal step
-    fn e_from_id(&mut self, edge_id: &str) -> &mut Self;
-
-    fn v_from_types(&mut self, node_labels: &[String]) -> &mut Self;
-
-    // fn e_from_type(&mut self, edge_label: &str) -> &mut Self;
 }
 
-pub trait TraversalSteps {
+pub trait RTraversalSteps {
     /// Adds the nodes at the end of an outgoing edge to the current traversal step that match a given edge label if given one
-    fn out(&mut self, edge_label: &str) -> &mut Self;
+    fn out(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
     /// Adds the outgoing edges from the current node to the current traversal step that match a given edge label if given one
-    fn out_e(&mut self, edge_label: &str) -> &mut Self;
+    fn out_e(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
     /// Adds the nodes at the start of an incoming edge to the current traversal step that match a given edge label if given one
-    fn in_(&mut self, edge_label: &str) -> &mut Self;
+    fn in_(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
     /// Adds the incoming edges from the current node
     /// to the current traversal step that match a given edge label if given one
-    fn in_e(&mut self, edge_label: &str) -> &mut Self;
+    fn in_e(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
     /// Adds the node that recieves the current edge to the current traversal step
-    fn in_v(&mut self) -> &mut Self;
+    fn in_v(&mut self, txn: &RoTxn) -> &mut Self;
 
     /// Adds the node that sends the current edge to the current traversal step
     /// to the current traversal step
-    fn out_v(&mut self) -> &mut Self;
+    fn out_v(&mut self, txn: &RoTxn) -> &mut Self;
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
     /// that match a given edge label if given one
-    fn both(&mut self,edge_label: &str) -> &mut Self;
+    fn both(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
     /// Adds both the incoming and outgoing edges from the current node to the current traversal step
     /// that match a given edge label if given one
-    fn both_e(&mut self,edge_label: &str) -> &mut Self;
+    fn both_e(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
-    fn mutual(&mut self,edge_label: &str) -> &mut Self;
+    fn mutual(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
-    // fn mutual_e(&mut self, edge_label: &str) -> &mut Self;
+    // fn mutual_e(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
-    fn both_v(&mut self ) -> &mut Self;
+    fn both_v(&mut self, txn: &RoTxn) -> &mut Self;
+}
 
+pub trait WTraversalSteps {
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
-    fn add_e_to(&mut self, edge_label: &str, to_id: &str, props: Vec<(String, Value)>)
-        -> &mut Self;
+    fn add_e_to(
+        &mut self,
+        txn: &mut RwTxn,
+        edge_label: &str,
+        to_id: &str,
+        props: Vec<(String, Value)>,
+    ) -> &mut Self;
 
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e_from(
         &mut self,
+        txn: &mut RwTxn,
         edge_label: &str,
         from_id: &str,
         props: Vec<(String, Value)>,
     ) -> &mut Self;
+
+    fn update_props(&mut self, txn: &mut RwTxn, props: Vec<(String, Value)>) -> &mut Self;
 }
 
 pub trait TraversalMethods {
@@ -195,51 +223,65 @@ pub trait TraversalMethods {
     ///
     ///
     /// ```
-    fn filter_nodes<F>(&mut self, predicate: F) -> &mut Self
+    fn filter_nodes<F>(&mut self, txn: &RoTxn, predicate: F) -> &mut Self
     where
         F: Fn(&Node) -> Result<bool, GraphError>;
 
-    fn filter_edges<F>(&mut self, predicate: F) -> &mut Self
+    fn filter_edges<F>(&mut self, txn: &RoTxn, predicate: F) -> &mut Self
     where
         F: Fn(&Edge) -> Result<bool, GraphError>;
 
     /// Maps the current traversal step to a new traversal step
-    fn get_properties(&mut self, keys: &Vec<String>) -> &mut Self;
+    fn get_properties(&mut self, txn: &RoTxn, keys: &Vec<String>) -> &mut Self;
 
     /// Maps the current traversal step to a new traversal step
-    fn map_nodes<F>(&mut self, map_fn: F) -> &mut Self
+    fn map_nodes<F>(&mut self, txn: &RoTxn, map_fn: F) -> &mut Self
     where
         F: Fn(&Node) -> Result<Node, GraphError>;
 
     /// Maps the current traversal step to a new traversal step
-    fn map_edges<F>(&mut self, map_fn: F) -> &mut Self
+    fn map_edges<F>(&mut self, txn: &RoTxn, map_fn: F) -> &mut Self
     where
         F: Fn(&Edge) -> Result<Edge, GraphError>;
 
-
-    fn for_each_node<F>(&mut self, map_fn: F) -> &mut Self
+    fn for_each_node<F>(&mut self, txn: &RoTxn, map_fn: F) -> &mut Self
     where
-        F: Fn(&Node) -> Result<(), GraphError>;
+        F: Fn(&Node, &RoTxn) -> Result<(), GraphError>;
 
-    fn for_each_edge<F>(&mut self, map_fn: F) -> &mut Self
+    fn for_each_node_mut<F>(&mut self, txn: &mut RwTxn, map_fn: F) -> &mut Self
+    where
+        F: Fn(&Node, &mut RwTxn) -> Result<(), GraphError>;
+
+    fn for_each_edge<F>(&mut self, txn: &RoTxn, map_fn: F) -> &mut Self
     where
         F: Fn(&Edge) -> Result<(), GraphError>;
 }
 
-pub trait TraversalBuilderMethods {
+pub trait RTraversalBuilderMethods {
+    //// / Finishes the result and returns the final current traversal step
+    fn result<'a, T>(self, txn: &mut T) -> Result<TraversalValue, GraphError>
+    where
+        T: AsMut<RoTxn<'a>>;
+
+    fn execute(self) -> Result<(), GraphError>;
+}
+
+pub trait WTraversalBuilderMethods {
     /// Finishes the result and returns the final current traversal step
-    fn result(self) -> Result<TraversalValue, GraphError>;
+    fn result<T>(self, txn: T) -> Result<TraversalValue, GraphError>
+    where
+        T: TransactionCommit;
 
     fn execute(self) -> Result<(), GraphError>;
 }
 
 pub trait TraversalSearchMethods {
     /// Finds the shortest path from a given node to the currnet node using BFS
-    fn shortest_path_from(&mut self, from_id: &str) -> &mut Self;
+    fn shortest_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self;
 
     /// Finds the shortes path from the current node to a given node using BFS
-    fn shortest_path_to(&mut self, to_id: &str) -> &mut Self;
+    fn shortest_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self;
 
     /// Finds the shortes path between two given nodes using BFS
-    fn shortest_path_between(&mut self, from_id: &str, to_id: &str) -> &mut Self;
+    fn shortest_path_between(&mut self, txn: &RoTxn, from_id: &str, to_id: &str) -> &mut Self;
 }

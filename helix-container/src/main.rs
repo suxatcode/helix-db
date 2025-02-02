@@ -1,8 +1,7 @@
-use chrono::Utc;
 use helix_engine::{
-    graph_core::graph_core::HelixGraphEngine,
+    graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts},
     props,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+    storage_core::{storage_core::HelixGraphStorage, storage_methods::{DBMethods, StorageMethods}},
 };
 use helix_gateway::{
     router::router::{HandlerFn, HandlerSubmission},
@@ -10,15 +9,25 @@ use helix_gateway::{
 };
 use inventory;
 use rand::Rng;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, ops::Deref, sync::Arc, time::Instant};
 
 mod traversals;
 
 fn main() {
-    let home_dir = dirs::home_dir().expect("Could not retrieve home directory");
-    let path = home_dir.join(".helix/user42");
+    let path = match std::env::var("HELIX_DATA_DIR") {
+        Ok(val) => std::path::PathBuf::from(val).join(".helix/user"),
+        Err(_) => {
+            println!("HELIX_DATA_DIR not set, using default");
+            let home= dirs::home_dir().expect("Could not retrieve home directory");
+            home.join(".helix/user")
+        }
+    };
     let path_str = path.to_str().expect("Could not convert path to string");
-    let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
+    let opts = HelixGraphEngineOpts {
+        path: path_str.to_string(), 
+        secondary_indices: Some(vec!["username".to_string(), "x_id".to_string()])
+    };
+    let graph = Arc::new(HelixGraphEngine::new(opts).unwrap());
     // create_test_graph(Arc::clone(&graph), 15000, 250);
 
     // generates routes from handler proc macro
@@ -45,10 +54,12 @@ fn main() {
             .collect::<Vec<((String, String), HandlerFn)>>(),
     );
 
+
+    
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "127.0.0.1:3001",
+        "127.0.0.1:6969",
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),
@@ -64,13 +75,13 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
     let mut node_ids = Vec::with_capacity(size + 1);
     let mut txn = storage.env.write_txn().unwrap();
     let node = storage
-        .create_node(&mut txn, "user", props! { "username" => "Xav".to_string()})
+        .create_node(&mut txn, "user", props! { "username" => "Xav".to_string()}, None)
         .unwrap();
     println!("Node: {:?}", node);
     node_ids.push(node.id);
     for _ in 0..size {
         let node = storage
-            .create_node(&mut txn, "user", props! { "username" => generate_random_name()})
+            .create_node(&mut txn, "user", props! { "username" => generate_random_name()}, None)
             .unwrap();
         node_ids.push(node.id);
     }

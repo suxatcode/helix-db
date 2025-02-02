@@ -1,5 +1,6 @@
 use bincode::{deserialize, serialize};
 use heed3::{types::*, Database, Env, EnvOpenOptions, RoTxn, RwTxn};
+use protocol::filterable::Filterable;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
@@ -8,6 +9,8 @@ use uuid::Uuid;
 use crate::storage_core::storage_methods::{SearchMethods, StorageMethods};
 use crate::types::GraphError;
 use protocol::{value::Value, Edge, Node};
+
+use super::storage_methods::DBMethods;
 
 // Database names for different stores
 const DB_NODES: &str = "nodes"; // For node data (n:)
@@ -33,17 +36,21 @@ pub struct HelixGraphStorage {
     edge_labels_db: Database<Bytes, Unit>,
     out_edges_db: Database<Bytes, Unit>,
     in_edges_db: Database<Bytes, Unit>,
+    secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
 }
 
 impl HelixGraphStorage {
-    pub fn new(path: &str) -> Result<HelixGraphStorage, GraphError> {
+    pub fn new(
+        path: &str,
+        secondary_indexes: Option<Vec<String>>,
+    ) -> Result<HelixGraphStorage, GraphError> {
         fs::create_dir_all(path)?;
 
         // Configure and open LMDB environment
         let env = unsafe {
             EnvOpenOptions::new()
-                .map_size(10 * 1024 * 1024 * 1024) // 10GB max
-                .max_dbs(6)
+                .map_size(20 * 1024 * 1024 * 1024) // 10GB max
+                .max_dbs(12)
                 .max_readers(126)
                 .open(Path::new(path))?
         };
@@ -58,6 +65,15 @@ impl HelixGraphStorage {
         let out_edges_db = env.create_database(&mut wtxn, Some(DB_OUT_EDGES))?;
         let in_edges_db = env.create_database(&mut wtxn, Some(DB_IN_EDGES))?;
 
+        // Create secondary indices
+        let mut secondary_indices = HashMap::new();
+        if let Some(indexes) = secondary_indexes {
+            for index in indexes {
+                secondary_indices
+                    .insert(index.clone(), env.create_database(&mut wtxn, Some(&index))?);
+            }
+        }
+
         wtxn.commit()?;
 
         Ok(Self {
@@ -68,6 +84,7 @@ impl HelixGraphStorage {
             edge_labels_db,
             out_edges_db,
             in_edges_db,
+            secondary_indices,
         })
     }
 
@@ -96,7 +113,6 @@ impl HelixGraphStorage {
         }
     }
 
-    
     #[inline(always)]
     pub fn node_key(id: &str) -> Vec<u8> {
         [NODE_PREFIX, id.as_bytes()].concat()
@@ -140,18 +156,44 @@ impl HelixGraphStorage {
     }
 }
 
+impl DBMethods for HelixGraphStorage {
+    fn create_secondary_index(&mut self, name: &str) -> Result<(), GraphError> {
+        let mut wtxn = self.env.write_txn()?;
+        let db = self.env.create_database(&mut wtxn, Some(name))?;
+        wtxn.commit()?;
+        self.secondary_indices.insert(name.to_string(), db);
+        Ok(())
+    }
+
+    fn drop_secondary_index(&mut self, name: &str) -> Result<(), GraphError> {
+        let mut wtxn = self.env.write_txn()?;
+        let db = self
+            .secondary_indices
+            .get(name)
+            .ok_or(GraphError::New(format!(
+                "Secondary Index {} not found",
+                name
+            )))?;
+        db.clear(&mut wtxn)?;
+        wtxn.commit()?;
+        self.secondary_indices.remove(name);
+        Ok(())
+    }
+}
+
 impl StorageMethods for HelixGraphStorage {
     #[inline(always)]
-    fn check_exists(&self, txn: &RoTxn<'_>, id: &str) -> Result<bool, GraphError> {
+    fn check_exists(&self, txn: &RoTxn, id: &str) -> Result<bool, GraphError> {
+        // let txn = txn.read_txn();
         let exists = self
             .nodes_db
-            .get(&txn, Self::node_key(id).as_slice())?
+            .get(txn, Self::node_key(id).as_slice())?
             .is_some();
         Ok(exists)
     }
 
     #[inline(always)]
-    fn get_temp_node(&self, txn: &RoTxn<'_>, id: &str) -> Result<Node, GraphError> {
+    fn get_temp_node(&self, txn: &RoTxn, id: &str) -> Result<Node, GraphError> {
         match self.nodes_db.get(&txn, Self::node_key(id).as_slice())? {
             Some(data) => Ok(deserialize(data)?),
             None => Err(GraphError::New(format!("Node not found: {}", id))),
@@ -159,7 +201,7 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     #[inline(always)]
-    fn get_temp_edge(&self, txn: &RoTxn<'_>, id: &str) -> Result<Edge, GraphError> {
+    fn get_temp_edge(&self, txn: &RoTxn, id: &str) -> Result<Edge, GraphError> {
         match self.edges_db.get(&txn, Self::edge_key(id).as_slice())? {
             Some(data) => Ok(deserialize(data)?),
             None => Err(GraphError::New(format!("Edge not found: {}", id))),
@@ -167,7 +209,7 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     #[inline(always)]
-    fn get_node(&self, txn: &RoTxn<'_>, id: &str) -> Result<Node, GraphError> {
+    fn get_node(&self, txn: &RoTxn, id: &str) -> Result<Node, GraphError> {
         let n: Result<Node, GraphError> = match self.nodes_db.get(txn, &Self::node_key(id))? {
             Some(data) => Ok(deserialize(data)?),
             None => Err(GraphError::New(format!("Node not found: {}", id))),
@@ -176,7 +218,7 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     #[inline(always)]
-    fn get_edge(&self, txn: &RoTxn<'_>, id: &str) -> Result<Edge, GraphError> {
+    fn get_edge(&self, txn: &RoTxn, id: &str) -> Result<Edge, GraphError> {
         let e: Result<Edge, GraphError> = match self.edges_db.get(txn, &Self::edge_key(id))? {
             Some(data) => Ok(deserialize(data)?),
             None => Err(GraphError::New(format!("Edge not found: {}", id))),
@@ -184,9 +226,21 @@ impl StorageMethods for HelixGraphStorage {
         e
     }
 
+    fn get_node_by_secondary_index(
+            &self,
+            txn:&RoTxn,
+            index: &str,
+            key: &Value
+        ) -> Result<Node, GraphError> {
+        let db = self.secondary_indices.get(index).ok_or(GraphError::New(format!("Secondary Index {} not found", index)) )?;
+        let node_id = db.get(txn, &serialize(key)?)?.ok_or(GraphError::New(format!("Node not found in secondary index: {}", index)))?;
+        let node_id = std::str::from_utf8(&node_id)?;
+        self.get_temp_node(txn, node_id)
+    }
+
     fn get_out_edges(
         &self,
-        txn: &RoTxn<'_>,
+        txn: &RoTxn,
         node_id: &str,
         edge_label: &str,
     ) -> Result<Vec<Edge>, GraphError> {
@@ -210,7 +264,7 @@ impl StorageMethods for HelixGraphStorage {
 
     fn get_in_edges(
         &self,
-        txn: &RoTxn<'_>,
+        txn: &RoTxn,
         node_id: &str,
         edge_label: &str,
     ) -> Result<Vec<Edge>, GraphError> {
@@ -234,7 +288,7 @@ impl StorageMethods for HelixGraphStorage {
 
     fn get_out_nodes(
         &self,
-        txn: &RoTxn<'_>,
+        txn: &RoTxn,
         node_id: &str,
         edge_label: &str,
     ) -> Result<Vec<Node>, GraphError> {
@@ -259,7 +313,7 @@ impl StorageMethods for HelixGraphStorage {
 
     fn get_in_nodes(
         &self,
-        txn: &RoTxn<'_>,
+        txn: &RoTxn,
         node_id: &str,
         edge_label: &str,
     ) -> Result<Vec<Node>, GraphError> {
@@ -282,7 +336,7 @@ impl StorageMethods for HelixGraphStorage {
         Ok(nodes)
     }
 
-    fn get_all_nodes(&self, txn: &RoTxn<'_>) -> Result<Vec<Node>, GraphError> {
+    fn get_all_nodes(&self, txn: &RoTxn) -> Result<Vec<Node>, GraphError> {
         let mut nodes = Vec::with_capacity(self.nodes_db.len(txn)? as usize);
 
         let iter = self.nodes_db.iter(&txn)?;
@@ -298,11 +352,7 @@ impl StorageMethods for HelixGraphStorage {
         Ok(nodes)
     }
 
-    fn get_nodes_by_types(
-        &self,
-        txn: &RoTxn<'_>,
-        types: &[String],
-    ) -> Result<Vec<Node>, GraphError> {
+    fn get_nodes_by_types(&self, txn: &RoTxn, types: &[String]) -> Result<Vec<Node>, GraphError> {
         let mut nodes = Vec::new();
 
         for label in types {
@@ -330,7 +380,7 @@ impl StorageMethods for HelixGraphStorage {
         Ok(nodes)
     }
 
-    fn get_all_edges(&self, txn: &RoTxn<'_>) -> Result<Vec<Edge>, GraphError> {
+    fn get_all_edges(&self, txn: &RoTxn) -> Result<Vec<Edge>, GraphError> {
         let mut edges = Vec::with_capacity(self.edges_db.len(txn)? as usize);
 
         let iter = self.edges_db.iter(&txn)?;
@@ -348,9 +398,10 @@ impl StorageMethods for HelixGraphStorage {
 
     fn create_node(
         &self,
-        txn: &mut RwTxn<'_>,
+        txn: &mut RwTxn,
         label: &str,
         properties: impl IntoIterator<Item = (String, Value)>,
+        secondary_indices: Option<&[String]>,
     ) -> Result<Node, GraphError> {
         let node = Node {
             id: Uuid::new_v4().to_string(),
@@ -366,12 +417,35 @@ impl StorageMethods for HelixGraphStorage {
         self.node_labels_db
             .put(txn, &Self::node_label_key(&node.label, &node.id), &())?;
 
+        for index in secondary_indices.unwrap_or(&[]) {
+            match self.secondary_indices.get(index) {
+                Some(db) => {
+                    let key = match node.check_property(index) {
+                        Some(value) => value,
+                        None => {
+                            return Err(GraphError::New(format!(
+                                "Secondary Index {} not found",
+                                index
+                            )))
+                        }
+                    };
+                    db.put(txn, &serialize(key)?, node.id.as_bytes())?;
+                }
+                None => {
+                    return Err(GraphError::New(format!(
+                        "Secondary Index {} not found",
+                        index
+                    )))
+                }
+            }
+        }
+
         Ok(node)
     }
 
     fn create_edge(
         &self,
-        txn: &mut RwTxn<'_>,
+        txn: &mut RwTxn,
         label: &str,
         from_node: &str,
         to_node: &str,
@@ -384,14 +458,13 @@ impl StorageMethods for HelixGraphStorage {
         //         "One or both nodes do not exist".to_string(),
         //     ));
         // }
-
         if self
             .nodes_db
-            .get(&txn, Self::node_key(from_node).as_slice())?
+            .get(txn, Self::node_key(from_node).as_slice())?
             .is_none()
             || self
                 .nodes_db
-                .get(&txn, Self::node_key(to_node).as_slice())?
+                .get(txn, Self::node_key(to_node).as_slice())?
                 .is_none()
         {
             return Err(GraphError::NodeNotFound);
@@ -423,9 +496,9 @@ impl StorageMethods for HelixGraphStorage {
         Ok(edge)
     }
 
-    fn drop_node(&self, txn: &mut RwTxn<'_>, id: &str) -> Result<(), GraphError> {
+    fn drop_node(&self, txn: &mut RwTxn, id: &str) -> Result<(), GraphError> {
         // Get node to get its label
-        let node = self.get_temp_node(&txn, id)?;
+        let node = self.get_temp_node(txn, id)?;
 
         // Delete outgoing edges
         let out_prefix = Self::out_edge_key(id, "");
@@ -482,7 +555,7 @@ impl StorageMethods for HelixGraphStorage {
         Ok(())
     }
 
-    fn drop_edge(&self, txn: &mut RwTxn<'_>, edge_id: &str) -> Result<(), GraphError> {
+    fn drop_edge(&self, txn: &mut RwTxn, edge_id: &str) -> Result<(), GraphError> {
         // Get edge data first
         let edge_data = match self.edges_db.get(&txn, &Self::edge_key(edge_id))? {
             Some(data) => data,
@@ -501,12 +574,42 @@ impl StorageMethods for HelixGraphStorage {
 
         Ok(())
     }
+
+    fn update_node(
+        &self,
+        txn: &mut RwTxn,
+        id: &str,
+        properties: impl IntoIterator<Item = (String, Value)>,
+    ) -> Result<Node, GraphError> {
+        let mut node = self.get_temp_node(txn, id)?;
+        properties.into_iter().for_each(|(k, v)| {
+            node.properties.insert(k, v);
+        });
+        self.nodes_db
+            .put(txn, &Self::node_key(id), &serialize(&node)?)?;
+        Ok(node)
+    }
+
+    fn update_edge(
+        &self,
+        txn: &mut RwTxn,
+        id: &str,
+        properties: impl IntoIterator<Item = (String, Value)>,
+    ) -> Result<Edge, GraphError> {
+        let mut edge = self.get_temp_edge(txn, id)?;
+        properties.into_iter().for_each(|(k, v)| {
+            edge.properties.insert(k, v);
+        });
+        self.edges_db
+            .put(txn, &Self::edge_key(id), &serialize(&edge)?)?;
+        Ok(edge)
+    }
 }
 
 impl SearchMethods for HelixGraphStorage {
     fn shortest_path(
         &self,
-        txn: &RoTxn<'_>,
+        txn: &RoTxn,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
@@ -523,18 +626,17 @@ impl SearchMethods for HelixGraphStorage {
             let mut nodes = Vec::with_capacity(parent.len());
             let mut edges = Vec::with_capacity(parent.len() - 1);
 
-
             let mut current = end_id;
 
-        while current != start_id {
-            nodes.push(self.get_temp_node(txn, current)?);
-            
-            let (prev_node, edge) = &parent[current];
-            edges.push(edge.clone());
-            current = prev_node;
-        }
-        
-        nodes.push(self.get_temp_node(txn, start_id)?);
+            while current != start_id {
+                nodes.push(self.get_temp_node(txn, current)?);
+
+                let (prev_node, edge) = &parent[current];
+                edges.push(edge.clone());
+                current = prev_node;
+            }
+
+            nodes.push(self.get_temp_node(txn, start_id)?);
 
             Ok((nodes, edges))
         };
@@ -552,11 +654,11 @@ impl SearchMethods for HelixGraphStorage {
                 if !visited.contains(&edge.to_node) {
                     visited.insert(edge.to_node.clone());
                     parent.insert(edge.to_node.clone(), (current_id.to_string(), edge.clone()));
-                    
+
                     if edge.to_node == to_id {
                         return reconstruct_path(&parent, from_id, to_id);
                     }
-                    
+
                     queue.push_back(edge.to_node);
                 }
             }
@@ -580,7 +682,7 @@ mod tests {
     fn setup_temp_db() -> HelixGraphStorage {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().to_str().unwrap();
-        let storage = HelixGraphStorage::new(db_path).unwrap();
+        let storage = HelixGraphStorage::new(db_path, None).unwrap();
 
         storage
     }
@@ -590,13 +692,15 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node = storage.create_node(&mut txn, "person", props! {}).unwrap();
+        let node = storage
+            .create_node(&mut txn, "person", props! {}, None)
+            .unwrap();
         txn.commit().unwrap();
 
         let txn = storage.env.read_txn().unwrap();
         let retrieved_node = storage.get_node(&txn, &node.id).unwrap();
 
-        // Compare after both transactions are complete
+        // Compare after both RoTxns are complete
         assert_eq!(node.id, retrieved_node.id);
         assert_eq!(node.label, retrieved_node.label);
     }
@@ -606,8 +710,12 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
         let edge = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
             .unwrap(); // TODO: Handle Error
@@ -631,7 +739,9 @@ mod tests {
             "name" => "test node",
         };
 
-        let node = storage.create_node(&mut txn, "person", properties).unwrap(); // TODO: Handle Error
+        let node = storage
+            .create_node(&mut txn, "person", properties, None)
+            .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
         let txn = storage.env.read_txn().unwrap();
@@ -649,8 +759,12 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
 
         let edge_props = props! {
             "age" => 22,
@@ -686,9 +800,15 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node3 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node3 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
 
         storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -709,8 +829,12 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
         let edge = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
             .unwrap(); // TODO: Handle Error
@@ -728,7 +852,9 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
         let txn = storage.env.read_txn().unwrap();
@@ -741,8 +867,12 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
 
         let edge1 = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -768,7 +898,9 @@ mod tests {
             "age" => 22,
             "active" => true,
         };
-        let node = storage.create_node(&mut txn, "person", properties).unwrap(); // TODO: Handle Error
+        let node = storage
+            .create_node(&mut txn, "person", properties, None)
+            .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
         let txn = storage.env.read_txn().unwrap();
@@ -793,9 +925,15 @@ mod tests {
     fn test_get_all_nodes() {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "thing", props!()).unwrap(); // TODO: Handle Error
-        let node3 = storage.create_node(&mut txn, "other", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "thing", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node3 = storage
+            .create_node(&mut txn, "other", props!(), None)
+            .unwrap(); // TODO: Handle Error
 
         txn.commit().unwrap();
 
@@ -821,9 +959,15 @@ mod tests {
     fn test_get_all_node_by_types() {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "thing", props!()).unwrap(); // TODO: Handle Error
-        let node3 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "thing", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node3 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
         println!("node1: {:?}, node2: {:?}, node3: {:?}", node1, node2, node3);
 
         txn.commit().unwrap();
@@ -847,9 +991,15 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.env.write_txn().unwrap();
 
-        let node1 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node2 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
-        let node3 = storage.create_node(&mut txn, "person", props!()).unwrap(); // TODO: Handle Error
+        let node1 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        let node3 = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
 
         let edge1 = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -896,7 +1046,9 @@ mod tests {
         let mut txn = storage.env.write_txn().unwrap();
         let mut nodes = Vec::new();
         for _ in 0..6 {
-            let node = storage.create_node(&mut txn, "person", props!()).unwrap();
+            let node = storage
+                .create_node(&mut txn, "person", props!(), None)
+                .unwrap();
             nodes.push(node);
         }
 

@@ -13,3 +13,5 @@ count.sh
 **/call.sh
 **/*.json
 .DS_Store
+push.sh
+

@@ -9,10 +9,7 @@
 
 use core::fmt;
 use helix_engine::{graph_core::graph_core::HelixGraphEngine, types::GraphError};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use protocol::{request::Request, response::Response};
 
@@ -67,15 +64,15 @@ impl HelixRouter {
     }
 
     /// Handle a request by finding the appropriate handler and executing it
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// * `graph_access` - A reference to the graph engine
     /// * `request` - The request to handle
     /// * `response` - The response to write to
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// * `Ok(())` if the request was handled successfully
     /// * `Err(RouterError)` if there was an error handling the request
     pub fn handle(
@@ -120,5 +117,23 @@ impl fmt::Display for RouterError {
 impl From<String> for RouterError {
     fn from(error: String) -> Self {
         RouterError::New(error)
+    }
+}
+
+impl From<std::io::Error> for RouterError {
+    fn from(error: std::io::Error) -> Self {
+        RouterError::Io(error)
+    }
+}
+
+impl From<GraphError> for RouterError {
+    fn from(error: GraphError) -> Self {
+        RouterError::New(error.to_string())
+    }
+}
+
+impl From<RouterError> for GraphError {
+    fn from(error: RouterError) -> Self {
+        GraphError::New(error.to_string())
     }
 }

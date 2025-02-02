@@ -1,0 +1,14 @@
+.git/
+**/target/
+**/*.json
+testing/
+graph_data/
+dst/
+docs/
+.vscode/
+.github/
+.hql/
+**/node_modules/
+queries/
+helix-lite/
+helix-cli/
