@@ -19,6 +19,7 @@ use protocol::{filterable::Filterable, value::Value, ReturnValue};
 use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
+
 struct SubGraphData {
     user_id: String,
     username: String,
@@ -43,7 +44,8 @@ pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Resul
     let mut user = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
     match data.username.len() {
         0 => {
-            user.v(&txn).range(0, 1);
+            let node = db.get_random_node(&txn)?;
+            user = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node));
         }
         _ => {
             // user.v().filter_nodes(node_matches!("username", data.username));
@@ -52,7 +54,7 @@ pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Resul
     }
     let user = user.result(txn)?;
     println!("User lookup took: {}ms", start_user.elapsed().as_millis());
-
+    println!("User: {:?}", user);
     // get 350 out nodes that are mutuals
     let start_mutuals = std::time::Instant::now();
     let txn = db.env.read_txn().unwrap();
@@ -81,6 +83,7 @@ pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Resul
 }
 
 #[derive(Deserialize)]
+
 struct ShortestPathData {
     user_id: String,
     to_id: String,
@@ -116,6 +119,7 @@ pub fn get_shortest_path_to_user(
 }
 
 #[derive(Deserialize)]
+
 struct AddUser {
     x_id: String,
     username: String,
@@ -226,12 +230,9 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
                 TraversalValue::NodeArray(nodes) => nodes.first().unwrap().clone(),
                 _ => return Err(GraphError::from("Invalid node".to_string())),
             };
-            // let following_ids: HashSet<String> = HashSet::from_iter(data.following_ids);
-            // The issue is in the following_ids.iter().for_each() closure
-            // We need to handle the Result types properly and not return them within the for_each
 
             data.following_ids.iter().for_each(|id: &String| {
-                let mut following = TraversalBuilder::new(Arc::clone(&db), added_user.clone());
+                let mut following = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
                 following.v_from_secondary_index(&txn, "x_id", &Value::String(id.to_string()));
 
                 match following.current_step {
@@ -276,7 +277,7 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
                                 println!("Failed to create edge");
                             }
                         }
-                    },
+                    }
                     _ => {
                         println!("Invalid node");
                         panic!("Invalid node");
@@ -300,3 +301,287 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
 // do type checking based on type of transaction do matches based on that
 // allow all reads to be done on writes
 // allow writes only on reads
+
+#[handler]
+pub fn count_nodes(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.env.read_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v(&txn).count();
+    let result = match tr.result(txn) {
+        Ok(TraversalValue::Count(c)) => c,
+        _ => Count::new(0),
+    };
+    return_vals.insert("count".to_string(), ReturnValue::Count(result));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[handler]
+pub fn count_edges(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.env.read_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.e(&txn).count();
+    let result = match tr.result(txn) {
+        Ok(TraversalValue::Count(c)) => c,
+        _ => Count::new(0),
+    };
+    return_vals.insert("count".to_string(), ReturnValue::Count(result));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct User {
+    x_id: String,
+    username: String,
+    url: String,
+    location: String,
+    verified: bool,
+    followers_count: i32,
+    following_count: i32,
+    post_count: i32,
+    joined_date: String,
+    profile_image_url: String,
+    profile_banner_url: String,
+    graph_image_url: String,
+    created_at: String,
+    updated_at: String,
+    following_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Data<'a> {
+    path: Option<&'a str>,
+}
+#[handler]
+pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let d = sonic_rs::from_slice::<Data>(&input.request.body).unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+    let db = Arc::clone(&input.graph.storage);
+    
+    // read json from from /home/ec2-user/convert/output_users.json
+    let json_str = std::fs::read_to_string(d.path.unwrap_or("/home/ec2-user/convert/output_users.json")).unwrap();
+    let users: Vec<User> = sonic_rs::from_str(&json_str).unwrap();
+    
+    //for each user run add user
+    let mut txn = db.env.write_txn().unwrap();
+    for data in users {
+        let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+        tr.v_from_secondary_index(&txn, "x_id", &Value::String(data.x_id.clone()));
+    
+        let user = tr.current_step;
+        println!("User: {:?}", user);
+        match user {
+            TraversalValue::NodeArray(nodes) => {
+                if nodes.len() > 1 {
+                    // if there are more than one user with the same x_id
+                    return Err(GraphError::from(
+                        "Multiple users with the same username".to_string(),
+                    ));
+                } else if nodes.len() == 1 {
+                    println!("Updating user");
+                    match nodes.first() {
+                        Some(node) => match node.check_property("is_enabled").unwrap() {
+                            Value::Boolean(b) => match b {
+                                true => {
+                                    return Err(GraphError::from("User already exists".to_string()))
+                                }
+                                false => {
+                                    let mut tr =
+                                        TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                                    tr.v_from_id(&txn, &node.id);
+                                    tr.update_props(
+                                        &mut txn,
+                                        props! {
+                                            "x_id" => data.x_id,
+                                            "username" => data.username,
+                                            "url" => data.url,
+                                            "location" => data.location,
+                                            "verified" => data.verified,
+                                            "followers_count" => data.followers_count,
+                                            "following_count" => data.following_count,
+                                            "post_count" => data.post_count,
+                                            "joined_date" => data.joined_date,
+                                            "profile_image_url" => data.profile_image_url,
+                                            "profile_banner_url" => data.profile_banner_url,
+                                            "graph_image_url" => data.graph_image_url,
+                                            "created_at" => data.created_at,
+                                            "updated_at" => data.updated_at,
+                                            "is_enabled" => true,
+                                        },
+                                    );
+                                    let updated_user = tr.finish()?;
+                                    let user = match updated_user.clone() {
+                                        TraversalValue::NodeArray(nodes) => nodes.first().unwrap().clone(),
+                                        _ => return Err(GraphError::from("Invalid node".to_string())),
+                                    };
+
+                                    data.following_ids.iter().for_each(|x_id: &String| {
+                                        let mut following = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                                        following.v_from_secondary_index(&txn, "x_id", &Value::String(x_id.to_string()));
+                        
+                                        match following.current_step {
+                                            TraversalValue::NodeArray(nodes) => {
+                                                if nodes.len() == 1 {
+                                                    let node = nodes.first().unwrap();
+                                                    let mut edge = TraversalBuilder::new(
+                                                        Arc::clone(&input.graph.storage),
+                                                        TraversalValue::Empty,
+                                                    );
+                                                    edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
+                                                    if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                                        println!("Failed to create edge");
+                                                    }
+                                                }
+                                            }
+                                            TraversalValue::Empty => {
+                                                println!("User with id {} not found", x_id);
+                                                let mut new_node = TraversalBuilder::new(
+                                                    Arc::clone(&input.graph.storage),
+                                                    TraversalValue::Empty,
+                                                );
+                                                new_node.add_v(
+                                                    &mut txn,
+                                                    "user",
+                                                    props! {
+                                                        "x_id" => x_id.to_string(),
+                                                        "created_at" => "2021-01-01".to_string(),
+                                                        "updated_at" => "2021-01-01".to_string(),
+                                                        "is_enabled" => false,
+                                                    },
+                                                    Some(&["x_id".to_string()]),
+                                                );
+                                                if let TraversalValue::NodeArray(nodes) = new_node.finish().unwrap() {
+                                                    let node = nodes.first().unwrap();
+                                                    let mut edge = TraversalBuilder::new(
+                                                        Arc::clone(&input.graph.storage),
+                                                        TraversalValue::Empty,
+                                                    );
+                                                    edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
+                                                    if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                                        println!("Failed to create edge");
+                                                    }
+                                                }
+                                            }
+                                            _ => {
+                                                println!("Invalid node");
+                                                panic!("Invalid node");
+                                            }
+                                        }
+                                    });
+                        
+                                    return_vals.insert(
+                                        "updated_user".to_string(),
+                                        ReturnValue::TraversalValues(updated_user),
+                                    );
+                                }
+                            },
+                            _ => return Err(GraphError::from("Invalid node".to_string())),
+                        },
+                        None => return Err(GraphError::from("Invalid node".to_string())),
+                    }
+                }
+            }
+            TraversalValue::Empty => {
+                println!("Adding user");
+                let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                tr.add_v(
+                    &mut txn,
+                    "user",
+                    props! {
+                        "x_id" => data.x_id,
+                        "username" => data.username,
+                        "url" => data.url,
+                        "location" => data.location,
+                        "verified" => data.verified,
+                        "followers_count" => data.followers_count,
+                        "following_count" => data.following_count,
+                        "post_count" => data.post_count,
+                        "joined_date" => data.joined_date,
+                        "profile_image_url" => data.profile_image_url,
+                        "profile_banner_url" => data.profile_banner_url,
+                        "graph_image_url" => data.graph_image_url,
+                        "created_at" => data.created_at,
+                        "updated_at" => data.updated_at,
+                        "is_enabled" => true,
+                    },
+                    Some(&["username".to_string(), "x_id".to_string()]),
+                );
+                let added_user = tr.current_step;
+                let user = match added_user.clone() {
+                    TraversalValue::NodeArray(nodes) => nodes.first().unwrap().clone(),
+                    _ => return Err(GraphError::from("Invalid node".to_string())),
+                };
+    
+                data.following_ids.iter().for_each(|x_id: &String| {
+                    let mut following = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                    following.v_from_secondary_index(&txn, "x_id", &Value::String(x_id.to_string()));
+    
+                    match following.current_step {
+                        TraversalValue::NodeArray(nodes) => {
+                            if nodes.len() == 1 {
+                                let node = nodes.first().unwrap();
+                                let mut edge = TraversalBuilder::new(
+                                    Arc::clone(&input.graph.storage),
+                                    TraversalValue::Empty,
+                                );
+                                edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
+                                if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                    println!("Failed to create edge");
+                                }
+                            }
+                        }
+                        TraversalValue::Empty => {
+                            println!("User with id {} not found", x_id);
+                            let mut new_node = TraversalBuilder::new(
+                                Arc::clone(&input.graph.storage),
+                                TraversalValue::Empty,
+                            );
+                            new_node.add_v(
+                                &mut txn,
+                                "user",
+                                props! {
+                                    "x_id" => x_id.to_string(),
+                                    "created_at" => "2021-01-01".to_string(),
+                                    "updated_at" => "2021-01-01".to_string(),
+                                    "is_enabled" => false,
+                                },
+                                Some(&["x_id".to_string()]),
+                            );
+                            if let TraversalValue::NodeArray(nodes) = new_node.finish().unwrap() {
+                                let node = nodes.first().unwrap();
+                                let mut edge = TraversalBuilder::new(
+                                    Arc::clone(&input.graph.storage),
+                                    TraversalValue::Empty,
+                                );
+                                edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
+                                if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                    println!("Failed to create edge");
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("Invalid node");
+                            panic!("Invalid node");
+                        }
+                    }
+                });
+    
+                return_vals.insert(
+                    "new_user".to_string(),
+                    ReturnValue::TraversalValues(added_user),
+                );
+            }
+            _ => return Err(GraphError::from("Invalid node".to_string())),
+        }
+    
+    }
+    
+    txn.commit()?;
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}

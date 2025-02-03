@@ -267,10 +267,11 @@ pub trait RTraversalBuilderMethods {
 }
 
 pub trait WTraversalBuilderMethods {
-    /// Finishes the result and returns the final current traversal step
+    // /// Finishes the result and returns the final current traversal step
     fn result<T>(self, txn: T) -> Result<TraversalValue, GraphError>
     where
         T: TransactionCommit;
+    fn finish(self) -> Result<TraversalValue, GraphError>;
 
     fn execute(self) -> Result<(), GraphError>;
 }

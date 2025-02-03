@@ -2,7 +2,10 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use helix_engine::{
     graph_core::{
         traversal::TraversalBuilder,
-        traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps},
+        traversal_steps::{
+            RSourceTraversalSteps, RTraversalSteps, WSourceTraversalSteps,
+            WTraversalBuilderMethods, WTraversalSteps,
+        },
     },
     props,
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -23,7 +26,9 @@ fn create_test_graph(
 
     let mut txn = storage.env.write_txn().unwrap();
     for _ in 0..size {
-        let node = storage.create_node(&mut txn,"person", props!(), None).unwrap();
+        let node = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap();
         node_ids.push(node.id);
     }
 
@@ -35,7 +40,7 @@ fn create_test_graph(
 
             if from_id != to_id {
                 storage
-                    .create_edge(&mut txn,"knows", from_id, to_id, props!())
+                    .create_edge(&mut txn, "knows", from_id, to_id, props!())
                     .unwrap();
             }
         }
@@ -81,10 +86,8 @@ fn bench_graph_operations(c: &mut Criterion) {
                 let mut traversal = TraversalBuilder::new(
                     Arc::clone(&storage),
                     TraversalValue::NodeArray(vec![start_node.clone()]),
-                    Some(txn),
-                    None,
                 );
-                traversal.out("knows");
+                traversal.out(&txn, "knows");
                 black_box(traversal)
             });
         });
@@ -96,10 +99,11 @@ fn bench_graph_operations(c: &mut Criterion) {
                 let mut traversal = TraversalBuilder::new(
                     Arc::clone(&storage),
                     TraversalValue::NodeArray(vec![start_node.clone()]),
-                    Some(txn),
-                    None,
                 );
-                traversal.out("knows").out("knows").out("knows");
+                traversal
+                    .out(&txn, "knows")
+                    .out(&txn, "knows")
+                    .out(&txn, "knows");
                 black_box(traversal)
             });
         });
@@ -108,13 +112,9 @@ fn bench_graph_operations(c: &mut Criterion) {
         group.bench_function(format!("full_graph_scan_{}", size), |b| {
             b.iter(|| {
                 let txn = storage.env.read_txn().unwrap();
-                let mut traversal = TraversalBuilder::new(
-                    Arc::clone(&storage),
-                    TraversalValue::Empty,
-                    Some(txn),
-                    None,
-                );
-                traversal.v();
+                let mut traversal =
+                    TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+                traversal.v(&txn);
                 black_box(traversal)
             });
         });
@@ -142,10 +142,8 @@ fn bench_complex_queries(c: &mut Criterion) {
             let mut traversal = TraversalBuilder::new(
                 Arc::clone(&storage),
                 TraversalValue::NodeArray(vec![start_node.clone()]),
-                Some(txn),
-                None,
             );
-            traversal.out("knows").out("knows");
+            traversal.out(&txn, "knows").out(&txn, "knows");
             black_box(traversal)
         });
     });
@@ -158,14 +156,12 @@ fn bench_complex_queries(c: &mut Criterion) {
             let mut traversal = TraversalBuilder::new(
                 Arc::clone(&storage),
                 TraversalValue::NodeArray(vec![start_node.clone()]),
-                Some(txn),
-                None,
             );
             traversal
-                .out("knows")
-                .out("knows")
-                .out("knows")
-                .in_("knows");
+                .out(&txn, "knows")
+                .out(&txn, "knows")
+                .out(&txn, "knows")
+                .in_(&txn, "knows");
             black_box(traversal)
         });
     });

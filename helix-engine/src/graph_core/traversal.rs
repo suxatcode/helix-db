@@ -815,6 +815,14 @@ impl WTraversalBuilderMethods for TraversalBuilder {
         Ok(self.current_step)
     }
 
+    fn finish(self) -> Result<TraversalValue, GraphError> {
+        if let Some(err) = self.error {
+            return Err(err);
+        }
+
+        Ok(self.current_step)
+    }
+
     fn execute(self) -> Result<(), GraphError> {
         if let Some(err) = self.error {
             return Err(err);

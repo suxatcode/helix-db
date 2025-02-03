@@ -59,7 +59,7 @@ fn main() {
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "127.0.0.1:6969",
+        "0.0.0.0:6969",
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),

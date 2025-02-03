@@ -30,13 +30,13 @@ const IN_EDGES_PREFIX: &[u8] = b"i:";
 
 pub struct HelixGraphStorage {
     pub env: Env,
-    nodes_db: Database<Bytes, Bytes>,
-    edges_db: Database<Bytes, Bytes>,
-    node_labels_db: Database<Bytes, Unit>,
-    edge_labels_db: Database<Bytes, Unit>,
-    out_edges_db: Database<Bytes, Unit>,
-    in_edges_db: Database<Bytes, Unit>,
-    secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
+    pub nodes_db: Database<Bytes, Bytes>,
+    pub edges_db: Database<Bytes, Bytes>,
+    pub node_labels_db: Database<Bytes, Unit>,
+    pub edge_labels_db: Database<Bytes, Unit>,
+    pub out_edges_db: Database<Bytes, Unit>,
+    pub in_edges_db: Database<Bytes, Unit>,
+    pub secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
 }
 
 impl HelixGraphStorage {
@@ -73,7 +73,7 @@ impl HelixGraphStorage {
                     .insert(index.clone(), env.create_database(&mut wtxn, Some(&index))?);
             }
         }
-
+        println!("Secondary Indices: {:?}", secondary_indices);
         wtxn.commit()?;
 
         Ok(Self {
@@ -110,6 +110,13 @@ impl HelixGraphStorage {
             from_node: from_node.to_string(),
             to_node: to_node.to_string(),
             properties: HashMap::from_iter(properties),
+        }
+    }
+
+    pub fn get_random_node(&self, txn: &RoTxn) -> Result<Node, GraphError> {
+        match self.nodes_db.first(&txn)? {
+            Some((_,data)) => Ok(deserialize(data)?),
+            None => Err(GraphError::New(format!("Node not found"))),
         }
     }
 
@@ -227,13 +234,24 @@ impl StorageMethods for HelixGraphStorage {
     }
 
     fn get_node_by_secondary_index(
-            &self,
-            txn:&RoTxn,
-            index: &str,
-            key: &Value
-        ) -> Result<Node, GraphError> {
-        let db = self.secondary_indices.get(index).ok_or(GraphError::New(format!("Secondary Index {} not found", index)) )?;
-        let node_id = db.get(txn, &serialize(key)?)?.ok_or(GraphError::New(format!("Node not found in secondary index: {}", index)))?;
+        &self,
+        txn: &RoTxn,
+        index: &str,
+        key: &Value,
+    ) -> Result<Node, GraphError> {
+        let db = self
+            .secondary_indices
+            .get(index)
+            .ok_or(GraphError::New(format!(
+                "Secondary Index {} not found",
+                index
+            )))?;
+        let node_id = db
+            .get(txn, &serialize(key)?)?
+            .ok_or(GraphError::New(format!(
+                "Node not found in secondary index: {}",
+                index
+            )))?;
         let node_id = std::str::from_utf8(&node_id)?;
         self.get_temp_node(txn, node_id)
     }
@@ -585,8 +603,18 @@ impl StorageMethods for HelixGraphStorage {
         properties.into_iter().for_each(|(k, v)| {
             node.properties.insert(k, v);
         });
+        for (key, v) in node
+            .properties
+            .iter()
+        {
+            if let Some(db) = self.secondary_indices.get(key) {
+                // println!("Updating secondary index: {}, {}", key, v);
+                db.put(txn, &serialize(v)?, node.id.as_bytes())?;
+            }
+        }
         self.nodes_db
             .put(txn, &Self::node_key(id), &serialize(&node)?)?;
+
         Ok(node)
     }
 
@@ -1098,5 +1126,145 @@ mod tests {
             .len();
         assert_eq!(shortest_path1, 3);
         assert_eq!(shortest_path2, 3);
+    }
+
+    #[test]
+    fn test_secondary_index() {
+        let mut storage = setup_temp_db();
+        storage.create_secondary_index("name").unwrap();
+        storage.create_secondary_index("age").unwrap();
+        let mut txn = storage.env.write_txn().unwrap();
+
+        let node1 = storage
+            .create_node(
+                &mut txn,
+                "person",
+                props! {
+                    "name" => "George",
+                    "age" => 22,
+                },
+                Some(&["name".to_string(), "age".to_string()]),
+            )
+            .unwrap(); // TODO: Handle Error
+        let node2 = storage
+            .create_node(
+                &mut txn,
+                "person",
+                props! {
+                    "name" => "John",
+                    "age" => 25,
+                },
+                Some(&["name".to_string(), "age".to_string()]),
+            )
+            .unwrap(); // TODO: Handle Error
+
+        txn.commit().unwrap();
+
+        let txn = storage.env.read_txn().unwrap();
+        let retrieved_node1 = storage
+            .get_node_by_secondary_index(&txn, "name", &Value::String("George".to_string()))
+            .unwrap(); // TODO: Handle Error
+        let retrieved_node2 = storage
+            .get_node_by_secondary_index(&txn, "age", &Value::Integer(25))
+            .unwrap(); // TODO: Handle Error
+
+        assert_eq!(retrieved_node1.id, node1.id);
+        assert_eq!(retrieved_node2.id, node2.id);
+    }
+
+    #[test]
+    fn test_update_node() {
+        let storage = setup_temp_db();
+        let mut txn = storage.env.write_txn().unwrap();
+
+        let node = storage
+            .create_node(&mut txn, "person", props!(), None)
+            .unwrap(); // TODO: Handle Error
+        txn.commit().unwrap();
+
+        let mut txn = storage.env.write_txn().unwrap();
+        let updated_node = storage
+            .update_node(
+                &mut txn,
+                &node.id,
+                props! {
+                    "name" => "George",
+                    "age" => 22,
+                },
+            )
+            .unwrap(); // TODO: Handle Error
+        txn.commit().unwrap();
+
+        let txn = storage.env.read_txn().unwrap();
+        let retrieved_node = storage.get_node(&txn, &node.id).unwrap(); // TODO: Handle Error
+
+        assert_eq!(retrieved_node.id, updated_node.id);
+        assert_eq!(retrieved_node.label, updated_node.label);
+        assert_eq!(
+            retrieved_node.properties.get("name").unwrap(),
+            &Value::String("George".to_string())
+        );
+        assert_eq!(
+            retrieved_node.properties.get("age").unwrap(),
+            &Value::Integer(22)
+        );
+    }
+
+    #[test]
+    fn test_update_with_secondary() {
+        let mut storage = setup_temp_db();
+        storage.create_secondary_index("name").unwrap();
+        storage.create_secondary_index("age").unwrap();
+        let mut txn = storage.env.write_txn().unwrap();
+
+        let node = storage
+            .create_node(
+                &mut txn,
+                "person",
+                props! {
+                    "name" => "George",
+                    "age" => 22,
+                },
+                Some(&["name".to_string(), "age".to_string()]),
+            )
+            .unwrap(); // TODO: Handle Error
+        txn.commit().unwrap();
+
+        let mut txn = storage.env.write_txn().unwrap();
+        let updated_node = storage
+            .update_node(
+                &mut txn,
+                &node.id,
+                props! {
+                    "name" => "John",
+                    "age" => 25,
+                },
+            )
+            .unwrap(); // TODO: Handle Error
+        txn.commit().unwrap();
+
+        let txn = storage.env.read_txn().unwrap();
+        let retrieved_node = storage.get_node(&txn, &node.id).unwrap(); // TODO: Handle Error
+
+        assert_eq!(retrieved_node.id, updated_node.id);
+        assert_eq!(retrieved_node.label, updated_node.label);
+        assert_eq!(
+            retrieved_node.properties.get("name").unwrap(),
+            &Value::String("John".to_string())
+        );
+        assert_eq!(
+            retrieved_node.properties.get("age").unwrap(),
+            &Value::Integer(25)
+        );
+
+        let retrieved_node = storage
+            .get_node_by_secondary_index(&txn, "name", &Value::String("John".to_string()))
+            .unwrap(); // TODO: Handle Error
+        assert_eq!(retrieved_node.id, node.id);
+
+        let retrieved_node = storage
+            .get_node_by_secondary_index(&txn, "age", &Value::Integer(25))
+            .unwrap(); // TODO: Handle Error
+        assert_eq!(retrieved_node.id, node.id);
     }
 }
