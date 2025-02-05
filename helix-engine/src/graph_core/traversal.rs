@@ -6,7 +6,7 @@ use crate::{
     props,
     storage_core::{
         storage_core::HelixGraphStorage,
-        storage_methods::{SearchMethods, StorageMethods},
+        storage_methods::{BasicStorageMethods, SearchMethods, StorageMethods},
         txn_context::TransactionContext,
     },
     types::GraphError,
@@ -71,6 +71,19 @@ impl TraversalBuilder {
             self.error = Some(err);
         }
     }
+
+    pub fn add_v_temp(
+        &mut self,
+        txn: &mut RwTxn,
+        node_label: &str,
+        props: Vec<(String, Value)>,
+        secondary_indices: Option<&[String]>,
+    ) -> Result<(), GraphError> {
+        self
+            .storage
+            .create_node_(txn, node_label, props, secondary_indices)?;
+        Ok(())
+    }
 }
 
 impl RSourceTraversalSteps for TraversalBuilder {
@@ -113,7 +126,7 @@ impl RSourceTraversalSteps for TraversalBuilder {
     fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[String]) -> &mut Self {
         let mut new_current = Vec::with_capacity(node_ids.len());
         for node_id in node_ids {
-            match self.storage.get_temp_node(txn, node_id) {
+            match self.storage.get_node(txn, node_id) {
                 Ok(node) => new_current.push(node),
                 Err(err) => {
                     self.store_error(err);
@@ -861,7 +874,7 @@ mod tests {
     #[test]
     fn test_v() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -874,7 +887,7 @@ mod tests {
             .unwrap();
         txn.commit().unwrap();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
         // Check that the node array contains all nodes
@@ -899,7 +912,7 @@ mod tests {
     #[test]
     fn test_e() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Graph Structure:
         // (person1)-[knows]->(person2)
@@ -928,7 +941,7 @@ mod tests {
 
         txn.commit().unwrap();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e(&txn);
 
@@ -974,7 +987,7 @@ mod tests {
     fn test_v_empty_graph() {
         let (storage, _temp_dir) = setup_test_db();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
 
@@ -991,7 +1004,7 @@ mod tests {
     fn test_e_empty_graph() {
         let (storage, _temp_dir) = setup_test_db();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e(&txn);
 
@@ -1008,7 +1021,7 @@ mod tests {
     #[test]
     fn test_v_nodes_without_edges() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -1018,7 +1031,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
 
@@ -1038,7 +1051,7 @@ mod tests {
     fn test_add_v() {
         let (storage, _temp_dir) = setup_test_db();
 
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
 
         traversal.add_v(&mut txn, "person", props! {}, None);
@@ -1061,7 +1074,7 @@ mod tests {
     #[test]
     fn test_add_e() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -1071,7 +1084,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.add_e(&mut txn, "knows", &node1.id, &node2.id, props!());
         let result = traversal.result(txn).unwrap();
@@ -1090,7 +1103,7 @@ mod tests {
     #[test]
     fn test_out() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create graph: (person1)-[knows]->(person2)-[knows]->(person3)
         let person1 = storage
@@ -1111,7 +1124,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
         // Traverse from person1 to person2
@@ -1130,7 +1143,7 @@ mod tests {
     #[test]
     fn test_out_e() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create graph: (person1)-[knows]->(person2)
         let person1 = storage
@@ -1145,7 +1158,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
         // Traverse from person1 to person2
@@ -1165,7 +1178,7 @@ mod tests {
     #[test]
     fn test_in() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create graph: (person1)-[knows]->(person2)
         let person1 = storage
@@ -1180,7 +1193,7 @@ mod tests {
             .unwrap();
         txn.commit().unwrap();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person2.clone()));
         // Traverse from person2 to person1
@@ -1199,7 +1212,7 @@ mod tests {
     #[test]
     fn test_in_e() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create test graph: (person1)-[knows]->(person2)
         let person1 = storage
@@ -1214,7 +1227,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person2.clone()));
         // Traverse from person2 to person1
@@ -1234,7 +1247,7 @@ mod tests {
     #[test]
     fn test_traversal_validation() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -1246,7 +1259,7 @@ mod tests {
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
             .unwrap();
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.current_step = TraversalValue::from(edge);
 
@@ -1259,7 +1272,7 @@ mod tests {
     #[test]
     fn test_complex_traversal() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Graph structure:
         // (person1)-[knows]->(person2)-[likes]->(person3)
@@ -1289,7 +1302,7 @@ mod tests {
 
         txn.commit().unwrap();
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
         // Traverse from person1 to person2
@@ -1332,12 +1345,12 @@ mod tests {
     #[test]
     fn test_count_single_node() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         let person = storage
             .create_node(&mut txn, "person", props!(), None)
             .unwrap();
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person));
         if let TraversalValue::Count(count) = &traversal.count().current_step {
@@ -1350,7 +1363,7 @@ mod tests {
     #[test]
     fn test_count_node_array() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         let _ = storage
             .create_node(&mut txn, "person", props!(), None)
             .unwrap();
@@ -1362,7 +1375,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn); // Get all nodes
         if let TraversalValue::Count(count) = &traversal.count().current_step {
@@ -1375,7 +1388,7 @@ mod tests {
     #[test]
     fn test_count_mixed_steps() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create a graph with multiple paths
         let person1 = storage
@@ -1400,7 +1413,7 @@ mod tests {
             person1, person2, person3
         );
 
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
         traversal.out(&txn, "knows"); // Should have 2 nodes (person2 and person3)
@@ -1417,7 +1430,7 @@ mod tests {
     #[test]
     fn test_range_subset() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create multiple nodes
         let _: Vec<Node> = (0..5)
@@ -1429,7 +1442,7 @@ mod tests {
             .collect();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn); // Get all nodes
         traversal.range(1, 3); // Take nodes at index 1 and 2
@@ -1444,7 +1457,7 @@ mod tests {
     #[test]
     fn test_range_chaining() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create graph: (p1)-[knows]->(p2)-[knows]->(p3)-[knows]->(p4)-[knows]->(p5)
         let nodes: Vec<Node> = (0..5)
@@ -1467,7 +1480,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn); // Get all nodes
         traversal.range(0, 3); // Take first 3 nodes
@@ -1483,9 +1496,9 @@ mod tests {
     #[test]
     fn test_range_empty() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
         traversal.range(0, 0);
@@ -1499,9 +1512,9 @@ mod tests {
     #[test]
     fn test_count_empty() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         if let TraversalValue::Count(count) = &traversal.count().current_step {
             assert_eq!(count.value(), 0);
@@ -1513,7 +1526,7 @@ mod tests {
     #[test]
     fn test_v_from_id() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create a test node
         let person = storage
@@ -1522,7 +1535,7 @@ mod tests {
         let node_id = person.id.clone();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v_from_id(&txn, &node_id);
         // Check that the current step contains the correct single node
@@ -1539,7 +1552,7 @@ mod tests {
     #[test]
     fn test_v_from_id_with_traversal() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create test graph: (person1)-[knows]->(person2)
         let person1 = storage
@@ -1553,7 +1566,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v_from_id(&txn, &person1.id).out(&txn, "knows");
 
@@ -1570,7 +1583,7 @@ mod tests {
     #[test]
     fn test_e_from_id() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create test graph and edge
         let person1 = storage
@@ -1585,7 +1598,7 @@ mod tests {
         let edge_id = edge.id.clone();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, &edge_id);
 
@@ -1605,7 +1618,7 @@ mod tests {
     #[test]
     fn test_v_from_id_nonexistent() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v_from_id(&txn, "nonexistent_id");
         let result = traversal.error;
@@ -1619,7 +1632,7 @@ mod tests {
     #[test]
     fn test_e_from_id_nonexistent() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, "nonexistent_id");
         let result = traversal.error;
@@ -1633,7 +1646,7 @@ mod tests {
     #[test]
     fn test_v_from_id_chain_operations() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create test graph: (person1)-[knows]->(person2)-[likes]->(person3)
         let person1 = storage
@@ -1654,7 +1667,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal
             .v_from_id(&txn, &person1.id)
@@ -1674,7 +1687,7 @@ mod tests {
     #[test]
     fn test_e_from_id_chain_operations() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create test graph and edges
         let person1 = storage
@@ -1688,7 +1701,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         let count_before = traversal.e_from_id(&txn, &edge.id).count();
 
@@ -1702,7 +1715,7 @@ mod tests {
     #[test]
     fn test_filter_nodes() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         // Create nodes with different properties
         let _ = storage
@@ -1716,7 +1729,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
 
@@ -1751,7 +1764,7 @@ mod tests {
     #[test]
     fn test_filter_macro_single_argument() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let _ = storage
             .create_node(&mut txn, "person", props! { "name" => "Alice" }, None)
@@ -1765,7 +1778,7 @@ mod tests {
         }
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn).filter_nodes(&txn, has_name);
 
@@ -1779,7 +1792,7 @@ mod tests {
     #[test]
     fn test_filter_macro_multiple_arguments() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let _ = storage
             .create_node(&mut txn, "person", props! { "age" => 25 }, None)
@@ -1801,7 +1814,7 @@ mod tests {
         }
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
         traversal.filter_nodes(&txn, |node| age_greater_than(node, 27));
@@ -1824,7 +1837,7 @@ mod tests {
     #[test]
     fn test_filter_edges() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -1853,7 +1866,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e(&txn);
 
@@ -1891,14 +1904,14 @@ mod tests {
     #[test]
     fn test_filter_empty_result() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let _ = storage
             .create_node(&mut txn, "person", props! { "age" => 25 }, None)
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
 
@@ -1929,7 +1942,7 @@ mod tests {
     #[test]
     fn test_filter_chain() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let _ = storage
             .create_node(
@@ -1952,7 +1965,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v(&txn);
 
@@ -1994,7 +2007,7 @@ mod tests {
     #[test]
     fn test_in_v() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -2008,7 +2021,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, &edge.id).in_v(&txn);
 
@@ -2024,7 +2037,7 @@ mod tests {
     #[test]
     fn test_out_v() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -2038,7 +2051,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, &edge.id).out_v(&txn);
 
@@ -2054,7 +2067,7 @@ mod tests {
     #[test]
     fn test_both() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -2076,7 +2089,7 @@ mod tests {
             .create_edge(&mut txn, "knows", &person3.id, &person2.id, props!())
             .unwrap();
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person2.clone()));
         traversal.both(&txn, "knows");
@@ -2092,7 +2105,7 @@ mod tests {
     #[test]
     fn test_both_e() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
         let db = Arc::clone(&storage);
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -2109,7 +2122,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal =
             TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person2.clone()));
         traversal.both_e(&txn, "knows");
@@ -2138,7 +2151,7 @@ mod tests {
     #[test]
     fn test_both_v() {
         let (storage, _temp_dir) = setup_test_db();
-        let mut txn = storage.env.write_txn().unwrap();
+        let mut txn = storage.graph_env.write_txn().unwrap();
 
         let person1 = storage
             .create_node(&mut txn, "person", props!(), None)
@@ -2152,7 +2165,7 @@ mod tests {
             .unwrap();
 
         txn.commit().unwrap();
-        let mut txn = storage.env.read_txn().unwrap();
+        let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, &edge.id).both_v(&txn);
 

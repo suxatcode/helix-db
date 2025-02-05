@@ -73,7 +73,7 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
     let now = Instant::now();
     let storage = &graph.storage; //.lock().unwrap();
     let mut node_ids = Vec::with_capacity(size + 1);
-    let mut txn = storage.env.write_txn().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
     let node = storage
         .create_node(&mut txn, "user", props! { "username" => "Xav".to_string()}, None)
         .unwrap();

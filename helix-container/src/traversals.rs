@@ -32,7 +32,7 @@ pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Resul
     let data: SubGraphData = sonic_rs::from_slice(&input.request.body).unwrap();
     let mut return_vals = HashMap::with_capacity(4);
     let db = input.graph.storage.clone();
-    let txn = db.env.read_txn().unwrap();
+    let txn = db.graph_env.read_txn().unwrap();
     println!("Setup took: {}ms", start.elapsed().as_millis());
 
     let limit = match data.limit {
@@ -57,7 +57,7 @@ pub fn get_user_subgraph(input: &HandlerInput, response: &mut Response) -> Resul
     println!("User: {:?}", user);
     // get 350 out nodes that are mutuals
     let start_mutuals = std::time::Instant::now();
-    let txn = db.env.read_txn().unwrap();
+    let txn = db.graph_env.read_txn().unwrap();
     let mut mutuals = TraversalBuilder::new(Arc::clone(&db), user.clone());
     mutuals.mutual(&txn, "follows").range(0, limit);
     let mutuals = mutuals.result(txn)?;
@@ -98,7 +98,7 @@ pub fn get_shortest_path_to_user(
     let data: ShortestPathData = sonic_rs::from_slice(&input.request.body).unwrap();
     let now = Instant::now();
     let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.env.read_txn().unwrap();
+    let mut txn = db.graph_env.read_txn().unwrap();
     let mut user = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
 
     user.v_from_id(&txn, data.user_id.as_str())
@@ -146,7 +146,7 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
     let now = Instant::now();
     let db = Arc::clone(&input.graph.storage);
 
-    let mut txn = db.env.write_txn().unwrap();
+    let mut txn = db.graph_env.write_txn().unwrap();
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
     tr.v_from_secondary_index(&txn, "username", &Value::String(data.username.clone()));
 
@@ -306,7 +306,7 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
 pub fn count_nodes(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
     let db = Arc::clone(&input.graph.storage);
-    let txn = db.env.read_txn().unwrap();
+    let txn = db.graph_env.read_txn().unwrap();
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
     tr.v(&txn).count();
     let result = match tr.result(txn) {
@@ -322,7 +322,7 @@ pub fn count_nodes(input: &HandlerInput, response: &mut Response) -> Result<(), 
 pub fn count_edges(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
     let db = Arc::clone(&input.graph.storage);
-    let txn = db.env.read_txn().unwrap();
+    let txn = db.graph_env.read_txn().unwrap();
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
     tr.e(&txn).count();
     let result = match tr.result(txn) {
@@ -362,17 +362,19 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
     let d = sonic_rs::from_slice::<Data>(&input.request.body).unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
     let db = Arc::clone(&input.graph.storage);
-    
+
     // read json from from /home/ec2-user/convert/output_users.json
-    let json_str = std::fs::read_to_string(d.path.unwrap_or("/home/ec2-user/convert/output_users.json")).unwrap();
+    let json_str =
+        std::fs::read_to_string(d.path.unwrap_or("/home/ec2-user/convert/output_users.json"))
+            .unwrap();
     let users: Vec<User> = sonic_rs::from_str(&json_str).unwrap();
-    
+
     //for each user run add user
-    let mut txn = db.env.write_txn().unwrap();
+    let mut txn = db.graph_env.write_txn().unwrap();
     for data in users {
         let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
         tr.v_from_secondary_index(&txn, "x_id", &Value::String(data.x_id.clone()));
-    
+
         let user = tr.current_step;
         println!("User: {:?}", user);
         match user {
@@ -391,8 +393,10 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                                     return Err(GraphError::from("User already exists".to_string()))
                                 }
                                 false => {
-                                    let mut tr =
-                                        TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                                    let mut tr = TraversalBuilder::new(
+                                        Arc::clone(&db),
+                                        TraversalValue::Empty,
+                                    );
                                     tr.v_from_id(&txn, &node.id);
                                     tr.update_props(
                                         &mut txn,
@@ -416,14 +420,27 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                                     );
                                     let updated_user = tr.finish()?;
                                     let user = match updated_user.clone() {
-                                        TraversalValue::NodeArray(nodes) => nodes.first().unwrap().clone(),
-                                        _ => return Err(GraphError::from("Invalid node".to_string())),
+                                        TraversalValue::NodeArray(nodes) => {
+                                            nodes.first().unwrap().clone()
+                                        }
+                                        _ => {
+                                            return Err(GraphError::from(
+                                                "Invalid node".to_string(),
+                                            ))
+                                        }
                                     };
 
                                     data.following_ids.iter().for_each(|x_id: &String| {
-                                        let mut following = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
-                                        following.v_from_secondary_index(&txn, "x_id", &Value::String(x_id.to_string()));
-                        
+                                        let mut following = TraversalBuilder::new(
+                                            Arc::clone(&db),
+                                            TraversalValue::Empty,
+                                        );
+                                        following.v_from_secondary_index(
+                                            &txn,
+                                            "x_id",
+                                            &Value::String(x_id.to_string()),
+                                        );
+
                                         match following.current_step {
                                             TraversalValue::NodeArray(nodes) => {
                                                 if nodes.len() == 1 {
@@ -432,8 +449,17 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                                                         Arc::clone(&input.graph.storage),
                                                         TraversalValue::Empty,
                                                     );
-                                                    edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
-                                                    if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                                    edge.add_e(
+                                                        &mut txn,
+                                                        "follows",
+                                                        &user.id,
+                                                        &node.id,
+                                                        props! {},
+                                                    );
+                                                    if !matches!(
+                                                        edge.current_step,
+                                                        TraversalValue::EdgeArray(_)
+                                                    ) {
                                                         println!("Failed to create edge");
                                                     }
                                                 }
@@ -455,14 +481,25 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                                                     },
                                                     Some(&["x_id".to_string()]),
                                                 );
-                                                if let TraversalValue::NodeArray(nodes) = new_node.finish().unwrap() {
+                                                if let TraversalValue::NodeArray(nodes) =
+                                                    new_node.finish().unwrap()
+                                                {
                                                     let node = nodes.first().unwrap();
                                                     let mut edge = TraversalBuilder::new(
                                                         Arc::clone(&input.graph.storage),
                                                         TraversalValue::Empty,
                                                     );
-                                                    edge.add_e(&mut txn, "follows", &user.id, &node.id, props! {});
-                                                    if !matches!(edge.current_step, TraversalValue::EdgeArray(_)) {
+                                                    edge.add_e(
+                                                        &mut txn,
+                                                        "follows",
+                                                        &user.id,
+                                                        &node.id,
+                                                        props! {},
+                                                    );
+                                                    if !matches!(
+                                                        edge.current_step,
+                                                        TraversalValue::EdgeArray(_)
+                                                    ) {
                                                         println!("Failed to create edge");
                                                     }
                                                 }
@@ -473,7 +510,7 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                                             }
                                         }
                                     });
-                        
+
                                     return_vals.insert(
                                         "updated_user".to_string(),
                                         ReturnValue::TraversalValues(updated_user),
@@ -516,11 +553,16 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                     TraversalValue::NodeArray(nodes) => nodes.first().unwrap().clone(),
                     _ => return Err(GraphError::from("Invalid node".to_string())),
                 };
-    
+
                 data.following_ids.iter().for_each(|x_id: &String| {
-                    let mut following = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
-                    following.v_from_secondary_index(&txn, "x_id", &Value::String(x_id.to_string()));
-    
+                    let mut following =
+                        TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                    following.v_from_secondary_index(
+                        &txn,
+                        "x_id",
+                        &Value::String(x_id.to_string()),
+                    );
+
                     match following.current_step {
                         TraversalValue::NodeArray(nodes) => {
                             if nodes.len() == 1 {
@@ -570,7 +612,7 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
                         }
                     }
                 });
-    
+
                 return_vals.insert(
                     "new_user".to_string(),
                     ReturnValue::TraversalValues(added_user),
@@ -578,10 +620,37 @@ pub fn upload_all(input: &HandlerInput, response: &mut Response) -> Result<(), G
             }
             _ => return Err(GraphError::from("Invalid node".to_string())),
         }
-    
     }
-    
+
     txn.commit()?;
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[handler]
+pub fn batch_create(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    println!(" ");
+    println!(" ");
+    println!(" ");
+    println!(" ");
+
+    println!("  Fetching 100_000 nodes");
+    let now = Instant::now();
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v(&txn);
+    let n = tr.result(txn)?;
+    let nodes = match n {
+        TraversalValue::NodeArray(nodes) => nodes,
+        _ => return Err(GraphError::from("Invalid node".to_string())),
+    };
+    let end = now.elapsed();
+    println!("  Fetching 100_000 nodes took: {}ms", end.as_millis());
+    println!(" ");
+    println!(" ");
+    println!(" ");
+    println!(" ");
+    response.body = sonic_rs::to_vec(&end.as_millis()).unwrap();
     Ok(())
 }

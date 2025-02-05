@@ -20,7 +20,7 @@ pub enum CommandType {
     Compile(CompileCommand),
 
     /// Lint a Helix project
-    Lint(LintCommand),
+    Check(LintCommand),
 
     /// Test a Helix project
     Test(TestCommand),
@@ -43,7 +43,7 @@ pub struct CompileCommand {
 }
 
 #[derive(Debug, Args)]
-#[clap(name = "lint", about = "Lint a Helix project")]
+#[clap(name = "check", about = "Lint a Helix project")]
 pub struct LintCommand {
     #[clap(short, long, help = "The path to the project")]
     pub path: Option<String>,

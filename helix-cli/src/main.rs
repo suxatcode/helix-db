@@ -75,7 +75,7 @@ fn main() {
             };
         }
 
-        args::CommandType::Lint(command) => {
+        args::CommandType::Check(command) => {
             match command.path {
                 Some(path) => {
                     // call parser
