@@ -104,8 +104,6 @@ jobs:
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             if [ "${{ matrix.arch }}" == "x86_64" ]; then
               cargo build --release --target x86_64-unknown-linux-gnu
-            # elif [ "${{ matrix.arch }}" == "arm64" ]; then
-            #   cargo build --release --target aarch64-unknown-linux-gnu
             fi
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             if [ "${{ matrix.arch }}" == "x86_64" ]; then
@@ -149,16 +147,6 @@ jobs:
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # - name: Upload arm64 release asset
-      #   if: matrix.arch == 'arm64' && matrix.os == 'ubuntu-latest'
-      #   uses: actions/upload-release-asset@v1
-      #   with:
-      #     upload_url: ${{ needs.create_release.outputs.upload_url }}
-      #     asset_path: helix-cli/target/aarch64-unknown-linux-gnu/release/helix
-      #     asset_name: helix-cli-linux-arm64
-      #     asset_content_type: application/octet-stream
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload macOS x86_64 release asset
         if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
         uses: actions/upload-release-asset@v1
