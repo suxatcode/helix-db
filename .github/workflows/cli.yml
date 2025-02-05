@@ -126,11 +126,11 @@ jobs:
           }
 
       # Add an ls command to debug target directory contents after build
-      - name: Debug target folder after build
-        run: |
-          cd helix-cli
-          echo "Listing target directory after build"
-          ls -R target
+    #   - name: Debug target folder after build
+    #     run: |
+    #       cd helix-cli
+    #       echo "Listing target directory after build"
+    #       ls -R target
 
     
 
