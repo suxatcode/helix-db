@@ -144,7 +144,7 @@ jobs:
         if: matrix.arch == 'x86_64' && matrix.os == 'ubuntu-latest'
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: main/target/x86_64-unknown-linux-gnu/release/bracket
+          asset_path: helix-cli/target/x86_64-unknown-linux-gnu/release/helix
           asset_name: helix-cli-linux-amd64
           asset_content_type: application/octet-stream
         env:
@@ -154,7 +154,7 @@ jobs:
       #   uses: actions/upload-release-asset@v1
       #   with:
       #     upload_url: ${{ needs.create_release.outputs.upload_url }}
-      #     asset_path: main/target/aarch64-unknown-linux-gnu/release/bracket
+      #     asset_path: helix-cli/target/aarch64-unknown-linux-gnu/release/helix
       #     asset_name: helix-cli-linux-arm64
       #     asset_content_type: application/octet-stream
       #   env:
@@ -164,7 +164,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: main/target/x86_64-apple-darwin/release/bracket
+          asset_path: helix-cli/target/x86_64-apple-darwin/release/helix
           asset_name: helix-cli-macos-amd64
           asset_content_type: application/octet-stream
         env:
@@ -174,7 +174,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: main/target/aarch64-apple-darwin/release/bracket
+          asset_path: helix-cli/target/aarch64-apple-darwin/release/helix
           asset_name: helix-cli-macos-arm64
           asset_content_type: application/octet-stream
         env:
@@ -184,7 +184,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: main/target/x86_64-pc-windows-msvc/release/bracket.exe
+          asset_path: helix-cli/target/x86_64-pc-windows-msvc/release/helix.exe
           asset_name: helix-cli-windows-amd64.exe
           asset_content_type: application/octet-stream
         env:
