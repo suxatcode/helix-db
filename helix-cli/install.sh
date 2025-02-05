@@ -17,6 +17,9 @@ echo "Latest version is $VERSION"
 OS=$(uname -s)
 ARCH=$(uname -m)
 
+echo "Detected OS: $OS"
+echo "Detected architecture: $ARCH"
+
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
