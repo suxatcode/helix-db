@@ -59,13 +59,13 @@ fi
 # Download the binary
 URL="https://github.com/$REPO/releases/download/$VERSION/$FILE"
 echo "Downloading from $URL"
-curl -L $URL -o "$INSTALL_DIR/bracket"
+curl -L $URL -o "$INSTALL_DIR/helix"
 
 # Make the binary executable
-chmod +x "$INSTALL_DIR/bracket"
+chmod +x "$INSTALL_DIR/helix"
 
 # Verify installation
-if command -v bracket >/dev/null 2>&1; then
+if command -v helix >/dev/null 2>&1; then
     echo "Installation successful!"
 else
     echo "Installation failed."
