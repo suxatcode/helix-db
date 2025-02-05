@@ -20,6 +20,15 @@ ARCH=$(uname -m)
 echo "Detected OS: $OS"
 echo "Detected architecture: $ARCH"
 
+if [[ "$OS" == "Linux" ]]; then
+    echo "Detected Linux"
+elif [[ "$OS" == "Darwin" ]]; then
+    echo "Detected macOS"
+else
+    echo "Unsupported OS: $OS"
+    exit 1
+fi
+
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
