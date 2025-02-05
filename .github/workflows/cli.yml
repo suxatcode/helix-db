@@ -90,7 +90,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          cd main
+          cd helix-cli
           if ($env:ARCH -eq "x86_64") {
             rustup target add x86_64-pc-windows-msvc
             echo "Binary built for Windows x86_64"
@@ -100,7 +100,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          cd main
+          cd helix-cli
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
             if [ "${{ matrix.arch }}" == "x86_64" ]; then
               cargo build --release --target x86_64-unknown-linux-gnu
@@ -121,7 +121,7 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          cd main
+          cd helix-cli
           if ($env:ARCH -eq "x86_64") {
             cargo build --release --target x86_64-pc-windows-msvc
             echo "Binary built for Windows x86_64"
@@ -130,7 +130,7 @@ jobs:
       # Add an ls command to debug target directory contents after build
       - name: Debug target folder after build
         run: |
-          cd main
+          cd helix-cli
           echo "Listing target directory after build"
           ls -R target
 
