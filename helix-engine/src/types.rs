@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
+use std::{fmt::format, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
 
 use heed3::Error;
 use helixc::parser::parser_methods::ParserError;
@@ -59,21 +59,34 @@ impl From<std::io::Error> for GraphError {
     }
 }
 
+
+impl From<AddrParseError> for GraphError {
+    fn from(error: AddrParseError) -> Self {
+        GraphError::ConversionError(format!("AddrParseError: {}", error.to_string()))
+    }
+}
+
+impl From<sonic_rs::Error> for GraphError {
+    fn from(error: sonic_rs::Error) -> Self {
+        GraphError::ConversionError(format!("sonic error: {}" , error.to_string()))
+    }
+}
+
 impl From<serde_json::Error> for GraphError {
     fn from(error: serde_json::Error) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::ConversionError(format!("serde_json error: {}", error.to_string()))
     }
 }
 
 impl From<FromUtf8Error> for GraphError {
     fn from(error: FromUtf8Error) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::ConversionError(format!("FromUtf8Error: {}", error.to_string()))
     }
 }
 
 impl From<&'static str> for GraphError {
     fn from(error: &'static str) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::New(error.to_string())
     }
 }
 
@@ -84,26 +97,21 @@ impl From<String> for GraphError {
 }
 
 
+
 impl From<Box<bincode::ErrorKind>> for GraphError {
     fn from(error: Box<bincode::ErrorKind>) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
 
 impl From<ParserError> for GraphError {
     fn from(error: ParserError) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::ConversionError(format!("ParserError: {}", error.to_string()))
     }
 }
 
 impl From<Utf8Error> for GraphError {
     fn from(error: Utf8Error) -> Self {
-        GraphError::ConversionError(error.to_string())
-    }
-}
-
-impl From<AddrParseError> for GraphError {
-    fn from(error: AddrParseError) -> Self {
-        GraphError::ConversionError(error.to_string())
+        GraphError::ConversionError(format!("Utf8Error: {}", error.to_string()))
     }
 }

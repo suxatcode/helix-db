@@ -2,7 +2,7 @@ name: Build and Upload Binaries
 
 on:
   push:
-    branches: ["main", "helix-engine"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
 

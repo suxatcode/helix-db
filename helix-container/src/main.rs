@@ -25,7 +25,7 @@ fn main() {
     let path_str = path.to_str().expect("Could not convert path to string");
     let opts = HelixGraphEngineOpts {
         path: path_str.to_string(), 
-        secondary_indices: Some(vec!["username".to_string(), "x_id".to_string()])
+        secondary_indices: Some(vec!["cognito_id".to_string()])
     };
     let graph = Arc::new(HelixGraphEngine::new(opts).unwrap());
     // create_test_graph(Arc::clone(&graph), 15000, 250);

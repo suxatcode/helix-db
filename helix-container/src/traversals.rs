@@ -16,6 +16,7 @@ use protocol::count::Count;
 use protocol::response::Response;
 use protocol::traversal_value::TraversalValue;
 use protocol::{filterable::Filterable, value::Value, ReturnValue};
+use serde::de;
 use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -652,5 +653,312 @@ pub fn batch_create(input: &HandlerInput, response: &mut Response) -> Result<(),
     println!(" ");
     println!(" ");
     response.body = sonic_rs::to_vec(&end.as_millis()).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct RSUser {
+    cognito_id: String,
+    username: String,
+}
+
+#[handler]
+pub fn create_user(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let data = sonic_rs::from_slice::<RSUser>(&input.request.body)?;
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.add_v(
+        &mut txn,
+        "user",
+        props! {
+            "username" => data.username,
+            "cognito_id" => data.cognito_id,
+            "created_at" => chrono::Utc::now().to_rfc3339(),
+        },
+        Some(&["cognito_id".to_string()]),
+    );
+    let user = tr.result(txn)?;
+    response.body = sonic_rs::to_vec(&user).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct Chat {
+    cognito_id: String,
+    chat_name: String,
+}
+
+#[handler]
+pub fn create_chat(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let data = sonic_rs::from_slice::<Chat>(&input.request.body).map_err(|e|GraphError::from(format!("CREATE CHAT ERROR {:?}",e)))?;
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.add_v(
+        &mut txn,
+        "chat",
+        props! {
+            "chat_name" => data.chat_name,
+            "created_at" => chrono::Utc::now().to_rfc3339(),
+        },
+        None,
+    );
+    let chat_id = match tr.finish()? {
+        TraversalValue::NodeArray(nodes) => nodes.first().unwrap().id.clone(),
+        _ => return Err(GraphError::from("Error creating chat".to_string())),
+    };
+
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v_from_secondary_index(&txn, "cognito_id", &Value::String(data.cognito_id));
+    tr.add_e_to(
+        &mut txn,
+        "created_chat",
+        &chat_id,
+        props! { "created_at" => chrono::Utc::now().to_rfc3339() },
+    );
+    tr.result(txn)?;
+
+    response.body = sonic_rs::to_vec(&chat_id).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct Message {
+    cognito_id: String,
+    chat_id: String,
+    chat_name: String,
+    message: String,
+    message_type: String,
+}
+
+#[handler]
+pub fn add_message(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let data = sonic_rs::from_slice::<Message>(&input.request.body).map_err(|e|GraphError::from(format!("ADD ERROR {:?}",e)))?;
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.add_v(
+        &mut txn,
+        "message",
+        props! {
+            "message" => data.message,
+            "message_type" => data.message_type,
+            "created_at" => chrono::Utc::now().to_rfc3339(),
+        },
+        None,
+    );
+    let message_id = match tr.current_step {
+        TraversalValue::NodeArray(nodes) => nodes.first().unwrap().id.clone(),
+        _ => return Err(GraphError::from("Invalid node".to_string())),
+    };
+
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v_from_id(&txn, data.chat_id.as_str());
+    tr.add_e_to(
+        &mut txn,
+        "chat_message",
+        &message_id,
+        props! { "created_at" => chrono::Utc::now().to_rfc3339() },
+    );
+
+    tr.result(txn)?;
+
+    response.body = sonic_rs::to_vec(&message_id).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct ChatRequest {
+    cognito_id: String,
+}
+
+#[handler]
+pub fn get_chats_and_messages(
+    input: &HandlerInput,
+    response: &mut Response,
+) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let data = sonic_rs::from_slice::<ChatRequest>(&input.request.body).map_err(|e|GraphError::from(format!("GET ERROR {:?}",e)))?;
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    println!("getting secondary index");
+    tr.v_from_secondary_index(&txn, "cognito_id", &Value::String(data.cognito_id));
+    println!("getting created_chat");
+    tr.out(&txn, "created_chat");
+    println!("getting chat_message");
+    let chats = tr.finish()?;
+
+    println!("Chats: {:?}", chats);
+
+    #[derive(Serialize)]
+    struct Message {
+        message: String,
+        message_type: String,
+        created_at: String,
+    }
+
+    #[derive(Serialize)]
+    struct ChatMessage {
+        chat_id: String,
+        chat_name: String,
+        messages: Vec<Message>,
+    }
+
+    let mut chat_messages = HashMap::new();
+
+    match chats {
+        TraversalValue::NodeArray(chats) => {
+            for chat in chats {
+                let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                tr.v_from_id(&txn, &chat.id);
+                tr.out(&txn, "chat_message");
+                let messages = tr.finish()?;
+                let messages: Vec<Message> = match messages {
+                    TraversalValue::NodeArray(messages) => messages
+                        .iter()
+                        .map(|message| {
+                            let message = Message {
+                                message: match message.check_property("message") {
+                                    Some(Value::String(s)) => s.clone(),
+                                    _ => "".to_string(),
+                                },
+                                message_type: match message.check_property("message_type") {
+                                    Some(Value::String(s)) => s.clone(),
+                                    _ => "".to_string(),
+                                },
+                                created_at: match message.check_property("created_at") {
+                                    Some(Value::String(s)) => s.clone(),
+                                    _ => "".to_string(),
+                                },
+                            };
+                            message
+                        })
+                        .collect(),
+                    _ => vec![],
+                };
+                chat_messages.insert(
+                    chat.id.clone(),
+                    ChatMessage {
+                        chat_id: chat.id.clone(),
+                        chat_name: {
+                            match chat.check_property("chat_name") {
+                                Some(Value::String(s)) => s.clone(),
+                                Some(_) => "".to_string(),
+                                None => "".to_string(),
+                            }
+                        },
+
+                        messages,
+                    },
+                );
+            }
+        }
+        _ => {}
+    }
+
+    txn.commit()?;
+
+    response.body = sonic_rs::to_vec(&chat_messages).unwrap();
+    Ok(())
+}
+
+
+#[handler]
+pub fn drop_chats_and_messages(
+    input: &HandlerInput,
+    response: &mut Response,
+) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let data = sonic_rs::from_slice::<ChatRequest>(&input.request.body)?;
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v_from_secondary_index(&txn, "cognito_id", &Value::String(data.cognito_id));
+    let chats = tr.finish()?;
+
+    match chats {
+        TraversalValue::NodeArray(chats) => {
+            for chat in chats {
+                let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                tr.v_from_id(&txn, &chat.id);
+                tr.out(&txn, "chat_message").drop(&mut txn);
+                
+                let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+                tr.v_from_id(&txn, &chat.id);
+                tr.drop(&mut txn);
+            }
+        }
+        _ => {}
+    }
+    
+    txn.commit()?;
+
+
+    response.body = sonic_rs::to_vec(&"Success").unwrap();
+    Ok(())
+}
+
+#[handler]
+pub fn drop_all(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v(&txn).drop(&mut txn);
+    txn.commit()?;
+    response.body = sonic_rs::to_vec(&"Success").unwrap();
+    Ok(())
+}
+#[handler]
+pub fn print_all(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    tr.v(&txn);
+    let nodes = tr.finish()?;
+    response.body = sonic_rs::to_vec(&nodes).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct UpdateChatName {
+    chat_id: String,
+    chat_name: String,
+}
+#[handler]
+pub fn update_chat_name(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let data = sonic_rs::from_slice::<UpdateChatName>(&input.request.body).map_err(|e|GraphError::from(format!("UPDATE ERROR {:?}",e)))?;
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+    
+    tr.v_from_id(&txn, data.chat_id.as_str());
+    match tr.current_step {
+        TraversalValue::NodeArray(ref nodes) => {
+            if nodes.len() == 1 {
+                let chat = nodes.first().unwrap();
+                if chat.check_property("chat_name") != Some(&Value::String(data.chat_name.clone()))
+                {
+                    tr.update_props(
+                        &mut txn,
+                        props! {
+                            "chat_name" => data.chat_name,
+                        },
+                    );
+                } else {
+                }
+            } else {
+                return Err(GraphError::from(
+                    "More than one node with chat id".to_string(),
+                ));
+            }
+        }
+        _ => {
+            return Err(GraphError::from("Invalid node".to_string()));
+        }
+    }
+
+    tr.result(txn)?;
+
+    response.body = sonic_rs::to_vec(&"Success").unwrap();
     Ok(())
 }

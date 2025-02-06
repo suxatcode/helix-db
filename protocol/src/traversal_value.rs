@@ -105,3 +105,12 @@ impl Serialize for TraversalValue {
         }
     }
 }
+
+impl TraversalValue {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            TraversalValue::Empty => true,
+            _ => false,
+        }
+    }
+}

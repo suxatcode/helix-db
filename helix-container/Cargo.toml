@@ -12,6 +12,7 @@ get_routes = { path = "../get_routes" }
 inventory = "0.3.16"
 rand = "0.8.5"
 dirs = "5.0.1"
+chrono = "0.4.19"
 
 serde = { version = "1.0", features = ["derive"] }
 sonic-rs = "0.3"

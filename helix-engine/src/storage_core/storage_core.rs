@@ -120,7 +120,7 @@ impl HelixGraphStorage {
     pub fn get_random_node(&self, txn: &RoTxn) -> Result<Node, GraphError> {
         match self.nodes_db.first(&txn)? {
             Some((_, data)) => Ok(deserialize(data)?),
-            None => Err(GraphError::New(format!("Node not found"))),
+            None => Err(GraphError::NodeNotFound),
         }
     }
 
@@ -243,15 +243,15 @@ impl BasicStorageMethods for HelixGraphStorage {
     fn get_temp_node<'a>(&self, txn: &'a RoTxn, id: &str) -> Result<&'a [u8], GraphError> {
         match self.nodes_db.get(&txn, Self::node_key(id).as_slice())? {
             Some(data) => Ok(data),
-            None => Err(GraphError::New(format!("Node not found: {}", id))),
+            None => Err(GraphError::NodeNotFound),
         }
     }
 
     #[inline(always)]
     fn get_temp_edge<'a>(&self, txn: &'a RoTxn, id: &str) -> Result<&'a [u8], GraphError> {
         match self.edges_db.get(&txn, Self::edge_key(id).as_slice())? {
-            Some(data) => Ok(deserialize(data)?),
-            None => Err(GraphError::New(format!("Edge not found: {}", id))),
+            Some(data) => Ok(data),
+            None => Err(GraphError::EdgeNotFound),
         }
     }
 
@@ -271,13 +271,14 @@ impl StorageMethods for HelixGraphStorage {
 
     #[inline(always)]
     fn get_node(&self, txn: &RoTxn, id: &str) -> Result<Node, GraphError> {
-        Ok(deserialize(self.get_temp_node(txn, id)?)?)
+        let node = self.get_temp_node(txn, id)?;
+        Ok(deserialize(node)?)
     }
 
     #[inline(always)]
     fn get_edge(&self, txn: &RoTxn, id: &str) -> Result<Edge, GraphError> {
-        Ok(deserialize(self.get_temp_edge(txn, id)?)?)
-
+        let edge = self.get_temp_edge(txn, id)?;
+        Ok(deserialize(edge)?)
     }
 
     fn get_node_by_secondary_index(
@@ -295,10 +296,7 @@ impl StorageMethods for HelixGraphStorage {
             )))?;
         let node_id = db
             .get(txn, &serialize(key)?)?
-            .ok_or(GraphError::New(format!(
-                "Node not found in secondary index: {}",
-                index
-            )))?;
+            .ok_or(GraphError::NodeNotFound)?;
         let node_id = std::str::from_utf8(&node_id)?;
         self.get_node(txn, node_id)
     }
@@ -427,12 +425,11 @@ impl StorageMethods for HelixGraphStorage {
             for result in iter {
                 let (key, _) = result?;
                 let node_id = std::str::from_utf8(&key[prefix.len()..])?;
-                println!("Node ID: {}", node_id);
 
                 let n: Result<Node, GraphError> =
                     match self.nodes_db.get(&txn, &Self::node_key(node_id))? {
                         Some(data) => Ok(deserialize(data)?),
-                        None => Err(GraphError::New(format!("Node not found: {}", node_id))),
+                        None => Err(GraphError::NodeNotFound),
                     };
                 println!("NODE: {:?}", n);
                 if let Ok(node) = n {

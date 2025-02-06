@@ -3,7 +3,7 @@
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
-    path::Path,
+    path::Path, vec,
 };
 
 use bincode::deserialize;
@@ -126,11 +126,12 @@ pub struct HNSWMetadata {
 
 #[repr(C)]
 #[derive(Serialize, Deserialize, Clone, PartialEq, PartialOrd)]
-pub struct HNeighbour<'a> {
-    id: &'a str,
+pub struct HNeighbour {
+    id: String,
     distance: f64,
+    connections: Vec<HNeighbour>,
 }
-impl<'a> Ord for HNeighbour<'a> {
+impl Ord for HNeighbour {
     fn cmp(&self, other: &Self) -> Ordering {
         self.distance
             .partial_cmp(&other.distance)
@@ -138,7 +139,7 @@ impl<'a> Ord for HNeighbour<'a> {
             .reverse()
     }
 }
-impl<'a> Eq for HNeighbour<'a> {}
+impl Eq for HNeighbour {}
 
 pub struct HNSW<
     const EF_C: usize,
@@ -203,6 +204,11 @@ impl<const EF_C: usize, const EF: usize, const M: usize, const M_0: usize, const
         [OUT_PREFIX, id.as_bytes()].concat()
     }
 
+    #[inline(always)]
+    pub fn in_prefix(id: &str) -> Vec<u8> {
+        [IN_PREFIX, id.as_bytes()].concat()
+    }
+
     pub fn generate_random_level(&self) -> usize {
         let mut rng = rand::rng();
         let mut level = 0;
@@ -227,21 +233,22 @@ impl<const EF_C: usize, const EF: usize, const M: usize, const M_0: usize, const
 
     /// Best fit algorithm to find neighbours
     pub fn search_layer<'a>(
-        &'a self,
-        txn: &'a RoTxn,
+        &self,
+        txn: &RoTxn,
         layer: usize,
         query: HVector,
         ef: usize,
-    ) -> Result<Vec<HNeighbour<'a>>, GraphError> {
+    ) -> Result<Vec<HNeighbour>, GraphError> {
         let start = self.metadata.entry_point;
-        let mut visited: HashSet<&str> = HashSet::with_capacity(100);
+        let mut visited: HashSet<String> = HashSet::with_capacity(100);
         let mut candidates: BinaryHeap<HNeighbour> = BinaryHeap::with_capacity(100);
         let mut nn: BinaryHeap<HNeighbour> = BinaryHeap::with_capacity(100); // nearest neighbours
         let start_id = start.unwrap().to_string();
-        visited.insert(start_id.as_str());
+        visited.insert(start_id.clone());
         candidates.push(HNeighbour {
-            id: start_id.as_str(),
+            id: start_id.clone(),
             distance: HVector::distance(&self.get_vector(txn, start_id.as_str())?, &query),
+            connections: vec![],
         });
 
         // c <- get nearest element from candidate to query
@@ -253,18 +260,15 @@ impl<const EF_C: usize, const EF: usize, const M: usize, const M_0: usize, const
             if current.distance > furthest_dist {
                 break;
             }
+            let connections = self.connections(txn, &current.id)?;
+            for mut e in connections {
+                if visited.insert(e.id.clone()) {
+                    let dist = HVector::distance(&self.get_vector(txn, e.id.as_str())?, &query);
 
-            for e in self.connections(txn, &current.id)? {
-                if visited.insert(e) {
-                    let dist = HVector::distance(&self.get_vector(txn, e)?, &query);
-
-                    let neighbour = HNeighbour {
-                        id: e,
-                        distance: dist,
-                    };
+                    e.distance = dist;
                     if dist < furthest_dist {
-                        candidates.push(neighbour.clone());
-                        nn.push(neighbour);
+                        candidates.push(e.clone());
+                        nn.push(e);
                         if nn.len() > ef {
                             nn.pop();
                         }
@@ -276,22 +280,22 @@ impl<const EF_C: usize, const EF: usize, const M: usize, const M_0: usize, const
         Ok(nn.into_sorted_vec())
     }
 
-    pub fn select_neighbours<'a>(
-        &'a self,
-        txn: &'a RoTxn,
+    pub fn select_neighbours(
+        & self,
+        txn: & RoTxn,
         _query: HVector,
-        candidates: &[HNeighbour<'a>],
+        candidates: &[HNeighbour],
         level: usize,
-    ) -> Result<Vec<&'a str>, GraphError> {
+    ) -> Result<Vec<HNeighbour>, GraphError> {
         let max_conns = if level == 0 { M_0 } else { M };
-        let mut result = Vec::with_capacity(max_conns);
+        let mut result: Vec<HNeighbour>= Vec::with_capacity(max_conns);
 
         for candidate in candidates.iter().take(max_conns) {
             let mut should_add = true;
-            for &existing in &result {
+            for existing in &result {
                 let dist_between = HVector::distance(
-                    &self.get_vector(txn, candidate.id)?,
-                    &self.get_vector(txn, existing)?,
+                    &self.get_vector(txn, candidate.id.as_str())?,
+                    &self.get_vector(txn, existing.id.as_str())?,
                 );
 
                 if dist_between < candidate.distance {
@@ -301,7 +305,7 @@ impl<const EF_C: usize, const EF: usize, const M: usize, const M_0: usize, const
             }
 
             if should_add {
-                result.push(candidate.id);
+                result.push(candidate.clone());
             }
         }
 
@@ -327,6 +331,7 @@ impl<
 
     fn insert(&mut self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), GraphError> {
         // for vector, get entry point via log dist
+        let vector_to_insert = HVector::new(data);
         let vec_id = Uuid::new_v4();
         let level = self.generate_random_level();
         let mut new_node = HVectorNode::new(vec_id, level, level);
@@ -343,7 +348,7 @@ impl<
         let mut current = self.metadata.entry_point.unwrap();
         let mut current_dist = HVector::distance(
             &self.get_vector(txn, current.to_string().as_str())?,
-            &HVector::new(data),
+            &vector_to_insert,
         );
         // store vector
 
@@ -353,36 +358,57 @@ impl<
         // update entry points with node id
 
         for level in (level..=self.metadata.max_layer) {
-            let neighbours = self.search_layer(txn, level, HVector::new(data),  1)?;
+            let neighbours = self.search_layer(txn, level, vector_to_insert,  1)?;
             self.metadata.entry_point =
-                Some(Uuid::parse_str(neighbours.first().unwrap().id).unwrap());
+                Some(Uuid::parse_str(neighbours.first().unwrap().id.as_str()).unwrap());
         }
 
         for level in (level..=self.metadata.max_layer).rev() {
-            let neighbours = self.search_layer(txn, level, HVector::new(data),if level == 0 { EF_C } else { M })?;
-            let selected = self.select_neighbours(txn, HVector::new(data), &neighbours, level)?;
+            let connected = self.search_layer(&txn, level, vector_to_insert,if level == 0 { EF_C } else { M })?;
+            let mut neighbours = self.select_neighbours(&txn, vector_to_insert, &connected, level)?;
+            // add bidirectional edges
+            for neighbour in &mut neighbours {
+                self.hnsw_out_nodes_db.put(
+                    txn,
+                    &Self::out_prefix(neighbour.id.as_str()),
+                    vec_id.to_string().as_bytes(),
+                )?;
+                self.hnsw_in_nodes_db.put(
+                    txn,
+                    &Self::in_prefix(neighbour.id.as_str()),
+                    vec_id.to_string().as_bytes(),
+                )?;
 
+                let neighbour_conns = self.connections(&txn, neighbour.id.as_str())?;
+                if neighbour_conns.len() > self.config.m_max {
+                    let new_neighbour_conns = self.select_neighbours(txn, vector_to_insert, &neighbour_conns, level)?;
+                    neighbour.connections = new_neighbour_conns
+                }
+            }
+            self.metadata.entry_point = Some(Uuid::parse_str(&neighbours.pop().unwrap().id).unwrap());
+            
 
         }
 
         self.vectors_db
-            .put(txn, id.as_bytes(), HVector::new(data).as_bytes())?;
+            .put(txn, id.as_bytes(), vector_to_insert.as_bytes())?;
 
         Ok(())
     }
 
-    fn connections(&'a self, txn: &'a RoTxn<'a>, id: &str) -> Result<Vec<&str>, GraphError> {
+    fn connections(&self, txn: &RoTxn, id: &str) -> Result<Vec<HNeighbour>, GraphError> {
         Ok(self
             .hnsw_out_nodes_db
             .lazily_decode_data()
             .prefix_iter(txn, &Self::out_prefix(id))?
             .filter_map(|res| match res {
                 Ok((key, _)) => {
-                    Some(std::str::from_utf8(&key[id.len()..]).map_err(GraphError::from))
+                    let id = String::from_utf8(key[id.len()..].to_vec()).unwrap();
+                    Some(HNeighbour { id , distance: 0f64, connections: vec![]} )
                 }
                 Err(_) => None,
             })
-            .collect::<Result<Vec<&str>, GraphError>>()?)
+            .collect::<Vec<HNeighbour>>())
     }
 }
 

@@ -79,10 +79,38 @@ impl TraversalBuilder {
         props: Vec<(String, Value)>,
         secondary_indices: Option<&[String]>,
     ) -> Result<(), GraphError> {
-        self
-            .storage
+        self.storage
             .create_node_(txn, node_label, props, secondary_indices)?;
         Ok(())
+    }
+
+    pub fn mut_self(&mut self) -> &mut Self {
+        self
+    }
+
+    pub fn drop(&mut self, txn: &mut RwTxn) -> &mut Self {
+        let mut e = GraphError::Empty;
+        match &self.current_step {
+            TraversalValue::NodeArray(nodes) => {
+                for node in nodes {
+                    match self.storage.drop_node(txn, &node.id) {
+                        Ok(_) => {}
+                        Err(err) => e = err,
+                    }
+                }
+            }
+            TraversalValue::EdgeArray(edges) => {
+                for edge in edges {
+                    match self.storage.drop_edge(txn, &edge.id) {
+                        Ok(_) => {}
+                        Err(err) => e = err,
+                    }
+                }
+            }
+            _ => {}
+        }
+        self.store_error(e);
+        self
     }
 }
 
@@ -92,9 +120,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(nodes) => {
                 self.current_step = TraversalValue::NodeArray(nodes);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::Empty => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -104,9 +137,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(edges) => {
                 self.current_step = TraversalValue::EdgeArray(edges);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::Empty => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -116,9 +154,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(node) => {
                 self.current_step = TraversalValue::from(node);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::NodeNotFound => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -146,9 +189,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(edge) => {
                 self.current_step = TraversalValue::from(edge);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::EdgeNotFound => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -158,9 +206,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(nodes) => {
                 self.current_step = TraversalValue::NodeArray(nodes);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::NodeNotFound => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -170,9 +223,14 @@ impl RSourceTraversalSteps for TraversalBuilder {
             Ok(node) => {
                 self.current_step = TraversalValue::from(node);
             }
-            Err(err) => {
-                self.store_error(err);
-            }
+            Err(err) => match err {
+                GraphError::NodeNotFound => {
+                    self.current_step = TraversalValue::Empty;
+                }
+                _ => {
+                    self.store_error(err);
+                }
+            },
         }
         self
     }
@@ -242,6 +300,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -265,6 +325,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -288,6 +350,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -311,6 +375,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -343,6 +409,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -375,6 +443,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -395,6 +465,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -415,6 +487,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -439,6 +513,8 @@ impl RTraversalSteps for TraversalBuilder {
             } else {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -474,6 +550,8 @@ impl RTraversalSteps for TraversalBuilder {
                 .collect();
 
             self.current_step = TraversalValue::NodeArray(result);
+        } else {
+            self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);
         self
@@ -506,6 +584,7 @@ impl WTraversalSteps for TraversalBuilder {
                 }
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
+            TraversalValue::Empty => {}
             _ => panic!("Invalid traversal step for add_e_from"),
         }
         self.store_error(e);
@@ -534,6 +613,7 @@ impl WTraversalSteps for TraversalBuilder {
                 }
                 self.current_step = TraversalValue::EdgeArray(new_current);
             }
+            TraversalValue::Empty => {}
             _ => panic!("Invalid traversal step for add_e_to"),
         }
         self.store_error(e);
@@ -1621,12 +1701,8 @@ mod tests {
         let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.v_from_id(&txn, "nonexistent_id");
-        let result = traversal.error;
-        assert!(result.is_some());
-
-        if let Some(e) = result {
-            matches!(e, GraphError::NodeNotFound);
-        }
+        let result = traversal.finish().unwrap();
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -1635,12 +1711,8 @@ mod tests {
         let mut txn = storage.graph_env.read_txn().unwrap();
         let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
         traversal.e_from_id(&txn, "nonexistent_id");
-        let result = traversal.error;
-        assert!(result.is_some());
-
-        if let Some(e) = result {
-            matches!(e, GraphError::EdgeNotFound);
-        }
+        let result = traversal.finish().unwrap();
+        assert!(result.is_empty());
     }
 
     #[test]

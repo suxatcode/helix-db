@@ -143,7 +143,7 @@ pub trait SearchMethods {
 
 pub trait VectorMethods<'a> {
     fn get_vector(&'a self, txn: &'a RoTxn<'a>, id: &str) -> Result<HVector<'a>, GraphError>;
-    fn connections(&'a self, txn: &'a RoTxn<'a>, id: &str) -> Result<Vec<&str>, GraphError>;
+    fn connections(& self, txn: & RoTxn, id: &str) -> Result<Vec<HNeighbour>, GraphError>;
     fn insert(&mut self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), GraphError>;
     // fn get_vector(&self, txn: &RoTxn, id: &str) -> Result<protocol::Node, GraphError> 
 }
