@@ -13,4 +13,4 @@ count.sh
 **/*.json
 .DS_Store
 push.sh
-
+.vscode/
