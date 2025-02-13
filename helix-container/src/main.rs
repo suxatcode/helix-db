@@ -1,24 +1,37 @@
-use chrono::Utc;
-use helix_engine::{
-    graph_core::graph_core::HelixGraphEngine,
-    props,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+use helixdb::helix_engine::{
+    graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts},
+    storage_core::{
+        storage_core::HelixGraphStorage,
+        storage_methods::{DBMethods, StorageMethods},
+    },
 };
-use helix_gateway::{
+use helixdb::helix_gateway::{
+    gateway::{GatewayOpts, HelixGateway},
     router::router::{HandlerFn, HandlerSubmission},
-    GatewayOpts, HelixGateway,
 };
+use helixdb::props;
 use inventory;
 use rand::Rng;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Deref, sync::Arc, time::Instant};
 
+mod ivba_traversals;
 mod traversals;
 
 fn main() {
-    let home_dir = dirs::home_dir().expect("Could not retrieve home directory");
-    let path = home_dir.join(".helix/user");
+    let path = match std::env::var("HELIX_DATA_DIR") {
+        Ok(val) => std::path::PathBuf::from(val).join(".helix/user"),
+        Err(_) => {
+            println!("HELIX_DATA_DIR not set, using default");
+            let home = dirs::home_dir().expect("Could not retrieve home directory");
+            home.join(".helix/user")
+        }
+    };
     let path_str = path.to_str().expect("Could not convert path to string");
-    let graph = Arc::new(HelixGraphEngine::new(path_str).unwrap());
+    let opts = HelixGraphEngineOpts {
+        path: path_str.to_string(),
+        secondary_indices: Some(vec!["username".to_string(), "x_id".to_string()]),
+    };
+    let graph = Arc::new(HelixGraphEngine::new(opts).unwrap());
     // create_test_graph(Arc::clone(&graph), 15000, 250);
 
     // generates routes from handler proc macro
@@ -48,7 +61,7 @@ fn main() {
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "127.0.0.1:3001",
+        "0.0.0.0:6969",
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),
@@ -59,16 +72,28 @@ fn main() {
 }
 
 fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: usize) {
+    let now = Instant::now();
     let storage = &graph.storage; //.lock().unwrap();
     let mut node_ids = Vec::with_capacity(size + 1);
+    let mut txn = storage.graph_env.write_txn().unwrap();
     let node = storage
-        .create_node("user", props! { "username" => "Xav".to_string()})
+        .create_node(
+            &mut txn,
+            "user",
+            props! { "username" => "Xav".to_string()},
+            None,
+        )
         .unwrap();
     println!("Node: {:?}", node);
     node_ids.push(node.id);
     for _ in 0..size {
         let node = storage
-            .create_node("user", props! { "username" => generate_random_name()})
+            .create_node(
+                &mut txn,
+                "user",
+                props! { "username" => generate_random_name()},
+                None,
+            )
             .unwrap();
         node_ids.push(node.id);
     }
@@ -81,14 +106,17 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
 
             if from_id != to_id {
                 storage
-                    .create_edge("follows", from_id, to_id, props!())
+                    .create_edge(&mut txn, "follows", from_id, to_id, props!())
                     .unwrap();
                 storage
-                    .create_edge("follows", to_id, from_id, props!())
+                    .create_edge(&mut txn, "follows", to_id, from_id, props!())
                     .unwrap();
             }
         }
     }
+    txn.commit().unwrap();
+    let elapsed = now.elapsed();
+    println!("Graph creation took: {:?}", elapsed);
 }
 
 use rand::seq::SliceRandom;

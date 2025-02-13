@@ -1,9 +1,9 @@
-use helix_engine::{
-    graph_core::graph_core::{HelixGraphEngine, QueryInput},
+use helixdb::helix_engine::{
+    graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts, QueryInput},
     types::GraphError,
 };
-use helix_gateway::router::router::RouterError;
-use helixc::parser::parser_methods::ParserError;
+use helixdb::helix_gateway::router::router::RouterError;
+use helixdb::helixc::parser::parser_methods::ParserError;
 use std::sync::Arc;
 
 pub mod bindings;
@@ -19,7 +19,11 @@ impl HelixEmbedded {
             "Unable to determine home directory".to_string(),
         ))?;
         let path = format!("{}/.helix/graph_data/{}", home_dir.display(), user);
-        let storage = match HelixGraphEngine::new(path.as_str()) {
+        let opts = HelixGraphEngineOpts {
+            path,
+            secondary_indices: None,
+        };
+        let storage = match HelixGraphEngine::new(opts) {
             Ok(helix) => helix,
             Err(err) => return Err(HelixLiteError::from(err)),
         };

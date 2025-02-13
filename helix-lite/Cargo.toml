@@ -5,13 +5,9 @@ edition = "2021"
 build = "build.rs"
 
 [dependencies]
-helix-engine = { path = "../helix-engine" }
-protocol = { path = "../protocol" }
-helixc = { path = "../helixc" }
-helix-gateway = { path = "../helix-gateway" }
+helixdb = { path = "../helixdb" }
 chrono = "0.4"
 inventory = "0.3.16"
-get_routes = { path = "../get_routes" }
 rand = "0.8.5"
 napi = { version = "2.16.13", features = ["napi4"] }
 napi-derive = "2.16.13"
