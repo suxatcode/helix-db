@@ -1,16 +1,20 @@
-use helix_engine::{
+use helixdb::helix_engine::{
     graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts},
-    props,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::{DBMethods, StorageMethods}},
+    storage_core::{
+        storage_core::HelixGraphStorage,
+        storage_methods::{DBMethods, StorageMethods},
+    },
 };
-use helix_gateway::{
+use helixdb::helix_gateway::{
+    gateway::{GatewayOpts, HelixGateway},
     router::router::{HandlerFn, HandlerSubmission},
-    GatewayOpts, HelixGateway,
 };
+use helixdb::props;
 use inventory;
 use rand::Rng;
 use std::{collections::HashMap, ops::Deref, sync::Arc, time::Instant};
 
+mod ivba_traversals;
 mod traversals;
 
 fn main() {
@@ -18,14 +22,14 @@ fn main() {
         Ok(val) => std::path::PathBuf::from(val).join(".helix/user"),
         Err(_) => {
             println!("HELIX_DATA_DIR not set, using default");
-            let home= dirs::home_dir().expect("Could not retrieve home directory");
+            let home = dirs::home_dir().expect("Could not retrieve home directory");
             home.join(".helix/user")
         }
     };
     let path_str = path.to_str().expect("Could not convert path to string");
     let opts = HelixGraphEngineOpts {
-        path: path_str.to_string(), 
-        secondary_indices: Some(vec!["cognito_id".to_string()])
+        path: path_str.to_string(),
+        secondary_indices: Some(vec!["username".to_string(), "x_id".to_string()]),
     };
     let graph = Arc::new(HelixGraphEngine::new(opts).unwrap());
     // create_test_graph(Arc::clone(&graph), 15000, 250);
@@ -54,8 +58,6 @@ fn main() {
             .collect::<Vec<((String, String), HandlerFn)>>(),
     );
 
-
-    
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
@@ -75,13 +77,23 @@ fn create_test_graph(graph: Arc<HelixGraphEngine>, size: usize, edges_per_node: 
     let mut node_ids = Vec::with_capacity(size + 1);
     let mut txn = storage.graph_env.write_txn().unwrap();
     let node = storage
-        .create_node(&mut txn, "user", props! { "username" => "Xav".to_string()}, None)
+        .create_node(
+            &mut txn,
+            "user",
+            props! { "username" => "Xav".to_string()},
+            None,
+        )
         .unwrap();
     println!("Node: {:?}", node);
     node_ids.push(node.id);
     for _ in 0..size {
         let node = storage
-            .create_node(&mut txn, "user", props! { "username" => generate_random_name()}, None)
+            .create_node(
+                &mut txn,
+                "user",
+                props! { "username" => generate_random_name()},
+                None,
+            )
             .unwrap();
         node_ids.push(node.id);
     }

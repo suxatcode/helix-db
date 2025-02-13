@@ -7,7 +7,6 @@ dst/
 docs/
 .vscode/
 .github/
-.hql/
 **/node_modules/
 queries/
 helix-lite/

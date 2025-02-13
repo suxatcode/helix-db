@@ -1,0 +1,40 @@
+[package]
+name = "helixdb"
+version = "0.1.0"
+edition = "2021"
+description = "HelixDB is a multi-model database built for performance and simplicity."
+license = "GPL-3.0"
+authors = ["HelixDB Team"]
+repository = "https://github.com/HelixDB/helix-db"
+
+[dependencies]
+pest = "2.7"
+pest_derive = "2.7"
+tempfile = "3.2"
+serde = { version = "1.0.217", features = ["derive"] }
+inventory = "0.3.16"
+sonic-rs = "0.3"
+bincode = "1.3.3"
+heed3 = "0.21.0"
+uuid = { version = "1.12.1", features = ["v4", "fast-rng"] }
+rand = "0.9.0"
+dirs = "6.0.0"
+chrono = "0.4.39"
+clap = { version = "4.5.29", features = ["derive"] }
+socket2 = "0.5"
+flume = "0.11.1"
+
+
+[dev-dependencies]
+criterion = "0.5"
+rand = "0.9.0"
+tempfile = "3.2"
+
+[[bench]]
+name = "graph_benchmarks"
+harness = false
+
+[profile.release]
+strip = "debuginfo"
+lto = true
+opt-level = "z"

@@ -4,10 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-helix-engine = { path = "../helix-engine" }
-protocol = { path = "../protocol" }
-helix-gateway = { path = "../helix-gateway" }
-helixc = { path = "../helixc" }
+helixdb = { path = "../helixdb" }
 get_routes = { path = "../get_routes" }
 inventory = "0.3.16"
 rand = "0.8.5"

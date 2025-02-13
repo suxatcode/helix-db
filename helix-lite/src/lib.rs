@@ -1,9 +1,9 @@
-use helix_engine::{
+use helixdb::helix_engine::{
     graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts, QueryInput},
     types::GraphError,
 };
-use helix_gateway::router::router::RouterError;
-use helixc::parser::parser_methods::ParserError;
+use helixdb::helix_gateway::router::router::RouterError;
+use helixdb::helixc::parser::parser_methods::ParserError;
 use std::sync::Arc;
 
 pub mod bindings;

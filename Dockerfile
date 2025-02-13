@@ -16,8 +16,6 @@ WORKDIR /usr/src/app
 # Copy source code
 COPY . .
 
-RUN echo '[workspace]\nmembers = ["helix-container", "helix-engine", "helix-gateway", "helixc", "protocol"]' > /usr/src/app/Cargo.toml
-
 # Create non-root user
 RUN useradd -m user && \
     chown -R user:user /usr/src/app

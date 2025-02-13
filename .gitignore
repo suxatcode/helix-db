@@ -7,7 +7,6 @@ docs/whitepaperV1.md
 count.sh
 /queries/
 **/node_modules/
-/hql/
 **/*.txt
 **/trump-map/
 **/call.sh

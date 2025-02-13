@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.23", features = ["derive"] }
-helixc = { path = "../helixc" }
+clap = { version = "4.5.29", features = ["derive"] }
+helixdb = { path = "../helixdb" }
 # helix-engine = { path = "../helix-engine" }
 # helix-gateway = { path = "../helix-gateway" }
-protocol = { path = "../protocol" }
 tempfile = "3.2.0"
 dirs = "5.0.1"

@@ -1,7 +1,7 @@
 use args::{CliError, HelixCLI};
 use clap::Parser;
-use helixc::{
-    // generator, 
+use helixdb::helixc::{
+    // generator,
     parser::helix_parser::{HelixParser, Source},
 };
 use runner::RustRunner;

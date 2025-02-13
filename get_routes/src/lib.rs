@@ -22,8 +22,8 @@ pub fn handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[used]
         static #static_name: () = {
             inventory::submit! {
-                ::helix_gateway::router::router::HandlerSubmission(
-                    ::helix_gateway::router::router::Handler::new(
+                ::helixdb::helix_gateway::router::router::HandlerSubmission(
+                    ::helixdb::helix_gateway::router::router::Handler::new(
                         #fn_name_str,
                         #fn_name
                     )
