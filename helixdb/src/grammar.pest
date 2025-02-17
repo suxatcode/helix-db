@@ -4,17 +4,16 @@ source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
 // Query definitions
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
-param_def    = {
-    identifier /* type here in future */
-}
+param_def    = { identifier ~ ":" ~ type_name  }
 query_body   = { (get_stmt | AddV | AddE)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
-traversal           = { (start_vertex | start_edge) ~ step* }
+traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ step+ }
-anonymous_traversal = { "_" ~ step+ }
-step                = { "::" ~ (graph_step | props_step | where_step | bool_operations | addfield | count) }
+anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
+step                = { "::" ~ (graph_step | props_step | where_step | bool_operations | count) }
+last_step           = { "::" ~ ( bool_operations | addfield | drop | ID | update ) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
@@ -28,6 +27,7 @@ evaluates_to_anything = {
   | integer
   | float
   | boolean
+  | none
 }
 
 evaluates_to_bool = {
@@ -94,7 +94,13 @@ LT              = { "LT" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ "
 LTE             = { "LTE" ~ "(" ~ (evaluates_to_number | anonymous_traversal) ~ ")" }
 EQ              = { "EQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
 NEQ             = { "NEQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
+
 count           = { "COUNT" }
+drop            = { "DROP" } 
+none            = { "none" }
+ID              = { "ID" }
+update_field   = { identifier ~ ":" ~ evaluates_to_anything }
+update          = { "UPDATE" ~ "(" ~ "{" ~ update_field ~ ("," ~ update_field)* ~ "}" ~ ")" }
 
 // Schema definitions
 node_def   = { "V::" ~ identifier_upper ~ node_body }
