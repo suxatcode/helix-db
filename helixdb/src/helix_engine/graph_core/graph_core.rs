@@ -1,6 +1,6 @@
+use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::helix_engine::storage_core::storage_methods::StorageMethods;
 use crate::helix_engine::types::GraphError;
-use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::props;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -19,10 +19,9 @@ use crate::helixc::parser::helix_parser::{
 use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::{
     items::{Edge, Node},
+    return_values::ReturnValue,
     value::Value,
-    return_values::ReturnValue
 };
-
 
 #[derive(Debug)]
 pub enum QueryInput {
@@ -201,6 +200,7 @@ impl HelixGraphEngine {
                         );
                         tr_builder.execute()?;
                     }
+                    Statement::Drop(drop) => {}
                 }
             }
             for return_value in query.return_values {
@@ -477,52 +477,7 @@ impl HelixGraphEngine {
                         }
                     }
                 }
-                Step::Exists(expression) => {
-                    match expression.start {
-                        StartNode::Anonymous => match tr_builder.current_step {
-                            TraversalValue::NodeArray(_) => {
-                                tr_builder.filter_nodes(&txn, |val| {
-                                    match self.evaluate_traversal(
-                                        expression.clone(),
-                                        Arc::clone(&vars),
-                                        TraversalValue::from(val),
-                                    )? {
-                                        ReturnValue::Boolean(val) => Ok(val),
-                                        _ => {
-                                            return Err(GraphError::from(
-                                                "Where clause must evaluate to a boolean!",
-                                            ));
-                                        }
-                                    }
-                                });
-                            }
-                            TraversalValue::EdgeArray(_) => {
-                                tr_builder.filter_edges(&txn, |val| {
-                                    match self.evaluate_traversal(
-                                        expression.clone(),
-                                        Arc::clone(&vars),
-                                        TraversalValue::from(val),
-                                    )? {
-                                        ReturnValue::Boolean(res) => Ok(res),
-                                        _ => {
-                                            return Err(GraphError::from(
-                                                "Where clause must evaluate to a boolean!",
-                                            ));
-                                        }
-                                    }
-                                });
-                            }
-                            _ => {
-                                return Err(GraphError::from(
-                                    "Exists clause must follow a traversal step!",
-                                ));
-                            }
-                        },
-                        _ => {
-                            return Err(GraphError::from("Where clause must start with an anonymous traversal or exists query!"));
-                        }
-                    }
-                }
+
                 Step::BooleanOperation(op) => {
                     // let previous_step = tr.steps[index - 1].clone();
                     // match previous_step {
