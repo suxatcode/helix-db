@@ -132,7 +132,8 @@ jobs:
 
     
 
-    
+      - name: List target directory
+        run: ls -la helix-cli/target
 
       # Upload release assets
       - name: Upload Release Assets
