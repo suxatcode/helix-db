@@ -4,7 +4,7 @@ use serde::{
     Deserializer, Serializer,
 };
 use sonic_rs::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, hash::Hash};
 use super::value::{properties_format, Value};
 use super::traversal_value::TraversalValue;
 
@@ -17,6 +17,12 @@ pub struct Node {
     pub label: String,
     #[serde(with = "properties_format")]
     pub properties: HashMap<String, Value>,
+}
+
+impl Node {
+    pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
+        Self { id: "".to_string(), label: label.to_string(), properties: HashMap::from_iter(properties) }
+    }
 }
 
 impl std::fmt::Display for Node {
