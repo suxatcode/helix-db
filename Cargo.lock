@@ -605,6 +605,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "helix"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dirs 5.0.1",
+ "helixdb",
+ "tempfile",
+]
+
+[[package]]
 name = "helix-container"
 version = "0.1.0"
 dependencies = [
