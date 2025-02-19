@@ -130,6 +130,12 @@ jobs:
     #       echo "Listing target directory after build"
     #       ls -R target
 
+    
+
+      - name: List target directory
+        if: matrix.arch == 'x86_64' && matrix.os == 'ubuntu-latest'
+        run: ls -la helix-cli/target
+
       # Upload release assets
       - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
