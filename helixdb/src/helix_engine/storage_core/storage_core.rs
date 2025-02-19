@@ -1,6 +1,6 @@
+use crate::protocol::filterable::Filterable;
 use bincode::{deserialize, serialize};
 use heed3::{types::*, Database, Env, EnvOpenOptions, RoTxn, RwTxn};
-use crate::protocol::filterable::Filterable;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
@@ -347,7 +347,6 @@ impl StorageMethods for HelixGraphStorage {
             let (_, value) = result?;
             let edge_id = decode_str!(value);
 
-
             let edge = self.get_edge(&txn, edge_id)?;
             if edge_label.is_empty() || edge.label == edge_label {
                 edges.push(edge);
@@ -566,11 +565,17 @@ impl StorageMethods for HelixGraphStorage {
             .put(txn, &Self::edge_label_key(label, &edge.id), &())?;
 
         // Store edge - node maps
-        self.out_edges_db
-            .put(txn, &Self::out_edge_key(from_node, to_node), &edge.id.as_bytes())?;
+        self.out_edges_db.put(
+            txn,
+            &Self::out_edge_key(from_node, to_node),
+            &edge.id.as_bytes(),
+        )?;
 
-        self.in_edges_db
-            .put(txn, &Self::in_edge_key(to_node, from_node), &edge.id.as_bytes())?;
+        self.in_edges_db.put(
+            txn,
+            &Self::in_edge_key(to_node, from_node),
+            &edge.id.as_bytes(),
+        )?;
 
         Ok(edge)
     }
@@ -741,9 +746,8 @@ impl SearchMethods for HelixGraphStorage {
                 .prefix_iter(&txn, &out_prefix)?;
 
             for result in iter {
-                let(key, value) = result?;
+                let (key, value) = result?;
                 let to_node = std::str::from_utf8(&key[out_prefix.len()..])?;
-
 
                 if !visited.contains(&to_node) {
                     visited.insert(to_node);
@@ -807,14 +811,14 @@ impl SearchMethods for HelixGraphStorage {
                 .prefix_iter(&txn, &out_prefix)?;
 
             for result in iter {
-                let(key, value) = result?;
+                let (key, value) = result?;
                 let to_node = std::str::from_utf8(&key[out_prefix.len()..])?;
 
                 println!("To Node: {}", to_node);
                 println!("Current: {}", current_id);
                 // Check if there's a reverse edge
                 let reverse_edge_key = Self::out_edge_key(&to_node, &current_id);
-            
+
                 let has_reverse_edge = self.out_edges_db.get(&txn, &reverse_edge_key)?.is_some();
 
                 // Only proceed if there's a mutual connection
@@ -843,11 +847,9 @@ impl SearchMethods for HelixGraphStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::props;
     use crate::helix_engine::storage_core::storage_methods::StorageMethods;
-    use crate::protocol::{
-        value::Value,
-    };
+    use crate::props;
+    use crate::protocol::value::Value;
     use tempfile::TempDir;
 
     fn setup_temp_db() -> HelixGraphStorage {

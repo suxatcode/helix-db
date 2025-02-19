@@ -5,15 +5,15 @@ source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ type_name  }
-query_body   = { (get_stmt | AddV | AddE)* }
+query_body   = { (get_stmt | AddV | AddE | drop)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
-id_traversal        = { identifier ~ step+ }
+id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | props_step | where_step | bool_operations | count) }
-last_step           = { "::" ~ ( bool_operations | addfield | drop | ID | update ) }
+step                = { "::" ~ (graph_step | props_step | where_step | count) }
+last_step           = { "::" ~ ( bool_operations | addfield | ID | update ) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
@@ -22,12 +22,12 @@ evaluates_to_anything = {
   | exists
   | traversal
   | id_traversal
-  | identifier
   | string_literal
   | integer
   | float
   | boolean
   | none
+  | identifier
 }
 
 evaluates_to_bool = {
@@ -53,7 +53,7 @@ return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)
 
 // Add fields
 addfield  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
-new_field = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
+new_field = { identifier ~ ":" ~ ( anonymous_traversal | evaluates_to_anything) }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
@@ -74,7 +74,7 @@ start_edge = { "E" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
-exists     = { "EXISTS" ~ "(" ~ traversal ~ ")" }
+exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal) ~ ")" }
 
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
@@ -96,10 +96,9 @@ EQ              = { "EQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~
 NEQ             = { "NEQ" ~ "(" ~ (evaluates_to_anything | anonymous_traversal) ~ ")" }
 
 count           = { "COUNT" }
-drop            = { "DROP" } 
 none            = { "none" }
 ID              = { "ID" }
-update_field   = { identifier ~ ":" ~ evaluates_to_anything }
+update_field   = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
 update          = { "UPDATE" ~ "(" ~ "{" ~ update_field ~ ("," ~ update_field)* ~ "}" ~ ")" }
 
 // Schema definitions
@@ -125,12 +124,10 @@ float            = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
-property_assignments = { property_assignment ~ ("," ~ property_assignment)* }
-property_assignment  = { identifier ~ ":" ~ (property_value | id_traversal | anonymous_traversal  | identifier) }
-property_value       = { (string_literal | integer | float | boolean) }
 
 // Add edged and vertices
-AddV    = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") }
-AddE    = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ ("{" ~ property_assignments? ~ "}")? ~ ")") ~ (from_to | to_from) }
+AddV    = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")") }
+AddE    = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")") ~ (from_to | to_from) }
 from_to = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 to_from = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
+drop    = { "DROP" ~ (traversal | id_traversal | identifier) }

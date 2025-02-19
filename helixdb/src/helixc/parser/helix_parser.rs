@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use super::parser_methods::ParserError;
+use crate::protocol::value::Value;
 use pest::{iterators::Pair, Parser as PestParser};
 use pest_derive::Parser;
-use crate::protocol::value::Value;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -37,7 +37,7 @@ pub struct Field {
     pub field_type: FieldType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FieldType {
     String,
     Integer,
@@ -56,6 +56,7 @@ pub struct Query {
 #[derive(Debug, Clone)]
 pub struct Parameter {
     pub name: String,
+    pub param_type: FieldType,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +64,7 @@ pub enum Statement {
     Assignment(Assignment),
     AddVertex(AddVertex),
     AddEdge(AddEdge),
+    Drop(Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +83,7 @@ pub enum Expression {
     Exists(Box<Traversal>),
     AddVertex(AddVertex),
     AddEdge(AddEdge),
+    None,
 }
 
 #[derive(Debug, Clone)]
@@ -109,10 +112,11 @@ pub enum Step {
     Edge(GraphStep),
     Props(Vec<String>),
     Where(Box<Expression>),
-    Exists(Box<Traversal>),
     BooleanOperation(BooleanOp),
     AddField(Vec<FieldAddition>),
     Count,
+    ID,
+    Update(Update),
 }
 
 #[derive(Debug, Clone)]
@@ -177,7 +181,7 @@ impl From<IdType> for String {
             IdType::Literal(mut s) => {
                 s.retain(|c| c != '"');
                 s
-            },
+            }
             IdType::Identifier(s) => s,
         }
     }
@@ -191,13 +195,23 @@ impl From<String> for IdType {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Update {
+    pub fields: Vec<(String, Expression)>,
+}
+
 impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
         let file = match HelixParser::parse(Rule::source, input) {
-            Ok(mut pairs) => pairs
-                .next()
-                .ok_or_else(|| ParserError::from("Empty input"))?,
-            Err(e) => return Err(ParserError::from(e)),
+            Ok(mut pairs) => {
+                let pair = pairs
+                    .next()
+                    .ok_or_else(|| ParserError::from("Empty input"))?;
+                pair
+            }
+            Err(e) => {
+                return Err(ParserError::from(e));
+            }
         };
 
         let mut source = Source {
@@ -304,8 +318,18 @@ impl HelixParser {
 
     fn parse_parameters(pair: Pair<Rule>) -> Vec<Parameter> {
         pair.into_inner()
-            .map(|p| Parameter {
-                name: p.as_str().to_string(),
+            .map(|p| {
+                let mut inner = p.into_inner();
+                let name = inner.next().unwrap().as_str().to_string();
+                let param_type = match inner.next().unwrap().as_str() {
+                    "String" => FieldType::String,
+                    "Integer" => FieldType::Integer,
+                    "Float" => FieldType::Float,
+                    "Boolean" => FieldType::Boolean,
+                    _ => unreachable!(),
+                };
+                Parameter { name, param_type }
+                //hi
             })
             .collect()
     }
@@ -316,6 +340,7 @@ impl HelixParser {
                 Rule::get_stmt => Ok(Statement::Assignment(Self::parse_get_statement(p)?)),
                 Rule::AddV => Ok(Statement::AddVertex(Self::parse_add_vertex(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(Self::parse_add_edge(p)?)),
+                Rule::drop => Ok(Statement::Drop(Self::parse_expression(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
                     p.as_rule()
@@ -333,7 +358,7 @@ impl HelixParser {
                 Rule::identifier_upper => {
                     vertex_type = Some(p.as_str().to_string());
                 }
-                Rule::property_assignments => {
+                Rule::addfield => {
                     fields = Some(Self::parse_property_assignments(p)?);
                 }
                 _ => {
@@ -405,7 +430,7 @@ impl HelixParser {
                 Rule::identifier_upper => {
                     edge_type = Some(p.as_str().to_string());
                 }
-                Rule::property_assignments => {
+                Rule::addfield => {
                     fields = Some(Self::parse_property_assignments(p)?);
                 }
                 Rule::to_from => {
@@ -437,9 +462,7 @@ impl HelixParser {
             .ok_or_else(|| ParserError::from("Missing ID"))?;
         match p.as_rule() {
             Rule::identifier => Ok(IdType::Identifier(p.as_str().to_string())),
-            Rule::string_literal | Rule::inner_string => {
-                Ok(IdType::from(p.as_str().to_string()))
-            }
+            Rule::string_literal | Rule::inner_string => Ok(IdType::from(p.as_str().to_string())),
             _ => unreachable!(),
         }
     }
@@ -505,6 +528,9 @@ impl HelixParser {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
             )?))),
+            Rule::id_traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
+                pair,
+            )?))),
             Rule::anonymous_traversal => Ok(Expression::Traversal(Box::new(
                 Self::parse_anon_traversal(pair)?,
             ))),
@@ -523,9 +549,11 @@ impl HelixParser {
                     .into_inner()
                     .next()
                     .ok_or_else(|| ParserError::from("Missing exists traversal"))?;
-                Ok(Expression::Exists(Box::new(Self::parse_traversal(
-                    traversal,
-                )?)))
+                Ok(Expression::Exists(Box::new(match traversal.as_rule() {
+                    Rule::traversal => Self::parse_traversal(traversal)?,
+                    Rule::id_traversal => Self::parse_traversal(traversal)?,
+                    _ => unreachable!(),
+                })))
             }
             Rule::AddV => Ok(Expression::AddVertex(Self::parse_add_vertex(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(Self::parse_add_edge(pair)?)),
@@ -600,12 +628,11 @@ impl HelixParser {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
             Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::exists => Ok(Step::Exists(Box::new(Self::parse_traversal(
-                inner.into_inner().next().unwrap(),
-            )?))),
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
+            Rule::ID => Ok(Step::ID),
+            Rule::update => Ok(Step::Update(Self::parse_update(inner)?)),
             _ => Err(ParserError::from("Unexpected step type")),
         }
     }
@@ -687,6 +714,17 @@ impl HelixParser {
 
         Ok(FieldAddition { name, value })
     }
+
+    fn parse_update(pair: Pair<Rule>) -> Result<Update, ParserError> {
+        let mut fields = Vec::new();
+        for p in pair.into_inner() {
+            let mut pairs = p.into_inner();
+            let prop_key = pairs.next().unwrap().as_str().to_string();
+            let prop_val = Self::parse_expression(pairs.next().unwrap())?;
+            fields.push((prop_key, prop_val));
+        }
+        Ok(Update { fields })
+    }
 }
 
 // Tests module
@@ -762,7 +800,7 @@ mod tests {
     #[test]
     fn test_parse_query() {
         let input = r#"
-        QUERY FindUser(userName) => 
+        QUERY FindUser(userName : String) => 
             user <- V<User>
             RETURN user
         "#;
@@ -780,7 +818,7 @@ mod tests {
     #[test]
     fn test_query_with_parameters() {
         let input = r#"
-        QUERY fetchUsers(name, age) =>
+        QUERY fetchUsers(name: String, age: Integer) =>
             user <- V<USER>("123")
             nameField <- user::Props(Name)
             ageField <- user::Props(Age)
@@ -791,6 +829,10 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.name, "fetchUsers");
         assert_eq!(query.parameters.len(), 2);
+        assert_eq!(query.parameters[0].name, "name");
+        assert_eq!(query.parameters[0].param_type, FieldType::String);
+        assert_eq!(query.parameters[1].name, "age");
+        assert_eq!(query.parameters[1].param_type, FieldType::Integer);
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
     }
@@ -866,15 +908,16 @@ mod tests {
     #[test]
     fn test_logical_operations() {
         let input = r#"
-    QUERY logicalOps(id) =>
+    QUERY logicalOps(id : String) =>
         user <- V<USER>(id)
-        condition <- name::EQ("Alice")::Props(Age)
+        condition <- user::Props(name)::EQ("Alice")
+        condition2 <- user::Props(age)::GT(20)
         RETURN condition
     "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "logicalOps");
-        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.statements.len(), 3);
     }
 
     #[test]
@@ -909,7 +952,7 @@ mod tests {
     #[test]
     fn test_exists_query() {
         let input = r#"
-        QUERY userExists(id) =>
+        QUERY userExists(id : String) =>
             user <- V<User>(id)
             result <- EXISTS(user::OutE::InV<User>)
             RETURN result
@@ -988,6 +1031,7 @@ mod tests {
         let input = r#"
     QUERY analyzeNetwork() =>
         edge <- AddE<Rating>({Rating: 5})::To("123")::From("456")
+        edge <- AddE<Rating>({Rating: 5, Date: "2025-01-01"})::To("123")::From("456")
         RETURN edge
     "#;
         let result = match HelixParser::parse_source(input) {
@@ -999,7 +1043,7 @@ mod tests {
         };
         let query = &result.queries[0];
         println!("{:?}", query);
-        assert_eq!(query.statements.len(), 1);
+        assert_eq!(query.statements.len(), 2);
     }
 
     #[test]
@@ -1029,20 +1073,50 @@ mod tests {
     fn test_where_with_props() {
         let input = r#"
     QUERY getFollows() =>
-        user <- V<User>()::WHERE(_::Props(Age)::GT(26))
-        follows <- user::Out<Follows>
+        user <- V<User>::WHERE(_::Props(Age)::GT(2))
+        user <- V<User>::WHERE(_::GT(2))
         RETURN user, follows
         "#;
         let result = match HelixParser::parse_source(input) {
             Ok(result) => result,
             Err(e) => {
-                println!("{:?}", e);
                 panic!();
             }
         };
-        println!("{:?}", result);
         let query = &result.queries[0];
-        println!("{:?}", query);
-        assert_eq!(query.statements.len(), 1398374);
+        assert_eq!(query.statements.len(), 2);
+    }
+
+    #[test]
+    fn test_drop_operation() {
+        let input = r#"
+        QUERY deleteUser(id: String) =>
+            user <- V<USER>(id)
+            DROP user
+            DROP user::OutE
+            DROP V::OutE
+            RETURN user
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.name, "deleteUser");
+        assert_eq!(query.parameters.len(), 1);
+        assert_eq!(query.statements.len(), 4);
+    }
+
+    #[test]
+    fn test_update_operation() {
+        let input = r#"
+        QUERY updateUser(id: String) =>
+            user <- V<USER>(id)
+            x <- user::UPDATE({Name: "NewName"})
+            l <- user::UPDATE({Name: "NewName", Age: 30})
+            RETURN user
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.name, "updateUser");
+        assert_eq!(query.parameters.len(), 1);
+        assert_eq!(query.statements.len(), 3);
     }
 }

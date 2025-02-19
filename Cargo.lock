@@ -1117,18 +1117,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dst"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "get_routes",
- "helixdb",
- "inventory",
- "rand 0.8.5",
- "tempfile",
-]
-
-[[package]]
 name = "ecdsa"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
