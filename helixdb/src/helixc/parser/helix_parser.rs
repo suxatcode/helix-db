@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
-use pest::{iterators::Pair, Parser as PestParser};
+use pest::{
+    iterators::{Pair, Pairs},
+    Parser as PestParser,
+};
 use pest_derive::Parser;
 
 #[derive(Parser)]
@@ -83,6 +86,8 @@ pub enum Expression {
     Exists(Box<Traversal>),
     AddVertex(AddVertex),
     AddEdge(AddEdge),
+    And(Vec<Expression>),
+    Or(Vec<Expression>),
     None,
 }
 
@@ -122,7 +127,14 @@ pub enum Step {
 #[derive(Debug, Clone)]
 pub struct FieldAddition {
     pub name: String,
-    pub value: Expression,
+    pub value: FieldValue,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldValue {
+    Traversal(Box<Traversal>),
+    Expression(Expression),
+    Fields(Vec<FieldAddition>),
 }
 
 #[derive(Debug, Clone)]
@@ -519,6 +531,24 @@ impl HelixParser {
             .collect()
     }
 
+    fn parse_expression_vec(pairs: Pairs<Rule>) -> Result<Vec<Expression>, ParserError> {
+        let mut expressions = Vec::new();
+        for p in pairs {
+            expressions.push(Self::parse_expression(p)?);
+        }
+        Ok(expressions)
+    }
+
+    fn parse_boolean_expression(pair: Pair<Rule>) -> Result<Expression, ParserError> {
+        let expression = pair.into_inner();
+        match expression.clone().next().unwrap().as_rule() {
+            Rule::and => Ok(Expression::And(Self::parse_expression_vec(expression)?)),
+            Rule::or => Ok(Expression::Or(Self::parse_expression_vec(expression)?)),
+            Rule::boolean => Ok(Expression::BooleanLiteral(expression.as_str() == "true")),
+            _ => unreachable!(),
+        }
+    }
+
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
         let pair = p
             .into_inner()
@@ -538,12 +568,6 @@ impl HelixParser {
             Rule::string_literal => {
                 Ok(Expression::StringLiteral(Self::parse_string_literal(pair)?))
             }
-            Rule::integer => pair
-                .as_str()
-                .parse()
-                .map(Expression::IntegerLiteral)
-                .map_err(|_| ParserError::from("Invalid integer literal")),
-            Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::exists => {
                 let traversal = pair
                     .into_inner()
@@ -555,6 +579,18 @@ impl HelixParser {
                     _ => unreachable!(),
                 })))
             }
+            Rule::integer => pair
+                .as_str()
+                .parse()
+                .map(Expression::IntegerLiteral)
+                .map_err(|_| ParserError::from("Invalid integer literal")),
+            Rule::float => pair
+                .as_str()
+                .parse()
+                .map(Expression::FloatLiteral)
+                .map_err(|_| ParserError::from("Invalid float literal")),
+            Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
+            Rule::evaluates_to_bool => Ok(Self::parse_boolean_expression(pair)?),
             Rule::AddV => Ok(Expression::AddVertex(Self::parse_add_vertex(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(Self::parse_add_edge(pair)?)),
             _ => Err(ParserError::from(format!(
@@ -699,11 +735,14 @@ impl HelixParser {
         let name = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
-        let value = match value_pair.as_rule() {
-            Rule::evaluates_to_anything => Self::parse_expression(value_pair)?,
-            Rule::anonymous_traversal => {
-                Expression::Traversal(Box::new(Self::parse_traversal(value_pair)?))
+        let value: FieldValue = match value_pair.as_rule() {
+            Rule::evaluates_to_anything => {
+                FieldValue::Expression(Self::parse_expression(value_pair)?)
             }
+            Rule::anonymous_traversal => {
+                FieldValue::Traversal(Box::new(Self::parse_traversal(value_pair)?))
+            }
+            Rule::addfield => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected field value type: {:?}",
@@ -719,6 +758,7 @@ impl HelixParser {
         let mut fields = Vec::new();
         for p in pair.into_inner() {
             let mut pairs = p.into_inner();
+            println!("pairs: {:?}", pairs);
             let prop_key = pairs.next().unwrap().as_str().to_string();
             let prop_val = Self::parse_expression(pairs.next().unwrap())?;
             fields.push((prop_key, prop_val));
@@ -1118,5 +1158,174 @@ mod tests {
         assert_eq!(query.name, "updateUser");
         assert_eq!(query.parameters.len(), 1);
         assert_eq!(query.statements.len(), 3);
+    }
+
+    #[test]
+    fn test_complex_traversal_combinations() {
+        let input = r#"
+        QUERY complexTraversal() =>
+            result1 <- V<User>::OutE<Follows>::InV<User>::Props(name)
+            result2 <- V::WHERE(AND(
+                _::Props(age)::GT(20),
+                OR(_::Props(name)::EQ("Alice"), _::Props(name)::EQ("Bob"))
+            ))
+            result3 <- V<User>::{
+                friends: _::Out<Follows>::InV::Props(name),
+                avgFriendAge: _::Out<Follows>::InV::Props(age)::GT(25)
+            }
+            RETURN result1, result2, result3
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.name, "complexTraversal");
+        assert_eq!(query.statements.len(), 3);
+        assert_eq!(query.return_values.len(), 3);
+    }
+
+    #[test]
+    fn test_nested_property_operations() {
+        let input = r#"
+        QUERY nestedProps() =>
+            user <- V<User>("123")
+            // Test nested property operations
+            result <- user::{
+                basic: {
+                    name: _::Props(name),
+                    age: _::Props(age)
+                },
+                social: {
+                    friends: _::Out<Follows>::COUNT,
+                    groups: _::Out<BelongsTo>::InV<Group>::Props(name)
+                }
+            }
+            RETURN result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+    }
+
+    #[test]
+    fn test_complex_edge_operations() {
+        let input = r#"
+        QUERY edgeOperations() =>
+            edge1 <- AddE<Follows>({since: "2024-01-01", weight: 0.8})::From("user1")::To("user2")
+            edge2 <- E<Follows>::WHERE(_::Props(weight)::GT(0.5))
+            edge3 <- edge2::UPDATE({weight: 1.0, updated: "2024-03-01"})
+            RETURN edge1, edge2, edge3
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 3);
+        assert_eq!(query.return_values.len(), 3);
+    }
+
+    #[test]
+    fn test_mixed_type_operations() {
+        let input = r#"
+        QUERY mixedTypes() =>
+            v1 <- AddV<User>({
+                name: "Alice",
+                age: 25,
+                active: true,
+                score: 4.5
+            })
+            result <- V<User>::WHERE(OR(
+                _::Props(age)::GT(20),
+                _::Props(score)::LT(5.0)
+            ))
+            RETURN v1, result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.return_values.len(), 2);
+    }
+
+    #[test]
+    fn test_error_cases() {
+        // Test invalid vertex type
+        let invalid_vertex = r#"
+        QUERY invalidQuery() =>
+            result <- V<InvalidType>()
+            RETURN result
+        "#;
+        assert!(HelixParser::parse_source(invalid_vertex).is_ok());
+
+        // Test missing return statement
+        let missing_return = r#"
+        QUERY noReturn() =>
+            result <- V<User>()
+        "#;
+        assert!(HelixParser::parse_source(missing_return).is_err());
+
+        // Test invalid property access
+        let invalid_props = r#"
+        QUERY invalidProps() =>
+            result <- V<User>::Props()
+            RETURN result
+        "#;
+        assert!(HelixParser::parse_source(invalid_props).is_err());
+    }
+
+    #[test]
+    fn test_complex_schema_definitions() {
+        let input = r#"
+        V::ComplexUser {
+            ID: String,
+            Name: String,
+            Age: Integer,
+            Score: Float,
+            Active: Boolean
+        }
+        E::ComplexRelation {
+            From: ComplexUser,
+            To: ComplexUser,
+            Properties {
+                StartDate: String,
+                EndDate: String,
+                Weight: Float,
+                Valid: Boolean,
+                Count: Integer
+            }
+        }
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        assert_eq!(result.node_schemas.len(), 1);
+        assert_eq!(result.edge_schemas.len(), 1);
+
+        let node = &result.node_schemas[0];
+        assert_eq!(node.fields.len(), 5);
+
+        let edge = &result.edge_schemas[0];
+        let props = edge.properties.as_ref().unwrap();
+        assert_eq!(props.len(), 5);
+    }
+
+    #[test]
+    fn test_query_chaining() {
+        let input = r#"
+        QUERY chainedOperations() =>
+            result <- V<User>("123")
+                ::OutE<Follows>
+                ::InV<User>
+                ::Props(name)
+                ::EQ("Alice")
+            filtered <- V<User>::WHERE(
+                _::Out<Follows>
+                    ::InV<User>
+                    ::Props(age)
+                    ::GT(25)
+            )
+            updated <- filtered
+                ::UPDATE({status: "active"})
+            has_updated <- updated::Props(status)
+                ::EQ("active")
+            RETURN result, filtered, updated, has_updated
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 4);
+        assert_eq!(query.return_values.len(), 4);
     }
 }

@@ -23,26 +23,28 @@ evaluates_to_anything = {
   | traversal
   | id_traversal
   | string_literal
-  | integer
   | float
+  | integer
   | boolean
   | none
+  | and
+  | or
   | identifier
 }
 
 evaluates_to_bool = {
     exists
   | boolean
+  | and
+  | or
   | identifier
   | traversal
   | id_traversal
-  | and
-  | or
 }
 
 evaluates_to_number = {
-    integer
-  | float
+   float
+  | integer
   | identifier
   | traversal
   | id_traversal
@@ -53,7 +55,7 @@ return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)
 
 // Add fields
 addfield  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
-new_field = { identifier ~ ":" ~ ( anonymous_traversal | evaluates_to_anything) }
+new_field = { identifier ~ ":" ~ ( anonymous_traversal | evaluates_to_anything | addfield) }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
@@ -99,7 +101,7 @@ count           = { "COUNT" }
 none            = { "none" }
 ID              = { "ID" }
 update_field   = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
-update          = { "UPDATE" ~ "(" ~ "{" ~ update_field ~ ("," ~ update_field)* ~ "}" ~ ")" }
+update          = { "UPDATE" ~ "(" ~ "{" ~ update_field ~ ("," ~ update_field)* ~ "}" ~ ")"}
 
 // Schema definitions
 node_def   = { "V::" ~ identifier_upper ~ node_body }
