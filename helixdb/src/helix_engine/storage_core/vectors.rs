@@ -1,7 +1,11 @@
 // vector struct to store raw data, dimension and de
 
 use std::{
-    cmp::Ordering, collections::{BinaryHeap, HashSet}, path::Path, sync::{Arc, Mutex}, vec
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet},
+    path::Path,
+    sync::{Arc, Mutex},
+    vec,
 };
 
 use bincode::deserialize;
@@ -22,7 +26,7 @@ const VECTOR_PREFIX: &[u8] = b"v:";
 const OUT_PREFIX: &[u8] = b"o:";
 const IN_PREFIX: &[u8] = b"i:";
 
-#[repr(C, align(16))]  // Align to 16 bytes for better SIMD performance
+#[repr(C, align(16))] // Align to 16 bytes for better SIMD performance
 #[derive(Clone)]
 pub struct HVector {
     data: Vec<f64>,
@@ -37,11 +41,14 @@ impl EuclidianDistance for HVector {
     fn distance(from: &HVector, to: &HVector) -> f64 {
         // Fast path: use SIMD for aligned data of same length
         if from.len() == to.len() {
+            #[cfg(target_arch = "aarch64")]
             unsafe {
                 return from.simd_distance_unchecked(to);
             }
+            #[cfg(not(target_arch = "aarch64"))]
+            return from.scalar_distance(to);
         }
-        
+
         // Fallback to scalar implementation for different lengths
         from.scalar_distance(to)
     }
@@ -55,7 +62,9 @@ impl HVector {
 
     #[inline(always)]
     pub fn from_slice(data: &[f64]) -> Self {
-        HVector { data: data.to_vec() }
+        HVector {
+            data: data.to_vec(),
+        }
     }
 
     #[inline(always)]
@@ -79,7 +88,7 @@ impl HVector {
 
         let mut data = Vec::with_capacity(bytes.len() / std::mem::size_of::<f64>());
         let chunks = bytes.chunks_exact(std::mem::size_of::<f64>());
-        
+
         for chunk in chunks {
             let value = f64::from_le_bytes(chunk.try_into().unwrap());
             data.push(value);
@@ -104,10 +113,11 @@ impl HVector {
     }
 
     // Internal methods for distance calculation
+    #[cfg(target_arch = "aarch64")]
     #[inline(always)]
     unsafe fn simd_distance_unchecked(&self, other: &HVector) -> f64 {
-        use std::arch::aarch64::{vld1q_f64, vsubq_f64, vmulq_f64, vaddvq_f64};
-        
+        use std::arch::aarch64::{vaddvq_f64, vld1q_f64, vmulq_f64, vsubq_f64};
+
         let mut sum = 0.0;
         let n = self.len();
         let mut i = 0;
@@ -136,7 +146,7 @@ impl HVector {
     fn scalar_distance(&self, other: &HVector) -> f64 {
         let mut sum = 0.0;
         let n = self.len().min(other.len());
-        
+
         // Use iterator for better bounds check elimination
         self.data[..n]
             .iter()
@@ -211,7 +221,7 @@ mod vector_tests {
     fn test_hvector_is_empty() {
         let empty_vector = HVector::new(vec![]);
         let non_empty_vector = HVector::new(vec![1.0, 2.0]);
-        
+
         assert!(empty_vector.is_empty());
         assert!(!non_empty_vector.is_empty());
     }

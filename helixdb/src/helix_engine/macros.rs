@@ -1,11 +1,52 @@
 pub mod macros {
     #[macro_export]
     /// Creates array of pairs which each represent the property key and corresponding value.
+    /// If a value is None, it will be excluded from the final vector.
+    /// The vector is preallocated with capacity for all potential items.
     ///
     /// ## Example Use
     /// ```rust
-    /// use helix_engine::props;
-    /// use protocol::value::Value;
+    /// use helixdb::optional_props;
+    /// use helixdb::protocol::value::Value;
+    ///
+    /// let properties: Vec<(String, Value)> = optional_props! {
+    ///     "name" => Some("Will"),
+    ///     "age" => Some(21),
+    ///     "title" => None::<String>,
+    /// };
+    ///
+    /// assert_eq!(properties.len(), 2); // "title" is excluded
+    /// ```
+    macro_rules! optional_props {
+    () => {
+        vec![]
+    };
+    ($($key:expr => $value:expr),* $(,)?) => {{
+        let mut vec = Vec::with_capacity($crate::count!($($key),*));
+        $(
+            if let Some(value) = $value {
+                vec.push((String::from($key), value.into()));
+            }
+        )*
+        vec
+    }};
+}
+
+    // Helper macro to count the number of expressions
+    #[macro_export]
+    #[doc(hidden)]
+    macro_rules! count {
+    () => (0);
+    ($head:expr $(, $tail:expr)*) => (1 + $crate::count!($($tail),*));
+    }
+
+    #[macro_export]
+    /// Creates array of pairs which each represent the property key and corresponding value.
+    ///
+    /// ## Example Use
+    /// ```rust
+    /// use helixdb::props;
+    /// use helixdb::protocol::value::Value;
     ///
     /// let properties: Vec<(String, Value)> = props! {
     ///     "name" => "Will",
@@ -13,20 +54,18 @@ pub mod macros {
     /// };
     ///
     /// assert_eq!(properties.len(), 2);
-    /// ```
     macro_rules! props {
-        () => {
-            vec![]
-        };
-        ($($key:expr => $value:expr),* $(,)?) => {
-            vec![
-                $(
-                    (String::from($key), $value.into()),
-                )*
-            ]
-        };
-
-    }
+    () => {
+    vec![]
+    };
+    ($($key:expr => $value:expr),* $(,)?) => {
+    vec![
+    $(
+    (String::from($key), $value.into()),
+    )*
+    ]
+    };
+ }
 
     #[macro_export]
     /// Creates a closeure that takes a node and checks a property of the node against a value.
@@ -35,33 +74,33 @@ pub mod macros {
     /// ## Example Use
     ///
     /// ```rust
-    /// use helix_engine::node_matches;
-    /// use protocol::value::Value;
-    /// use protocol::node::Node;
-    ///
+    /// use helixdb::node_matches;
+    /// use helixdb::protocol::value::Value;
+    /// use helixdb::protocol::items::Node;
+    /// use helixdb::protocol::filterable::Filterable;
     /// let pred = node_matches!("name", "Will");
-    ///
+    /// 
     /// let node = Node::new("person", vec![
     ///    ("name".to_string(), Value::String("Will".to_string())),
-    ///   ("age".to_string(), Value::Number(21.0)),
+    ///   ("age".to_string(), Value::Integer(21)),
     /// ]);
     ///
     ///
-    /// assert_eq!(pred(&node), true);
+    /// assert_eq!(pred(&node).unwrap(), true);
     /// ```
     macro_rules! node_matches {
         ($key:expr, $value:expr) => {
-            |node: &protocol::Node| {
+            |node: &helixdb::protocol::items::Node| {
                 if let Some(val) = node.check_property($key) {
-                    if let protocol::value::Value::String(val) = &val {
+                    if let helixdb::protocol::value::Value::String(val) = &val {
                         Ok(*val == $value)
                     } else {
-                        Err(helix_engine::types::GraphError::from(
+                        Err(helixdb::helix_engine::types::GraphError::from(
                             "Invalid node".to_string(),
                         ))
                     }
                 } else {
-                    Err(helix_engine::types::GraphError::from(
+                    Err(helixdb::helix_engine::types::GraphError::from(
                         "Invalid node".to_string(),
                     ))
                 }
@@ -72,30 +111,35 @@ pub mod macros {
     #[macro_export]
     macro_rules! edge_matches {
         ($key:expr, $value:expr) => {
-            |edge: &protocol::Edge| {
+            |edge: &helixdb::protocol::items::Edge| {
                 if let Some(val) = edge.check_property($key) {
-                    if let protocol::value::Value::String(val) = &val {
+                    if let helixdb::protocol::value::Value::String(val) = &val {
                         Ok(*val == $value)
                     } else {
-                        Err(helix_engine::types::GraphError::from(
+                        Err(helixdb::helix_engine::types::GraphError::from(
                             "Invalid edge".to_string(),
                         ))
                     }
                 } else {
-                    Err(helix_engine::types::GraphError::from(
+                    Err(helixdb::helix_engine::types::GraphError::from(
                         "Invalid edge".to_string(),
                     ))
                 }
             }
         };
     }
-    
+
     #[macro_export]
     macro_rules! decode_str {
         ($value:expr) => {
             match $value.decode() {
                 Ok(v) => std::str::from_utf8(v)?,
-                Err(e) => return Err(GraphError::ConversionError(format!("Error Decoding: {:?}", e))),
+                Err(e) => {
+                    return Err(GraphError::ConversionError(format!(
+                        "Error Decoding: {:?}",
+                        e
+                    )))
+                }
             }
         };
     }
