@@ -27,7 +27,7 @@ impl Response {
     /// 
     /// ```rust
     /// use std::io::Cursor;
-    /// use protocol::response::Response;
+    /// use helixdb::protocol::response::Response;
     /// 
     /// let mut response = Response::new();
     /// 

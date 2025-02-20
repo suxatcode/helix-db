@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
+use helixdb::optional_props;
 use helixdb::{
     node_matches,
     props,
@@ -19,6 +20,7 @@ use helixdb::{
     protocol::{filterable::Filterable, value::Value, return_values::ReturnValue},
 };
 use sonic_rs::{Deserialize, Serialize};
+
 
 #[derive(Deserialize)]
 
@@ -395,31 +397,31 @@ pub fn add_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
 
 #[derive(Deserialize)]
 struct UpdateUser {
-    x_id: String,
-    username: String,
-    url: String,
-    location: String,
-    verified: bool,
-    followers_count: i32,
-    following_count: i32,
-    post_count: i32,
-    joined_date: String,
-    profile_image_url: String,
-    profile_banner_url: String,
-    graph_image_url: String,
-    created_at: String,
-    updated_at: String,
-    following_ids: Vec<String>,
+    x_id: Option<String>,
+    username: Option<String>,
+    url: Option<String>,
+    location: Option<String>,
+    verified: Option<bool>,
+    followers_count: Option<i32>,
+    following_count: Option<i32>,
+    post_count: Option<i32>,
+    joined_date: Option<String>,
+    profile_image_url: Option<String>,
+    profile_banner_url: Option<String>,
+    graph_image_url: Option<String>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    following_ids: Option<Vec<String>>,
 }
 #[handler]
 pub fn update_user(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     let data: UpdateUser = sonic_rs::from_slice(&input.request.body).unwrap();
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(2);
+    let return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(2);
     let db = Arc::clone(&input.graph.storage);
     let mut txn = db.graph_env.write_txn().unwrap();
 
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
-    tr.v_from_secondary_index(&txn, "x_id", &Value::String(data.x_id.clone()));
+    tr.v_from_secondary_index(&txn, "x_id", &Value::String(data.x_id.clone().unwrap_or_default()));
 
     match tr.current_step {
         TraversalValue::NodeArray(nodes) => {
@@ -435,7 +437,7 @@ pub fn update_user(input: &HandlerInput, response: &mut Response) -> Result<(), 
                         tr.v_from_id(&txn, &node.id);
                         tr.update_props(
                             &mut txn,
-                            props! {
+                            optional_props! {
                                 "username" => data.username,
                                 "url" => data.url,
                                 "location" => data.location,
@@ -449,7 +451,7 @@ pub fn update_user(input: &HandlerInput, response: &mut Response) -> Result<(), 
                                 "graph_image_url" => data.graph_image_url,
                                 "created_at" => data.created_at,
                                 "updated_at" => data.updated_at,
-                                "is_enabled" => true,
+                                "is_enabled" => Some(true),
                             },
                         );
 
@@ -461,7 +463,7 @@ pub fn update_user(input: &HandlerInput, response: &mut Response) -> Result<(), 
                                     _ => return Err(GraphError::from("Invalid node".to_string())),
                                 };
 
-                                data.following_ids.iter().for_each(|x_id: &String| {
+                                data.following_ids.unwrap_or_default().iter().for_each(|x_id: &String| {
                                     let mut following = TraversalBuilder::new(
                                         Arc::clone(&db),
                                         TraversalValue::Empty,

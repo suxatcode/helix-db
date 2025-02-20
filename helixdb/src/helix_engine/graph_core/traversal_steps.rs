@@ -130,7 +130,7 @@ pub trait TraversalMethods {
     /// ## Example
     /// ```rust
     ///
-    /// use helix_engine::{
+    /// use helixdb::helix_engine::{
     ///     graph_core::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
     ///     graph_core::graph_core::HelixGraphEngine,
     ///     graph_core::traversal::TraversalBuilder,
@@ -139,8 +139,7 @@ pub trait TraversalMethods {
     ///     types::GraphError,
     ///     
     /// };
-    /// 
-    /// use protocol::{count::Count, traversal_value::TraversalValue, Edge, filterable::Filterable, Node, value::Value};
+    /// use helixdb::protocol::{count::Count, traversal_value::TraversalValue, items::{Edge, Node}, value::Value};
     /// use std::collections::HashMap;
     /// use tempfile::TempDir;
     /// use std::sync::Arc;

@@ -2,7 +2,7 @@ name: Build and Upload Binaries
 
 on:
   push:
-    branches: ["main"]
+    # branches: ["main"]
 
 permissions:
   contents: write  
@@ -132,7 +132,9 @@ jobs:
 
     
 
-    
+      - name: List target directory
+        if: matrix.arch == 'x86_64' && matrix.os == 'ubuntu-latest'
+        run: ls -la helix-cli/target
 
       # Upload release assets
       - name: Upload Release Assets
