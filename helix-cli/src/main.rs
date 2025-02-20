@@ -2,6 +2,7 @@ use args::{CliError, HelixCLI};
 use clap::Parser;
 use helixdb::helixc::{
     // generator,
+    generator::generator::CodeGenerator,
     parser::helix_parser::{HelixParser, Source},
 };
 use runner::RustRunner;
@@ -21,58 +22,82 @@ fn main() {
     let args = HelixCLI::parse();
     match args.command {
         args::CommandType::Compile(command) => {
-            match command.path {
+            let path = match command.path {
                 Some(path) => {
                     // call parser
-                    // let files = match check_and_read_files(&path) {
-                    //     Ok(files) => files,
-                    //     Err(e) => {
-                    //         println!("{}", e);
-                    //         return;
-                    //     }
-                    // };
-
-                    // if files.is_empty() {
-                    //     println!("No queries found, nothing to compile");
-                    //     return;
-                    // }
-
-                    // let numb_of_files = files.len();
-                    // let mut successes = HashMap::new();
-                    // let mut errors = HashMap::new();
-                    // for file in files {
-                    //     let contents = match fs::read_to_string(file.path()) {
-                    //         Ok(contents) => contents,
-                    //         Err(e) => {
-                    //             println!("{}", e);
-                    //             return;
-                    //         }
-                    //     };
-                    //     match HelixParser::parse_source(&contents) {
-                    //         Ok(source) => {
-                    //             successes.insert(
-                    //                 file.file_name().to_string_lossy().into_owned(),
-                    //                 source,
-                    //             );
-                    //             // println!("{:?}", parser);
-                    //         }
-                    //         Err(e) => {
-                    //             errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                    //         }
-                    //     }
-                    // }
-
-                    // println!("\nCompiled {} files!\n", numb_of_files);
-                    // successes
-                    //     .iter()
-                    //     .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-                    // errors
-                    //     .iter()
-                    //     .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
-                    // println!();
+                    path
                 }
-                None => {}
+                None => {
+                    // current directory
+                    ".".to_string()
+                }
             };
+            let output = match command.output {
+                Some(output) => output,
+                None => dirs::home_dir()
+                    .map(|path| {
+                        path.join(".helix/cache/generated/")
+                            .to_string_lossy()
+                            .into_owned()
+                    })
+                    .unwrap_or_else(|| "./.helix/cache/generated/".to_string()),
+            };
+            let files = match check_and_read_files(&path) {
+                Ok(files) => files,
+                Err(e) => {
+                    println!("{}", e);
+                    return;
+                }
+            };
+
+            if files.is_empty() {
+                println!("No queries found, nothing to compile");
+                return;
+            }
+
+            let numb_of_files = files.len();
+            let mut successes = HashMap::new();
+            let mut errors = HashMap::new();
+            let mut code = String::new();
+            let mut generator = CodeGenerator::new();
+            code.push_str(&generator.generate_headers());
+            for file in files {
+                let contents = match fs::read_to_string(file.path()) {
+                    Ok(contents) => contents,
+                    Err(e) => {
+                        println!("{}", e);
+                        return;
+                    }
+                };
+                match HelixParser::parse_source(&contents) {
+                    Ok(source) => {
+                        // println!("{:?}", parser);
+                        code.push_str(&generator.generate_source(&source));
+
+                        // write to ~/.helix/cache/generated/
+
+                        successes.insert(file.file_name().to_string_lossy().into_owned(), source);
+                    }
+                    Err(e) => {
+                        errors.insert(file.file_name().to_string_lossy().into_owned(), e);
+                    }
+                }
+            }
+            let cache_dir = PathBuf::from(&output);
+            fs::create_dir_all(&cache_dir).unwrap();
+
+            let file_path = cache_dir.join(format!(
+                "queries.rs",
+            ));
+            fs::write(file_path, code).unwrap();
+            println!("\nCompiled {} files!\n", numb_of_files);
+            successes
+                .iter()
+                .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
+            errors
+                .iter()
+                .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
+            println!();
         }
 
         args::CommandType::Check(command) => {

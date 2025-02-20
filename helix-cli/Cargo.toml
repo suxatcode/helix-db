@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { version = "4.5.30", features = ["derive"] }
 helixdb = { path = "../helixdb" }
 # helix-engine = { path = "../helix-engine" }
 # helix-gateway = { path = "../helix-gateway" }
-tempfile = "3.2.0"
-dirs = "5.0.1"
+tempfile = "3.17.1"
+dirs = "6.0.0"

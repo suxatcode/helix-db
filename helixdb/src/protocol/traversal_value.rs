@@ -138,11 +138,20 @@ impl TraversalValue {
             _ => Err(TraversalValueError::NoId),
         }
     }
+
+    pub fn as_count(&self) -> Result<Count, TraversalValueError> {
+        match self {
+            TraversalValue::Count(count) => Ok(count.clone()),
+            _ => Err(TraversalValueError::NoCount),
+        }
+    }
 }
 
+#[derive(Debug, Clone)]
 pub enum TraversalValueError {
     Empty,
     NoId,
+    NoCount,
 }
 
 impl std::fmt::Display for TraversalValueError {
@@ -150,6 +159,7 @@ impl std::fmt::Display for TraversalValueError {
         match self {
             TraversalValueError::Empty => write!(f, "TraversalValue is empty"),
             TraversalValueError::NoId => write!(f, "TraversalValue has no id"),
+            TraversalValueError::NoCount => write!(f, "TraversalValue is not a count"),
         }
     }
 }
