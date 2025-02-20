@@ -165,13 +165,13 @@ pub enum BooleanOp {
 #[derive(Debug, Clone)]
 pub struct AddVertex {
     pub vertex_type: Option<String>,
-    pub fields: Option<Vec<(String, Value)>>,
+    pub fields: Option<Vec<(String, ValueType)>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AddEdge {
     pub edge_type: Option<String>,
-    pub fields: Option<Vec<(String, Value)>>,
+    pub fields: Option<Vec<(String, ValueType)>>,
     pub connection: EdgeConnection,
 }
 
@@ -185,6 +185,24 @@ pub struct EdgeConnection {
 pub enum IdType {
     Literal(String),
     Identifier(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum ValueType {
+    Literal(Value),
+    Identifier(String),
+}
+impl From<Value> for ValueType {
+    fn from(value: Value) -> ValueType {
+        match value {
+            Value::String(s) => ValueType::Literal(Value::String(s)),
+            Value::Integer(i) => ValueType::Literal(Value::Integer(i)),
+            Value::Float(f) => ValueType::Literal(Value::Float(f)),
+            Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
+            Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
+            Value::Empty => ValueType::Literal(Value::Empty),
+        }
+    }
 }
 
 impl From<IdType> for String {
@@ -389,7 +407,9 @@ impl HelixParser {
         })
     }
 
-    fn parse_property_assignments(pair: Pair<Rule>) -> Result<Vec<(String, Value)>, ParserError> {
+    fn parse_property_assignments(
+        pair: Pair<Rule>,
+    ) -> Result<Vec<(String, ValueType)>, ParserError> {
         pair.into_inner()
             .map(|p| {
                 let mut pairs = p.into_inner();
@@ -407,24 +427,29 @@ impl HelixParser {
                             .ok_or_else(|| ParserError::from("Empty property value"))?;
 
                         match value_pair.as_rule() {
-                            Rule::string_literal => {
-                                Ok(Value::from(value_pair.as_str().to_string()))
-                            }
+                            Rule::string_literal => Ok(ValueType::from(Value::from(
+                                value_pair.as_str().to_string(),
+                            ))),
                             Rule::integer => value_pair
                                 .as_str()
                                 .parse()
-                                .map(Value::Integer)
+                                .map(|i| ValueType::from(Value::Integer(i)))
                                 .map_err(|_| ParserError::from("Invalid integer value")),
                             Rule::float => value_pair
                                 .as_str()
                                 .parse()
-                                .map(Value::Float)
+                                .map(|f| ValueType::from(Value::Float(f)))
                                 .map_err(|_| ParserError::from("Invalid float value")),
-                            Rule::boolean => Ok(Value::Boolean(value_pair.as_str() == "true")),
+                            Rule::boolean => Ok(ValueType::from(Value::Boolean(
+                                value_pair.as_str() == "true",
+                            ))),
+                            Rule::identifier => {
+                                Ok(ValueType::Identifier(value_pair.as_str().to_string()))
+                            }
                             _ => Err(ParserError::from("Invalid property value type")),
                         }?
                     }
-                    None => Value::Empty,
+                    None => ValueType::from(Value::Empty),
                 };
 
                 Ok((prop_key, prop_val))
@@ -531,20 +556,35 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_expression_vec(pairs: Pairs<Rule>) -> Result<Vec<Expression>, ParserError> {
+    fn parse_expression_vec(mut pairs: Pairs<Rule>) -> Result<Vec<Expression>, ParserError> {
         let mut expressions = Vec::new();
         for p in pairs {
-            expressions.push(Self::parse_expression(p)?);
+            match p.as_rule() {
+                Rule::anonymous_traversal => {
+                    expressions.push(Expression::Traversal(Box::new(Self::parse_anon_traversal(p)?)));
+                }
+                Rule::traversal => {
+                    expressions.push(Expression::Traversal(Box::new(Self::parse_traversal(p)?)));
+                }
+                Rule::id_traversal => {
+                    expressions.push(Expression::Traversal(Box::new(Self::parse_traversal(p)?)));
+                }
+                Rule::evaluates_to_bool => {
+                    expressions.push(Self::parse_boolean_expression(p)?);
+                }
+                _ => unreachable!(),
+            }
         }
         Ok(expressions)
     }
 
     fn parse_boolean_expression(pair: Pair<Rule>) -> Result<Expression, ParserError> {
-        let expression = pair.into_inner();
-        match expression.clone().next().unwrap().as_rule() {
-            Rule::and => Ok(Expression::And(Self::parse_expression_vec(expression)?)),
-            Rule::or => Ok(Expression::Or(Self::parse_expression_vec(expression)?)),
+        let expression = pair.into_inner().next().unwrap();
+        match expression.as_rule() {
+            Rule::and => Ok(Expression::And(Self::parse_expression_vec(expression.into_inner())?)),
+            Rule::or => Ok(Expression::Or(Self::parse_expression_vec(expression.into_inner())?)),
             Rule::boolean => Ok(Expression::BooleanLiteral(expression.as_str() == "true")),
+            Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_anon_traversal(expression.into_inner().next().unwrap())?))),
             _ => unreachable!(),
         }
     }
@@ -554,6 +594,7 @@ impl HelixParser {
             .into_inner()
             .next()
             .ok_or_else(|| ParserError::from("Empty expression"))?;
+
         match pair.as_rule() {
             Rule::traversal => Ok(Expression::Traversal(Box::new(Self::parse_traversal(
                 pair,
@@ -634,23 +675,53 @@ impl HelixParser {
     fn parse_start_node(pair: Pair<Rule>) -> Result<StartNode, ParserError> {
         match pair.as_rule() {
             Rule::start_vertex => {
-                let mut pairs = pair.into_inner();
-                let types = pairs
-                    .next()
-                    .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
-                let ids = pairs
-                    .next()
-                    .map(|p| p.into_inner().map(|id| id.as_str().to_string()).collect());
+                let pairs = pair.into_inner();
+                let mut types = None;
+                let mut ids = None;
+                for p in pairs {
+                    match p.as_rule() {
+                        Rule::type_args => {
+                            types = Some(
+                                p.into_inner()
+                                    .map(|t| t.as_str().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                        Rule::id_args => {
+                            ids = Some(
+                                p.into_inner()
+                                    .map(|id| id.as_str().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 Ok(StartNode::Vertex { types, ids })
             }
             Rule::start_edge => {
-                let mut pairs = pair.into_inner();
-                let types = pairs
-                    .next()
-                    .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
-                let ids = pairs
-                    .next()
-                    .map(|p| p.into_inner().map(|id| id.as_str().to_string()).collect());
+                let pairs = pair.into_inner();
+                let mut types = None;
+                let mut ids = None;
+                for p in pairs {
+                    match p.as_rule() {
+                        Rule::type_args => {
+                            types = Some(
+                                p.into_inner()
+                                    .map(|t| t.as_str().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                        Rule::id_args => {
+                            ids = Some(
+                                p.into_inner()
+                                    .map(|id| id.as_str().to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 Ok(StartNode::Edge { types, ids })
             }
             Rule::identifier => Ok(StartNode::Variable(pair.as_str().to_string())),
@@ -1327,5 +1398,20 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 4);
         assert_eq!(query.return_values.len(), 4);
+    }
+
+    #[test]
+    fn test_property_assignments() {
+        let input = r#"
+        QUERY testProperties(age: Integer) =>
+            user <- AddV<User>({
+                name: "Alice",
+                age: age
+            })
+            RETURN user
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.parameters.len(), 1);
     }
 }

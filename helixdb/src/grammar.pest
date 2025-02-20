@@ -58,25 +58,25 @@ addfield  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
 new_field = { identifier ~ ":" ~ ( anonymous_traversal | evaluates_to_anything | addfield) }
 
 // Vertex-related steps
-start_vertex = { "V" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
+start_vertex = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 graph_step   = {
-    "OutE" ~ ("<" ~ type_args? ~ ">")?
-  | "InE" ~ ("<" ~ type_args? ~ ">")?
-  | "BothE" ~ ("<" ~ type_args? ~ ">")?
-  | "OutV" ~ ("<" ~ type_args? ~ ">")?
-  | "InV" ~ ("<" ~ type_args? ~ ">")?
-  | "BothV" ~ ("<" ~ type_args? ~ ">")?
-  | "Out" ~ ("<" ~ type_args? ~ ">")?
-  | "In" ~ ("<" ~ type_args? ~ ">")?
-  | "Both" ~ ("<" ~ type_args? ~ ">")?
+    "OutE" ~ ("<" ~ type_args ~ ">")?
+  | "InE" ~ ("<" ~ type_args ~ ">")?
+  | "BothE" ~ ("<" ~ type_args ~ ">")?
+  | "OutV" ~ ("<" ~ type_args ~ ">")?
+  | "InV" ~ ("<" ~ type_args ~ ">")?
+  | "BothV" ~ ("<" ~ type_args ~ ">")?
+  | "Out" ~ ("<" ~ type_args ~ ">")?
+  | "In" ~ ("<" ~ type_args ~ ">")?
+  | "Both" ~ ("<" ~ type_args ~ ">")?
 }
 
 // Edge-related steps
-start_edge = { "E" ~ ("<" ~ type_args? ~ ">")? ~ ("(" ~ id_args? ~ ")")? }
+start_edge = { "E" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
-exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal) ~ ")" }
+exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal | anonymous_traversal) ~ ")" }
 
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
@@ -128,8 +128,8 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
 
 // Add edged and vertices
-AddV    = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")") }
-AddE    = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")") ~ (from_to | to_from) }
+AddV    = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")")? }
+AddE    = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ addfield? ~ ")")? ~ (from_to | to_from) }
 from_to = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 to_from = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
 drop    = { "DROP" ~ (traversal | id_traversal | identifier) }

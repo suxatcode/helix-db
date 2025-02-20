@@ -139,6 +139,7 @@ pub trait TraversalMethods {
     ///     types::GraphError,
     ///     
     /// };
+    /// 
     /// use protocol::{count::Count, traversal_value::TraversalValue, Edge, filterable::Filterable, Node, value::Value};
     /// use std::collections::HashMap;
     /// use tempfile::TempDir;
