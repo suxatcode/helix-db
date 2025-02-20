@@ -130,34 +130,36 @@ pub trait TraversalMethods {
     /// ## Example
     /// ```rust
     ///
+    /// use helixdb::props;
     /// use helixdb::helix_engine::{
-    ///     graph_core::traversal_steps::{SourceTraversalSteps, TraversalMethods, TraversalSteps},
-    ///     graph_core::graph_core::HelixGraphEngine,
+    ///     graph_core::traversal_steps::{TraversalMethods, RSourceTraversalSteps, WSourceTraversalSteps},
+    ///     graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts},
     ///     graph_core::traversal::TraversalBuilder,
-    ///     props,
     ///     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     ///     types::GraphError,
     ///     
     /// };
-    /// use helixdb::protocol::{count::Count, traversal_value::TraversalValue, items::{Edge, Node}, value::Value};
+    /// use helixdb::protocol::{filterable::Filterable, count::Count, traversal_value::TraversalValue, items::{Edge, Node}, value::Value};
     /// use std::collections::HashMap;
     /// use tempfile::TempDir;
     /// use std::sync::Arc;
+    /// use heed3::RoTxn;
     ///
     /// let temp_dir = TempDir::new().unwrap();
     /// let db_path = temp_dir.path().to_str().unwrap();
-    /// let engine = HelixGraphEngine::new(db_path).unwrap();
+    /// let opts = HelixGraphEngineOpts::with_path(db_path.to_string());
+    /// let engine = HelixGraphEngine::new(opts).unwrap();
+    /// let mut txn = engine.storage.graph_env.write_txn().unwrap();
     ///
     /// let _ = engine.storage
-    ///     .create_node("person", props! { "age" => 25, "name" => "Alice" })
+    ///     .create_node(&mut txn, "person", props! { "age" => 25, "name" => "Alice" }, None)
     ///     .unwrap();
     /// let person2 = engine.storage
-    ///     .create_node("person", props! { "age" => 30, "name" => "Bob" })
+    ///     .create_node(&mut txn, "person", props! { "age" => 30, "name" => "Bob" }, None)
     ///     .unwrap();
     /// let _ = engine.storage
-    ///     .create_node("person", props! { "age" => 35 })
+    ///     .create_node(&mut txn, "person", props! { "age" => 35 }, None)
     ///     .unwrap();
-    ///
     ///
     /// fn age_greater_than(val: &Node, min_age: i32) -> Result<bool, GraphError> {
     ///     if let Some(value) = val.check_property("age") {
@@ -177,7 +179,7 @@ pub trait TraversalMethods {
     ///
     /// // Example With Closure
     /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
-    /// let test_with_closure = traversal.v().filter_nodes(|val| {
+    /// let test_with_closure = traversal.v(&txn).filter_nodes(&txn, |val| {
     ///     if let Some(value) = val.check_property("age") {
     ///         match value {
     ///             Value::Float(age) => Ok(*age > 25.0),
@@ -196,7 +198,7 @@ pub trait TraversalMethods {
     ///    
     /// // Example passing function that takes input
     /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
-    /// let test_calling_function_with_inputs = traversal.v().filter_nodes(|node| age_greater_than(node, 30)).count();
+    /// let test_calling_function_with_inputs = traversal.v(&txn).filter_nodes(&txn, |node| age_greater_than(node, 30)).count();
     /// if let TraversalValue::Count(count) = &test_calling_function_with_inputs.current_step {
     ///     assert_eq!(count.value(), 1, "W input");
     /// } else {
@@ -205,7 +207,7 @@ pub trait TraversalMethods {
     ///  
     /// // Example passing function that takes NO input
     /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
-    /// let test_calling_function_without_inputs = traversal.v().filter_nodes(has_name).count();
+    /// let test_calling_function_without_inputs = traversal.v(&txn).filter_nodes(&txn, has_name).count();
     /// if let TraversalValue::Count(count) = &test_calling_function_without_inputs.current_step {
     ///     assert_eq!(count.value(), 2, "WO input");
     /// } else {
@@ -215,9 +217,9 @@ pub trait TraversalMethods {
     ///
     /// // Example of chained traversal
     /// let mut traversal = TraversalBuilder::new(Arc::clone(&engine.storage), TraversalValue::Empty);
-    /// let test_chained_traversal = traversal.v()
-    ///     .filter_nodes(has_name)
-    ///     .filter_nodes(|val| age_greater_than(val, 27)).count();
+    /// let test_chained_traversal = traversal.v(&txn)
+    ///     .filter_nodes(&txn, has_name)
+    ///     .filter_nodes(&txn, |val| age_greater_than(val, 27)).count();
     /// if let TraversalValue::Count(count) = &test_chained_traversal.current_step {
     ///     assert_eq!(count.value(), 1, "Chained");
     /// } else {

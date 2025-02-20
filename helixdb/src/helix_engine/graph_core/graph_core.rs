@@ -40,6 +40,22 @@ pub struct HelixGraphEngineOpts {
     pub secondary_indices: Option<Vec<String>>,
 }
 
+impl HelixGraphEngineOpts {
+    pub fn default() -> Self {
+        Self {
+            path: String::new(),
+            secondary_indices: None,
+        }
+    }
+    pub fn with_path(path: String) -> Self {
+        Self {
+            path,
+            secondary_indices: None,
+        }
+    }
+    
+}
+
 impl HelixGraphEngine {
     pub fn new(opts: HelixGraphEngineOpts) -> Result<HelixGraphEngine, GraphError> {
         let storage = match HelixGraphStorage::new(opts.path.as_str(), opts.secondary_indices) {
