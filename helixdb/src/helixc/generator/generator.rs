@@ -1,4 +1,5 @@
 use crate::helix_engine::types::GraphError;
+use crate::helixc::parser::helix_parser::StartNode;
 use crate::helixc::parser::helix_parser::{
     AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, Expression, Field, FieldAddition,
     FieldType, FieldValue, GraphStep, IdType, NodeSchema, Query, Source,
@@ -25,6 +26,33 @@ impl CodeGenerator {
         }
     }
 
+    pub fn generate_headers(&self) -> String {
+        let mut output = String::new();
+        output.push_str("use std::collections::{HashMap, HashSet};\n");
+        output.push_str("use std::sync::Arc;\n");
+        output.push_str("use std::time::Instant;\n\n");
+        output.push_str("use get_routes::handler;\n");
+        output.push_str("use helixdb::{\n");
+        output.push_str("    node_matches,\n");
+        output.push_str("    props,\n");
+        output.push_str("    helix_engine::graph_core::traversal::TraversalBuilder,\n");
+        output.push_str("    helix_engine::graph_core::traversal_steps::{\n");
+        output.push_str("        RSourceTraversalSteps, RTraversalBuilderMethods, RTraversalSteps, TraversalMethods,\n");
+        output.push_str("        TraversalSearchMethods, WSourceTraversalSteps, WTraversalBuilderMethods, WTraversalSteps,\n");
+        output.push_str("    },\n");
+        output.push_str("    helix_engine::types::GraphError,\n");
+        output.push_str("    helix_gateway::router::router::HandlerInput,\n");
+        output.push_str("    protocol::count::Count,\n");
+        output.push_str("    protocol::response::Response,\n");
+        output.push_str("    protocol::traversal_value::TraversalValue,\n");
+        output.push_str(
+            "    protocol::{filterable::Filterable, value::Value, return_values::ReturnValue},\n",
+        );
+        output.push_str("};\n");
+        output.push_str("use sonic_rs::{Deserialize, Serialize};\n\n");
+        output
+    }
+
     fn indent(&self) -> String {
         "    ".repeat(self.indent_level)
     }
@@ -44,13 +72,13 @@ impl CodeGenerator {
         // Generate node schema definitions
         for node_schema in &source.node_schemas {
             output.push_str(&self.generate_node_schema(node_schema));
-            output.push('\n');
+            output.push_str("\n");
         }
 
         // Generate query implementations
         for query in &source.queries {
             output.push_str(&self.generate_query(query));
-            output.push('\n');
+            output.push_str("\n");
         }
 
         output
@@ -126,7 +154,11 @@ impl CodeGenerator {
         output.push_str(&self.indent());
         output.push_str("let db = Arc::clone(&input.graph.storage);\n");
         output.push_str(&self.indent());
-        output.push_str("let mut txn = db.graph_env.write_txn().unwrap();\n\n");
+        if query.statements.iter().any(|s| matches!(s, Statement::AddVertex(_))) {
+            output.push_str("let mut txn = db.graph_env.write_txn().unwrap();\n\n");
+        } else {
+            output.push_str("let txn = db.graph_env.read_txn().unwrap();\n\n");
+        }
 
         // Generate return values map if needed
         if !query.return_values.is_empty() {
@@ -236,16 +268,14 @@ impl CodeGenerator {
         // Generate start node
         match &traversal.start {
             Vertex { types, ids } => {
-                println!("Vertex {:?} {:?}", types, ids);
                 if let Some(ids) = ids {
                     output.push_str(&self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
                         output.push_str(&format!("tr.v_from_id(&txn, {});\n", var_name));
                     } else {
-                        // If it's not a variable, treat it as a literal ID
                         output.push_str(&format!(
                             "tr.v_from_id(&txn, &data.{});\n",
-                            to_snake_case(&ids.first().unwrap())
+                            to_snake_case(&ids[0])
                         ));
                     }
                 } else if let Some(types) = types {
@@ -269,19 +299,14 @@ impl CodeGenerator {
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
                         output.push_str(&format!("tr.e_from_id(&txn, {});\n", var_name));
                     } else {
-                        // If it's not a variable, treat it as a literal ID
                         output.push_str(&format!(
                             "tr.e_from_id(&txn, &data.{});\n",
                             to_snake_case(&ids[0])
                         ));
                     }
                 } else if let Some(types) = types {
-                    // Implement edge type filtering
                     output.push_str(&self.indent());
                     output.push_str("tr.e(&txn);\n");
-                    // Add filtering by type
-                    output.push_str(&self.indent());
-                    // e_from_types
                 } else {
                     output.push_str(&self.indent());
                     output.push_str("tr.e(&txn);\n");
@@ -296,16 +321,142 @@ impl CodeGenerator {
                     ));
                 }
             }
-            Anonymous => {
-                // Handle anonymous start node
-            }
+            Anonymous => {}
         }
 
         // Generate steps
-        for step in &traversal.steps {
-            output.push_str(&self.generate_step(step));
+        let mut skip_next = false;
+        for (i, step) in traversal.steps.iter().enumerate() {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+
+            match step {
+                Step::Props(_) => {
+                    // If this is part of a count comparison, skip property checks
+                    if i < traversal.steps.len() - 2
+                        && matches!(traversal.steps[i + 1], Step::BooleanOperation(_))
+                        && matches!(traversal.steps[i + 2], Step::Count)
+                    {
+                        skip_next = true;
+                        continue;
+                    }
+                    output.push_str(&self.generate_step(step));
+                }
+                Step::BooleanOperation(_) => {
+                    // Skip boolean operations if they're part of a count comparison
+                    if i < traversal.steps.len() - 1
+                        && matches!(traversal.steps[i + 1], Step::Count)
+                    {
+                        continue;
+                    }
+                    output.push_str(&self.generate_step(step));
+                }
+                Step::Vertex(graph_step) => match graph_step {
+                    GraphStep::Out(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.out(&txn, \"\");\n");
+                        }
+                    }
+                    GraphStep::In(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.in_(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.in_(&txn, \"\");\n");
+                        }
+                    }
+                    GraphStep::OutE(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.out_e(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.out_e(&txn, \"\");\n");
+                        }
+                    }
+                    GraphStep::InE(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.in_e(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.in_e(&txn, \"\");\n");
+                        }
+                    }
+                    GraphStep::Both(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.both(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.both(&txn, \"\");\n");
+                        }
+                    }
+                    GraphStep::BothE(types) => {
+                        if let Some(types) = types {
+                            output.push_str(&format!("tr.both_e(&txn, \"{}\");\n", types[0]));
+                        } else {
+                            output.push_str("tr.both_e(&txn, \"\");\n");
+                        }
+                    }
+                    _ => output.push_str(&self.generate_step(step)),
+                },
+                Step::Edge(graph_step) => match graph_step {
+                    GraphStep::InV => output.push_str("tr.in_v(&txn);\n"),
+                    GraphStep::OutV => output.push_str("tr.out_v(&txn);\n"),
+                    GraphStep::BothV => output.push_str("tr.both_v(&txn);\n"),
+                    _ => output.push_str(&self.generate_step(step)),
+                },
+                _ => output.push_str(&self.generate_step(step)),
+            }
         }
 
+        output
+    }
+    fn generate_boolean_operation(&self, bool_op: &BooleanOp) -> String {
+        let mut output = String::new();
+        match bool_op {
+            BooleanOp::Equal(value) => match &**value {
+                Expression::BooleanLiteral(b) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if *val == {})));\n", b));
+                }
+                Expression::IntegerLiteral(i) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if *val == {})));\n", i));
+                }
+                Expression::FloatLiteral(f) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if *val == {})));\n", f));
+                }
+                Expression::StringLiteral(s) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", s));
+                }
+                Expression::Identifier(id) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", id));
+                }
+                _ => output.push_str(&format!("// Unhandled value type in EQ\n {:?}", value)),
+            },
+            BooleanOp::GreaterThan(value) => match &**value {
+                Expression::IntegerLiteral(i) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", i));
+                }
+                Expression::FloatLiteral(f) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val > {})));\n", f));
+                }
+                Expression::Identifier(id) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", id));
+                }
+                _ => output.push_str("// Unhandled value type in GT\n"),
+            },
+            BooleanOp::LessThan(value) => match &**value {
+                Expression::IntegerLiteral(i) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", i));
+                }
+                Expression::FloatLiteral(f) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val < {})));\n", f));
+                }
+                Expression::Identifier(id) => {
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", id));
+                }
+                _ => output.push_str("// Unhandled value type in LT\n"),
+            },
+            _ => output.push_str("// Unhandled boolean operation\n"),
+        }
         output
     }
 
@@ -327,42 +478,7 @@ impl CodeGenerator {
                 output.push_str(&format!("let current_prop = \"{}\";\n", props[0]));
             }
             Step::BooleanOperation(bool_op) => {
-                match bool_op {
-                    BooleanOp::Equal(value) => match &**value {
-                        Expression::BooleanLiteral(b) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if val == {})));\n", b));
-                        }
-                        Expression::IntegerLiteral(i) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val == {})));\n", i));
-                        }
-                        Expression::FloatLiteral(f) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val == {})));\n", f));
-                        }
-                        Expression::StringLiteral(s) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if val == \"{}\")));\n", s));
-                        }
-                        _ => output.push_str("// Unhandled value type in EQ\n"),
-                    },
-                    BooleanOp::GreaterThan(value) => match &**value {
-                        Expression::IntegerLiteral(i) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", i));
-                        }
-                        Expression::FloatLiteral(f) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val > {})));\n", f));
-                        }
-                        _ => output.push_str("// Unhandled value type in GT\n"),
-                    },
-                    BooleanOp::LessThan(value) => match &**value {
-                        Expression::IntegerLiteral(i) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", i));
-                        }
-                        Expression::FloatLiteral(f) => {
-                            output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val < {})));\n", f));
-                        }
-                        _ => output.push_str("// Unhandled value type in LT\n"),
-                    },
-                    _ => output.push_str("// Unhandled boolean operation\n"),
-                }
+                output.push_str(&self.generate_boolean_operation(bool_op));
             }
             Step::Vertex(graph_step) => match graph_step {
                 GraphStep::Out(types) => {
@@ -447,21 +563,25 @@ impl CodeGenerator {
                         output.push_str(&self.indent());
                         output.push_str("});\n");
                     }
-                    Expression::Traversal(traversal) => {
+                    Expression::Traversal(_) => {
                         // For traversal-based conditions
                         output.push_str("tr.filter_nodes(&txn, |node| {\n");
                         output.push_str(&self.indent());
-                        output.push_str("    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));\n");
-                        output.push_str(&self.generate_traversal(traversal));
-                        output.push_str(&self.indent());
-                        output.push_str("    tr.count();\n");
-                        output.push_str(&self.indent());
-                        output
-                            .push_str("    let count = tr.finish()?.as_count().unwrap();\n");
-                        output.push_str(&self.indent());
-                        output.push_str("    Ok(count > 0)\n");
+                        output.push_str("    Ok(");
+                        output.push_str(&self.generate_filter_condition(expr));
+                        output.push_str("    )\n");
                         output.push_str(&self.indent());
                         output.push_str("});\n");
+                        // output.push_str("    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));\n");
+                        // output.push_str(&self.generate_traversal(traversal));
+                        // output.push_str(&self.indent());
+                        // output.push_str("    tr.count();\n");
+                        // output.push_str(&self.indent());
+                        // output.push_str("    let count = tr.finish()?.as_count().unwrap();\n");
+                        // output.push_str(&self.indent());
+                        // output.push_str("    Ok(count > 0)\n");
+                        // output.push_str(&self.indent());
+                        // output.push_str("});\n");
                     }
                     _ => {
                         output.push_str(&format!("// Unhandled where condition: {:?}\n", expr));
@@ -503,62 +623,173 @@ impl CodeGenerator {
             }
             Expression::Traversal(traversal) => {
                 // For traversals that check properties with boolean operations
-                if let Some(Step::Props(props)) = traversal.steps.first() {
-                    if let Some(Step::BooleanOperation(bool_op)) = traversal.steps.get(1) {
-                        let prop_name = &props[0];
-                        match bool_op {
-                            BooleanOp::Equal(value) => match &**value {
-                                Expression::BooleanLiteral(b) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if val == {}))", prop_name, b)
+                let mut output = String::new();
+
+                // match traversal.start {
+                //     StartNode::Anonymous => {
+                //         output.push_str("{");
+                //         output.push_str("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));");
+                //         output.push_str(&process_steps(&traversal.steps));
+                //         output.push_str("}");
+                //     }
+                //     _ => {
+                //         output.push_str(&process_steps(&traversal.steps));
+                //     },
+                // }
+                let mut inner_traversal = false;
+                for (i, step) in traversal.steps.iter().enumerate() {
+                    match step {
+                        Step::Props(props) => {
+                            let prop_name = &props[0];
+                            if let Some(Step::BooleanOperation(bool_op)) = traversal.steps.get(i+1) {
+                                match bool_op {
+                                    BooleanOp::Equal(value) => match &**value {
+                                        Expression::BooleanLiteral(b) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val == {}))", prop_name, b));
+                                        }
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val == {}))", prop_name, i));
+                                        }
+                                        Expression::FloatLiteral(f) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val == {}))", prop_name, f));
+                                        }
+                                        Expression::StringLiteral(s) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in EQ */"),
+                                    },
+                                    BooleanOp::GreaterThan(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, i));
+                                        }
+                                        Expression::FloatLiteral(f) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val > {}))", prop_name, f));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in GT */"),
+                                    },
+                                    BooleanOp::LessThan(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, i));
+                                        }
+                                        Expression::FloatLiteral(f) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val < {}))", prop_name, f));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in LT */"),
+                                    },
+                                    _ => output.push_str("/* Unhandled boolean operation */"),
                                 }
-                                Expression::IntegerLiteral(i) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if val == {}))", prop_name, i)
-                                }
-                                Expression::FloatLiteral(f) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if val == {}))", prop_name, f)
-                                }
-                                Expression::StringLiteral(s) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if val == \"{}\"))", prop_name, s)
-                                }
-                                _ => format!("/* Unhandled value type in EQ */"),
-                            },
-                            BooleanOp::GreaterThan(value) => match &**value {
-                                Expression::IntegerLiteral(i) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if val > {}))", prop_name, i)
-                                }
-                                Expression::FloatLiteral(f) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if val > {}))", prop_name, f)
-                                }
-                                _ => format!("/* Unhandled value type in GT */"),
-                            },
-                            BooleanOp::LessThan(value) => match &**value {
-                                Expression::IntegerLiteral(i) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if val < {}))", prop_name, i)
-                                }
-                                Expression::FloatLiteral(f) => {
-                                    format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if val < {}))", prop_name, f)
-                                }
-                                _ => format!("/* Unhandled value type in LT */"),
-                            },
-                            _ => format!("/* Unhandled boolean operation */"),
+                            } else {
+                                output.push_str(&format!(
+                                    "node.check_property(\"{}\").is_some()",
+                                    prop_name
+                                ));
+                            }
+                            if inner_traversal {
+                                output.push_str("}");
+                            }
+
+                            return output;
                         }
-                    } else {
-                        format!("node.check_property(\"{}\").is_some()", props[0])
+                        Step::Count => {
+                            output.push_str("tr.count();\n");
+                            output.push_str("let count = tr.finish()?.as_count().unwrap();\n");
+                            if let Some(Step::BooleanOperation(bool_op)) = traversal.steps.get(i+1) {
+                                match bool_op {
+                                    BooleanOp::Equal(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("count == {}", i));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("count == {}", id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in EQ */"),
+                                    },
+                                    BooleanOp::GreaterThan(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("count > {}", i));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("count > {}", id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in GT */"),
+                                    },
+                                    BooleanOp::LessThan(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("count < {}", i));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("count < {}", id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in LT */"),
+                                    },
+                                    BooleanOp::GreaterThanOrEqual(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("count >= {}", i));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("count >= {}", id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in GTE */"),
+                                    },
+                                    BooleanOp::LessThanOrEqual(value) => match &**value {
+                                        Expression::IntegerLiteral(i) => {
+                                            output.push_str(&format!("count <= {}", i));
+                                        }
+                                        Expression::Identifier(id) => {
+                                            output.push_str(&format!("count <= {}", id));
+                                        }
+                                        _ => output.push_str("/* Unhandled value type in LTE */"),
+                                    },
+                                    _ => output.push_str("/* Unhandled boolean operation */"),
+                                }
+                            } else {
+                                output.push_str("count > 0");
+                            }
+                            if inner_traversal {
+                                output.push_str("}");
+                            }
+                            return output;
+                        }
+                        _ => {
+                            inner_traversal = true;
+                            if i == 0 {
+                                output.push_str("{");
+                                output.push_str("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));");
+                                output.push_str(&self.generate_step(step));
+                            } else {
+                                output.push_str(&self.generate_step(step));
+                            }
+                            
+                        }
                     }
-                } else {
-                    self.generate_traversal(traversal)
+                    
                 }
+                output
             }
-            Expression::And(exprs) => exprs
-                .iter()
-                .map(|e| self.generate_filter_condition(e))
-                .collect::<Vec<_>>()
-                .join(" && "),
-            Expression::Or(exprs) => exprs
-                .iter()
-                .map(|e| self.generate_filter_condition(e))
-                .collect::<Vec<_>>()
-                .join(" || "),
+
+            Expression::And(exprs) => {
+                let conditions = exprs
+                    .iter()
+                    .map(|e| self.generate_filter_condition(e))
+                    .collect::<Vec<_>>();
+                format!("({})", conditions.join(" && "))
+            }
+            Expression::Or(exprs) => {
+                let conditions = exprs
+                    .iter()
+                    .map(|e| self.generate_filter_condition(e))
+                    .collect::<Vec<_>>();
+                format!("({})", conditions.join(" || "))
+            }
             _ => format!("/* Unhandled filter condition: {:?} */", expr),
         }
     }
@@ -676,7 +907,9 @@ impl CodeGenerator {
 
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&self.indent());
-            output.push_str(&format!("return_vals.insert(\"return_{}\".to_string(), ReturnValue::TraversalValues({}));\n", i, self.expression_to_return_value(expr)));
+            if let Expression::Identifier(id) = expr {
+                output.push_str(&format!("return_vals.insert(\"{}\".to_string(), ReturnValue::TraversalValues({}));\n", id, id));
+            }
         }
 
         output.push_str(&self.indent());
@@ -932,5 +1165,52 @@ mod tests {
         assert!(generated.contains("followers_count"));
         assert!(generated.contains("out"));
         assert!(generated.contains("count"));
+    }
+
+    #[test]
+    fn test_boolean_operations() {
+        let input = r#"
+        QUERY FindUsersWithSpecificProperty(property_name: String, value: String) =>
+            users <- V<User>::WHERE(_::Props(property_name)::EQ(value))
+            RETURN users
+        "#;
+
+        let source = HelixParser::parse_source(input).unwrap();
+        let mut generator = CodeGenerator::new();
+        let generated = generator.generate_source(&source);
+        println!("Generated code:\n{}", generated);
+
+        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("property_name"));
+        assert!(generated.contains("=="));
+        assert!(generated.contains("value"));
+        assert!(generated.contains("node.check_property"));
+    }
+
+    #[test]
+    fn test_boolean_operations_with_multiple_properties() {
+        let input = r#"
+        QUERY FindUsersWithSpecificProperties(property1: String, value1: String, property2: String, value2: String, property3: String, value3: String) =>
+            users <- V<User>::WHERE(AND(
+                _::Props(property1)::EQ(value1),
+                _::Props(property2)::EQ(value2),
+                _::Props(property3)::EQ(value3)
+            ))
+            RETURN users
+        "#;
+
+        let source = HelixParser::parse_source(input).unwrap();
+        let mut generator = CodeGenerator::new();
+        let generated = generator.generate_source(&source);
+        println!("Generated code:\n{}", generated);
+
+        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("&&"));
+        assert!(generated.contains("property1"));
+        assert!(generated.contains("property2"));
+        assert!(generated.contains("property3"));
+        assert!(generated.contains("value1"));
+        assert!(generated.contains("value2"));
+        assert!(generated.contains("value3"));
     }
 }

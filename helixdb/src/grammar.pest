@@ -110,7 +110,7 @@ node_body  = { "{" ~ field_defs ~ "}" }
 edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
 field_def  = { (identifier_upper ~ ":" ~ type_name) }
 field_defs = { field_def ~ ("," ~ field_def)* }
-properties = { "Properties" ~ "{" ~ field_defs? ~ "}" }
+properties = { "Properties" ~ ":" ~ "{" ~ field_defs? ~ "}" }
 
 // Values and literals
 string_literal   = ${ "\"" ~ inner_string ~ "\"" }

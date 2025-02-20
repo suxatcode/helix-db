@@ -32,8 +32,8 @@ pub struct CompileCommand {
     #[clap(short, long, help = "The path to the project")]
     pub path: Option<String>,
 
-    // #[clap(short, long, help = "The output path")]
-    // pub output: Option<String>,
+    #[clap(short, long, help = "The output path")]
+    pub output: Option<String>,
 
     // #[clap(short, long, help = "The target platform")]
     // pub target: Option<String>,

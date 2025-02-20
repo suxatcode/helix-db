@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::thread;
 use std::time::Instant;
 
-use crate::props;
 use get_routes::handler;
 use helixdb::{
+    node_matches,
+    props,
     helix_engine::graph_core::traversal::TraversalBuilder,
     helix_engine::graph_core::traversal_steps::{
         RSourceTraversalSteps, RTraversalBuilderMethods, RTraversalSteps, TraversalMethods,
@@ -18,7 +18,6 @@ use helixdb::{
     protocol::traversal_value::TraversalValue,
     protocol::{filterable::Filterable, value::Value, return_values::ReturnValue},
 };
-use serde::de;
 use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Deserialize)]

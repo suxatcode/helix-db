@@ -76,7 +76,9 @@ impl HelixGraphEngine {
     //     json_string
     // }
 
-    // pub fn query(&self, query: String, params: Vec<QueryInput>) -> Result<String, GraphError> {
+    pub fn query(&self, query: String, params: Vec<QueryInput>) -> Result<String, GraphError> {
+        Ok(String::new())
+    }
     //     let ast: Source = match HelixParser::parse_source(query.as_str()) {
     //         Ok(src) => src,
     //         Err(err) => return Err(GraphError::from(err)),

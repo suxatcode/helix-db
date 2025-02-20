@@ -18,7 +18,7 @@ pub fn example_code_generation() -> String {
     E::Authored {
         From: User,
         To: Post,
-        Properties {}
+        Properties: {}
     }
 
     QUERY CreateUser(name: String, age: Integer, email: String) =>

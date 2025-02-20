@@ -16,6 +16,7 @@ use std::{collections::HashMap, ops::Deref, sync::Arc, time::Instant};
 
 mod ivba_traversals;
 mod traversals;
+mod queries;
 
 fn main() {
     let path = match std::env::var("HELIX_DATA_DIR") {

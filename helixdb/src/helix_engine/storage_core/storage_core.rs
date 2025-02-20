@@ -428,7 +428,7 @@ impl StorageMethods for HelixGraphStorage {
         Ok(nodes)
     }
 
-    fn get_nodes_by_types(&self, txn: &RoTxn, types: &[String]) -> Result<Vec<Node>, GraphError> {
+    fn get_nodes_by_types(&self, txn: &RoTxn, types: &[&str]) -> Result<Vec<Node>, GraphError> {
         let mut nodes = Vec::new();
 
         for label in types {
@@ -1147,7 +1147,7 @@ mod tests {
 
         let txn = storage.graph_env.read_txn().unwrap();
         let nodes = storage
-            .get_nodes_by_types(&txn, &["person".to_string()])
+            .get_nodes_by_types(&txn, &["person"])
             .unwrap(); // TODO: Handle Error
 
         assert_eq!(nodes.len(), 2);

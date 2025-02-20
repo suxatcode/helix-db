@@ -22,11 +22,11 @@ pub trait RSourceTraversalSteps {
     /// Adds node with specific id to current traversal step
     fn v_from_id(&mut self, txn: &RoTxn, node_id: &str) -> &mut Self;
 
-    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[String]) -> &mut Self;
+    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[&str]) -> &mut Self;
     /// Adds edge with specific id to current traversal step
     fn e_from_id(&mut self, txn: &RoTxn, edge_id: &str) -> &mut Self;
 
-    fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[String]) -> &mut Self;
+    fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[&str]) -> &mut Self;
 
     // fn e_from_type(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 

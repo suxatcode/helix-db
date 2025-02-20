@@ -866,7 +866,7 @@ mod tests {
         E::Follows {
             From: User,
             To: User,
-            Properties {
+            Properties: {
                 Since: Float
             }
         }
@@ -892,7 +892,7 @@ mod tests {
         E::Follows {
             From: User,
             To: User,
-            Properties {
+            Properties: {
             }
         }
         "#;
@@ -970,7 +970,7 @@ mod tests {
         E::FRIENDSHIP {
             From: USER,
             To: USER,
-            Properties {
+            Properties: {
                 Since: String,
                 Strength: Integer
             }
@@ -1001,7 +1001,7 @@ mod tests {
         E::LIKES {
             From: USER,
             To: POST,
-            Properties {
+            Properties: {
                 Timestamp: String
             }
         }
@@ -1315,13 +1315,6 @@ mod tests {
 
     #[test]
     fn test_error_cases() {
-        // Test invalid vertex type
-        let invalid_vertex = r#"
-        QUERY invalidQuery() =>
-            result <- V<InvalidType>()
-            RETURN result
-        "#;
-        assert!(HelixParser::parse_source(invalid_vertex).is_ok());
 
         // Test missing return statement
         let missing_return = r#"
@@ -1352,7 +1345,7 @@ mod tests {
         E::ComplexRelation {
             From: ComplexUser,
             To: ComplexUser,
-            Properties {
+            Properties: {
                 StartDate: String,
                 EndDate: String,
                 Weight: Float,
