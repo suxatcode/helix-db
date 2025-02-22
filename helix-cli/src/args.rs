@@ -16,14 +16,42 @@ pub struct HelixCLI {
 
 #[derive(Debug, Subcommand)]
 pub enum CommandType {
+    /// Deploy a Helix project
+    Deploy(DeployCommand),
+
     /// Compile a Helix project
     Compile(CompileCommand),
 
     /// Lint a Helix project
     Check(LintCommand),
 
+    /// Install the Helix repo
+    Install(InstallCommand),
+
     /// Test a Helix project
     Test(TestCommand),
+
+    /// List running Helix instances
+    Instances(InstancesCommand),
+
+    /// Stop Helix instances
+    Stop(StopCommand),
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "deploy", about = "Deploy a Helix project")]
+pub struct DeployCommand {
+    #[clap(short, long, help = "The path to the project")]
+    pub path: Option<String>,
+
+    #[clap(short, long, help = "The output path")]
+    pub output: Option<String>,
+
+    #[clap(short, long, help = "Should build for local machine")]
+    pub local: bool,
+
+    #[clap(short, long, help = "Port to run the instance on")]
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Args)]
@@ -50,6 +78,11 @@ pub struct LintCommand {
 }
 
 #[derive(Debug, Args)]
+#[clap(name = "install", about = "Install the Helix repo")]
+pub struct InstallCommand {
+}
+
+#[derive(Debug, Args)]
 #[clap(name = "test", about = "Test a Helix project")]
 pub struct TestCommand {
     #[clap(short, long, help = "The path to the project")]
@@ -57,6 +90,20 @@ pub struct TestCommand {
 
     #[clap(short, long, help = "The test to run")]
     pub test: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "instances", about = "List running Helix instances")]
+pub struct InstancesCommand {}
+
+#[derive(Debug, Args)]
+#[clap(name = "stop", about = "Stop Helix instances")]
+pub struct StopCommand {
+    #[clap(long, help = "Stop all running instances")]
+    pub all: bool,
+
+    #[clap(help = "Instance ID to stop")]
+    pub instance_id: Option<String>,
 }
 
 #[derive(Debug)]

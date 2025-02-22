@@ -14,8 +14,6 @@ use inventory;
 use rand::Rng;
 use std::{collections::HashMap, ops::Deref, sync::Arc, time::Instant};
 
-mod ivba_traversals;
-mod traversals;
 mod queries;
 
 fn main() {
@@ -26,6 +24,10 @@ fn main() {
             let home = dirs::home_dir().expect("Could not retrieve home directory");
             home.join(".helix/user")
         }
+    };
+    let port = match std::env::var("HELIX_PORT") {
+        Ok(val) => val.parse::<u16>().unwrap(),
+        Err(_) => 6969,
     };
     let path_str = path.to_str().expect("Could not convert path to string");
     let opts = HelixGraphEngineOpts {
@@ -62,7 +64,7 @@ fn main() {
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
-        "0.0.0.0:6969",
+        &format!("0.0.0.0:{}", port),
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),

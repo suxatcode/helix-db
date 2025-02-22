@@ -1,0 +1,112 @@
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use dirs;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InstanceInfo {
+    pub id: String,
+    pub pid: u32,
+    pub port: u16,
+    pub started_at: String,
+    pub available_endpoints: Vec<String>,
+}
+
+pub struct InstanceManager {
+    instances_file: PathBuf,
+}
+
+impl InstanceManager {
+    pub fn new() -> io::Result<Self> {
+        let home_dir = dirs::home_dir().expect("Could not find home directory");
+        let helix_dir = home_dir.join(".helix");
+        fs::create_dir_all(&helix_dir)?;
+        
+        Ok(Self {
+            instances_file: helix_dir.join("instances.json"),
+        })
+    }
+
+    pub fn start_instance(&self, binary_path: &Path, port: u16, endpoints: Vec<String>) -> io::Result<InstanceInfo> {
+        let mut command = Command::new(binary_path);
+        command.env("PORT", port.to_string());
+        command.env("HELIX_DAEMON", "1")
+        .stdout(Stdio::null());
+
+        // Start the process in the background
+        let child = command.spawn()?;
+        
+        let instance = InstanceInfo {
+            id: Uuid::new_v4().to_string(),
+            pid: child.id(),
+            port,
+            started_at: chrono::Local::now().to_rfc3339(),
+            available_endpoints: endpoints,
+        };
+
+        // Save instance info
+        self.save_instance(&instance)?;
+
+        Ok(instance)
+    }
+
+    pub fn list_instances(&self) -> io::Result<Vec<InstanceInfo>> {
+        if !self.instances_file.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut file = File::open(&self.instances_file)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        if contents.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let instances: Vec<InstanceInfo> = serde_json::from_str(&contents)?;
+        Ok(instances)
+    }
+
+    pub fn stop_instance(&self, instance_id: &str) -> io::Result<()> {
+        let mut instances = self.list_instances()?;
+        if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
+            let instance = instances.remove(pos);
+            unsafe {
+                libc::kill(instance.pid as i32, libc::SIGTERM);
+            }
+            self.save_instances(&instances)?;
+        }
+        Ok(())
+    }
+
+    pub fn stop_all_instances(&self) -> io::Result<()> {
+        let instances = self.list_instances()?;
+        for instance in instances {
+            unsafe {
+                libc::kill(instance.pid as i32, libc::SIGTERM);
+            }
+        }
+        self.save_instances(&Vec::new())?;
+        Ok(())
+    }
+
+    fn save_instance(&self, instance: &InstanceInfo) -> io::Result<()> {
+        let mut instances = self.list_instances()?;
+        instances.push(instance.clone());
+        self.save_instances(&instances)
+    }
+
+    fn save_instances(&self, instances: &[InstanceInfo]) -> io::Result<()> {
+        let contents = serde_json::to_string_pretty(instances)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.instances_file)?;
+        file.write_all(contents.as_bytes())?;
+        Ok(())
+    }
+} 
