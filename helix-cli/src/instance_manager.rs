@@ -133,8 +133,20 @@ impl InstanceManager {
         let mut instances = self.list_instances()?;
         if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
             let instance = instances.remove(pos);
+            #[cfg(unix)]
             unsafe {
                 libc::kill(instance.pid as i32, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                let handle = unsafe { windows::Win32::System::Threading::OpenProcess(
+                    windows::Win32::System::Threading::PROCESS_TERMINATE,
+                    false,
+                    instance.pid
+                )};
+                if let Ok(handle) = handle {
+                    unsafe { windows::Win32::System::Threading::TerminateProcess(handle, 0) };
+                }
             }
             self.save_instances(&instances)?;
         }
@@ -144,8 +156,20 @@ impl InstanceManager {
     pub fn stop_all_instances(&self) -> io::Result<()> {
         let instances = self.list_instances()?;
         for instance in instances {
+            #[cfg(unix)]
             unsafe {
                 libc::kill(instance.pid as i32, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                let handle = unsafe { windows::Win32::System::Threading::OpenProcess(
+                    windows::Win32::System::Threading::PROCESS_TERMINATE,
+                    false,
+                    instance.pid
+                )};
+                if let Ok(handle) = handle {
+                    unsafe { windows::Win32::System::Threading::TerminateProcess(handle, 0) };
+                }
             }
         }
         self.save_instances(&Vec::new())?;
