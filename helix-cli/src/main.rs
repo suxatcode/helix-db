@@ -9,12 +9,12 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
+    io::ErrorKind,
+    net::{SocketAddr, TcpListener},
     path,
     process::{Command, Stdio},
     thread::sleep,
     time::Duration,
-    net::{TcpListener, SocketAddr},
-    io::ErrorKind,
 };
 use tempfile::TempDir;
 
@@ -24,27 +24,12 @@ mod instance_manager;
 
 use instance_manager::InstanceManager;
 
-fn create_spinner(msg: &str) -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
-    pb.enable_steady_tick(Duration::from_millis(100));
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-            .template("{spinner:.green.bold} {msg}")
-            .unwrap(),
-    );
-    pb.set_message(format!("\t{}", msg));
-    pb
-}
-
 fn find_available_port(start_port: u16) -> Option<u16> {
     let mut port = start_port;
     while port < 65535 {
-        // Try binding to 0.0.0.0 first since that's what the server will use
         let addr = format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap();
         match TcpListener::bind(addr) {
             Ok(_) => {
-                // Also check localhost to be thorough
                 let localhost = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
                 match TcpListener::bind(localhost) {
                     Ok(_) => return Some(port),
@@ -52,7 +37,6 @@ fn find_available_port(start_port: u16) -> Option<u16> {
                         if e.kind() != ErrorKind::AddrInUse {
                             return None;
                         }
-                        // Port is in use on localhost, try next port
                         port += 1;
                         continue;
                     }
@@ -62,7 +46,6 @@ fn find_available_port(start_port: u16) -> Option<u16> {
                 if e.kind() != ErrorKind::AddrInUse {
                     return None;
                 }
-                // Port is in use, try next port
                 port += 1;
                 continue;
             }
@@ -78,7 +61,7 @@ fn main() {
             // check if cargo is installed
             let mut runner = Command::new("cargo");
             match runner.output() {
-                Ok(_) =>{},
+                Ok(_) => {}
                 Err(e) => {
                     println!("\t❌ Cargo is not installed");
                     println!("\t|");
@@ -90,7 +73,7 @@ fn main() {
             let mut runner = Command::new("ls");
             runner.arg(".helix/repo/helix-container");
             match runner.output() {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(_) => {
                     println!("\t❌ Helix repo does not exist");
                     println!("\t|");
@@ -125,10 +108,13 @@ fn main() {
             let port = match find_available_port(start_port) {
                 Some(port) => {
                     if port != start_port {
-                        println!("\t⚠️  Port {} is in use, using port {} instead", start_port, port);
+                        println!(
+                            "\t⚠️  Port {} is in use, using port {} instead",
+                            start_port, port
+                        );
                     }
                     port
-                },
+                }
                 None => {
                     println!("\t❌ No available ports found starting from {}", start_port);
                     return;
@@ -160,8 +146,16 @@ fn main() {
                 return;
             }
 
-            let spinner = create_spinner("Compiling Helix queries");
-            
+            // create progress spinner
+            let spinner = ProgressBar::new_spinner();
+            // spinner.set_style(
+            //     ProgressStyle::default_spinner()
+            //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
+            //         .template("{spinner:.green.bold} {msg}")
+            //         .unwrap(),
+            // );
+            spinner.set_message("Compiling Helix queries");
+            spinner.enable_steady_tick(Duration::from_millis(100));
             // number of files
             let numb_of_files = files.len();
             let mut successes = HashMap::new();
@@ -197,18 +191,32 @@ fn main() {
                 return;
             }
 
-            spinner.finish_with_message(format!("✅ Successfully compiled {} queries", numb_of_files));
+            spinner.finish_with_message(format!(
+                "\t✅ Successfully compiled {} queries",
+                numb_of_files
+            ));
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
             // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
             if local {
-                let spinner = create_spinner("Building Helix");
-                
+                let spinner = ProgressBar::new_spinner();
+                // spinner.set_style(
+                //     ProgressStyle::default_spinner()
+                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
+                //         .template("{spinner:.green.bold} {msg}")
+                //         .unwrap(),
+                // );
+                spinner.set_message("Building Helix");
+                spinner.enable_steady_tick(Duration::from_millis(100));
+
+
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
-                    Ok(_) => {},
+                    Ok(_) => {
+                        spinner.finish_with_message("\t✅ Successfully wrote queries file");
+                    }
                     Err(e) => {
                         spinner.finish_with_message("❌ Failed to write queries file");
                         println!("\t|");
@@ -225,7 +233,7 @@ fn main() {
                     .stderr(Stdio::null())
                     .current_dir(PathBuf::from(&output));
                 match runner.output() {
-                    Ok(_) =>{},
+                    Ok(_) => {}
                     Err(e) => {
                         spinner.finish_with_message("❌ Failed to check Rust code");
                         println!("\t|");
@@ -234,7 +242,6 @@ fn main() {
                     }
                 }
 
-                // run rust code
                 let mut runner = Command::new("cargo");
                 runner
                     .arg("build")
@@ -245,8 +252,8 @@ fn main() {
 
                 match runner.output() {
                     Ok(_) => {
-                        spinner.finish_with_message("✅ Successfully built Helix");
-                    },
+                        spinner.finish_with_message("\t✅ Successfully built Helix");
+                    }
                     Err(e) => {
                         spinner.finish_with_message("\t❌ Failed to build Helix");
                         println!("\t|");
@@ -255,22 +262,29 @@ fn main() {
                     }
                 }
 
-                // After successful build and ping test, start the instance in background
-                let spinner = create_spinner("Starting Helix instance");
+               let spinner = ProgressBar::new_spinner();
+                // spinner.set_style(
+                //     ProgressStyle::default_spinner()
+                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
+                //         .template("{spinner:.green.bold} {msg}")
+                //         .unwrap(),
+                // );
+                spinner.set_message("Starting Helix instance");
+                spinner.enable_steady_tick(Duration::from_millis(100));
                 let instance_manager = InstanceManager::new().unwrap();
-               
+
                 let binary_path = dirs::home_dir()
                     .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
                     .unwrap();
 
-                // Collect query names from successes
-                let endpoints: Vec<String> = successes.values()
+                let endpoints: Vec<String> = successes
+                    .values()
                     .flat_map(|source| source.queries.iter().map(|q| q.name.clone()))
                     .collect();
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        spinner.finish_with_message("✅ Successfully started Helix instance");
+                        spinner.finish_with_message("\t✅ Successfully started Helix instance");
                         println!(" ");
                         println!("\t└── Instance ID: {}", instance.id);
                         println!("\t└── Port: {}", instance.port);
@@ -315,16 +329,50 @@ fn main() {
             let instance_manager = InstanceManager::new().unwrap();
             if command.all {
                 match instance_manager.stop_all_instances() {
-                    Ok(_) => println!("Stopped all Helix instances"),
-                    Err(e) => println!("Failed to stop instances: {}", e),
+                    Ok(_) => println!("\t✅ Stopped all Helix instances"),
+                    Err(e) => println!("\t❌ Failed to stop instances: {}", e),
                 }
             } else if let Some(instance_id) = command.instance_id {
                 match instance_manager.stop_instance(&instance_id) {
-                    Ok(_) => println!("Stopped instance {}", instance_id),
-                    Err(e) => println!("Failed to stop instance: {}", e),
+                    Ok(_) => println!("\t✅ Stopped instance {}", instance_id),
+                    Err(e) => println!("\t❌ Failed to stop instance: {}", e),
                 }
             } else {
                 println!("Please specify --all or provide an instance ID");
+            }
+        }
+        args::CommandType::Start(command) => {
+            let instance_manager = InstanceManager::new().unwrap();
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::default_spinner()
+                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
+                    .template("{spinner:.green.bold} {msg}")
+                    .unwrap(),
+            );
+            spinner.set_message("Starting Helix instance");
+
+            match instance_manager.restart_instance(&command.instance_id) {
+                Ok(Some(instance)) => {
+                    spinner.finish_with_message("\t✅ Successfully restarted Helix instance");
+                    println!("\t└── Instance ID: {}", instance.id);
+                    println!("\t└── Port: {}", instance.port);
+                    println!("\t└── Available endpoints:");
+                    for endpoint in instance.available_endpoints {
+                        println!("\t    └── /{}", endpoint);
+                    }
+                }
+                Ok(None) => {
+                    spinner.finish_with_message("\t❌ Instance not found or binary missing");
+                    println!(
+                        "\t└── Could not find instance with ID: {}",
+                        command.instance_id
+                    );
+                }
+                Err(e) => {
+                    spinner.finish_with_message("\t❌ Failed to restart instance");
+                    println!("\t└── {}", e);
+                }
             }
         }
         args::CommandType::Compile(command) => {
@@ -534,17 +582,6 @@ fn main() {
             }
 
             // check if helix repo exists
-            let mut runner = Command::new("ls");
-            runner.arg(".helix/repo/helix-container");
-            match runner.output() {
-                Ok(_) => {
-                    println!("\t✅ Helix repo already exists");
-                    return;
-                }
-                Err(e) => {}
-            }
-
-            println!("Installing Helix repo...");
             let home_dir = match dirs::home_dir() {
                 Some(dir) => dir,
                 None => {
@@ -552,6 +589,14 @@ fn main() {
                     return;
                 }
             };
+            let repo_path = home_dir.join(".helix/repo/helix-db");
+
+            if repo_path.exists() && repo_path.is_dir() {
+                println!("\t✅ Helix repo already exists at {}", repo_path.display());
+                return;
+            }
+
+            println!("Installing Helix repo...");
             let repo_dir = home_dir.join(".helix/repo");
 
             // Create the directory structure if it doesn't exist

@@ -63,7 +63,7 @@ impl CodeGenerator {
             .map(|(k, v)| format!("\"{}\".to_string() => {}", k, self.value_type_to_rust(v)))
             .collect::<Vec<_>>()
             .join(", ");
-        format!("crate::props!{{ {} }}", props_str)
+        format!("props!{{ {} }}", props_str)
     }
 
     pub fn generate_source(&mut self, source: &Source) -> String {
@@ -154,7 +154,18 @@ impl CodeGenerator {
         output.push_str(&self.indent());
         output.push_str("let db = Arc::clone(&input.graph.storage);\n");
         output.push_str(&self.indent());
-        if query.statements.iter().any(|s| matches!(s, Statement::AddVertex(_))) {
+        if query.statements.iter().any(|s| {
+            matches!(s, Statement::AddVertex(_))
+                || matches!(s, Statement::AddEdge(_))
+                || matches!(s, Statement::Drop(_))
+                || { 
+                    if let Statement::Assignment(assignment) = s {
+                        matches!(assignment.value, Expression::AddVertex(_)) || matches!(assignment.value, Expression::AddEdge(_))
+                    } else {
+                        false
+                    }
+                }
+        }) {
             output.push_str("let mut txn = db.graph_env.write_txn().unwrap();\n\n");
         } else {
             output.push_str("let txn = db.graph_env.read_txn().unwrap();\n\n");
@@ -171,16 +182,33 @@ impl CodeGenerator {
             output.push_str(&self.generate_statement(statement));
         }
 
+        if query.statements.iter().any(|s| {
+            matches!(s, Statement::AddVertex(_))
+                || matches!(s, Statement::AddEdge(_))
+                || matches!(s, Statement::Drop(_))
+                || { 
+                    if let Statement::Assignment(assignment) = s {
+                        matches!(assignment.value, Expression::AddVertex(_)) || matches!(assignment.value, Expression::AddEdge(_))
+                    } else {
+                        false
+                    }
+                }
+        }) {
+            output.push_str(&self.indent());
+            output.push_str("txn.commit()?;\n");
+        }
         // Generate return statement
         if !query.return_values.is_empty() {
             output.push_str(&self.generate_return_values(&query.return_values));
         }
-
+       
         // Close function
         output.push_str(&self.indent());
         output.push_str("Ok(())\n");
         self.indent_level -= 1;
         output.push_str("}\n");
+
+        
 
         output
     }
@@ -210,7 +238,11 @@ impl CodeGenerator {
             .insert(var_name.clone(), var_name.clone());
 
         output.push_str(&self.indent());
-        output.push_str(&format!("let {} = tr.finish()?;\n\n", var_name));
+
+        match assignment.value {
+
+            _ => output.push_str(&format!("let {} = tr.finish()?;\n\n", var_name)),
+        }
 
         output
     }
@@ -604,7 +636,7 @@ impl CodeGenerator {
                     .collect::<Vec<_>>()
                     .join(", ");
                 output.push_str(&format!(
-                    "tr.update_props(&mut txn, crate::props!{{ {} }});\n",
+                    "tr.update_props(&mut txn, props!{{ {} }});\n",
                     props
                 ));
             }
@@ -641,7 +673,9 @@ impl CodeGenerator {
                     match step {
                         Step::Props(props) => {
                             let prop_name = &props[0];
-                            if let Some(Step::BooleanOperation(bool_op)) = traversal.steps.get(i+1) {
+                            if let Some(Step::BooleanOperation(bool_op)) =
+                                traversal.steps.get(i + 1)
+                            {
                                 match bool_op {
                                     BooleanOp::Equal(value) => match &**value {
                                         Expression::BooleanLiteral(b) => {
@@ -702,7 +736,9 @@ impl CodeGenerator {
                         Step::Count => {
                             output.push_str("tr.count();\n");
                             output.push_str("let count = tr.finish()?.as_count().unwrap();\n");
-                            if let Some(Step::BooleanOperation(bool_op)) = traversal.steps.get(i+1) {
+                            if let Some(Step::BooleanOperation(bool_op)) =
+                                traversal.steps.get(i + 1)
+                            {
                                 match bool_op {
                                     BooleanOp::Equal(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
@@ -768,10 +804,8 @@ impl CodeGenerator {
                             } else {
                                 output.push_str(&self.generate_step(step));
                             }
-                            
                         }
                     }
-                    
                 }
                 output
             }
@@ -820,7 +854,7 @@ impl CodeGenerator {
 
         if let Some(name) = var_name {
             output.push_str(&self.indent());
-            output.push_str(&format!("let {} = tr.finish()?;\n", name));
+            output.push_str(&format!("let {} = tr.result()?;\n", name));
             self.current_variables
                 .insert(name.to_string(), name.to_string());
         }
@@ -873,6 +907,7 @@ impl CodeGenerator {
             "tr.add_e(&mut txn, \"{}\", {}, {}, {});\n",
             edge_type, from_id, to_id, props
         ));
+        output.push_str(&format!("tr.result()?;\n"));
 
         output
     }
@@ -908,7 +943,10 @@ impl CodeGenerator {
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&self.indent());
             if let Expression::Identifier(id) = expr {
-                output.push_str(&format!("return_vals.insert(\"{}\".to_string(), ReturnValue::TraversalValues({}));\n", id, id));
+                output.push_str(&format!(
+                    "return_vals.insert(\"{}\".to_string(), ReturnValue::TraversalValues({}));\n",
+                    id, id
+                ));
             }
         }
 

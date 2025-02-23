@@ -13,44 +13,103 @@ pub struct InstanceInfo {
     pub port: u16,
     pub started_at: String,
     pub available_endpoints: Vec<String>,
+    pub binary_path: PathBuf,
 }
 
 pub struct InstanceManager {
     instances_file: PathBuf,
+    cache_dir: PathBuf,
 }
 
 impl InstanceManager {
     pub fn new() -> io::Result<Self> {
         let home_dir = dirs::home_dir().expect("Could not find home directory");
         let helix_dir = home_dir.join(".helix");
+        let cache_dir = helix_dir.join("cached_builds");
         fs::create_dir_all(&helix_dir)?;
+        fs::create_dir_all(&cache_dir)?;
         
         Ok(Self {
             instances_file: helix_dir.join("instances.json"),
+            cache_dir,
         })
     }
 
-    pub fn start_instance(&self, binary_path: &Path, port: u16, endpoints: Vec<String>) -> io::Result<InstanceInfo> {
-        let mut command = Command::new(binary_path);
+    pub fn start_instance(&self, source_binary: &Path, port: u16, endpoints: Vec<String>) -> io::Result<InstanceInfo> {
+        let instance_id = Uuid::new_v4().to_string();
+        let cached_binary = self.cache_dir.join(&instance_id);
+        fs::copy(source_binary, &cached_binary)?;
+        
+        // make sure data dir exists
+        // make it .cached_builds/data/instance_id/
+        let data_dir = self.cache_dir.join("data").join(&instance_id);
+        fs::create_dir_all(&data_dir)?;
+
+        let mut command = Command::new(&cached_binary);
         command.env("PORT", port.to_string());
         command.env("HELIX_DAEMON", "1")
-        .stdout(Stdio::null());
+            .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
+            .env("HELIX_PORT", port.to_string())
+            .stdout(Stdio::null());
 
-        // Start the process in the background
         let child = command.spawn()?;
         
         let instance = InstanceInfo {
-            id: Uuid::new_v4().to_string(),
+            id: instance_id,
             pid: child.id(),
             port,
             started_at: chrono::Local::now().to_rfc3339(),
             available_endpoints: endpoints,
+            binary_path: cached_binary,
         };
 
         // Save instance info
         self.save_instance(&instance)?;
 
         Ok(instance)
+    }
+
+    pub fn restart_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
+        if let Some(instance) = self.get_instance(instance_id)? {
+            // Check if binary exists
+            if !instance.binary_path.exists() {
+                return Ok(None);
+            }
+            let data_dir = instance.binary_path.clone().join("data");
+            // make sure data dir exists
+            let data_dir = self.cache_dir.join("data").join(&instance_id);
+            fs::create_dir_all(&data_dir)?;
+
+            let mut command = Command::new(&instance.binary_path);
+            command.env("PORT", instance.port.to_string());
+            command.env("HELIX_DAEMON", "1")
+                .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
+                .env("HELIX_PORT", instance.port.to_string())
+                .stdout(Stdio::null());
+
+            let child = command.spawn()?;
+            
+            let new_instance = InstanceInfo {
+                id: instance.id,
+                pid: child.id(),
+                port: instance.port,
+                started_at: chrono::Local::now().to_rfc3339(),
+                available_endpoints: instance.available_endpoints,
+                binary_path: instance.binary_path,
+            };
+
+            // Update instance info
+            self.save_instance(&new_instance)?;
+
+            Ok(Some(new_instance))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
+        let instances = self.list_instances()?;
+        Ok(instances.into_iter().find(|i| i.id == instance_id))
     }
 
     pub fn list_instances(&self) -> io::Result<Vec<InstanceInfo>> {

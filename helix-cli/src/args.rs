@@ -36,6 +36,9 @@ pub enum CommandType {
 
     /// Stop Helix instances
     Stop(StopCommand),
+
+    /// Start a stopped Helix instance
+    Start(StartCommand),
 }
 
 #[derive(Debug, Args)]
@@ -104,6 +107,13 @@ pub struct StopCommand {
 
     #[clap(help = "Instance ID to stop")]
     pub instance_id: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "start", about = "Start a stopped Helix instance")]
+pub struct StartCommand {
+    #[clap(help = "Instance ID to Start")]
+    pub instance_id: String,
 }
 
 #[derive(Debug)]
