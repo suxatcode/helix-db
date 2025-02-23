@@ -54,6 +54,19 @@ fn find_available_port(start_port: u16) -> Option<u16> {
     None
 }
 
+fn create_spinner(message: &str) -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+            .template("{spinner:.blue.bold} {msg}")
+            .unwrap()
+    );
+    spinner.set_message(message.to_string());
+    spinner.enable_steady_tick(Duration::from_millis(80));
+    spinner
+}
+
 fn main() {
     let args = HelixCLI::parse();
     match args.command {
@@ -147,15 +160,13 @@ fn main() {
             }
 
             // create progress spinner
-            let spinner = ProgressBar::new_spinner();
+            let spinner = create_spinner("Compiling Helix queries");
             // spinner.set_style(
             //     ProgressStyle::default_spinner()
             //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
             //         .template("{spinner:.green.bold} {msg}")
             //         .unwrap(),
             // );
-            spinner.set_message("Compiling Helix queries");
-            spinner.enable_steady_tick(Duration::from_millis(100));
             // number of files
             let numb_of_files = files.len();
             let mut successes = HashMap::new();
@@ -201,17 +212,13 @@ fn main() {
 
             // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
             if local {
-                let spinner = ProgressBar::new_spinner();
+                let spinner = create_spinner("Building Helix");
                 // spinner.set_style(
                 //     ProgressStyle::default_spinner()
                 //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
                 //         .template("{spinner:.green.bold} {msg}")
                 //         .unwrap(),
                 // );
-                spinner.set_message("Building Helix");
-                spinner.enable_steady_tick(Duration::from_millis(100));
-
-
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
@@ -262,15 +269,13 @@ fn main() {
                     }
                 }
 
-               let spinner = ProgressBar::new_spinner();
+               let spinner = create_spinner("Starting Helix instance");
                 // spinner.set_style(
                 //     ProgressStyle::default_spinner()
                 //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
                 //         .template("{spinner:.green.bold} {msg}")
                 //         .unwrap(),
                 // );
-                spinner.set_message("Starting Helix instance");
-                spinner.enable_steady_tick(Duration::from_millis(100));
                 let instance_manager = InstanceManager::new().unwrap();
 
                 let binary_path = dirs::home_dir()
@@ -343,14 +348,7 @@ fn main() {
         }
         args::CommandType::Start(command) => {
             let instance_manager = InstanceManager::new().unwrap();
-            let spinner = ProgressBar::new_spinner();
-            spinner.set_style(
-                ProgressStyle::default_spinner()
-                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-                    .template("{spinner:.green.bold} {msg}")
-                    .unwrap(),
-            );
-            spinner.set_message("Starting Helix instance");
+            let spinner = create_spinner("Starting Helix instance");
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
