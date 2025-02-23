@@ -157,6 +157,8 @@ jobs:
           asset_path: target/aarch64-unknown-linux-gnu/release/helix
           asset_name: helix-cli-linux-arm64
           asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload macOS x86_64 release asset
         if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
         uses: actions/upload-release-asset@v1
