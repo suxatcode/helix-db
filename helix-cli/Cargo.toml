@@ -16,7 +16,8 @@ uuid = { version = "1.14.0", features = ["v4"] }
 chrono = "0.4"
 libc = "0.2.170"
 indicatif = "0.17"
-windows = "0.60.0"
+windows = { version = "0.60.0", features = ["Win32_System_Threading", "Win32_Foundation"] }
+
 
 [profile.release]
 lto = true

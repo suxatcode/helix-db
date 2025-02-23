@@ -139,13 +139,14 @@ impl InstanceManager {
             }
             #[cfg(windows)]
             {
-                let handle = unsafe { windows::Win32::System::Threading::OpenProcess(
-                    windows::Win32::System::Threading::PROCESS_TERMINATE,
-                    false,
+                use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+                let handle = unsafe { OpenProcess(
+                    PROCESS_TERMINATE,
+                    false.into(),
                     instance.pid
                 )};
                 if let Ok(handle) = handle {
-                    unsafe { windows::Win32::System::Threading::TerminateProcess(handle, 0) };
+                    unsafe { TerminateProcess(handle, 0) };
                 }
             }
             self.save_instances(&instances)?;
@@ -162,13 +163,14 @@ impl InstanceManager {
             }
             #[cfg(windows)]
             {
-                let handle = unsafe { windows::Win32::System::Threading::OpenProcess(
-                    windows::Win32::System::Threading::PROCESS_TERMINATE,
-                    false,
+                use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+                let handle = unsafe { OpenProcess(
+                    PROCESS_TERMINATE,
+                    false.into(),
                     instance.pid
                 )};
                 if let Ok(handle) = handle {
-                    unsafe { windows::Win32::System::Threading::TerminateProcess(handle, 0) };
+                    unsafe { TerminateProcess(handle, 0) };
                 }
             }
         }
