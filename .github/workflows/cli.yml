@@ -55,12 +55,14 @@ jobs:
       - name: Install dependencies for arm64 (Linux only)
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
             binutils-aarch64-linux-gnu \
             libgcc-9-dev-arm64-cross \
+            crossbuild-essential-arm64 \
             libssl-dev:arm64 \
             pkg-config \
             openssl
