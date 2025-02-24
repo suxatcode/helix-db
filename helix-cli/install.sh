@@ -43,33 +43,13 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # Determine the appropriate binary to download
-if [[ "$OS" == "Linux" ]]; then
-    if [[ "$ARCH" == "x86_64" ]]; then
-        FILE="helix-cli-linux-amd64"
-    elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-        FILE="helix-cli-linux-arm64"
-    else
-        echo "Unsupported architecture: $ARCH"
-        exit 1
-    fi
-elif [[ "$OS" == "Darwin" ]]; then
-    if [[ "$ARCH" == "x86_64" ]]; then
-        FILE="helix-cli-macos-amd64"
-    elif [[ "$ARCH" == "arm64" ]]; then
-        FILE="helix-cli-macos-arm64"
-    else
-        echo "Unsupported architecture: $ARCH"
-        exit 1
-    fi
-elif [[ "$OS" == "Windows_NT" ]]; then
-    if [[ "$ARCH" == "x86_64" ]]; then
-        FILE="helix-cli-windows-amd64.exe"
-    else
-        echo "Unsupported architecture: $ARCH"
-        exit 1
-    fi
+if [[ "$OS" == "Linux" && "$ARCH" == "x86_64" ]]; then
+    FILE="helix-cli-linux-amd64"
+elif [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
+    FILE="helix-cli-macos-arm64"
 else
-    echo "Unsupported OS: $OS"
+    echo "Unsupported system: This installer only works on Linux AMD64 and macOS ARM64"
+    echo "Your system is: $OS $ARCH"
     exit 1
 fi
 
