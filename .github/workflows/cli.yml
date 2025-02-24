@@ -65,11 +65,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config build-essential
 
-      - name: Install OpenSSL for arm64 cross-compilation
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
-        run: |
-          sudo apt-get install -y libssl-dev:arm64
-
       - name: Set environment variables for arm64 cross-compilation
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
