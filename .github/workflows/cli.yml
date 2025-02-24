@@ -60,7 +60,22 @@ jobs:
             gcc-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
             binutils-aarch64-linux-gnu \
-            libgcc-9-dev-arm64-cross
+            libgcc-9-dev-arm64-cross \
+            libssl-dev \
+            pkg-config \
+            build-essential
+
+      # Add OpenSSL dependencies for x86_64 Linux
+      - name: Install OpenSSL dependencies (Linux x86_64)
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config build-essential
+
+      - name: Install OpenSSL for arm64 cross-compilation
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get install -y libssl-dev:arm64
 
       - name: Set environment variables for arm64 cross-compilation
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
