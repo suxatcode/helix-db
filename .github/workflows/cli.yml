@@ -62,14 +62,18 @@ jobs:
             binutils-aarch64-linux-gnu \
             libgcc-9-dev-arm64-cross \
             libssl-dev \
-            pkg-config
+            pkg-config \
+            openssl
 
       # Add OpenSSL installation for Ubuntu x86_64
       - name: Install OpenSSL (Linux x86_64)
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
+          sudo apt-get install -y libssl-dev pkg-config openssl
+          echo "OPENSSL_DIR=/usr/lib/ssl" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=/usr/include/openssl" >> $GITHUB_ENV
 
       # Linux and macOS - Bash Shell
       - name: Install target for architecture (Linux and macOS)
