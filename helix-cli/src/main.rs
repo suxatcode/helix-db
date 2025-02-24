@@ -118,83 +118,80 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
-fn main() {
+async fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
+    // Create a temporary file for the install script
+    let mut temp_file = NamedTempFile::new().map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to create temporary file");
+        e
+    })?;
+
+    // Download the install script
+    let client = reqwest::Client::new();
+    let response = client.get("https://install.helix-db.com")
+        .send()
+        .await
+        .map_err(|e| {
+            finish_spinner_with_message(&spinner, false, "Failed to download install script");
+            e
+        })?;
+
+    // Check if the request was successful
+    if !response.status().is_success() {
+        finish_spinner_with_message(&spinner, false, "Failed to download install script");
+        return Err(format!("Server returned: {}", response.status()).into());
+    }
+
+    // Write the script to the temporary file
+    let content = response.bytes().await.map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to read response");
+        e
+    })?;
+    
+    temp_file.write_all(&content).map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to write install script");
+        e
+    })?;
+
+    // Make the script executable (Unix-like systems only)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o755)).map_err(|e| {
+            finish_spinner_with_message(&spinner, false, "Failed to make script executable");
+            e
+        })?;
+    }
+
+    // Run the install script
+    let status = if cfg!(target_os = "windows") {
+        Command::new("bash")
+            .arg(temp_file.path())
+            .status()
+    } else {
+        Command::new(temp_file.path())
+            .status()
+    }.map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to run update script");
+        e
+    })?;
+
+    if status.success() {
+        finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
+        Ok(())
+    } else {
+        finish_spinner_with_message(&spinner, false, "Update script failed");
+        Err(format!("Exit code: {}", status).into())
+    }
+}
+
+#[tokio::main]
+async fn main() {
     let args = HelixCLI::parse();
     match args.command {
         args::CommandType::Update(_) => {
             let spinner = create_spinner("Updating Helix CLI");
-
-            // Create a temporary file for the install script
-            let mut temp_file = match NamedTempFile::new() {
-                Ok(file) => file,
-                Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to create temporary file");
-                    println!("\t└── {}", e);
-                    return;
-                }
-            };
-
-            // Download the install script
-            let client = reqwest::blocking::Client::new();
-            let response = match client.get("https://install.helix-db.com").send() {
-                Ok(response) => response,
-                Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to download install script");
-                    println!("\t└── {}", e);
-                    return;
-                }
-            };
-
-            // Check if the request was successful
-            if !response.status().is_success() {
-                finish_spinner_with_message(&spinner, false, "Failed to download install script");
-                println!("\t└── Server returned: {}", response.status());
-                return;
-            }
-
-            // Write the script to the temporary file
-            match temp_file.write_all(&response.bytes().unwrap()) {
-                Ok(_) => {},
-                Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to write install script");
-                    println!("\t└── {}", e);
-                    return;
-                }
-            };
-
-            // Make the script executable (Unix-like systems only)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Err(e) = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o755)) {
-                    finish_spinner_with_message(&spinner, false, "Failed to make script executable");
-                    println!("\t└── {}", e);
-                    return;
-                }
-            }
-
-            // Run the install script
-            let status = if cfg!(target_os = "windows") {
-                Command::new("bash")
-                    .arg(temp_file.path())
-                    .status()
-            } else {
-                Command::new(temp_file.path())
-                    .status()
-            };
-
-            match status {
-                Ok(exit_status) if exit_status.success() => {
-                    finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
-                }
-                Ok(exit_status) => {
-                    finish_spinner_with_message(&spinner, false, "Update script failed");
-                    println!("\t└── Exit code: {}", exit_status);
-                }
-                Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to run update script");
-                    println!("\t└── {}", e);
-                }
+            if let Err(e) = update_cli(&spinner).await {
+                println!("\t└── {}", e);
             }
         }
         args::CommandType::Deploy(command) => {
