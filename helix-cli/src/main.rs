@@ -153,6 +153,8 @@ fn main() {
     let args = HelixCLI::parse();
     match args.command {
         args::CommandType::Update(_) => {
+            unimplemented!();
+            return;
             let spinner = create_spinner("Updating Helix CLI");
             if let Err(e) = update_cli(&spinner) {
                 println!("\t└── {}", e);
