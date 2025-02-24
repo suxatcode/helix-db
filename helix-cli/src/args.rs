@@ -39,6 +39,9 @@ pub enum CommandType {
 
     /// Start a stopped Helix instance
     Start(StartCommand),
+
+    /// Update Helix CLI to the latest version
+    Update(UpdateCommand),
 }
 
 #[derive(Debug, Args)]
@@ -115,6 +118,10 @@ pub struct StartCommand {
     #[clap(help = "Instance ID to Start")]
     pub instance_id: String,
 }
+
+#[derive(Debug, Args)]
+#[clap(name = "update", about = "Update Helix CLI to the latest version")]
+pub struct UpdateCommand {}
 
 #[derive(Debug)]
 pub enum CliError {

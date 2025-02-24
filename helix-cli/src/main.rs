@@ -9,20 +9,45 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
-    io::ErrorKind,
+    io::{ErrorKind, Write},
     net::{SocketAddr, TcpListener},
     path,
     process::{Command, Stdio},
     thread::sleep,
     time::Duration,
 };
-use tempfile::TempDir;
+use tempfile::{TempDir, NamedTempFile};
+use reqwest;
 
 use std::path::PathBuf;
 pub mod args;
 mod instance_manager;
 
 use instance_manager::InstanceManager;
+
+fn check_helix_installation() -> Result<PathBuf, String> {
+    let home_dir = dirs::home_dir().ok_or("Could not determine home directory")?;
+    let repo_path = home_dir.join(".helix/repo/helix-db");
+    let container_path = repo_path.join("helix-container");
+    let cargo_path = container_path.join("Cargo.toml");
+
+    // Check if main repo directory exists and is a directory
+    if !repo_path.exists() || !repo_path.is_dir() {
+        return Err("Helix repo is not installed. Please run `helix install` first.".to_string());
+    }
+
+    // Check if helix-container exists and is a directory
+    if !container_path.exists() || !container_path.is_dir() {
+        return Err("Helix container is missing. Please run `helix install` to repair the installation.".to_string());
+    }
+
+    // Check if Cargo.toml exists in helix-container
+    if !cargo_path.exists() {
+        return Err("Helix container's Cargo.toml is missing. Please run `helix install` to repair the installation.".to_string());
+    }
+
+    Ok(container_path)
+}
 
 fn find_available_port(start_port: u16) -> Option<u16> {
     let mut port = start_port;
@@ -59,17 +84,119 @@ fn create_spinner(message: &str) -> ProgressBar {
     spinner.set_style(
         ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("{spinner:.blue.bold} {msg}")
+            .template("{prefix:>12.cyan.bold} {spinner:.green} {wide_msg}")
             .unwrap()
     );
     spinner.set_message(message.to_string());
+    spinner.set_prefix("🔄");
     spinner.enable_steady_tick(Duration::from_millis(80));
     spinner
+}
+
+fn finish_spinner_with_message(spinner: &ProgressBar, success: bool, message: &str) {
+    let prefix = if success { "✅" } else { "❌" };
+    spinner.set_prefix(prefix);
+    spinner.finish_with_message(message.to_string());
+}
+
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut prev_is_uppercase = false;
+
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 && !prev_is_uppercase {
+                result.push('_');
+            }
+            result.push(c.to_lowercase().next().unwrap());
+            prev_is_uppercase = true;
+        } else {
+            result.push(c);
+            prev_is_uppercase = false;
+        }
+    }
+    result
 }
 
 fn main() {
     let args = HelixCLI::parse();
     match args.command {
+        args::CommandType::Update(_) => {
+            let spinner = create_spinner("Updating Helix CLI");
+
+            // Create a temporary file for the install script
+            let mut temp_file = match NamedTempFile::new() {
+                Ok(file) => file,
+                Err(e) => {
+                    finish_spinner_with_message(&spinner, false, "Failed to create temporary file");
+                    println!("\t└── {}", e);
+                    return;
+                }
+            };
+
+            // Download the install script
+            let client = reqwest::blocking::Client::new();
+            let response = match client.get("https://install.helix-db.com").send() {
+                Ok(response) => response,
+                Err(e) => {
+                    finish_spinner_with_message(&spinner, false, "Failed to download install script");
+                    println!("\t└── {}", e);
+                    return;
+                }
+            };
+
+            // Check if the request was successful
+            if !response.status().is_success() {
+                finish_spinner_with_message(&spinner, false, "Failed to download install script");
+                println!("\t└── Server returned: {}", response.status());
+                return;
+            }
+
+            // Write the script to the temporary file
+            match temp_file.write_all(&response.bytes().unwrap()) {
+                Ok(_) => {},
+                Err(e) => {
+                    finish_spinner_with_message(&spinner, false, "Failed to write install script");
+                    println!("\t└── {}", e);
+                    return;
+                }
+            };
+
+            // Make the script executable (Unix-like systems only)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Err(e) = fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o755)) {
+                    finish_spinner_with_message(&spinner, false, "Failed to make script executable");
+                    println!("\t└── {}", e);
+                    return;
+                }
+            }
+
+            // Run the install script
+            let status = if cfg!(target_os = "windows") {
+                Command::new("bash")
+                    .arg(temp_file.path())
+                    .status()
+            } else {
+                Command::new(temp_file.path())
+                    .status()
+            };
+
+            match status {
+                Ok(exit_status) if exit_status.success() => {
+                    finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
+                }
+                Ok(exit_status) => {
+                    finish_spinner_with_message(&spinner, false, "Update script failed");
+                    println!("\t└── Exit code: {}", exit_status);
+                }
+                Err(e) => {
+                    finish_spinner_with_message(&spinner, false, "Failed to run update script");
+                    println!("\t└── {}", e);
+                }
+            }
+        }
         args::CommandType::Deploy(command) => {
             // check if cargo is installed
             let mut runner = Command::new("cargo");
@@ -82,18 +209,15 @@ fn main() {
                     return;
                 }
             }
-            // check if helix repo exists
-            let mut runner = Command::new("ls");
-            runner.arg(".helix/repo/helix-container");
-            match runner.output() {
-                Ok(_) => {}
-                Err(_) => {
-                    println!("\t❌ Helix repo does not exist");
-                    println!("\t|");
-                    println!("\t└── Please run `helix install` to install the helix repo");
+
+            // Check helix installation
+            let container_path = match check_helix_installation() {
+                Ok(path) => path,
+                Err(e) => {
+                    println!("\t❌ Helix is not installed. Please run `helix install` first.");
                     return;
                 }
-            }
+            };
 
             // path to project
             let path = match command.path {
@@ -195,17 +319,14 @@ fn main() {
             }
 
             if !errors.is_empty() {
-                spinner.finish_with_message("❌ Failed to compile some queries");
+                finish_spinner_with_message(&spinner, false, "Failed to compile some queries");
                 for (name, error) in errors {
                     println!("\t❌ {}: {}", name, error);
                 }
                 return;
             }
 
-            spinner.finish_with_message(format!(
-                "\t✅ Successfully compiled {} queries",
-                numb_of_files
-            ));
+            finish_spinner_with_message(&spinner, true, &format!("Successfully compiled {} queries", numb_of_files));
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
@@ -222,11 +343,10 @@ fn main() {
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
-                        spinner.finish_with_message("\t✅ Successfully wrote queries file");
+                        finish_spinner_with_message(&spinner, true, "Successfully wrote queries file");
                     }
                     Err(e) => {
-                        spinner.finish_with_message("❌ Failed to write queries file");
-                        println!("\t|");
+                        finish_spinner_with_message(&spinner, false, "Failed to write queries file");
                         println!("\t└── {}", e);
                         return;
                     }
@@ -242,8 +362,7 @@ fn main() {
                 match runner.output() {
                     Ok(_) => {}
                     Err(e) => {
-                        spinner.finish_with_message("❌ Failed to check Rust code");
-                        println!("\t|");
+                        finish_spinner_with_message(&spinner, false, "Failed to check Rust code");
                         println!("\t└── {}", e);
                         return;
                     }
@@ -259,11 +378,10 @@ fn main() {
 
                 match runner.output() {
                     Ok(_) => {
-                        spinner.finish_with_message("\t✅ Successfully built Helix");
+                        finish_spinner_with_message(&spinner, true, "Successfully built Helix");
                     }
                     Err(e) => {
-                        spinner.finish_with_message("\t❌ Failed to build Helix");
-                        println!("\t|");
+                        finish_spinner_with_message(&spinner, false, "Failed to build Helix");
                         println!("\t└── {}", e);
                         return;
                     }
@@ -284,12 +402,12 @@ fn main() {
 
                 let endpoints: Vec<String> = successes
                     .values()
-                    .flat_map(|source| source.queries.iter().map(|q| q.name.clone()))
+                    .flat_map(|source| source.queries.iter().map(|q| to_snake_case(&q.name)))
                     .collect();
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        spinner.finish_with_message("\t✅ Successfully started Helix instance");
+                        finish_spinner_with_message(&spinner, true, "Successfully started Helix instance");
                         println!(" ");
                         println!("\t└── Instance ID: {}", instance.id);
                         println!("\t└── Port: {}", instance.port);
@@ -299,7 +417,7 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        spinner.finish_with_message("\t❌ Failed to start Helix instance");
+                        finish_spinner_with_message(&spinner, false, "Failed to start Helix instance");
                         println!("\t└── {}", e);
                     }
                 }
@@ -352,7 +470,7 @@ fn main() {
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    spinner.finish_with_message("\t✅ Successfully restarted Helix instance");
+                    finish_spinner_with_message(&spinner, true, "Successfully restarted Helix instance");
                     println!("\t└── Instance ID: {}", instance.id);
                     println!("\t└── Port: {}", instance.port);
                     println!("\t└── Available endpoints:");
@@ -361,14 +479,14 @@ fn main() {
                     }
                 }
                 Ok(None) => {
-                    spinner.finish_with_message("\t❌ Instance not found or binary missing");
+                    finish_spinner_with_message(&spinner, false, "Instance not found or binary missing");
                     println!(
                         "\t└── Could not find instance with ID: {}",
                         command.instance_id
                     );
                 }
                 Err(e) => {
-                    spinner.finish_with_message("\t❌ Failed to restart instance");
+                    finish_spinner_with_message(&spinner, false, "Failed to restart instance");
                     println!("\t└── {}", e);
                 }
             }
