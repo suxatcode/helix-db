@@ -56,7 +56,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y libssl-dev:arm64 pkg-config
+          sudo apt-get install -y libc6-dev-arm64-cross
 
       # Add OpenSSL dependencies for x86_64 Linux
       - name: Install OpenSSL dependencies (Linux x86_64)
