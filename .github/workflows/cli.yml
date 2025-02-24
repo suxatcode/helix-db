@@ -38,15 +38,11 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest, windows-latest, ubuntu-latest] # Using ubuntu-20.04 for better GLIBC compatibility
+        os: [ubuntu-20.04, macos-latest, windows-latest] # Using ubuntu-20.04 for better GLIBC compatibility
         include:
           - os: ubuntu-20.04
             target: x86_64-unknown-linux-gnu
             binary_name: helix-cli-linux-amd64
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary_name: helix-cli-arch-amd64
-            container: archlinux:latest
           - os: macos-latest
             target: x86_64-apple-darwin
             binary_name: helix-cli-macos-amd64
@@ -60,13 +56,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install dependencies (Arch Linux only)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel openssl pkg-config
-
-      - name: Install OpenSSL and pkg-config (Ubuntu only)
+      - name: Install OpenSSL and pkg-config (Linux only)
         if: matrix.os == 'ubuntu-20.04'
         run: |
           sudo apt-get update
