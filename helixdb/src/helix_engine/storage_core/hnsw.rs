@@ -148,7 +148,7 @@ impl HNSW {
     }
 
     fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<String>, GraphError> {
-        let key = [Self::out_edges_key(id, id, level)].concat();
+        let key = Self::out_edges_key(id, "", level);
         match self.out_edges_db.get(txn, &key)? {
             Some(bytes) => Ok(deserialize(bytes)?),
             None => Ok(Vec::new()),
@@ -156,17 +156,21 @@ impl HNSW {
     }
     
     fn set_neighbors(&self, txn: &mut RwTxn, id: &str, level: usize, neighbors: &[String]) -> Result<(), GraphError> {
-        neighbors.iter().try_for_each::<_, Result<(), GraphError>>(|s|{
-            let out_key = [Self::out_edges_key(id, s, level)].concat();
-            let in_key = [Self::in_edges_key(s, id, level)].concat();
-            self.out_edges_db.put(txn, &out_key, &serialize(neighbors)?)?;
-            self.in_edges_db.put(txn, &in_key, &serialize(neighbors)?)?;
-            Ok(())
-        })?;
+
+        let neighbors_key = Self::out_edges_key(id, "", level);
+        self.out_edges_db.put(txn, &neighbors_key, &serialize(neighbors)?)?;
+        
+        for neighbor_id in neighbors {
+            let mut neighbor_neighbors = self.get_neighbors(txn, neighbor_id, level)?;
+            if !neighbor_neighbors.contains(&id.to_string()) {
+                neighbor_neighbors.push(id.to_string());
+                let neighbor_key = Self::out_edges_key(neighbor_id, "", level);
+                self.out_edges_db.put(txn, &neighbor_key, &serialize(&neighbor_neighbors)?)?;
+            }
+        }
         
         Ok(())
     }
-
     #[inline]
     fn get_vector(&self, txn: &RoTxn, id: &str, level: usize) -> Result<HVector, GraphError> {
         match self.vectors_db.get(txn, &Self::vector_key(id, level))? {
