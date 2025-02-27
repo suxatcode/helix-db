@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetch all history to include all tags
+          fetch-depth: 0
       - name: Create GitHub Release
         id: create_release
         uses: zendesk/action-create-release@v1
@@ -38,140 +38,47 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        arch: [x86_64, arm64]
+        os: [ubuntu-20.04, macos-latest, windows-latest] # Using ubuntu-20.04 for better GLIBC compatibility
+        include:
+          - os: ubuntu-20.04
+            target: x86_64-unknown-linux-gnu
+            binary_name: helix-cli-linux-amd64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: helix-cli-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: helix-cli-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: helix-cli-windows-amd64.exe
 
     steps:
       - uses: actions/checkout@v3
 
+      - name: Install OpenSSL and pkg-config (Linux only)
+        if: matrix.os == 'ubuntu-20.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
+          target: ${{ matrix.target }}
           override: true
 
-      # Install necessary tools for cross-compiling on arm64 (Ubuntu)
-      - name: Install dependencies for arm64 (Linux only)
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            binutils-aarch64-linux-gnu \
-            libgcc-9-dev-arm64-cross
-
-      - name: Set environment variables for arm64 cross-compilation
-        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
-        run: |
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-          export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-          export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
-
-      # Linux and macOS - Bash Shell
-      - name: Install target for architecture (Linux and macOS)
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          if [ "${{ matrix.arch }}" == "x86_64" ]; then
-            rustup target add x86_64-unknown-linux-gnu
-            rustup target add x86_64-apple-darwin
-          elif [ "${{ matrix.arch }}" == "arm64" ]; then
-            rustup target add aarch64-unknown-linux-gnu
-          fi
-
-      # Windows - PowerShell Shell
-      - name: Install target for architecture (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        env:
-          ARCH: ${{ matrix.arch }}
+      - name: Build
         run: |
           cd helix-cli
-          if ($env:ARCH -eq "x86_64") {
-            rustup target add x86_64-pc-windows-msvc
-            echo "Binary built for Windows x86_64"
-          }
-
-      - name: Build ubuntu or mac
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          cd helix-cli
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            if [ "${{ matrix.arch }}" == "x86_64" ]; then
-              cargo build --release --target x86_64-unknown-linux-gnu
-            fi
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            if [ "${{ matrix.arch }}" == "x86_64" ]; then
-              cargo build --release --target x86_64-apple-darwin
-            elif [ "${{ matrix.arch }}" == "arm64" ]; then
-              cargo build --release --target aarch64-apple-darwin
-            fi
-          fi
-
-      - name: Build windows
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          cd helix-cli
-          if ($env:ARCH -eq "x86_64") {
-            cargo build --release --target x86_64-pc-windows-msvc
-            echo "Binary built for Windows x86_64"
-          }
-
-      # Add an ls command to debug target directory contents after build
-    #   - name: Debug target folder after build
-    #     run: |
-    #       cd helix-cli
-    #       echo "Listing target directory after build"
-    #       ls -R target
-
-    
-
-    
-
-      # Upload release assets
-      - name: Upload Release Assets
-        uses: actions/upload-release-asset@v1
-        if: matrix.arch == 'x86_64' && matrix.os == 'ubuntu-latest'
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: helix-cli/target/x86_64-unknown-linux-gnu/release/helix
-          asset_name: helix-cli-linux-amd64
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload macOS x86_64 release asset
-        if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
+          cargo build --release --target ${{ matrix.target }}
+      - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: helix-cli/target/x86_64-apple-darwin/release/helix
-          asset_name: helix-cli-macos-amd64
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload macOS arm64 release asset
-        if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: helix-cli/target/aarch64-apple-darwin/release/helix
-          asset_name: helix-cli-macos-arm64
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload windows release asset
-        if: matrix.os == 'windows-latest' && matrix.arch == 'x86_64'
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: helix-cli/target/x86_64-pc-windows-msvc/release/helix.exe
-          asset_name: helix-cli-windows-amd64.exe
+          asset_path: target/${{ matrix.target }}/release/${{ matrix.os == 'windows-latest' && 'helix.exe' || 'helix' }}
+          asset_name: ${{ matrix.binary_name }}
           asset_content_type: application/octet-stream
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

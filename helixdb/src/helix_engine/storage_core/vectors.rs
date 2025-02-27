@@ -1,7 +1,11 @@
 // vector struct to store raw data, dimension and de
 
 use std::{
-    cmp::Ordering, collections::{BinaryHeap, HashSet}, path::Path, sync::{Arc, Mutex}, vec
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet},
+    path::Path,
+    sync::{Arc, Mutex},
+    vec,
 };
 
 use bincode::deserialize;
@@ -40,9 +44,12 @@ impl EuclidianDistance for HVector {
     fn distance(from: &HVector, to: &HVector) -> f64 {
         // Fast path: use SIMD for aligned data of same length
         if from.len() == to.len() {
+            #[cfg(target_arch = "aarch64")]
             unsafe {
                 return from.simd_distance_unchecked(to);
             }
+            #[cfg(not(target_arch = "aarch64"))]
+            return from.scalar_distance(to);
         }
 
         from.scalar_distance(to)
@@ -81,7 +88,7 @@ impl HVector {
 
         let mut data = Vec::with_capacity(bytes.len() / std::mem::size_of::<f64>());
         let chunks = bytes.chunks_exact(std::mem::size_of::<f64>());
-        
+
         for chunk in chunks {
             let value = f64::from_le_bytes(chunk.try_into().unwrap());
             data.push(value);
@@ -108,8 +115,8 @@ impl HVector {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
     unsafe fn simd_distance_unchecked(&self, other: &HVector) -> f64 {
-        use std::arch::aarch64::{vld1q_f64, vsubq_f64, vmulq_f64, vaddvq_f64};
-        
+        use std::arch::aarch64::{vaddvq_f64, vld1q_f64, vmulq_f64, vsubq_f64};
+
         let mut sum = 0.0;
         let n = self.len();
         let mut i = 0;
@@ -136,7 +143,7 @@ impl HVector {
     fn scalar_distance(&self, other: &HVector) -> f64 {
         let mut sum = 0.0;
         let n = self.len().min(other.len());
-        
+
         // Use iterator for better bounds check elimination
         self.data[..n]
             .iter()

@@ -170,7 +170,7 @@ impl RSourceTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[String]) -> &mut Self {
+    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[&str]) -> &mut Self {
         let mut new_current = Vec::with_capacity(node_ids.len());
         for node_id in node_ids {
             match self.storage.get_node(txn, node_id) {
@@ -205,7 +205,7 @@ impl RSourceTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[String]) -> &mut Self {
+    fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[&str]) -> &mut Self {
         match self.storage.get_nodes_by_types(txn, node_labels) {
             Ok(nodes) => {
                 self.current_step = TraversalValue::NodeArray(nodes);

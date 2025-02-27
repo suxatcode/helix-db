@@ -30,6 +30,14 @@ criterion = "0.5"
 rand = "0.9.0"
 tempfile = "3.2"
 
+[features]
+engine=[]
+compiler=[]
+protocol=[]
+build=["protocol", "compiler"]
+full = ["build", "engine", "compiler", "protocol"]
+default = ["engine", "compiler", "protocol"]
+
 [[bench]]
 name = "graph_benchmarks"
 harness = false
