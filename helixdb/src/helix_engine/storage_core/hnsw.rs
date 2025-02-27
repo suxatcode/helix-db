@@ -1,22 +1,15 @@
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet},
-    sync::Arc,
+    collections::{BinaryHeap, HashSet},
 };
 
 use bincode::{deserialize, serialize};
-use heed3::{
-    types::{Bytes, Unit},
-    Database, Env, RoTxn, RwTxn,
-};
+use heed3::{types::Bytes, Database, Env, RoTxn, RwTxn};
 use rand::{rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 
+use super::storage_core::{IN_EDGES_PREFIX, OUT_EDGES_PREFIX};
 use super::vectors::HVector;
-use super::{
-    storage_core::{IN_EDGES_PREFIX, OUT_EDGES_PREFIX},
-    storage_methods::VectorMethods,
-};
 use crate::helix_engine::types::GraphError;
 
 const HNSW_VECTORS: &str = "hnsw_vectors";
@@ -25,8 +18,6 @@ const HNSW_OUT_EDGES: &str = "hnsw_out_edges";
 const ENTRY_POINT_KEY: &str = "entry_point";
 
 const VECTOR_PREFIX: &[u8] = b"v:";
-const LINKS_PREFIX: &[u8] = b"l:";
-const LEVEL_SEPARATOR: &[u8] = b":";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
@@ -93,7 +84,7 @@ impl HNSW {
         let out_edges_db = env.create_database(txn, Some(HNSW_OUT_EDGES))?;
 
         let config = config.unwrap_or_default();
-        
+
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
 
         let entry_point = match vectors_db.get(txn, entry_key.as_ref())? {
@@ -105,7 +96,7 @@ impl HNSW {
 
         Ok(Self {
             vectors_db,
-            in_edges_db,    
+            in_edges_db,
             out_edges_db,
             entry_point,
             rng: ThreadRng::default(),
@@ -115,17 +106,39 @@ impl HNSW {
 
     #[inline]
     pub fn vector_key(id: &str, level: usize) -> Vec<u8> {
-        [VECTOR_PREFIX, id.as_bytes(), b":", &level.to_string().into_bytes()].concat()
+        [
+            VECTOR_PREFIX,
+            id.as_bytes(),
+            b":",
+            &level.to_string().into_bytes(),
+        ]
+        .concat()
     }
 
     #[inline]
-    pub fn in_edges_key(source_id: &str,sink_id: &str ,level: usize) -> Vec<u8> {
-        [IN_EDGES_PREFIX, source_id.as_bytes(), b":", sink_id.as_bytes(), b":", &level.to_string().into_bytes()].concat()
+    pub fn in_edges_key(source_id: &str, sink_id: &str, level: usize) -> Vec<u8> {
+        [
+            IN_EDGES_PREFIX,
+            source_id.as_bytes(),
+            b":",
+            sink_id.as_bytes(),
+            b":",
+            &level.to_string().into_bytes(),
+        ]
+        .concat()
     }
 
     #[inline]
-    pub fn out_edges_key(source_id: &str,sink_id: &str ,level: usize) -> Vec<u8> {
-        [OUT_EDGES_PREFIX, source_id.as_bytes(), b":", sink_id.as_bytes(), b":", &level.to_string().into_bytes()].concat()
+    pub fn out_edges_key(source_id: &str, sink_id: &str, level: usize) -> Vec<u8> {
+        [
+            OUT_EDGES_PREFIX,
+            source_id.as_bytes(),
+            b":",
+            sink_id.as_bytes(),
+            b":",
+            &level.to_string().into_bytes(),
+        ]
+        .concat()
     }
 
     #[inline]
@@ -140,35 +153,51 @@ impl HNSW {
     }
 
     #[inline]
-    pub fn set_entry_point(&mut self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), GraphError> {
+    pub fn set_entry_point(
+        &mut self,
+        txn: &mut RwTxn,
+        entry: &EntryPoint,
+    ) -> Result<(), GraphError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db.put(txn, &entry_key, &serialize(entry)?)?;
         self.entry_point = Some(entry.clone());
         Ok(())
     }
 
-    fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<String>, GraphError> {
+    fn get_neighbors(
+        &self,
+        txn: &RoTxn,
+        id: &str,
+        level: usize,
+    ) -> Result<Vec<String>, GraphError> {
         let key = Self::out_edges_key(id, "", level);
         match self.out_edges_db.get(txn, &key)? {
             Some(bytes) => Ok(deserialize(bytes)?),
             None => Ok(Vec::new()),
         }
     }
-    
-    fn set_neighbors(&self, txn: &mut RwTxn, id: &str, level: usize, neighbors: &[String]) -> Result<(), GraphError> {
 
+    fn set_neighbors(
+        &self,
+        txn: &mut RwTxn,
+        id: &str,
+        level: usize,
+        neighbors: &[String],
+    ) -> Result<(), GraphError> {
         let neighbors_key = Self::out_edges_key(id, "", level);
-        self.out_edges_db.put(txn, &neighbors_key, &serialize(neighbors)?)?;
-        
+        self.out_edges_db
+            .put(txn, &neighbors_key, &serialize(neighbors)?)?;
+
         for neighbor_id in neighbors {
             let mut neighbor_neighbors = self.get_neighbors(txn, neighbor_id, level)?;
             if !neighbor_neighbors.contains(&id.to_string()) {
                 neighbor_neighbors.push(id.to_string());
                 let neighbor_key = Self::out_edges_key(neighbor_id, "", level);
-                self.out_edges_db.put(txn, &neighbor_key, &serialize(&neighbor_neighbors)?)?;
+                self.out_edges_db
+                    .put(txn, &neighbor_key, &serialize(&neighbor_neighbors)?)?;
             }
         }
-        
+
         Ok(())
     }
     #[inline]
@@ -181,7 +210,11 @@ impl HNSW {
 
     #[inline]
     fn put_vector(&self, txn: &mut RwTxn, id: &str, vector: &HVector) -> Result<(), GraphError> {
-        self.vectors_db.put(txn, &Self::vector_key(id, vector.level), &serialize(&vector)?)?;
+        self.vectors_db.put(
+            txn,
+            &Self::vector_key(id, vector.level),
+            &serialize(&vector)?,
+        )?;
         Ok(())
     }
 
@@ -236,9 +269,9 @@ impl HNSW {
 
                 let neighbor_vector = match self.get_vector(txn, &neighbor_id, level) {
                     Ok(v) => v,
-                    Err(_) => continue, 
+                    Err(_) => continue,
                 };
-                
+
                 let distance = neighbor_vector.distance_to(query);
 
                 if results.len() < ef || distance < results.peek().unwrap().distance {
@@ -319,7 +352,12 @@ impl HNSW {
         Ok(selected)
     }
 
-    pub fn search(&self, txn: &RoTxn, query: &HVector, k: usize) -> Result<Vec<(String, f64)>, GraphError> {
+    pub fn search(
+        &self,
+        txn: &RoTxn,
+        query: &HVector,
+        k: usize,
+    ) -> Result<Vec<(String, f64)>, GraphError> {
         let entry_point = match &self.entry_point {
             Some(ep) => ep,
             None => return Ok(Vec::new()),
@@ -327,15 +365,15 @@ impl HNSW {
 
         let max_level = entry_point.level;
         let curr_id = entry_point.id.clone();
-        
+
         let curr_dist = match self.get_vector(txn, &curr_id, entry_point.level) {
             Ok(v) => v.distance_to(query),
             Err(_) => return Ok(Vec::new()),
         };
-        
+
         let mut curr_dist = curr_dist;
         let mut curr_id = curr_id;
-        
+
         for l in (1..=max_level).rev() {
             let mut changed = true;
 
@@ -349,9 +387,9 @@ impl HNSW {
                         Ok(v) => v,
                         Err(_) => continue,
                     };
-                    
+
                     let dist = neighbor_vector.distance_to(query);
-                    
+
                     if dist < curr_dist {
                         curr_dist = dist;
                         curr_id = neighbor_id;
@@ -363,7 +401,7 @@ impl HNSW {
 
         let ef = k.max(self.config.ef_construction);
         let candidates = self.search_layer(txn, query, &curr_id, ef, 0)?;
-        
+
         let mut results = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             results.push((candidate.id, candidate.distance));
@@ -374,17 +412,16 @@ impl HNSW {
         if results.len() > k {
             results.truncate(k);
         }
-        
+
         Ok(results)
     }
-
 
     pub fn insert(&mut self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), GraphError> {
         let random_level = self.get_random_level();
         let vector = HVector::from_slice(id.to_string(), random_level, data.to_vec());
-        
+
         self.put_vector(txn, id, &vector)?;
-        
+
         if self.entry_point.is_none() {
             let entry_point = EntryPoint {
                 id: id.to_string(),
@@ -393,15 +430,15 @@ impl HNSW {
             self.set_entry_point(txn, &entry_point)?;
             return Ok(());
         }
-        
+
         let current_ep = match &self.entry_point {
             Some(ep) => ep.clone(),
             None => return Err(GraphError::from("No entry point found")),
         };
-        
+
         let curr_id = current_ep.id.clone();
         let mut curr_level = current_ep.level;
-        
+
         if random_level > curr_level {
             let new_ep = EntryPoint {
                 id: id.to_string(),
@@ -410,65 +447,65 @@ impl HNSW {
             self.set_entry_point(txn, &new_ep)?;
             curr_level = random_level;
         }
-        
+
         let mut ep_id = curr_id;
-        
+
         for level in (0..=random_level).rev() {
             if level <= curr_level {
-                let nearest = self.search_layer(txn, &vector, &ep_id, self.config.ef_construction, level)?;
-                
+                let nearest =
+                    self.search_layer(txn, &vector, &ep_id, self.config.ef_construction, level)?;
+
                 if nearest.is_empty() {
                     continue;
                 }
-                
-                let m = if level == 0 { self.config.m } else { self.config.m_max };
+
+                let m = if level == 0 {
+                    self.config.m
+                } else {
+                    self.config.m_max
+                };
                 let neighbors = self.select_neighbors(txn, &vector, &nearest, m, level)?;
-                
+
                 self.set_neighbors(txn, id, level, &neighbors)?;
-                
+
                 for neighbor_id in &neighbors {
                     let mut neighbor_neighbors = self.get_neighbors(txn, neighbor_id, level)?;
                     neighbor_neighbors.push(id.to_string());
-                    
+
                     if neighbor_neighbors.len() > m {
                         let neighbor_vector = match self.get_vector(txn, neighbor_id, level) {
                             Ok(v) => v,
                             Err(_) => continue,
                         };
-                        
+
                         let candidates: BinaryHeap<_> = neighbor_neighbors
                             .iter()
-                            .filter_map(|n_id| {
-                                match self.get_vector(txn, n_id, level) {
-                                    Ok(n_vector) => {
-                                        let dist = neighbor_vector.distance_to(&n_vector);
-                                        Some(DistancedId {
-                                            id: n_id.clone(),
-                                            distance: dist,
-                                        })
-                                    },
-                                    Err(_) => None,
+                            .filter_map(|n_id| match self.get_vector(txn, n_id, level) {
+                                Ok(n_vector) => {
+                                    let dist = neighbor_vector.distance_to(&n_vector);
+                                    Some(DistancedId {
+                                        id: n_id.clone(),
+                                        distance: dist,
+                                    })
                                 }
+                                Err(_) => None,
                             })
                             .collect();
-                        
-                        let pruned = self.select_neighbors(txn, &neighbor_vector, &candidates, m, level)?;
+
+                        let pruned =
+                            self.select_neighbors(txn, &neighbor_vector, &candidates, m, level)?;
                         self.set_neighbors(txn, neighbor_id, level, &pruned)?;
                     } else {
                         self.set_neighbors(txn, neighbor_id, level, &neighbor_neighbors)?;
                     }
                 }
-                
+
                 if !nearest.is_empty() {
                     ep_id = nearest.peek().unwrap().id.clone();
                 }
             }
         }
-        
+
         Ok(())
     }
 }
-
-
-
-

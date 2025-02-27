@@ -1,22 +1,7 @@
 // vector struct to store raw data, dimension and de
-
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
-    path::Path,
-    sync::{Arc, Mutex},
-    vec,
-};
-
-use bincode::deserialize;
-use heed3::{types::Bytes, Database, Env, EnvOpenOptions, RoTxn, RwTxn};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::num::ParseIntError;
 
 use crate::helix_engine::types::GraphError;
-
-use super::storage_methods::{BasicStorageMethods, StorageMethods, VectorMethods};
 
 const DB_VECTORS: &str = "vectors"; // For vector data (v:)
 const DB_HNSW_OUT_NODES: &str = "hnsw_out_nodes"; // For hnsw out node data
@@ -59,12 +44,22 @@ impl EuclidianDistance for HVector {
 impl HVector {
     #[inline(always)]
     pub fn new(id: String, data: Vec<f64>) -> Self {
-        HVector { id, is_deleted: false, level: 0, data }
+        HVector {
+            id,
+            is_deleted: false,
+            level: 0,
+            data,
+        }
     }
 
     #[inline(always)]
     pub fn from_slice(id: String, level: usize, data: Vec<f64>) -> Self {
-        HVector { id, is_deleted: false, level, data }
+        HVector {
+            id,
+            is_deleted: false,
+            level,
+            data,
+        }
     }
 
     #[inline(always)]
@@ -94,7 +89,12 @@ impl HVector {
             data.push(value);
         }
 
-        Ok(HVector { id, is_deleted: false, level, data })
+        Ok(HVector {
+            id,
+            is_deleted: false,
+            level,
+            data,
+        })
     }
 
     #[inline(always)]

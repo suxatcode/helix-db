@@ -133,7 +133,7 @@ fn bench_vector_search(c: &mut Criterion) {
 fn bench_high_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("high_throughput");
     group.measurement_time(Duration::from_secs(30));
-    group.sample_size(5);
+    group.sample_size(10);
     
     // Test with different numbers of vectors
     for &count in &[1000, 10000, 50000] {
@@ -277,7 +277,8 @@ fn bench_hnsw_configs(c: &mut Criterion) {
 fn bench_memory_usage(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_usage");
     group.measurement_time(Duration::from_secs(30));
-    group.sample_size(3); // Fewer samples due to high memory usage
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(5));
     
     // Test with extremely high dimensions
     for &dim in &[4096, 8192] {
@@ -324,7 +325,7 @@ fn bench_memory_usage(c: &mut Criterion) {
 fn bench_vector_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("vector_scaling");
     group.measurement_time(Duration::from_secs(20));
-    group.sample_size(5);
+    group.sample_size(10);
     
     // Fixed dimension for this benchmark
     let dim = 256;
@@ -366,6 +367,149 @@ fn bench_vector_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark operations on a very large dataset
+fn bench_large_dataset(c: &mut Criterion) {
+    let mut group = c.benchmark_group("large_dataset");
+    // Longer measurement time for more stable results with large datasets
+    group.measurement_time(Duration::from_secs(60));
+    // Criterion requires at least 10 samples
+    group.sample_size(10);
+    // Reduce the number of resamples to speed up the benchmark
+    group.warm_up_time(Duration::from_secs(5));
+    
+    // Parameters for the large dataset benchmark
+    let base_count = 100_000; // Base dataset size (100K vectors)
+    let dim = 128;           // Moderate dimension to balance memory usage and realism
+    let batch_size = 1000;   // Number of vectors to insert in each benchmark iteration
+    let query_count = 50;    // Number of queries to run in each benchmark iteration
+    
+    eprintln!("=== LARGE DATASET BENCHMARK ===");
+    eprintln!("Preparing base dataset with {} vectors of {} dimensions", base_count, dim);
+    eprintln!("This may take a while...");
+    
+    // Setup: Create a large base dataset
+    let (env, _temp_dir) = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+    let mut hnsw = HNSW::new(&env, &mut txn, None).unwrap();
+    
+    // Use a more efficient config for large datasets
+    let large_dataset_config = HNSWConfig {
+        m: 16,
+        m_max: 32,
+        ef_construction: 100, // Lower for faster construction
+        max_elements: 1_000_000,
+        ml_factor: 1.0 / std::f64::consts::LN_2,
+        distance_multiplier: 1.0,
+    };
+    
+    // Generate and insert the base dataset
+    let base_vectors = generate_random_vectors(base_count, dim, 42);
+    
+    // Insert in batches to avoid excessive memory usage
+    let batch_size_build = 10_000;
+    let num_batches = (base_count + batch_size_build - 1) / batch_size_build;
+    
+    for i in 0..num_batches {
+        let start = i * batch_size_build;
+        let end = (start + batch_size_build).min(base_count);
+        eprintln!("Building index batch {}/{}: vectors {}-{}", i+1, num_batches, start, end-1);
+        
+        for j in start..end {
+            let (id, data) = &base_vectors[j];
+            hnsw.insert(&mut txn, id, data).unwrap();
+        }
+    }
+    
+    txn.commit().unwrap();
+    eprintln!("Base dataset of {} vectors built successfully", base_count);
+    
+    // 1. Benchmark: Insertion into existing large dataset
+    group.bench_function(format!("insert_{}_into_{}", batch_size, base_count), |b| {
+        eprintln!("Benchmarking insertion of {} new vectors into existing dataset of {} vectors", 
+                 batch_size, base_count);
+        
+        // Generate new vectors for insertion
+        let new_vectors = generate_random_vectors(batch_size, dim, 100);
+        
+        b.iter(|| {
+            let mut txn = env.write_txn().unwrap();
+            for (id, data) in &new_vectors {
+                // Add a unique suffix to avoid ID conflicts with base dataset
+                let unique_id = format!("{}_new", id);
+                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+            }
+            txn.commit().unwrap();
+        });
+    });
+    
+    // 2. Benchmark: Querying the large dataset
+    group.bench_function(format!("query_{}_against_{}", query_count, base_count), |b| {
+        eprintln!("Benchmarking {} queries against dataset of {} vectors", 
+                 query_count, base_count);
+        
+        // Generate query vectors
+        let query_vectors = generate_random_vectors(query_count, dim, 200);
+        
+        b.iter(|| {
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+    
+    // 3. Benchmark: Mixed workload (both insertions and queries)
+    group.bench_function(format!("mixed_{}q_{}i_on_{}", query_count/2, batch_size/10, base_count), |b| {
+        eprintln!("Benchmarking mixed workload: {} queries and {} insertions on dataset of {} vectors", 
+                 query_count/2, batch_size/10, base_count);
+        
+        // Generate vectors for the mixed workload
+        let insert_vectors = generate_random_vectors(batch_size/10, dim, 300);
+        let query_vectors = generate_random_vectors(query_count/2, dim, 400);
+        
+        b.iter(|| {
+            // First do some insertions
+            let mut txn = env.write_txn().unwrap();
+            for (id, data) in &insert_vectors {
+                // Add a unique suffix to avoid ID conflicts
+                let unique_id = format!("{}_mixed", id);
+                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+            }
+            txn.commit().unwrap();
+            
+            // Then do some queries
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+    
+    // 4. Benchmark: Bulk query performance (many queries in a single transaction)
+    group.bench_function(format!("bulk_query_{}_against_{}", query_count*5, base_count), |b| {
+        eprintln!("Benchmarking bulk query performance: {} queries against dataset of {} vectors", 
+                 query_count*5, base_count);
+        
+        // Generate a larger set of query vectors for bulk testing
+        let bulk_query_vectors = generate_random_vectors(query_count*5, dim, 500);
+        
+        b.iter(|| {
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &bulk_query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+    
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_vector_insertion,
@@ -373,6 +517,7 @@ criterion_group!(
     bench_high_throughput,
     bench_hnsw_configs,
     bench_memory_usage,
-    bench_vector_scaling
+    bench_vector_scaling,
+    bench_large_dataset
 );
 criterion_main!(benches); 
