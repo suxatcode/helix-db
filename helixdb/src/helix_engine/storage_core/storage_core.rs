@@ -447,9 +447,7 @@ impl StorageMethods for HelixGraphStorage {
                         Some(data) => Ok(deserialize(data)?),
                         None => Err(GraphError::NodeNotFound),
                     };
-                println!("NODE: {:?}", n);
                 if let Ok(node) = n {
-                    println!("Node: {:?}", node);
                     nodes.push(node);
                 }
             }

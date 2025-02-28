@@ -4,13 +4,13 @@ use std::{
 };
 
 use bincode::{deserialize, serialize};
-use heed3::{types::Bytes, Database, Env, RoTxn, RwTxn};
+use heed3::{types::{Bytes, Unit}, Database, Env, RoTxn, RwTxn};
 use rand::{rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 
 use super::storage_core::{IN_EDGES_PREFIX, OUT_EDGES_PREFIX};
 use super::vectors::HVector;
-use crate::helix_engine::types::GraphError;
+use crate::{decode_str, decode_string, helix_engine::types::GraphError};
 
 const HNSW_VECTORS: &str = "hnsw_vectors";
 const HNSW_IN_EDGES: &str = "hnsw_in_edges";
@@ -70,8 +70,8 @@ impl Ord for DistancedId {
 
 pub struct HNSW {
     vectors_db: Database<Bytes, Bytes>,
-    in_edges_db: Database<Bytes, Bytes>,
-    out_edges_db: Database<Bytes, Bytes>,
+    in_edges_db: Database<Bytes, Unit>,
+    out_edges_db: Database<Bytes, Unit>,
     entry_point: Option<EntryPoint>,
     rng: ThreadRng,
     config: HNSWConfig,
@@ -170,11 +170,19 @@ impl HNSW {
         id: &str,
         level: usize,
     ) -> Result<Vec<String>, GraphError> {
-        let key = Self::out_edges_key(id, "", level);
-        match self.out_edges_db.get(txn, &key)? {
-            Some(bytes) => Ok(deserialize(bytes)?),
-            None => Ok(Vec::new()),
+        let out_key = Self::out_edges_key(id, "", level);
+
+        let iter = self.out_edges_db.lazily_decode_data().prefix_iter(&txn, &out_key)?;
+
+        let mut neighbors = Vec::with_capacity(512);
+
+        for result in iter {
+            let (key, _) = result?;
+            let neighbor_id = String::from_utf8(key[id.len() + 1..].to_vec())?;
+            neighbors.push(neighbor_id);
         }
+
+        Ok(neighbors)
     }
 
     fn set_neighbors(
@@ -184,22 +192,17 @@ impl HNSW {
         level: usize,
         neighbors: &[String],
     ) -> Result<(), GraphError> {
-        let neighbors_key = Self::out_edges_key(id, "", level);
-        self.out_edges_db
-            .put(txn, &neighbors_key, &serialize(neighbors)?)?;
+        neighbors.iter().try_for_each(|neighbor_id| -> Result<(), GraphError> {
+            let out_key = Self::out_edges_key(id, neighbor_id, level);
+            let in_key = Self::in_edges_key(neighbor_id, id, level);
 
-        for neighbor_id in neighbors {
-            let mut neighbor_neighbors = self.get_neighbors(txn, neighbor_id, level)?;
-            if !neighbor_neighbors.contains(&id.to_string()) {
-                neighbor_neighbors.push(id.to_string());
-                let neighbor_key = Self::out_edges_key(neighbor_id, "", level);
-                self.out_edges_db
-                    .put(txn, &neighbor_key, &serialize(&neighbor_neighbors)?)?;
-            }
-        }
-
+            self.out_edges_db.put(txn, &out_key, &())?;
+            self.in_edges_db.put(txn, &in_key, &())?;
+            Ok(())
+        })?;
         Ok(())
     }
+
     #[inline]
     fn get_vector(&self, txn: &RoTxn, id: &str, level: usize) -> Result<HVector, GraphError> {
         match self.vectors_db.get(txn, &Self::vector_key(id, level))? {
