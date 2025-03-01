@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::decode_str;
 use crate::helix_engine::storage_core::storage_methods::{SearchMethods, StorageMethods};
-use crate::helix_engine::storage_core::vectors;
+
 use crate::helix_engine::types::GraphError;
 use crate::protocol::{
     items::{Edge, Node},
@@ -16,7 +16,6 @@ use crate::protocol::{
 };
 
 use super::storage_methods::{BasicStorageMethods, DBMethods};
-use super::vectors::HVector;
 
 // Database names for different stores
 const DB_NODES: &str = "nodes"; // For node data (n:)

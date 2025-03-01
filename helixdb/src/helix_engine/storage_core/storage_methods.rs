@@ -1,17 +1,9 @@
-use std::borrow::Cow;
-
 use crate::helix_engine::types::GraphError;
-use heed3::{
-    types::{Bytes, Unit},
-    Database, RoTxn, RwTxn,
-};
 use crate::protocol::{
     items::{Edge, Node},
     value::Value,
 };
-use uuid::Uuid;
-
-use super::vectors::{HVector};
+use heed3::{RoTxn, RwTxn};
 
 pub trait DBMethods {
     /// Creates a new database with a given name for a secondary index

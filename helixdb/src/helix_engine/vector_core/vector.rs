@@ -1,18 +1,12 @@
 // vector struct to store raw data, dimension and de
 use serde::{Deserialize, Serialize};
 
-use crate::helix_engine::types::GraphError;
+use crate::helix_engine::types::VectorError;
 
-const DB_VECTORS: &str = "vectors"; // For vector data (v:)
-const DB_HNSW_OUT_NODES: &str = "hnsw_out_nodes"; // For hnsw out node data
-const DB_HNSW_IN_NODES: &str = "hnsw_in_nodes"; // For hnsw in node data
 
-const VECTOR_PREFIX: &[u8] = b"v:";
-const OUT_PREFIX: &[u8] = b"o:";
-const IN_PREFIX: &[u8] = b"i:";
 
 #[repr(C, align(16))]
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct HVector {
     id: String,
     is_deleted: bool,
@@ -27,7 +21,6 @@ pub trait EuclidianDistance {
 impl EuclidianDistance for HVector {
     #[inline(always)]
     fn distance(from: &HVector, to: &HVector) -> f64 {
-        // Fast path: use SIMD for aligned data of same length
         if from.len() == to.len() {
             #[cfg(target_arch = "aarch64")]
             unsafe {
@@ -67,6 +60,11 @@ impl HVector {
         &self.data
     }
 
+    #[inline(always)]
+    pub fn get_id(&self) -> &str {
+        &self.id
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let size = self.data.len() * std::mem::size_of::<f64>();
         let mut bytes = Vec::with_capacity(size);
@@ -76,9 +74,9 @@ impl HVector {
         bytes
     }
 
-    pub fn from_bytes(id: String, level: usize, bytes: &[u8]) -> Result<Self, GraphError> {
+    pub fn from_bytes(id: String, level: usize, bytes: &[u8]) -> Result<Self, VectorError> {
         if bytes.len() % std::mem::size_of::<f64>() != 0 {
-            return Err(GraphError::Default);
+            return Err(VectorError::InvalidVectorData);
         }
 
         let mut data = Vec::with_capacity(bytes.len() / std::mem::size_of::<f64>());
@@ -144,7 +142,6 @@ impl HVector {
         let mut sum = 0.0;
         let n = self.len().min(other.len());
 
-        // Use iterator for better bounds check elimination
         self.data[..n]
             .iter()
             .zip(other.data[..n].iter())
