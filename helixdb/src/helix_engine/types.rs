@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{fmt::format, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
 
-use heed3::Error;
+use heed3::Error as HeedError;
 use crate::helixc::parser::parser_methods::ParserError;
 use crate::protocol::traversal_value::TraversalValueError;
 
@@ -15,6 +15,7 @@ pub enum GraphError {
     ConversionError(String),
     EdgeNotFound,
     NodeNotFound,
+    VectorError(String),
     Default,
     New(String),
     Empty,
@@ -44,6 +45,7 @@ impl fmt::Display for GraphError {
             GraphError::MultipleNodesWithSameId => write!(f, "Multiple nodes with same id"),
             GraphError::MultipleEdgesWithSameId => write!(f, "Multiple edges with same id"),
             GraphError::InvalidNode => write!(f, "Invalid node"),
+            GraphError::VectorError(msg) => write!(f, "Vector error: {}", msg),
         }
     }
 }
@@ -54,8 +56,8 @@ impl fmt::Display for GraphError {
 //     }
 // }
 
-impl From<Error> for GraphError {
-    fn from(error: Error) -> Self {
+impl From<HeedError> for GraphError {
+    fn from(error: HeedError) -> Self {
         GraphError::StorageError(error.to_string())
     }
 }
@@ -127,5 +129,60 @@ impl From<uuid::Error> for GraphError {
 impl From<TraversalValueError> for GraphError {
     fn from(error: TraversalValueError) -> Self {
         GraphError::ConversionError(format!("TraversalValueError: {}", error.to_string()))
+    }
+}
+
+impl From<VectorError> for GraphError {
+    fn from(error: VectorError) -> Self {
+        GraphError::VectorError(format!("VectorError: {}", error.to_string()))
+    }
+}
+
+#[derive(Debug)]
+pub enum VectorError {
+    VectorNotFound,
+    InvalidVectorLength,
+    InvalidVectorData,
+    InvalidVectorId,
+    InvalidVectorLevel,
+    InvalidEntryPoint,
+    EntryPointNotFound,
+    InvalidVectorCoreConfig,
+    ConversionError(String),
+    VectorCoreError(String),
+}
+
+impl fmt::Display for VectorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VectorError::VectorNotFound => write!(f, "Vector not found"),
+            VectorError::InvalidVectorLength => write!(f, "Invalid vector length"),
+            VectorError::InvalidVectorData => write!(f, "Invalid vector data"),
+            VectorError::InvalidVectorId => write!(f, "Invalid vector id"),
+            VectorError::InvalidVectorLevel => write!(f, "Invalid vector level"),
+            VectorError::InvalidEntryPoint => write!(f, "Invalid entry point"),
+            VectorError::EntryPointNotFound => write!(f, "Entry point not found"),
+            VectorError::InvalidVectorCoreConfig => write!(f, "Invalid vector core config"),
+            VectorError::ConversionError(msg) => write!(f, "Conversion error: {}", msg),
+            VectorError::VectorCoreError(msg) => write!(f, "Vector core error: {}", msg),
+        }
+    }
+}
+
+impl From<Box<bincode::ErrorKind>> for VectorError {
+    fn from(error: Box<bincode::ErrorKind>) -> Self {
+        VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
+    }
+}
+
+impl From<HeedError> for VectorError {
+    fn from(error: HeedError) -> Self {
+        VectorError::VectorCoreError(format!("heed error: {}", error.to_string()))
+    }
+}
+
+impl From<FromUtf8Error> for VectorError {
+    fn from(error: FromUtf8Error) -> Self {
+        VectorError::ConversionError(format!("FromUtf8Error: {}", error.to_string()))
     }
 }

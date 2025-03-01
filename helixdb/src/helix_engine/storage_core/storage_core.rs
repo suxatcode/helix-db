@@ -8,15 +8,14 @@ use uuid::Uuid;
 
 use crate::decode_str;
 use crate::helix_engine::storage_core::storage_methods::{SearchMethods, StorageMethods};
-use crate::helix_engine::storage_core::vectors;
+
 use crate::helix_engine::types::GraphError;
 use crate::protocol::{
     items::{Edge, Node},
     value::Value,
 };
 
-use super::storage_methods::{BasicStorageMethods, DBMethods, VectorMethods};
-use super::vectors::HVector;
+use super::storage_methods::{BasicStorageMethods, DBMethods};
 
 // Database names for different stores
 const DB_NODES: &str = "nodes"; // For node data (n:)
@@ -447,9 +446,7 @@ impl StorageMethods for HelixGraphStorage {
                         Some(data) => Ok(deserialize(data)?),
                         None => Err(GraphError::NodeNotFound),
                     };
-                println!("NODE: {:?}", n);
                 if let Ok(node) = n {
-                    println!("Node: {:?}", node);
                     nodes.push(node);
                 }
             }
@@ -1146,9 +1143,7 @@ mod tests {
         txn.commit().unwrap();
 
         let txn = storage.graph_env.read_txn().unwrap();
-        let nodes = storage
-            .get_nodes_by_types(&txn, &["person"])
-            .unwrap(); // TODO: Handle Error
+        let nodes = storage.get_nodes_by_types(&txn, &["person"]).unwrap(); // TODO: Handle Error
 
         assert_eq!(nodes.len(), 2);
 

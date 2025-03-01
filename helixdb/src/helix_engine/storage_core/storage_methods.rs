@@ -1,17 +1,9 @@
-use std::borrow::Cow;
-
 use crate::helix_engine::types::GraphError;
-use heed3::{
-    types::{Bytes, Unit},
-    Database, RoTxn, RwTxn,
-};
 use crate::protocol::{
     items::{Edge, Node},
     value::Value,
 };
-use uuid::Uuid;
-
-use super::vectors::{HVector};
+use heed3::{RoTxn, RwTxn};
 
 pub trait DBMethods {
     /// Creates a new database with a given name for a secondary index
@@ -150,10 +142,3 @@ pub trait SearchMethods {
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
 }
-
-pub trait VectorMethods {
-    fn get_vector(& self, txn: &RoTxn, id: &str) -> Result<HVector, GraphError>;
-    fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), GraphError>;
-    // fn get_vector(&self, txn: &RoTxn, id: &str) -> Result<protocol::Node, GraphError> 
-}
-
