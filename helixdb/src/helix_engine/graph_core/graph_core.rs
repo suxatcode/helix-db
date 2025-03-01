@@ -8,10 +8,7 @@ use std::str;
 use std::sync::{Arc, RwLock};
 
 use super::traversal::TraversalBuilder;
-use super::traversal_steps::{
-    RSourceTraversalSteps, RTraversalBuilderMethods, RTraversalSteps, TraversalMethods,
-    WSourceTraversalSteps, WTraversalBuilderMethods, WTraversalSteps,
-};
+use super::traversal_steps::{TraversalBuilderMethods, TraversalMethods, TraversalSteps};
 use crate::helixc::parser::helix_parser::{
     BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
     Traversal,
@@ -53,7 +50,6 @@ impl HelixGraphEngineOpts {
             secondary_indices: None,
         }
     }
-    
 }
 
 impl HelixGraphEngine {

@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::{collections::BinaryHeap, sync::{Arc, Mutex}};
 
 use heed3::{RoTxn, RwTxn};
 
@@ -37,19 +37,19 @@ pub trait HNSW {
     /// # Returns
     /// 
     /// An empty tuple
-    fn insert(&mut self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError>;
+    fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError>;
 
     /// Get all vectors from the index
     fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError>;
 
     /// Get the entry point of the index
-    fn get_entry_point(&self) -> Result<&Option<EntryPoint>, VectorError>;
+    fn get_entry_point(&self, txn: &RoTxn) -> Result<EntryPoint, VectorError>;
 
     /// Set the entry point of the index
-    fn set_entry_point(&mut self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError>;
+    fn set_entry_point(&self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError>;
 
     /// Get a random level
-    fn get_random_level(&mut self) -> usize;
+    fn get_random_level(&self) -> usize;
 
     /// Get a vector from the index
     fn get_vector(&self, txn: &RoTxn, id: &str, level: usize) -> Result<HVector, VectorError>;

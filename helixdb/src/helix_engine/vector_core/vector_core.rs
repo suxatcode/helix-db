@@ -1,6 +1,7 @@
 use std::{
+    cell::RefCell,
     cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
+    collections::{BinaryHeap, HashSet}, sync::{atomic::{AtomicU64, Ordering as AtomicOrdering}, Arc, Mutex},
 };
 
 use bincode::{deserialize, serialize};
@@ -79,34 +80,27 @@ pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
     in_edges_db: Database<Bytes, Unit>,
     out_edges_db: Database<Bytes, Unit>,
-    entry_point: Option<EntryPoint>,
-    rng: ThreadRng,
+    rng_seed: AtomicU64,
     config: HNSWConfig,
 }
 
 impl VectorCore {
-    pub fn new(env: &Env, txn: &mut RwTxn, config: Option<HNSWConfig>) -> Result<Self, VectorError> {
+    pub fn new(
+        env: &Env,
+        txn: &mut RwTxn,
+        config: Option<HNSWConfig>,
+    ) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
         let in_edges_db = env.create_database(txn, Some(DB_HNSW_IN_EDGES))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
 
         let config = config.unwrap_or_default();
 
-        let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
-
-        let entry_point = match vectors_db.get(txn, entry_key.as_ref())? {
-            Some(bytes) => Some(deserialize(bytes).map_err(|_| VectorError::InvalidEntryPoint)?),
-            None => None,
-        };
-
-        // let entry_point = sm
-
         Ok(Self {
             vectors_db,
             in_edges_db,
             out_edges_db,
-            entry_point,
-            rng: ThreadRng::default(),
+            rng_seed: AtomicU64::new(0),
             config,
         })
     }
@@ -151,24 +145,40 @@ impl VectorCore {
 
 impl HNSW for VectorCore {
     #[inline]
-    fn get_random_level(&mut self) -> usize {
-        let r: f64 = self.rng.random_range(0.0..1.0);
+    fn get_random_level(&self) -> usize {
+        let mut seed = self.rng_seed.load(AtomicOrdering::Relaxed);
+        if seed == 0 { seed = 1; }
+        
+        seed ^= seed >> 12;
+        seed ^= seed << 25;
+        seed ^= seed >> 27;
+        
+        self.rng_seed.store(seed, AtomicOrdering::Relaxed);
+        
+        let r = ((seed as f64) / (u64::MAX as f64)).abs();
+        
         let level = (-r.ln() * self.config.ml_factor).floor() as usize;
+        println!("Level: {}, r: {}, seed: {}", level, r, seed);
         level
     }
 
     #[inline]
-    fn get_entry_point(&self) -> Result<&Option<EntryPoint>, VectorError> {
-        Ok(&self.entry_point)
+    fn get_entry_point(&self, txn: &RoTxn) -> Result<EntryPoint, VectorError> {
+        let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
+
+        let entry_point = match self.vectors_db.get(txn, entry_key.as_ref())? {
+            Some(bytes) => deserialize(bytes).map_err(|_| VectorError::InvalidEntryPoint)?,
+            None => return Err(VectorError::EntryPointNotFound),
+        };
+        Ok(entry_point)
     }
 
     #[inline]
-    fn set_entry_point(&mut self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError> {
+    fn set_entry_point(&self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db
             .put(txn, &entry_key, &serialize(entry)?)
             .map_err(VectorError::from)?;
-        self.entry_point = Some(entry.clone());
         Ok(())
     }
 
@@ -399,9 +409,15 @@ impl HNSW for VectorCore {
         query: &HVector,
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
-        let entry_point = match &self.entry_point {
-            Some(ep) => ep,
-            None => return Ok(Vec::new()),
+        let entry_point = match self.get_entry_point(txn) {
+            Ok(ep) => ep,
+            Err(_) => {
+                let entry_point = EntryPoint {
+                    id: "".to_string(),
+                    level: 0,
+                };
+                entry_point
+            },
         };
 
         let query_id = query.get_id();
@@ -470,7 +486,7 @@ impl HNSW for VectorCore {
         Ok(results)
     }
 
-    fn insert(&mut self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
+    fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
         let random_level = self.get_random_level();
         let vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
 
@@ -481,19 +497,21 @@ impl HNSW for VectorCore {
             self.put_vector(txn, id, &higher_vector)?;
         }
 
-        if self.entry_point.is_none() {
-            let entry_point = EntryPoint {
-                id: id.to_string(),
-                level: random_level,
-            };
-            self.set_entry_point(txn, &entry_point)?;
-            return Ok(());
-        }
-
-        let current_ep = match &self.entry_point {
-            Some(ep) => ep.clone(),
-            None => return Err(VectorError::EntryPointNotFound),
+        let entry_point = match self.get_entry_point(txn) {
+            Ok(ep) => ep,
+            Err(_) => {
+                let entry_point = EntryPoint {
+                    id: id.to_string(),
+                    level: random_level,
+                };
+                self.set_entry_point(txn, &entry_point)?;
+                entry_point
+            },
         };
+
+            
+
+        let current_ep = entry_point;
 
         let curr_id = current_ep.id.clone();
         let mut curr_level = current_ep.level;
