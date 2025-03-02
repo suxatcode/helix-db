@@ -465,6 +465,7 @@ impl HNSW for VectorCore {
         query: &HVector,
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
+        // TODO: make sure input vector is the same dim as all the other vecs
         let reduced_vec = self.reduce_dims(query.get_data());
         let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec);
 
@@ -548,6 +549,7 @@ impl HNSW for VectorCore {
     fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
         let random_level = self.get_random_level();
 
+        // TODO: make sure input vector is the same dim as all the other vecs
         let reduced_vec = self.reduce_dims(data);
         let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
 

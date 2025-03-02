@@ -150,11 +150,63 @@ fn test_hnsw_accuracy() {
 }
 
 #[test]
+fn test_hnsw_accuracy_reduced_dims() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let dim = 5;
+
+    let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
+    let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
+
+    let mut vectors = Vec::new();
+
+    for cluster in 0..3 {
+        let mut base = vec![0.0; dim];
+        base[cluster] = 10000.0;
+
+        for i in 0..5 {
+            let id = format!("cluster_{}_vec_{}", cluster, i);
+            let mut data = base.clone();
+
+            for j in 0..data.len() {
+                data[j] += i as f64 * 0.01;
+            }
+
+            vectors.push((id, data));
+        }
+    }
+
+    for (id, data) in &vectors {
+        let result = hnsw.insert(&mut txn, id, data);
+        assert!(result.is_ok());
+    }
+
+    for cluster in 0..3 {
+        let query_idx = cluster * 5;
+        let query_id = &vectors[query_idx].0;
+        let query_data = &vectors[query_idx].1;
+        let query = HVector::new(query_id.clone(), query_data.clone());
+
+        let results = hnsw.search(&txn, &query, 5).unwrap();
+        assert!(
+            !results.is_empty(),
+            "No results found for query: {}",
+            query_id
+        );
+        assert_eq!(results[0].0, *query_id);
+    }
+
+    txn.commit().unwrap();
+}
+
+#[test]
 fn test_hnsw_persistence() {
     let temp_dir = tempfile::tempdir().unwrap();
     let path = temp_dir.path().to_str().unwrap();
 
-    let vectors = generate_random_vectors(50, 10, 42);
+    let dim = 10;
+    let vectors = generate_random_vectors(50, dim, 42);
     let query_id = vectors[0].0.clone();
     let query_data = vectors[0].1.clone();
 
@@ -189,6 +241,62 @@ fn test_hnsw_persistence() {
 
         let mut init_txn = env.write_txn().unwrap();
         let hnsw = VectorCore::new(&env, &mut init_txn, None).unwrap();
+        init_txn.commit().unwrap();
+
+        let txn = env.read_txn().unwrap();
+
+        let query = HVector::new(query_id.clone(), query_data);
+        let results = hnsw.search(&txn, &query, 5).unwrap();
+
+        assert!(!results.is_empty());
+        assert_eq!(results[0].0, query_id);
+        assert!(results[0].1 < 0.001);
+    }
+}
+
+#[test]
+fn test_hnsw_persistence_reduced_dims() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+
+    let dim = 10;
+    let vectors = generate_random_vectors(50, dim, 42);
+    let query_id = vectors[0].0.clone();
+    let query_data = vectors[0].1.clone();
+
+    {
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .map_size(10 * 1024 * 1024)
+                .max_dbs(10)
+                .open(path)
+                .unwrap()
+        };
+
+        let mut txn = env.write_txn().unwrap();
+        let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
+        let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
+
+        for (id, data) in &vectors {
+            let result = hnsw.insert(&mut txn, id, data);
+            assert!(result.is_ok());
+        }
+
+        txn.commit().unwrap();
+    }
+
+    {
+        let env = unsafe {
+            EnvOpenOptions::new()
+                .map_size(10 * 1024 * 1024)
+                .max_dbs(10)
+                .open(path)
+                .unwrap()
+        };
+
+        let mut init_txn = env.write_txn().unwrap();
+        let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
+        let hnsw = VectorCore::new(&env, &mut init_txn, Some(hnsw_config)).unwrap();
         init_txn.commit().unwrap();
 
         let txn = env.read_txn().unwrap();
