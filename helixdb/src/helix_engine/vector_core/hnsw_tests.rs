@@ -214,6 +214,7 @@ fn test_hnsw_large_scale() {
         max_elements: 10_000,
         ml_factor: 1.0 / std::f64::consts::LN_2,
         distance_multiplier: 1.0,
+        target_dimension: None,
     };
 
     let mut txn = env.write_txn().unwrap();

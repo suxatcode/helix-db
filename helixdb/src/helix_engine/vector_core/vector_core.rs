@@ -1,7 +1,6 @@
 use std::{
-    cell::RefCell,
     cmp::Ordering,
-    collections::{BinaryHeap, HashSet}, sync::{atomic::{AtomicU64, Ordering as AtomicOrdering}, Arc, Mutex},
+    collections::{BinaryHeap, HashSet}, sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
 };
 
 use bincode::{deserialize, serialize};
@@ -9,7 +8,6 @@ use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
 };
-use rand::{rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 
 use crate::helix_engine::vector_core::vector::HVector;
@@ -35,6 +33,7 @@ pub struct HNSWConfig {
     pub max_elements: usize,      // Maximum number of elements in the index
     pub ml_factor: f64,           // Level generation factor
     pub distance_multiplier: f64, // Distance multiplier for pruning
+    pub target_dimension: Option<usize>,
 }
 
 impl Default for HNSWConfig {
@@ -46,6 +45,20 @@ impl Default for HNSWConfig {
             max_elements: 1_000_000,
             ml_factor: 1.0 / std::f64::consts::LN_2,
             distance_multiplier: 1.5,
+            target_dimension: None,
+        }
+    }
+}
+
+impl HNSWConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_dim_reduce(n: usize) -> Self {
+        Self {
+            target_dimension: Some(n),
+            ..Self::default()
         }
     }
 }
@@ -141,6 +154,34 @@ impl VectorCore {
         ]
         .concat()
     }
+
+    fn reduce_dims(&self, data: &[f64]) -> Vec<f64> {
+        let target_dim = match self.config.target_dimension {
+            None => return data.to_vec(),
+            Some(dim) => dim,
+        };
+
+        if data.len() <= target_dim {
+            return data.to_vec();
+        }
+
+        let chunk_size = (data.len() as f64 / target_dim as f64).ceil() as usize;
+        let mut reduced = Vec::with_capacity(target_dim);
+
+        for chunk_idx in 0..target_dim {
+            let start = chunk_idx * chunk_size;
+            let end = (start + chunk_size).min(data.len());
+
+            if start >= data.len() {
+                break;
+            }
+
+            let avg = data[start..end].iter().sum::<f64>() / (end - start) as f64;
+            reduced.push(avg);
+        }
+
+        reduced
+    }
 }
 
 impl HNSW for VectorCore {
@@ -148,17 +189,17 @@ impl HNSW for VectorCore {
     fn get_random_level(&self) -> usize {
         let mut seed = self.rng_seed.load(AtomicOrdering::Relaxed);
         if seed == 0 { seed = 1; }
-        
+
         seed ^= seed >> 12;
         seed ^= seed << 25;
         seed ^= seed >> 27;
-        
+
         self.rng_seed.store(seed, AtomicOrdering::Relaxed);
-        
+
         let r = ((seed as f64) / (u64::MAX as f64)).abs();
-        
+
         let level = (-r.ln() * self.config.ml_factor).floor() as usize;
-        println!("Level: {}, r: {}, seed: {}", level, r, seed);
+        //println!("Level: {}, r: {}, seed: {}", level, r, seed);
         level
     }
 
@@ -403,12 +444,17 @@ impl HNSW for VectorCore {
 
         Ok(selected)
     }
+
     fn search(
         &self,
         txn: &RoTxn,
         query: &HVector,
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
+        // TODO: if no dim reduce, this is a waste
+        let reduced_vec = self.reduce_dims(query.get_data());
+        let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec.clone());
+
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
@@ -424,7 +470,7 @@ impl HNSW for VectorCore {
         let exact_match = self.get_vector(txn, query_id, 0);
 
         if let Ok(exact_vector) = exact_match {
-            if exact_vector.distance_to(query) < 0.001 {
+            if exact_vector.distance_to(&query) < 0.001 {
                 return Ok(vec![(query_id.to_string(), 0.0)]);
             }
         }
@@ -435,22 +481,22 @@ impl HNSW for VectorCore {
         let mut curr_id = entry_point.id.clone();
 
         for level in (1..=curr_level).rev() {
-            let nearest = self.search_layer(txn, query, &curr_id, 1, level)?;
+            let nearest = self.search_layer(txn, &query, &curr_id, 1, level)?;
             if !nearest.is_empty() {
                 curr_id = nearest.peek().unwrap().id.clone();
             }
         }
 
-        let mut candidates = self.search_layer(txn, query, &curr_id, ef * 3, 0)?;
+        let mut candidates = self.search_layer(txn, &query, &curr_id, ef * 3, 0)?;
 
         if candidates.is_empty() {
-            candidates = self.search_layer(txn, query, &entry_point.id, ef * 5, 0)?;
+            candidates = self.search_layer(txn, &query, &entry_point.id, ef * 5, 0)?;
 
             if candidates.is_empty() {
                 let all_vectors = self.get_all_vectors(txn)?;
                 for vector in all_vectors {
                     if vector.level == 0 {
-                        let distance = vector.distance_to(query);
+                        let distance = vector.distance_to(&query);
                         candidates.push(DistancedId {
                             id: vector.get_id().to_string(),
                             distance,
@@ -463,7 +509,7 @@ impl HNSW for VectorCore {
         let mut results = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             if let Ok(vector) = self.get_vector(txn, &candidate.id, 0) {
-                let exact_distance = vector.distance_to(query);
+                let exact_distance = vector.distance_to(&query);
                 results.push((candidate.id, exact_distance));
             } else {
                 results.push((candidate.id, candidate.distance));
@@ -487,13 +533,15 @@ impl HNSW for VectorCore {
     }
 
     fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
+        // TODO: if no dim reduce, this is a waste
+        let reduced_vec = self.reduce_dims(data);
         let random_level = self.get_random_level();
-        let vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
 
+        let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
         self.put_vector(txn, id, &vector)?;
 
         if random_level > 0 {
-            let higher_vector = HVector::from_slice(id.to_string(), random_level, data.to_vec());
+            let higher_vector = HVector::from_slice(id.to_string(), random_level, reduced_vec);
             self.put_vector(txn, id, &higher_vector)?;
         }
 
@@ -508,8 +556,6 @@ impl HNSW for VectorCore {
                 entry_point
             },
         };
-
-            
 
         let current_ep = entry_point;
 
