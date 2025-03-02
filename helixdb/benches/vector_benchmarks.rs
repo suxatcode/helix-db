@@ -558,8 +558,136 @@ fn bench_large_dataset(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark operations on a very large dataset
+fn bench_large_dataset_reduced_dims(c: &mut Criterion) {
+    let mut group = c.benchmark_group("large_dataset_reduced_dims");
+    group.measurement_time(Duration::from_secs(60));
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(5));
+
+    // Parameters for the large dataset benchmark
+    let base_count = 100_000; // Base dataset size (100K vectors)
+    let dim = 128;           // Moderate dimension to balance memory usage and realism
+    let batch_size = 1000;   // Number of vectors to insert in each benchmark iteration
+    let query_count = 50;    // Number of queries to run in each benchmark iteration
+
+    eprintln!("=== LARGE DATASET REDUCE DIMS BENCHMARK ===");
+    eprintln!("Preparing base dataset with {} vectors of {} dimensions", base_count, dim);
+    eprintln!("This may take a while...");
+
+    let (env, _temp_dir) = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let large_dataset_config = HNSWConfig {
+        m: 16,
+        m_max: 32,
+        ef_construction: 100,
+        max_elements: 1_000_000,
+        ml_factor: 1.0 / std::f64::consts::LN_2,
+        distance_multiplier: 1.0,
+        target_dimension: Some(HNSWConfig::calc_target_dim(dim)), // auto dim choosing
+    };
+
+    let hnsw = VectorCore::new(&env, &mut txn, Some(large_dataset_config)).unwrap();
+    let base_vectors = generate_random_vectors(base_count, dim, 42);
+
+    let batch_size_build = 10_000;
+    let num_batches = (base_count + batch_size_build - 1) / batch_size_build;
+
+    for i in 0..num_batches {
+        let start = i * batch_size_build;
+        let end = (start + batch_size_build).min(base_count);
+        eprintln!("Building index batch {}/{}: vectors {}-{}", i+1, num_batches, start, end-1);
+
+        for j in start..end {
+            let (id, data) = &base_vectors[j];
+            hnsw.insert(&mut txn, id, data).unwrap();
+        }
+    }
+
+    txn.commit().unwrap();
+    eprintln!("Base dataset of {} vectors built successfully", base_count);
+
+    group.bench_function(format!("insert_{}_into_{}", batch_size, base_count), |b| {
+        eprintln!("Benchmarking insertion of {} new vectors into existing dataset of {} vectors",
+                 batch_size, base_count);
+
+        let new_vectors = generate_random_vectors(batch_size, dim, 100);
+
+        b.iter(|| {
+            let mut txn = env.write_txn().unwrap();
+            for (id, data) in &new_vectors {
+                // Add a unique suffix to avoid ID conflicts with base dataset
+                let unique_id = format!("{}_new", id);
+                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+            }
+            txn.commit().unwrap();
+        });
+    });
+
+    group.bench_function(format!("query_{}_against_{}", query_count, base_count), |b| {
+        eprintln!("Benchmarking {} queries against dataset of {} vectors",
+                 query_count, base_count);
+
+        let query_vectors = generate_random_vectors(query_count, dim, 200);
+
+        b.iter(|| {
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+
+    group.bench_function(format!("mixed_{}q_{}i_on_{}", query_count/2, batch_size/10, base_count), |b| {
+        eprintln!("Benchmarking mixed workload: {} queries and {} insertions on dataset of {} vectors",
+                 query_count/2, batch_size/10, base_count);
+
+        let insert_vectors = generate_random_vectors(batch_size/10, dim, 300);
+        let query_vectors = generate_random_vectors(query_count/2, dim, 400);
+
+        b.iter(|| {
+            let mut txn = env.write_txn().unwrap();
+            for (id, data) in &insert_vectors {
+                let unique_id = format!("{}_mixed", id);
+                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+            }
+            txn.commit().unwrap();
+
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+
+    group.bench_function(format!("bulk_query_{}_against_{}", query_count*5, base_count), |b| {
+        eprintln!("Benchmarking bulk query performance: {} queries against dataset of {} vectors",
+                 query_count*5, base_count);
+
+        let bulk_query_vectors = generate_random_vectors(query_count*5, dim, 500);
+
+        b.iter(|| {
+            let txn = env.read_txn().unwrap();
+            for (_, data) in &bulk_query_vectors {
+                let query = HVector::new("query".to_string(), data.clone());
+                let results = hnsw.search(&txn, &query, 10).unwrap();
+                black_box(results);
+            }
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_large_dataset_reduced_dims,
+    bench_large_dataset,
     bench_vector_search,
     bench_vector_search_reduced_dims,
     bench_vector_insertion_reduced_dims,
@@ -568,6 +696,5 @@ criterion_group!(
     bench_hnsw_configs,
     bench_memory_usage,
     bench_vector_scaling,
-    bench_large_dataset
 );
 criterion_main!(benches);

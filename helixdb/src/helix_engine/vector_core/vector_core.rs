@@ -55,7 +55,7 @@ impl HNSWConfig {
         Self::default()
     }
 
-    fn calc_target_dim(original_dim: usize) -> usize {
+    pub fn calc_target_dim(original_dim: usize) -> usize {
         let sqrt_dim = (original_dim as f64).sqrt().ceil() as usize;
         let log_dim = ((original_dim as f64).log2() * 2.0).ceil() as usize;
         let percent_dim = (original_dim as f64 * 0.2).ceil() as usize;
