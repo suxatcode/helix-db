@@ -9,15 +9,15 @@ use super::vector_core::{DistancedId, EntryPoint};
 
 pub trait HNSW {
     /// Search for the k nearest neighbors of a query vector
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `txn` - The transaction to use
     /// * `query` - The query vector
     /// * `k` - The number of nearest neighbors to search for
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A vector of tuples containing the id and distance of the nearest neighbors
     fn search(
         &self,
@@ -27,15 +27,15 @@ pub trait HNSW {
     ) -> Result<Vec<(String, f64)>, VectorError>;
 
     /// Insert a new vector into the index
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `txn` - The transaction to use
     /// * `id` - The id of the vector
     /// * `data` - The vector data
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// An empty tuple
     fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError>;
 
@@ -58,15 +58,15 @@ pub trait HNSW {
     fn put_vector(&self, txn: &mut RwTxn, id: &str, vector: &HVector) -> Result<(), VectorError>;
 
     /// Get the neighbors of a vector
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `txn` - The transaction to use
     /// * `id` - The id of the vector
     /// * `level` - The level of the vector
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A vector of ids of the neighbors
     fn get_neighbors(
         &self,
@@ -88,7 +88,6 @@ pub trait HNSW {
     fn select_neighbors(
         &self,
         txn: &RoTxn,
-        query: &HVector,
         candidates: &BinaryHeap<DistancedId>,
         m: usize,
         level: usize,

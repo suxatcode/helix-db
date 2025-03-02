@@ -50,7 +50,7 @@ fn test_hnsw_creation() {
 fn test_hnsw_insert_single() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     let id = "test_vec";
     let data = vec![1.0, 2.0, 3.0];
@@ -80,7 +80,7 @@ fn test_hnsw_search_empty() {
 fn test_hnsw_insert_and_search() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     let vectors = generate_random_vectors(1000, 10, 42);
 
@@ -106,8 +106,7 @@ fn test_hnsw_insert_and_search() {
 fn test_hnsw_accuracy() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-
-    let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     let mut vectors = Vec::new();
 
@@ -169,7 +168,7 @@ fn test_hnsw_persistence() {
         };
 
         let mut txn = env.write_txn().unwrap();
-        let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+        let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
         for (id, data) in &vectors {
             let result = hnsw.insert(&mut txn, id, data);
@@ -218,7 +217,7 @@ fn test_hnsw_large_scale() {
     };
 
     let mut txn = env.write_txn().unwrap();
-    let mut hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
 
     let vectors = generate_random_vectors(100, 10, 42);
 
@@ -258,7 +257,7 @@ fn test_hnsw_large_scale() {
 fn test_hnsw_edge_cases() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     let result = hnsw.insert(&mut txn, "empty", &[]);
     assert!(result.is_ok());
@@ -285,7 +284,7 @@ fn test_hnsw_edge_cases() {
 fn test_hnsw_different_dimensions() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let mut hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     hnsw.insert(&mut txn, "vec_2d", &[1.0, 2.0]).unwrap();
     hnsw.insert(&mut txn, "vec_3d", &[1.0, 2.0, 3.0]).unwrap();

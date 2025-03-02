@@ -55,9 +55,24 @@ impl HNSWConfig {
         Self::default()
     }
 
-    pub fn with_dim_reduce(n: usize) -> Self {
+    fn calc_target_dim(original_dim: usize) -> usize {
+        let sqrt_dim = (original_dim as f64).sqrt().ceil() as usize;
+        let log_dim = ((original_dim as f64).log2() * 2.0).ceil() as usize;
+        let percent_dim = (original_dim as f64 * 0.2).ceil() as usize;
+
+        let mut dims = vec![sqrt_dim, log_dim, percent_dim];
+        dims.sort_unstable();
+        let target_dim = dims[1];
+
+        target_dim.clamp(3, original_dim.min(256))
+    }
+
+    pub fn with_dim_reduce(original_dim: usize, n: Option<usize>) -> Self {
         Self {
-            target_dimension: Some(n),
+            target_dimension: Some(match n {
+                Some(dim) => dim,
+                None => Self::calc_target_dim(original_dim),
+            }),
             ..Self::default()
         }
     }
@@ -386,7 +401,6 @@ impl HNSW for VectorCore {
     fn select_neighbors(
         &self,
         txn: &RoTxn,
-        _query: &HVector,
         candidates: &BinaryHeap<DistancedId>,
         m: usize,
         level: usize,
@@ -451,9 +465,8 @@ impl HNSW for VectorCore {
         query: &HVector,
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
-        // TODO: if no dim reduce, this is a waste
         let reduced_vec = self.reduce_dims(query.get_data());
-        let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec.clone());
+        let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec);
 
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
@@ -533,11 +546,11 @@ impl HNSW for VectorCore {
     }
 
     fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
-        // TODO: if no dim reduce, this is a waste
-        let reduced_vec = self.reduce_dims(data);
         let random_level = self.get_random_level();
 
+        let reduced_vec = self.reduce_dims(data);
         let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
+
         self.put_vector(txn, id, &vector)?;
 
         if random_level > 0 {
@@ -597,7 +610,7 @@ impl HNSW for VectorCore {
                     self.config.m_max
                 };
 
-                let neighbors = self.select_neighbors(txn, &vector, &nearest, m, level)?;
+                let neighbors = self.select_neighbors(txn, &nearest, m, level)?;
 
                 self.set_neighbors(txn, id, level, &neighbors)?;
 
@@ -625,8 +638,7 @@ impl HNSW for VectorCore {
                             })
                             .collect();
 
-                        let pruned =
-                            self.select_neighbors(txn, &neighbor_vector, &candidates, m, level)?;
+                        let pruned = self.select_neighbors(txn, &candidates, m, level)?;
                         self.set_neighbors(txn, neighbor_id, level, &pruned)?;
                     } else {
                         self.set_neighbors(txn, neighbor_id, level, &neighbor_neighbors)?;

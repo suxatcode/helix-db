@@ -95,9 +95,7 @@ fn bench_vector_insertion_reduced_dims(c: &mut Criterion) {
                 || {
                     let (env, _temp_dir) = setup_temp_env();
                     let mut txn = env.write_txn().unwrap();
-                    let sqrt_dim = (dim as f64).sqrt().ceil() as usize; // TODO: auto implement in
-                                                                        // VectorCore
-                    let hnsw_config = HNSWConfig::with_dim_reduce(sqrt_dim);
+                    let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
                     let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
                     txn.commit().unwrap();
 
@@ -178,15 +176,10 @@ fn bench_vector_search_reduced_dims(c: &mut Criterion) {
             eprintln!("Benchmarking {} queries against index of {} vectors with {} reduced dimensions",
                      queries_per_iter, index_size, dim);
 
-            // Setup: Create index with vectors
             let (env, _temp_dir) = setup_temp_env();
             let mut txn = env.write_txn().unwrap();
-
-            let sqrt_dim = (dim as f64).sqrt().ceil() as usize; // TODO: auto implement in
-                                                                // VectorCore
-            let hnsw_config = HNSWConfig::with_dim_reduce(sqrt_dim);
+            let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
             let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
-            //let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
             let vectors = generate_random_vectors(index_size, dim, 42);
             eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
