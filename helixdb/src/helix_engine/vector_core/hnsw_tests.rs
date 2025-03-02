@@ -62,10 +62,44 @@ fn test_hnsw_insert_single() {
 }
 
 #[test]
+fn test_hnsw_insert_single_reduced_dims() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let hnsw_config = HNSWConfig::with_dim_reduce(3, None);
+    let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
+
+    let id = "test_vec";
+    let data = vec![1.0, 2.0, 3.0];
+
+    let result = hnsw.insert(&mut txn, id, &data);
+    assert!(result.is_ok());
+
+    txn.commit().unwrap();
+}
+
+#[test]
 fn test_hnsw_search_empty() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
+
+    let query = HVector::new("query".to_string(), vec![1.0, 2.0, 3.0]);
+    let results = hnsw.search(&txn, &query, 5);
+
+    assert!(results.is_ok());
+    assert!(results.unwrap().is_empty());
+
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_hnsw_search_empty_reduced_dims() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let hnsw_config = HNSWConfig::with_dim_reduce(3, None);
+    let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
 
     let query = HVector::new("query".to_string(), vec![1.0, 2.0, 3.0]);
     let results = hnsw.search(&txn, &query, 5);
@@ -83,6 +117,35 @@ fn test_hnsw_insert_and_search() {
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
     let vectors = generate_random_vectors(1000, 10, 42);
+
+    for (id, data) in &vectors {
+        let result = hnsw.insert(&mut txn, id, data);
+        assert!(result.is_ok());
+    }
+
+    let query_id = &vectors[0].0;
+    let query_data = &vectors[0].1;
+    let query = HVector::new(query_id.clone(), query_data.clone());
+
+    let results = hnsw.search(&txn, &query, 24).unwrap();
+
+    assert!(!results.is_empty());
+    assert_eq!(results[0].0, *query_id);
+    assert!(results[0].1 < 0.001);
+
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_hnsw_insert_and_search_reduced_dims() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let dim = 10;
+    let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
+    let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
+
+    let vectors = generate_random_vectors(1000, dim, 42);
 
     for (id, data) in &vectors {
         let result = hnsw.insert(&mut txn, id, data);
@@ -362,6 +425,58 @@ fn test_hnsw_large_scale() {
 }
 
 #[test]
+fn test_hnsw_large_scale_reduced_dims() {
+    let env = setup_temp_env();
+
+    let dim = 10;
+    let config = HNSWConfig {
+        m: 16,
+        m_max: 32,
+        ef_construction: 500,
+        max_elements: 10_000,
+        ml_factor: 1.0 / std::f64::consts::LN_2,
+        distance_multiplier: 1.0,
+        target_dimension: Some(HNSWConfig::calc_target_dim(dim)),
+    };
+
+    let mut txn = env.write_txn().unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
+
+    let vectors = generate_random_vectors(100, dim, 42);
+
+    for (id, data) in &vectors {
+        let result = hnsw.insert(&mut txn, id, data);
+        assert!(result.is_ok());
+    }
+
+    let query_indices = vec![0, 10, 20];
+
+    for &idx in &query_indices {
+        let query_id = &vectors[idx].0;
+        let query_data = &vectors[idx].1;
+        let query = HVector::new(query_id.clone(), query_data.clone());
+
+        let results = hnsw.search(&txn, &query, 10).unwrap();
+
+        assert!(
+            !results.is_empty(),
+            "No results found for query vector {}",
+            query_id
+        );
+
+        println!(
+            "Query: {}, Found {} results. First result: {} with distance {}",
+            query_id,
+            results.len(),
+            results[0].0,
+            results[0].1
+        );
+    }
+
+    txn.commit().unwrap();
+}
+
+#[test]
 fn test_hnsw_edge_cases() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
@@ -388,6 +503,8 @@ fn test_hnsw_edge_cases() {
     txn.commit().unwrap();
 }
 
+// TODO: test_hnsw_edge_cases_reduced_dims()
+
 #[test]
 fn test_hnsw_different_dimensions() {
     let env = setup_temp_env();
@@ -410,3 +527,5 @@ fn test_hnsw_different_dimensions() {
     println!("Results 2d: {:?}", results_2d);
     txn.commit().unwrap();
 }
+
+// TODO: test_hnsw_different_dimensions_reduced_dims()
