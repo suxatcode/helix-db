@@ -466,8 +466,10 @@ impl HNSW for VectorCore {
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
         // TODO: make sure input vector is the same dim as all the other vecs
-        let reduced_vec = self.reduce_dims(query.get_data());
-        let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec);
+        //let reduced_vec = self.reduce_dims(query.get_data());
+        //let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec);
+
+        println!("vecs in db: {:?}", self.vectors_db.len(txn)?);
 
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
@@ -502,6 +504,7 @@ impl HNSW for VectorCore {
         }
 
         let mut candidates = self.search_layer(txn, &query, &curr_id, ef * 3, 0)?;
+        println!("num cands: {}", candidates.len());
 
         if candidates.is_empty() {
             candidates = self.search_layer(txn, &query, &entry_point.id, ef * 5, 0)?;
@@ -539,6 +542,8 @@ impl HNSW for VectorCore {
             }
         }
 
+        println!("results len: {}", results.len());
+
         if results.len() > k {
             results.truncate(k);
         }
@@ -550,13 +555,15 @@ impl HNSW for VectorCore {
         let random_level = self.get_random_level();
 
         // TODO: make sure input vector is the same dim as all the other vecs
-        let reduced_vec = self.reduce_dims(data);
-        let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
+        //let reduced_vec = self.reduce_dims(data);
+        //let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
+        let vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
 
         self.put_vector(txn, id, &vector)?;
 
         if random_level > 0 {
-            let higher_vector = HVector::from_slice(id.to_string(), random_level, reduced_vec);
+            //let higher_vector = HVector::from_slice(id.to_string(), random_level, reduced_vec);
+            let higher_vector = HVector::from_slice(id.to_string(), random_level, data.to_vec());
             self.put_vector(txn, id, &higher_vector)?;
         }
 

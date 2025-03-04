@@ -1,5 +1,7 @@
 use heed3::{Env, EnvOpenOptions};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::collections::HashSet;
+use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
+use polars::prelude::*;
 
 use super::hnsw::HNSW;
 use super::vector::HVector;
@@ -30,6 +32,33 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
     }
 
     vectors
+}
+
+fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
+    v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
+}
+
+fn load_dbpedia_vectors(file_path: &str, limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
+    let df = ParquetReader::new(std::fs::File::open(file_path)?)
+        .finish()?
+        .lazy()
+        .limit(limit as u32)
+        .collect()?;
+
+    let ids = df.column("_id")?.str()?;
+    let embeddings = df.column("openai")?.list()?;
+
+    let mut vectors = Vec::new();
+    for (i, (_id, embedding)) in ids.into_iter().zip(embeddings.into_iter()).enumerate() {
+        let f64_series = embedding
+            .unwrap()
+            .cast(&DataType::Float64)
+            .unwrap();
+        let chunked = f64_series.f64().unwrap();
+        let vector: Vec<f64> = chunked.into_no_null_iter().collect();
+        vectors.push((i.to_string(), vector));
+    }
+    Ok(vectors)
 }
 
 #[test]
@@ -503,8 +532,7 @@ fn test_hnsw_edge_cases() {
     txn.commit().unwrap();
 }
 
-// TODO: test_hnsw_edge_cases_reduced_dims()
-
+// TODO: remove? bc not using diff dims
 #[test]
 fn test_hnsw_different_dimensions() {
     let env = setup_temp_env();
@@ -528,4 +556,69 @@ fn test_hnsw_different_dimensions() {
     txn.commit().unwrap();
 }
 
-// TODO: test_hnsw_different_dimensions_reduced_dims()
+/// test to run alone for testing with actual data (for now)
+#[test]
+fn test_accuracy_with_dbpedia_openai() {
+    // cargo test test_accuracy_with_dbpedia_openai -- --nocapture
+    // from data/ dir
+    let file_path = "../data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
+    let n_base = 10_000; // Number of base vectors (subset) (increase for better testing)
+    let n_query = 10;   // Number of query vectors
+    let k = 10;          // Number of neighbors to retrieve
+
+    let vectors = load_dbpedia_vectors(file_path, n_base).unwrap();
+    println!("Loaded {} vectors", vectors.len());
+
+    // split into base and query sets
+    let mut rng = rand::rng();
+    let mut shuffled_vectors = vectors.clone();
+    shuffled_vectors.shuffle(&mut rng);
+    let base_vectors = &shuffled_vectors[..n_base - n_query];
+    let query_vectors = &shuffled_vectors[n_base - n_query..];
+
+    println!("num of base vecs: {}", base_vectors.len());
+    println!("num of query vecs: {}", query_vectors.len());
+
+    // compute ground truth using exact search (euclidean_distance)
+    let mut ground_truth = Vec::new();
+    for (_, query) in query_vectors {
+        let mut distances: Vec<(String, f64)> = base_vectors // calcing euc for every other, our sol: hnsw
+            .iter()
+            .map(|(id, v)| (id.clone(), euclidean_distance(query, v))) // TODO: find better sol for clone() here
+            .collect();
+        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let top_k: Vec<String> = distances.iter().take(k).map(|(i, _)| i.clone()).collect(); // TODO: find better sol for clone() here
+        ground_truth.push(top_k);
+    }
+
+    //let hnsw_config = HNSWConfig::with_dim_reduce(original_dim, None);
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+    let hnsw = VectorCore::new(&env, &mut txn, None).unwrap(); // TODO: rename to db
+    for (id, data) in base_vectors.iter().take(10) {
+        hnsw.insert(&mut txn, id, data).unwrap();
+    }
+    txn.commit().unwrap();
+    let txn = env.read_txn().unwrap();
+
+    // run queries and compute recall@k
+    let mut total_recall = 0.0;
+    for ((_, query), gt) in query_vectors.iter().zip(ground_truth.iter()) {
+        let search_q = HVector::new("query".to_string(), query.clone());
+        let results = hnsw.search(&txn, &search_q, k).unwrap();
+        println!("results: {:?}", results);
+
+        //println!("ground truth: {:?}, hnsw result: {:?}", gt, results);
+
+        let result_indices: HashSet<String> = results.into_iter().map(|(id, _)| id).collect();
+        let gt_indices: HashSet<String> = gt.iter().cloned().collect();
+        let intersection = result_indices.intersection(&gt_indices).count();
+        let recall = intersection as f64 / k as f64;
+        total_recall += recall;
+    }
+
+    // well tuned vector dbs typically achieve recall rates between 0.8 and 0.99
+    let average_recall = total_recall / n_query as f64;
+    println!("Average recall@{}: {:.4}", k, average_recall);
+    //assert!(average_recall > 0.8, "Recall too low: {}", average_recall);
+}

@@ -11,7 +11,9 @@ pub struct HVector {
     id: String,
     is_deleted: bool,
     pub level: usize,
-    data: Vec<f64>,
+    data: Vec<f64>, // TODO: consider default to f32 just for initial space/time save?
+                    // TODO: define `data_size` or similar and set there so that can change between
+                    // 64 and 32, etc.
 }
 
 pub trait EuclidianDistance {

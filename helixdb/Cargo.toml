@@ -23,6 +23,7 @@ chrono = "0.4.39"
 clap = { version = "4.5.29", features = ["derive"] }
 socket2 = "0.5"
 flume = "0.11.1"
+polars = { version = "0.36", features = ["parquet", "lazy"] }
 
 
 [dev-dependencies]
