@@ -1,28 +1,3 @@
-    fn get_neighbors(
-        &self,
-        txn: &RoTxn,
-        id: &str,
-        level: usize,
-    ) -> Result<Vec<String>, VectorError> {
-        let out_key = Self::out_edges_key(id, "", level);
-
-        let iter = self
-            .out_edges_db
-            .lazily_decode_data()
-            .prefix_iter(&txn, &out_key)?;
-
-        let mut neighbors = Vec::with_capacity(512);
-        let prefix_len = OUT_EDGES_PREFIX.len() + id.len() + 1 + level.to_string().len() + 1;
-
-        for result in iter {
-            let (key, _) = result?;
-            let neighbor_id = String::from_utf8(key[prefix_len..].to_vec())?;
-            neighbors.push(neighbor_id);
-        }
-
-        Ok(neighbors)
-    }
-
     fn set_neighbors(
         &self,
         txn: &mut RwTxn,
@@ -41,102 +16,6 @@
                 Ok(())
             })?;
         Ok(())
-    }
-
-    #[inline]
-    fn get_vector(&self, txn: &RoTxn, id: &str, level: usize) -> Result<HVector, VectorError> {
-        let key = Self::vector_key(id, level);
-        match self.vectors_db.get(txn, &key)? {
-            Some(bytes) => deserialize(&bytes).map_err(VectorError::from),
-            None => Err(VectorError::VectorNotFound),
-        }
-    }
-
-    #[inline]
-    fn put_vector(&self, txn: &mut RwTxn, id: &str, vector: &HVector) -> Result<(), VectorError> {
-        let key = Self::vector_key(id, vector.level);
-        let serialized = serialize(vector).map_err(VectorError::from)?;
-        self.vectors_db.put(txn, &key, &serialized)?;
-        Ok(())
-    }
-
-    fn search_layer(
-        &self,
-        txn: &RoTxn,
-        query: &HVector,
-        entry_point: &HVector,
-        ef: usize,
-        level: usize,
-    ) -> Result<BinaryHeap<DistancedId>, VectorError> {
-        let mut visited = HashSet::new();
-        let mut candidates = BinaryHeap::new();
-        let mut results = BinaryHeap::new();
-
-        let distance = entry_point.distance_to(query);
-
-        candidates.push(DistancedId {
-            id: entry_point.get_id().to_string(),
-            distance,
-        });
-
-        results.push(DistancedId {
-            id: entry_point.get_id().to_string(),
-            distance,
-        });
-
-        visited.insert(entry_point.get_id().to_string());
-
-        let expanded_ef = ef.max(10);
-
-        while !candidates.is_empty() {
-            let current = candidates.pop().unwrap();
-
-            if results.len() >= expanded_ef {
-                if let Some(furthest) = results.peek() {
-                    if current.distance > furthest.distance {
-                        continue;
-                    }
-                }
-            }
-
-            let neighbors = self.get_neighbors(txn, &current.id, level)?;
-
-            for neighbor_id in neighbors {
-                if visited.contains(&neighbor_id) {
-                    continue;
-                }
-
-                visited.insert(neighbor_id.clone());
-                let neighbor_vector = match self.get_vector(txn, &neighbor_id, level) {
-                    Ok(v) => v,
-                    Err(_) if level > 0 => match self.get_vector(txn, &neighbor_id, 0) {
-                        Ok(v) => v,
-                        Err(_) => continue,
-                    },
-                    Err(_) => continue,
-                };
-
-                let distance = neighbor_vector.distance_to(query);
-
-                candidates.push(DistancedId {
-                    id: neighbor_id.clone(),
-                    distance,
-                });
-
-                if results.len() < expanded_ef || distance < results.peek().unwrap().distance {
-                    results.push(DistancedId {
-                        id: neighbor_id,
-                        distance,
-                    });
-
-                    if results.len() > expanded_ef {
-                        results.pop();
-                    }
-                }
-            }
-        }
-
-        Ok(results)
     }
 
     fn select_neighbors(
@@ -315,4 +194,4 @@
         }
         Ok(vectors)
     }
-}
+

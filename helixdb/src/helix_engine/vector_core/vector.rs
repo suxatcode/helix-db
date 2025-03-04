@@ -1,19 +1,34 @@
+use std::cmp::Ordering;
+
 // vector struct to store raw data, dimension and de
 use serde::{Deserialize, Serialize};
 
 use crate::helix_engine::types::VectorError;
 
-
-
 #[repr(C, align(16))]
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
     id: String,
     is_deleted: bool,
     pub level: usize,
     data: Vec<f64>, // TODO: consider default to f32 just for initial space/time save?
-                    // TODO: define `data_size` or similar and set there so that can change between
-                    // 64 and 32, etc.
+    // TODO: define `data_size` or similar and set there so that can change between
+    // 64 and 32, etc.
+    pub distance: f64,
+}
+
+impl Eq for HVector {}
+
+impl PartialOrd for HVector {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        other.distance.partial_cmp(&self.distance)
+    }
+}
+
+impl Ord for HVector {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
 }
 
 pub trait EuclidianDistance {
@@ -44,6 +59,7 @@ impl HVector {
             is_deleted: false,
             level: 0,
             data,
+            distance: 0,
         }
     }
 
@@ -54,6 +70,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
+            distance: 0,
         }
     }
 
@@ -99,6 +116,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
+            distance: 0,
         })
     }
 
@@ -147,26 +165,31 @@ impl HVector {
     // TODO: compare from_to with map euc_dist
     // apparently performance is negligible, would prefer the 1 liner tho
 
-    //#[inline(always)]
-    //fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
-    //    v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
-    //}
-
     #[inline(always)]
     fn scalar_distance(&self, other: &HVector) -> f64 {
-        let mut sum = 0.0;
-        let n = self.len().min(other.len());
-
-        self.data[..n]
+        self.data
             .iter()
-            .zip(other.data[..n].iter())
-            .for_each(|(x, y)| {
-                let diff = x - y;
-                sum += diff * diff;
-            });
-
-        sum.sqrt()
+            .zip(other.data.iter())
+            .map(|(&a, &b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt()
     }
+
+    // #[inline(always)]
+    // fn scalar_distance(&self, other: &HVector) -> f64 {
+    //     let mut sum = 0.0;
+    //     let n = self.len().min(other.len());
+
+    //     self.data[..n]
+    //         .iter()
+    //         .zip(other.data[..n].iter())
+    //         .for_each(|(x, y)| {
+    //             let diff = x - y;
+    //             sum += diff * diff;
+    //         });
+
+    //     sum.sqrt()
+    // }
 }
 
 #[cfg(test)]
@@ -258,6 +281,4 @@ mod vector_tests {
         let distance = HVector::distance(&v1, &v2);
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
-
-
 }

@@ -186,3 +186,9 @@ impl From<FromUtf8Error> for VectorError {
         VectorError::ConversionError(format!("FromUtf8Error: {}", error.to_string()))
     }
 }
+
+impl From<Utf8Error> for VectorError {
+    fn from(error: Utf8Error) -> Self {
+        VectorError::ConversionError(format!("Utf8Error: {}", error.to_string()))
+    }
+}
