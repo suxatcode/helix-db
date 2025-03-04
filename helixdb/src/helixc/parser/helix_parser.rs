@@ -118,10 +118,12 @@ pub enum Step {
     Props(Vec<String>),
     Where(Box<Expression>),
     BooleanOperation(BooleanOp),
-    AddField(Vec<FieldAddition>),
     Count,
     ID,
     Update(Update),
+    Add(Add),
+    Exclude(Exclude),
+    Map(Map),
 }
 
 #[derive(Debug, Clone)]
@@ -227,7 +229,22 @@ impl From<String> for IdType {
 
 #[derive(Debug, Clone)]
 pub struct Update {
-    pub fields: Vec<(String, Expression)>,
+    pub fields: Vec<(String, FieldAddition)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Add {
+    pub fields: Vec<(String, FieldAddition)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Exclude {
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Map {
+    pub fields: Vec<(String, FieldAddition)>,
 }
 
 impl HelixParser {
@@ -388,7 +405,7 @@ impl HelixParser {
                 Rule::identifier_upper => {
                     vertex_type = Some(p.as_str().to_string());
                 }
-                Rule::addfield => {
+                Rule::create_field => {
                     fields = Some(Self::parse_property_assignments(p)?);
                 }
                 _ => {
@@ -467,7 +484,7 @@ impl HelixParser {
                 Rule::identifier_upper => {
                     edge_type = Some(p.as_str().to_string());
                 }
-                Rule::addfield => {
+                Rule::create_field => {
                     fields = Some(Self::parse_property_assignments(p)?);
                 }
                 Rule::to_from => {
@@ -561,7 +578,9 @@ impl HelixParser {
         for p in pairs {
             match p.as_rule() {
                 Rule::anonymous_traversal => {
-                    expressions.push(Expression::Traversal(Box::new(Self::parse_anon_traversal(p)?)));
+                    expressions.push(Expression::Traversal(Box::new(Self::parse_anon_traversal(
+                        p,
+                    )?)));
                 }
                 Rule::traversal => {
                     expressions.push(Expression::Traversal(Box::new(Self::parse_traversal(p)?)));
@@ -581,10 +600,16 @@ impl HelixParser {
     fn parse_boolean_expression(pair: Pair<Rule>) -> Result<Expression, ParserError> {
         let expression = pair.into_inner().next().unwrap();
         match expression.as_rule() {
-            Rule::and => Ok(Expression::And(Self::parse_expression_vec(expression.into_inner())?)),
-            Rule::or => Ok(Expression::Or(Self::parse_expression_vec(expression.into_inner())?)),
+            Rule::and => Ok(Expression::And(Self::parse_expression_vec(
+                expression.into_inner(),
+            )?)),
+            Rule::or => Ok(Expression::Or(Self::parse_expression_vec(
+                expression.into_inner(),
+            )?)),
             Rule::boolean => Ok(Expression::BooleanLiteral(expression.as_str() == "true")),
-            Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_anon_traversal(expression.into_inner().next().unwrap())?))),
+            Rule::exists => Ok(Expression::Exists(Box::new(Self::parse_anon_traversal(
+                expression.into_inner().next().unwrap(),
+            )?))),
             _ => unreachable!(),
         }
     }
@@ -733,13 +758,13 @@ impl HelixParser {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
-            Rule::props_step => Ok(Step::Props(Self::parse_props_step(inner))),
+            Rule::object_step => Ok(Step::Props(Self::parse_object_step(inner))),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
-            Rule::addfield => Ok(Step::AddField(Self::parse_field_additions(inner)?)),
             Rule::count => Ok(Step::Count),
             Rule::ID => Ok(Step::ID),
             Rule::update => Ok(Step::Update(Self::parse_update(inner)?)),
+            Rule::exclude_field => Ok(Step::Exclude(Self::parse_exclude(inner)?)),
             _ => Err(ParserError::from("Unexpected step type")),
         }
     }
@@ -765,7 +790,7 @@ impl HelixParser {
         }
     }
 
-    fn parse_props_step(pair: Pair<Rule>) -> Vec<String> {
+    fn parse_object_step(pair: Pair<Rule>) -> Vec<String> {
         pair.into_inner().map(|p| p.as_str().to_string()).collect()
     }
 
@@ -813,7 +838,6 @@ impl HelixParser {
             Rule::anonymous_traversal => {
                 FieldValue::Traversal(Box::new(Self::parse_traversal(value_pair)?))
             }
-            Rule::addfield => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected field value type: {:?}",
@@ -831,10 +855,19 @@ impl HelixParser {
             let mut pairs = p.into_inner();
             println!("pairs: {:?}", pairs);
             let prop_key = pairs.next().unwrap().as_str().to_string();
-            let prop_val = Self::parse_expression(pairs.next().unwrap())?;
-            fields.push((prop_key, prop_val));
+            let field_addition = Self::parse_new_field(pairs.next().unwrap())?;
+            fields.push((prop_key, field_addition));
         }
         Ok(Update { fields })
+    }
+
+    fn parse_exclude(pair: Pair<Rule>) -> Result<Exclude, ParserError> {
+        println!("pair: {:?}", pair);
+        let mut fields = Vec::new();
+        for p in pair.into_inner() {
+            fields.push(p.as_str().to_string());
+        }
+        Ok(Exclude { fields })
     }
 }
 
@@ -931,8 +964,8 @@ mod tests {
         let input = r#"
         QUERY fetchUsers(name: String, age: Integer) =>
             user <- V<USER>("123")
-            nameField <- user::Props(Name)
-            ageField <- user::Props(Age)
+            nameField <- user::{Name}
+            ageField <- user::{Age}
             RETURN nameField, ageField
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1021,8 +1054,8 @@ mod tests {
         let input = r#"
     QUERY logicalOps(id : String) =>
         user <- V<USER>(id)
-        condition <- user::Props(name)::EQ("Alice")
-        condition2 <- user::Props(age)::GT(20)
+        condition <- user::{name}::EQ("Alice")
+        condition2 <- user::{age}::GT(20)
         RETURN condition
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1035,7 +1068,7 @@ mod tests {
     fn test_anonymous_traversal() {
         let input = r#"
     QUERY anonymousTraversal() =>
-        result <- V::OutE<FRIENDSHIP>::InV::Props(Age)
+        result <- V::OutE<FRIENDSHIP>::InV::{Age}
         RETURN result
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1081,8 +1114,8 @@ mod tests {
         let input = r#"
     QUERY returnMultipleValues() =>
         user <- V<USER>("999")
-        name <- user::Props(Name)
-        age <- user::Props(Age)
+        name <- user::{Name}
+        age <- user::{Age}
         RETURN name, age
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1096,7 +1129,7 @@ mod tests {
         let input = r#"
     QUERY enrichUserData() =>
         user <- V<USER>("123")
-        enriched <- user::{Name: "name", Follows: _::Out<Follows>::Props(Age)}
+        enriched <- user::{Name: "name", Follows: _::Out<Follows>::{Age}}
         RETURN enriched
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1184,7 +1217,7 @@ mod tests {
     fn test_where_with_props() {
         let input = r#"
     QUERY getFollows() =>
-        user <- V<User>::WHERE(_::Props(Age)::GT(2))
+        user <- V<User>::WHERE(_::{Age}::GT(2))
         user <- V<User>::WHERE(_::GT(2))
         RETURN user, follows
         "#;
@@ -1235,14 +1268,14 @@ mod tests {
     fn test_complex_traversal_combinations() {
         let input = r#"
         QUERY complexTraversal() =>
-            result1 <- V<User>::OutE<Follows>::InV<User>::Props(name)
+            result1 <- V<User>::OutE<Follows>::InV<User>::{name}
             result2 <- V::WHERE(AND(
-                _::Props(age)::GT(20),
-                OR(_::Props(name)::EQ("Alice"), _::Props(name)::EQ("Bob"))
+                _::{age}::GT(20),
+                OR(_::{name}::EQ("Alice"), _::{name}::EQ("Bob"))
             ))
             result3 <- V<User>::{
-                friends: _::Out<Follows>::InV::Props(name),
-                avgFriendAge: _::Out<Follows>::InV::Props(age)::GT(25)
+                friends: _::Out<Follows>::InV::{name},
+                avgFriendAge: _::Out<Follows>::InV::{age}::GT(25)
             }
             RETURN result1, result2, result3
         "#;
@@ -1261,12 +1294,12 @@ mod tests {
             // Test nested property operations
             result <- user::{
                 basic: {
-                    name: _::Props(name),
-                    age: _::Props(age)
+                    name: _::{name},
+                    age: _::{age}
                 },
                 social: {
                     friends: _::Out<Follows>::COUNT,
-                    groups: _::Out<BelongsTo>::InV<Group>::Props(name)
+                    groups: _::Out<BelongsTo>::InV<Group>::{name}
                 }
             }
             RETURN result
@@ -1281,7 +1314,7 @@ mod tests {
         let input = r#"
         QUERY edgeOperations() =>
             edge1 <- AddE<Follows>({since: "2024-01-01", weight: 0.8})::From("user1")::To("user2")
-            edge2 <- E<Follows>::WHERE(_::Props(weight)::GT(0.5))
+            edge2 <- E<Follows>::WHERE(_::{weight}::GT(0.5))
             edge3 <- edge2::UPDATE({weight: 1.0, updated: "2024-03-01"})
             RETURN edge1, edge2, edge3
         "#;
@@ -1302,8 +1335,8 @@ mod tests {
                 score: 4.5
             })
             result <- V<User>::WHERE(OR(
-                _::Props(age)::GT(20),
-                _::Props(score)::LT(5.0)
+                _::{age}::GT(20),
+                _::{score}::LT(5.0)
             ))
             RETURN v1, result
         "#;
@@ -1315,7 +1348,6 @@ mod tests {
 
     #[test]
     fn test_error_cases() {
-
         // Test missing return statement
         let missing_return = r#"
         QUERY noReturn() =>
@@ -1326,7 +1358,7 @@ mod tests {
         // Test invalid property access
         let invalid_props = r#"
         QUERY invalidProps() =>
-            result <- V<User>::Props()
+            result <- V<User>::{}
             RETURN result
         "#;
         assert!(HelixParser::parse_source(invalid_props).is_err());
@@ -1373,17 +1405,17 @@ mod tests {
             result <- V<User>("123")
                 ::OutE<Follows>
                 ::InV<User>
-                ::Props(name)
+                ::{name}
                 ::EQ("Alice")
             filtered <- V<User>::WHERE(
                 _::Out<Follows>
                     ::InV<User>
-                    ::Props(age)
+                    ::{age}
                     ::GT(25)
             )
             updated <- filtered
                 ::UPDATE({status: "active"})
-            has_updated <- updated::Props(status)
+            has_updated <- updated::{status}
                 ::EQ("active")
             RETURN result, filtered, updated, has_updated
         "#;
@@ -1407,4 +1439,32 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.parameters.len(), 1);
     }
+
+    #[test]
+    fn test_map_operation() {
+        let input = r#"
+        QUERY mapOperation() =>
+            user <- V<User>("123")
+            mapped <- user::{name: "name", age: "age"}
+            RETURN mapped
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 1);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_map_in_return() {
+        let input = r#"
+        QUERY mapInReturn() =>
+            user <- V<User>("123")
+            RETURN user::{name: "name", age: "age"}
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 1);
+        assert_eq!(query.return_values.len(), 1);
+    }
+    
 }

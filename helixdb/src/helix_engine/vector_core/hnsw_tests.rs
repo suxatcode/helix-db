@@ -14,8 +14,9 @@ fn setup_temp_env() -> Env {
 
     unsafe {
         EnvOpenOptions::new()
-            .map_size(10 * 1024 * 1024) // 10MB
+            .map_size(512 * 1024 * 1024) // 10MB
             .max_dbs(10)
+
             .open(path)
             .unwrap()
     }
@@ -84,7 +85,7 @@ fn test_hnsw_insert_single() {
     let id = "test_vec";
     let data = vec![1.0, 2.0, 3.0];
 
-    let result = hnsw.insert(&mut txn, id, &data);
+    let result = hnsw.insert(&mut txn, &data);
     assert!(result.is_ok());
 
     txn.commit().unwrap();
@@ -101,7 +102,7 @@ fn test_hnsw_insert_single_reduced_dims() {
     let id = "test_vec";
     let data = vec![1.0, 2.0, 3.0];
 
-    let result = hnsw.insert(&mut txn, id, &data);
+    let result = hnsw.insert(&mut txn, &data);
     assert!(result.is_ok());
 
     txn.commit().unwrap();
@@ -145,13 +146,14 @@ fn test_hnsw_insert_and_search() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
-    let vectors = generate_random_vectors(1000, 10, 42);
+    let mut vectors = generate_random_vectors(1000, 10, 42);
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
-
     let query_id = &vectors[0].0;
     let query_data = &vectors[0].1;
     let query = HVector::new(query_id.clone(), query_data.clone());
@@ -161,7 +163,7 @@ fn test_hnsw_insert_and_search() {
     assert!(!results.is_empty());
     assert_eq!(results[0].0, *query_id);
     assert!(results[0].1 < 0.001);
-
+    assert!(results.len() == 24);
     txn.commit().unwrap();
 }
 
@@ -174,11 +176,13 @@ fn test_hnsw_insert_and_search_reduced_dims() {
     let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
     let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
 
-    let vectors = generate_random_vectors(1000, dim, 42);
+    let mut vectors = generate_random_vectors(1000, dim, 42);
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
 
     let query_id = &vectors[0].0;
@@ -218,9 +222,11 @@ fn test_hnsw_accuracy() {
         }
     }
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
 
     for cluster in 0..3 {
@@ -269,11 +275,13 @@ fn test_hnsw_accuracy_reduced_dims() {
         }
     }
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
-
+    
     for cluster in 0..3 {
         let query_idx = cluster * 5;
         let query_id = &vectors[query_idx].0;
@@ -286,7 +294,11 @@ fn test_hnsw_accuracy_reduced_dims() {
             "No results found for query: {}",
             query_id
         );
+        println!("results: {:?}", results[0]);
+        println!("query_id: {:?}", query_id);
         assert_eq!(results[0].0, *query_id);
+        println!("results: {:?}", results);
+        assert_eq!(results.len(), 5);
     }
 
     txn.commit().unwrap();
@@ -298,9 +310,8 @@ fn test_hnsw_persistence() {
     let path = temp_dir.path().to_str().unwrap();
 
     let dim = 10;
-    let vectors = generate_random_vectors(50, dim, 42);
-    let query_id = vectors[0].0.clone();
-    let query_data = vectors[0].1.clone();
+    let mut vectors = generate_random_vectors(50, dim, 42);
+    
 
     {
         let env = unsafe {
@@ -314,9 +325,11 @@ fn test_hnsw_persistence() {
         let mut txn = env.write_txn().unwrap();
         let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
-        for (id, data) in &vectors {
-            let result = hnsw.insert(&mut txn, id, data);
+        for (i, (_, data)) in vectors.clone().iter().enumerate() {
+            let result = hnsw.insert(&mut txn, data);
             assert!(result.is_ok());
+            let id = result.unwrap();
+            vectors[i].0 = id;
         }
 
         txn.commit().unwrap();
@@ -336,7 +349,8 @@ fn test_hnsw_persistence() {
         init_txn.commit().unwrap();
 
         let txn = env.read_txn().unwrap();
-
+        let query_id = vectors[0].0.clone();
+        let query_data = vectors[0].1.clone();
         let query = HVector::new(query_id.clone(), query_data);
         let results = hnsw.search(&txn, &query, 5).unwrap();
 
@@ -352,9 +366,8 @@ fn test_hnsw_persistence_reduced_dims() {
     let path = temp_dir.path().to_str().unwrap();
 
     let dim = 10;
-    let vectors = generate_random_vectors(50, dim, 42);
-    let query_id = vectors[0].0.clone();
-    let query_data = vectors[0].1.clone();
+    let mut vectors = generate_random_vectors(50, dim, 42);
+   
 
     {
         let env = unsafe {
@@ -369,9 +382,11 @@ fn test_hnsw_persistence_reduced_dims() {
         let hnsw_config = HNSWConfig::with_dim_reduce(dim, None);
         let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
 
-        for (id, data) in &vectors {
-            let result = hnsw.insert(&mut txn, id, data);
+        for (i, (_, data)) in vectors.clone().iter().enumerate() {
+            let result = hnsw.insert(&mut txn, data);
             assert!(result.is_ok());
+            let id = result.unwrap();
+            vectors[i].0 = id;
         }
 
         txn.commit().unwrap();
@@ -392,7 +407,8 @@ fn test_hnsw_persistence_reduced_dims() {
         init_txn.commit().unwrap();
 
         let txn = env.read_txn().unwrap();
-
+        let query_id = vectors[0].0.clone();
+        let query_data = vectors[0].1.clone();
         let query = HVector::new(query_id.clone(), query_data);
         let results = hnsw.search(&txn, &query, 5).unwrap();
 
@@ -419,11 +435,13 @@ fn test_hnsw_large_scale() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
 
-    let vectors = generate_random_vectors(100, 10, 42);
+    let mut vectors = generate_random_vectors(100, 10, 42);
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
 
     let query_indices = vec![0, 10, 20];
@@ -434,7 +452,7 @@ fn test_hnsw_large_scale() {
         let query = HVector::new(query_id.clone(), query_data.clone());
 
         let results = hnsw.search(&txn, &query, 10).unwrap();
-
+        println!("results: {:?}", results);
         assert!(
             !results.is_empty(),
             "No results found for query vector {}",
@@ -471,11 +489,13 @@ fn test_hnsw_large_scale_reduced_dims() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
 
-    let vectors = generate_random_vectors(100, dim, 42);
+    let mut vectors = generate_random_vectors(100, dim, 42);
 
-    for (id, data) in &vectors {
-        let result = hnsw.insert(&mut txn, id, data);
+    for (i, (_, data)) in vectors.clone().iter().enumerate() {
+        let result = hnsw.insert(&mut txn, data);
         assert!(result.is_ok());
+        let id = result.unwrap();
+        vectors[i].0 = id;
     }
 
     let query_indices = vec![0, 10, 20];
@@ -511,17 +531,17 @@ fn test_hnsw_edge_cases() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
-    let result = hnsw.insert(&mut txn, "empty", &[]);
+    let result = hnsw.insert(&mut txn, &[]);
     assert!(result.is_ok());
 
     let large_vec: Vec<f64> = (0..1000).map(|i| i as f64).collect();
-    let result = hnsw.insert(&mut txn, "large", &large_vec);
+    let result = hnsw.insert(&mut txn, &large_vec);
     assert!(result.is_ok());
 
-    let result1 = hnsw.insert(&mut txn, "duplicate", &[1.0, 2.0, 3.0]);
+    let result1 = hnsw.insert(&mut txn, &[1.0, 2.0, 3.0]);
     assert!(result1.is_ok());
 
-    let result2 = hnsw.insert(&mut txn, "duplicate", &[4.0, 5.0, 6.0]);
+    let result2 = hnsw.insert(&mut txn, &[4.0, 5.0, 6.0]);
     assert!(result2.is_ok());
 
     let query = HVector::new("query".to_string(), vec![4.0, 5.0, 6.0]);
@@ -539,10 +559,9 @@ fn test_hnsw_different_dimensions() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
-    hnsw.insert(&mut txn, "vec_2d", &[1.0, 2.0]).unwrap();
-    hnsw.insert(&mut txn, "vec_3d", &[1.0, 2.0, 3.0]).unwrap();
-    hnsw.insert(&mut txn, "vec_4d", &[1.0, 2.0, 3.0, 4.0])
-        .unwrap();
+    hnsw.insert(&mut txn, &[1.0, 2.0]).unwrap();
+    hnsw.insert(&mut txn, &[1.0, 2.0, 3.0]).unwrap();
+    hnsw.insert(&mut txn, &[1.0, 2.0, 3.0, 4.0]).unwrap();
 
     let query_2d = HVector::new("query".to_string(), vec![1.0, 2.0]);
     let results_2d = hnsw.search(&txn, &query_2d, 3).unwrap();
@@ -596,7 +615,7 @@ fn test_accuracy_with_dbpedia_openai() {
     let mut txn = env.write_txn().unwrap();
     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap(); // TODO: rename to db
     for (id, data) in base_vectors.iter().take(10) {
-        hnsw.insert(&mut txn, id, data).unwrap();
+        hnsw.insert(&mut txn, data).unwrap();
     }
     txn.commit().unwrap();
     let txn = env.read_txn().unwrap();

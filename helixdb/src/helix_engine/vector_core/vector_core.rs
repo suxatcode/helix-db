@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashSet}, sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
+    collections::{BinaryHeap, HashSet},
+    sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
 };
 
 use bincode::{deserialize, serialize};
@@ -83,7 +84,6 @@ pub struct EntryPoint {
     id: String,
     level: usize,
 }
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct DistancedId {
     id: String,
@@ -150,9 +150,9 @@ impl VectorCore {
             IN_EDGES_PREFIX,
             source_id.as_bytes(),
             b":",
-            sink_id.as_bytes(),
-            b":",
             &level.to_string().into_bytes(),
+            b":",
+            sink_id.as_bytes(),
         ]
         .concat()
     }
@@ -163,9 +163,9 @@ impl VectorCore {
             OUT_EDGES_PREFIX,
             source_id.as_bytes(),
             b":",
-            sink_id.as_bytes(),
-            b":",
             &level.to_string().into_bytes(),
+            b":",
+            sink_id.as_bytes(),
         ]
         .concat()
     }
@@ -203,7 +203,9 @@ impl HNSW for VectorCore {
     #[inline]
     fn get_random_level(&self) -> usize {
         let mut seed = self.rng_seed.load(AtomicOrdering::Relaxed);
-        if seed == 0 { seed = 1; }
+        if seed == 0 {
+            seed = 1;
+        }
 
         seed ^= seed >> 12;
         seed ^= seed << 25;
@@ -219,22 +221,35 @@ impl HNSW for VectorCore {
     }
 
     #[inline]
-    fn get_entry_point(&self, txn: &RoTxn) -> Result<EntryPoint, VectorError> {
+    fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
 
-        let entry_point = match self.vectors_db.get(txn, entry_key.as_ref())? {
+        let entry_point: EntryPoint = match self.vectors_db.get(txn, entry_key.as_ref())? {
             Some(bytes) => deserialize(bytes).map_err(|_| VectorError::InvalidEntryPoint)?,
             None => return Err(VectorError::EntryPointNotFound),
         };
-        Ok(entry_point)
+        let vector_key = Self::vector_key(entry_point.id.as_str(), entry_point.level);
+        let vector: HVector = match self.vectors_db.get(txn, vector_key.as_ref())? {
+            Some(bytes) => deserialize(bytes).map_err(|_| VectorError::InvalidEntryPoint)?,
+            None => return Err(VectorError::EntryPointNotFound),
+        };
+        Ok(vector)
     }
 
     #[inline]
-    fn set_entry_point(&self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError> {
+    fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
+        let vector_key = Self::vector_key(entry.get_id(), entry.get_level());
+        self.vectors_db.put(txn, &vector_key, &serialize(entry)?)?;
+
+        let entry_point = EntryPoint {
+            id: entry.get_id().to_string(),
+            level: entry.get_level(),
+        };
         self.vectors_db
-            .put(txn, &entry_key, &serialize(entry)?)
+            .put(txn, &entry_key, &serialize(&entry_point)?)
             .map_err(VectorError::from)?;
+
         Ok(())
     }
 
@@ -252,10 +267,11 @@ impl HNSW for VectorCore {
             .prefix_iter(&txn, &out_key)?;
 
         let mut neighbors = Vec::with_capacity(512);
+        let prefix_len = OUT_EDGES_PREFIX.len() + id.len() + 1 + level.to_string().len() + 1;
 
         for result in iter {
             let (key, _) = result?;
-            let neighbor_id = String::from_utf8(key[id.len() + 1..].to_vec())?;
+            let neighbor_id = String::from_utf8(key[prefix_len..].to_vec())?;
             neighbors.push(neighbor_id);
         }
 
@@ -287,17 +303,7 @@ impl HNSW for VectorCore {
         let key = Self::vector_key(id, level);
         match self.vectors_db.get(txn, &key)? {
             Some(bytes) => deserialize(&bytes).map_err(VectorError::from),
-            None => {
-                if level > 0 {
-                    let key = Self::vector_key(id, 0);
-                    match self.vectors_db.get(txn, &key)? {
-                        Some(bytes) => deserialize(&bytes).map_err(VectorError::from),
-                        None => Err(VectorError::VectorNotFound),
-                    }
-                } else {
-                    Err(VectorError::VectorNotFound)
-                }
-            }
+            None => Err(VectorError::VectorNotFound),
         }
     }
 
@@ -313,7 +319,7 @@ impl HNSW for VectorCore {
         &self,
         txn: &RoTxn,
         query: &HVector,
-        entry_id: &str,
+        entry_point: &HVector,
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<DistancedId>, VectorError> {
@@ -321,28 +327,19 @@ impl HNSW for VectorCore {
         let mut candidates = BinaryHeap::new();
         let mut results = BinaryHeap::new();
 
-        let entry_vector = match self.get_vector(txn, entry_id, level) {
-            Ok(v) => v,
-            Err(_) if level > 0 => match self.get_vector(txn, entry_id, 0) {
-                Ok(v) => v,
-                Err(_) => return Ok(BinaryHeap::new()),
-            },
-            Err(_) => return Ok(BinaryHeap::new()),
-        };
-
-        let distance = entry_vector.distance_to(query);
+        let distance = entry_point.distance_to(query);
 
         candidates.push(DistancedId {
-            id: entry_id.to_string(),
+            id: entry_point.get_id().to_string(),
             distance,
         });
 
         results.push(DistancedId {
-            id: entry_id.to_string(),
+            id: entry_point.get_id().to_string(),
             distance,
         });
 
-        visited.insert(entry_id.to_string());
+        visited.insert(entry_point.get_id().to_string());
 
         let expanded_ef = ef.max(10);
 
@@ -365,7 +362,6 @@ impl HNSW for VectorCore {
                 }
 
                 visited.insert(neighbor_id.clone());
-
                 let neighbor_vector = match self.get_vector(txn, &neighbor_id, level) {
                     Ok(v) => v,
                     Err(_) if level > 0 => match self.get_vector(txn, &neighbor_id, 0) {
@@ -471,43 +467,35 @@ impl HNSW for VectorCore {
 
         println!("vecs in db: {:?}", self.vectors_db.len(txn)?);
 
-        let entry_point = match self.get_entry_point(txn) {
+        let mut entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
-                let entry_point = EntryPoint {
-                    id: "".to_string(),
-                    level: 0,
-                };
-                entry_point
-            },
+                // return empty HVector
+                return Ok(vec![]);
+            }
         };
 
-        let query_id = query.get_id();
-        let exact_match = self.get_vector(txn, query_id, 0);
+        println!("entry point: {:?}", entry_point);
 
-        if let Ok(exact_vector) = exact_match {
-            if exact_vector.distance_to(&query) < 0.001 {
-                return Ok(vec![(query_id.to_string(), 0.0)]);
-            }
-        }
+        let query_id = query.get_id();
 
         let ef = k.max(self.config.ef_construction).max(10);
 
-        let curr_level = entry_point.level;
-        let mut curr_id = entry_point.id.clone();
+        let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let nearest = self.search_layer(txn, &query, &curr_id, 1, level)?;
+            let nearest = self.search_layer(txn, &query, &entry_point, 10, level)?;
             if !nearest.is_empty() {
-                curr_id = nearest.peek().unwrap().id.clone();
+                println!("nearest id: {:?}", nearest.peek().unwrap().id);
+                entry_point = self.get_vector(txn, &nearest.peek().unwrap().id, 0)?;
             }
         }
 
-        let mut candidates = self.search_layer(txn, &query, &curr_id, ef * 3, 0)?;
+        let mut candidates = self.search_layer(txn, &query, &entry_point, ef * 3, 0)?;
         println!("num cands: {}", candidates.len());
 
         if candidates.is_empty() {
-            candidates = self.search_layer(txn, &query, &entry_point.id, ef * 5, 0)?;
+            candidates = self.search_layer(txn, &query, &entry_point, ef * 5, 0)?;
 
             if candidates.is_empty() {
                 let all_vectors = self.get_all_vectors(txn)?;
@@ -551,45 +539,37 @@ impl HNSW for VectorCore {
         Ok(results)
     }
 
-    fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError> {
+    fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<String, VectorError> {
         let random_level = self.get_random_level();
 
         // TODO: make sure input vector is the same dim as all the other vecs
         //let reduced_vec = self.reduce_dims(data);
         //let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
-        let vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
-
+        let id = uuid::Uuid::new_v4().to_string();
+        let vector = HVector::from_slice(id.clone(), random_level, data.to_vec());
+        let id = id.as_str();
         self.put_vector(txn, id, &vector)?;
 
         if random_level > 0 {
-            //let higher_vector = HVector::from_slice(id.to_string(), random_level, reduced_vec);
-            let higher_vector = HVector::from_slice(id.to_string(), random_level, data.to_vec());
-            self.put_vector(txn, id, &higher_vector)?;
+            let level0_vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
+            self.put_vector(txn, id, &level0_vector)?;
         }
 
-        let entry_point = match self.get_entry_point(txn) {
+        let mut entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
-                let entry_point = EntryPoint {
-                    id: id.to_string(),
-                    level: random_level,
-                };
+                let entry_point = HVector::from_slice(id.to_string(), random_level, data.to_vec());
                 self.set_entry_point(txn, &entry_point)?;
                 entry_point
-            },
+            }
         };
 
-        let current_ep = entry_point;
-
-        let curr_id = current_ep.id.clone();
-        let mut curr_level = current_ep.level;
+        let curr_id = entry_point.get_id().to_string();
+        let mut curr_level = entry_point.get_level();
 
         if random_level > curr_level {
-            let new_ep = EntryPoint {
-                id: id.to_string(),
-                level: random_level,
-            };
-            self.set_entry_point(txn, &new_ep)?;
+            entry_point = HVector::from_slice(id.to_string(), random_level, data.to_vec());
+            self.set_entry_point(txn, &entry_point)?;
             curr_level = random_level;
         }
 
@@ -607,7 +587,7 @@ impl HNSW for VectorCore {
         for level in (1..=random_level).rev() {
             if level <= curr_level {
                 let ef = self.config.ef_construction * 2;
-                let nearest = self.search_layer(txn, &vector, &ep_id, ef, level)?;
+                let nearest = self.search_layer(txn, &vector, &entry_point, ef, level)?;
 
                 if nearest.is_empty() {
                     continue;
@@ -660,7 +640,7 @@ impl HNSW for VectorCore {
             }
         }
 
-        Ok(())
+        Ok(id.to_string())
     }
 
     fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {

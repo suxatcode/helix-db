@@ -67,6 +67,11 @@ impl HVector {
         &self.id
     }
 
+    #[inline(always)]
+    pub fn get_level(&self) -> usize {
+        self.level
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let size = self.data.len() * std::mem::size_of::<f64>();
         let mut bytes = Vec::with_capacity(size);

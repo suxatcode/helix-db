@@ -1002,8 +1002,8 @@ impl VectorTraversalSteps for TraversalBuilder {
         self
     }
     
-    fn insert_vector(&mut self, txn: &mut RwTxn, vector_id: &str, vector: &[f64]) -> &mut Self {
-        self.storage.vectors.insert(txn, vector_id, vector).unwrap();
+    fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self {
+        self.storage.vectors.insert(txn, vector).unwrap();
         self
     }
 

@@ -37,8 +37,8 @@ impl CodeGenerator {
         output.push_str("    props,\n");
         output.push_str("    helix_engine::graph_core::traversal::TraversalBuilder,\n");
         output.push_str("    helix_engine::graph_core::traversal_steps::{\n");
-        output.push_str("        RSourceTraversalSteps, RTraversalBuilderMethods, RTraversalSteps, TraversalMethods,\n");
-        output.push_str("        TraversalSearchMethods, WSourceTraversalSteps, WTraversalBuilderMethods, WTraversalSteps,\n");
+        output.push_str("        SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps, TraversalMethods,\n");
+        output.push_str("        TraversalSearchMethods, \n");
         output.push_str("    },\n");
         output.push_str("    helix_engine::types::GraphError,\n");
         output.push_str("    helix_gateway::router::router::HandlerInput,\n");
@@ -631,7 +631,7 @@ impl CodeGenerator {
                     .fields
                     .iter()
                     .map(|(k, v)| {
-                        format!("\"{}\".to_string() => {}", k, self.expression_to_value(v))
+                        format!("\"{}\".to_string() => {}", k, self.generate_field_addition(v))
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -828,6 +828,11 @@ impl CodeGenerator {
         }
     }
 
+    fn generate_field_addition(&self, field_addition: &FieldAddition) -> String {
+        let mut output = String::new();
+        output
+    }
+
     fn generate_add_vertex(&mut self, add_vertex: &AddVertex, var_name: Option<&str>) -> String {
         let mut output = String::new();
 
@@ -978,6 +983,7 @@ impl CodeGenerator {
             ValueType::Identifier(identifier) => format!("\"{}\"", identifier),
         }
     }
+
 
     fn value_to_rust(&self, value: &Value) -> String {
         match value {

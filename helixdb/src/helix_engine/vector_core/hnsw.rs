@@ -37,16 +37,16 @@ pub trait HNSW {
     /// # Returns
     ///
     /// An empty tuple
-    fn insert(&self, txn: &mut RwTxn, id: &str, data: &[f64]) -> Result<(), VectorError>;
+    fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<String, VectorError>;
 
     /// Get all vectors from the index
     fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError>;
 
     /// Get the entry point of the index
-    fn get_entry_point(&self, txn: &RoTxn) -> Result<EntryPoint, VectorError>;
+    fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError>;
 
     /// Set the entry point of the index
-    fn set_entry_point(&self, txn: &mut RwTxn, entry: &EntryPoint) -> Result<(), VectorError>;
+    fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError>;
 
     /// Get a random level
     fn get_random_level(&self) -> usize;
@@ -98,7 +98,7 @@ pub trait HNSW {
         &self,
         txn: &RoTxn,
         query: &HVector,
-        entry_id: &str,
+        entry_point: &HVector,
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<DistancedId>, VectorError>;

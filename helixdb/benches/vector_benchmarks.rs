@@ -67,7 +67,7 @@ fn bench_vector_insertion(c: &mut Criterion) {
                 |(env, hnsw, vectors)| {
                     let mut txn = env.write_txn().unwrap();
                     for (id, data) in vectors.iter().take(vectors_per_iter) {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
                 },
@@ -105,7 +105,7 @@ fn bench_vector_insertion_reduced_dims(c: &mut Criterion) {
                 |(env, hnsw, vectors)| {
                     let mut txn = env.write_txn().unwrap();
                     for (id, data) in vectors.iter().take(vectors_per_iter) {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
                 },
@@ -140,7 +140,7 @@ fn bench_vector_search(c: &mut Criterion) {
             eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -185,7 +185,7 @@ fn bench_vector_search_reduced_dims(c: &mut Criterion) {
             eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -229,7 +229,7 @@ fn bench_high_throughput(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
                 },
@@ -251,7 +251,7 @@ fn bench_high_throughput(c: &mut Criterion) {
             eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -297,7 +297,7 @@ fn bench_high_throughput_reduced_dims(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
                 },
@@ -320,7 +320,7 @@ fn bench_high_throughput_reduced_dims(c: &mut Criterion) {
             eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -394,7 +394,7 @@ fn bench_hnsw_configs(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
 
@@ -464,7 +464,7 @@ fn bench_hnsw_configs_reduced_dims(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, Some(config)).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
 
@@ -512,7 +512,7 @@ fn bench_memory_usage(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
 
@@ -559,7 +559,7 @@ fn bench_memory_usage_reduced_dims(c: &mut Criterion) {
                     let hnsw = VectorCore::new(&env, &mut txn, Some(hnsw_config)).unwrap();
 
                     for (id, data) in &vectors {
-                        hnsw.insert(&mut txn, id, data).unwrap();
+                        hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
 
@@ -596,7 +596,7 @@ fn bench_vector_scaling(c: &mut Criterion) {
             eprintln!("Building index with {} vectors...", vectors.len());
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -640,7 +640,7 @@ fn bench_vector_scaling_reduced_dims(c: &mut Criterion) {
             eprintln!("Building index with {} vectors...", vectors.len());
 
             for (id, data) in &vectors {
-                hnsw.insert(&mut txn, id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
             eprintln!("Index built successfully");
@@ -705,7 +705,7 @@ fn bench_large_dataset(c: &mut Criterion) {
 
         for j in start..end {
             let (id, data) = &base_vectors[j];
-            hnsw.insert(&mut txn, id, data).unwrap();
+            hnsw.insert(&mut txn, data).unwrap();
         }
     }
 
@@ -723,7 +723,7 @@ fn bench_large_dataset(c: &mut Criterion) {
             for (id, data) in &new_vectors {
                 // Add a unique suffix to avoid ID conflicts with base dataset
                 let unique_id = format!("{}_new", id);
-                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
         });
@@ -754,9 +754,10 @@ fn bench_large_dataset(c: &mut Criterion) {
 
         b.iter(|| {
             let mut txn = env.write_txn().unwrap();
+            let mut ids = Vec::new();
             for (id, data) in &insert_vectors {
                 let unique_id = format!("{}_mixed", id);
-                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+                ids.push(hnsw.insert(&mut txn, data).unwrap());
             }
             txn.commit().unwrap();
 
@@ -831,7 +832,7 @@ fn bench_large_dataset_reduced_dims(c: &mut Criterion) {
 
         for j in start..end {
             let (id, data) = &base_vectors[j];
-            hnsw.insert(&mut txn, id, data).unwrap();
+            hnsw.insert(&mut txn, data).unwrap();
         }
     }
 
@@ -849,7 +850,7 @@ fn bench_large_dataset_reduced_dims(c: &mut Criterion) {
             for (id, data) in &new_vectors {
                 // Add a unique suffix to avoid ID conflicts with base dataset
                 let unique_id = format!("{}_new", id);
-                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
         });
@@ -882,7 +883,7 @@ fn bench_large_dataset_reduced_dims(c: &mut Criterion) {
             let mut txn = env.write_txn().unwrap();
             for (id, data) in &insert_vectors {
                 let unique_id = format!("{}_mixed", id);
-                hnsw.insert(&mut txn, &unique_id, data).unwrap();
+                hnsw.insert(&mut txn, data).unwrap();
             }
             txn.commit().unwrap();
 
