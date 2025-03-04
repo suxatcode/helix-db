@@ -281,7 +281,7 @@ fn test_hnsw_accuracy_reduced_dims() {
         let id = result.unwrap();
         vectors[i].0 = id;
     }
-    
+
     for cluster in 0..3 {
         let query_idx = cluster * 5;
         let query_id = &vectors[query_idx].0;
@@ -311,7 +311,7 @@ fn test_hnsw_persistence() {
 
     let dim = 10;
     let mut vectors = generate_random_vectors(50, dim, 42);
-    
+
 
     {
         let env = unsafe {
@@ -367,7 +367,7 @@ fn test_hnsw_persistence_reduced_dims() {
 
     let dim = 10;
     let mut vectors = generate_random_vectors(50, dim, 42);
-   
+
 
     {
         let env = unsafe {
@@ -579,7 +579,7 @@ fn test_hnsw_different_dimensions() {
 #[test]
 fn test_accuracy_with_dbpedia_openai() {
     // cargo test test_accuracy_with_dbpedia_openai -- --nocapture
-    // from data/ dir
+    // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
     let file_path = "../data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
     let n_base = 10_000; // Number of base vectors (subset) (increase for better testing)
     let n_query = 10;   // Number of query vectors

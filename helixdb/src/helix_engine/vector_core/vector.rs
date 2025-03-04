@@ -145,6 +145,7 @@ impl HVector {
     }
 
     // TODO: compare from_to with map euc_dist
+    // apparently performance is negligible, would prefer the 1 liner tho
 
     //#[inline(always)]
     //fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
@@ -258,5 +259,5 @@ mod vector_tests {
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
 
-    
+
 }

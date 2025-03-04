@@ -82,13 +82,11 @@ pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     rng_seed: AtomicU64,
-    // entry_point: Box<Option<HVector>>,
     config: HNSWConfig,
     // TODO: optim configs here, not in hnswconfig
 }
 
-
-
+// TODO: also not needed?
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntryPoint {
     id: String,
@@ -110,7 +108,6 @@ impl VectorCore {
             vectors_db,
             out_edges_db,
             rng_seed: AtomicU64::new(0),
-            // entry_point: Box::new(None),
             config,
         })
     }
@@ -141,6 +138,8 @@ impl VectorCore {
 
     /// (pooling operation reduce)
     fn reduce_dims(&self, data: &[f64]) -> Vec<f64> {
+        // TODO: assert dim is correct and same as all others
+        // TODO: implement this on HVector? like HVector::
         let target_dim = match self.config.target_dimension {
             None => return data.to_vec(),
             Some(dim) => dim,
@@ -186,7 +185,7 @@ impl VectorCore {
         level
     }
 
- 
+    // TODO: impl HNSW for VectorCore {} starting here?
     #[inline]
     fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
@@ -221,11 +220,9 @@ impl VectorCore {
     }
 
     fn search(&self, txn: &RoTxn, query: &HVector, k: usize) -> Result<Vec<(String, f64)>, VectorError> {
-        let reduced_vec = self.reduce_dims(data); // TODO: general optim traits thing
+        let reduced_vec = self.reduce_dims(query.get_data()); // TODO: general optim traits thing
         let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
-
-        let random_level = self.get_random_level();
-        let mut cache = HashMap::with_capacity(500);
+        let mut cache: HashMap<String, HVector> = HashMap::with_capacity(500);
 
         let mut entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
@@ -234,34 +231,38 @@ impl VectorCore {
             }
         };
 
-        let query_id = query.get_id();
         let ef = k.max(self.config.ef_construction).max(10); // TODO: Remove hardcoded 10
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let nearest = self.search_layer(txn, &query, &entry_point, 10, level, cache)?;
+            let nearest = self.search_layer(txn, &query, &entry_point, 10, level, &mut cache)?;
             assert_eq!(nearest.len(), 1, "Search layer should return 1 result");
             if !nearest.empty() {
-                entry_point = self.get_vector(txn, &nearest.peek().unwrap().id, 0)?;
+                entry_point = self.get_vector(txn, &nearest.peek().unwrap().get_id(), 0)?;
             }
         }
 
-        let mut candidates = self.search_layer(txn, &query, &entry_point, ef * 5, 0)?; // TODO: if we get nothing, add a change in precision mechanism
+        let mut candidates = self.search_layer(txn, &query, &entry_point, ef * 5, 0, &mut cache)?; // TODO: if we get nothing, add a change in precision mechanism for ef
 
         let results = Vec::with_capacity(candidates.len());
         candidates.iter().for_each(|c| {
             results.push((c.get_id().clone(), c.distance_to(&query)));
         });
-        Ok(results)
+
+        // old ---
+        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+
+        if let Some(pos) = results.iter().position(|(id, _)| id == query_id) {
+            if pos > 0 {
+                let item = results.remove(pos);
+                results.insert(0, item);
+            }
+        }
+        //---
+
+        Ok(results.truncate(k))
     }
 
-    /**
-     * #[derive(Debug, Clone, PartialEq)]
-        pub struct DistancedId {
-            id: String,
-            distance: f64,
-        }
-     */
     fn search_layer(
         &self,
         txn: &RoTxn,
@@ -269,24 +270,31 @@ impl VectorCore {
         entry_point: &HVector,
         ef: usize,
         level: usize,
-        cands: &mut HashMap<String, HVector>,
+        cache: &mut HashMap<String, HVector>,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
+        // TODO: how cache here?
+        let mut results = BinaryHeap::new();
+        let distance = entry_point.distance_to(query);
 
+        let expanded_ef = ef.max(10); // TODO: global or something?
+
+        // ...
+
+        while !candidates.is_empty() {
+            let curr_cand = candidates.pop().unwrap();
+
+            let neighbors = self.get_neighbors(txn, &curr_cand.id, level)?;
+        }
     }
 
     // fn search_and_return_string(&self, txn: &RoTxn, query: &HVector, k: usize) -> Result<Vec<String>, VectorError> {
     //     let hashmap = HashMap::with_capacity(500);
-
-        
-
     //     for (string, _ ) in self.search(txn, query, k)? {
-    //         // get string data from lmdb 
+    //         // get string data from lmdb
     //     }
 
     // }
 
     fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<String, VectorError> {
     }
-
-    
 }
