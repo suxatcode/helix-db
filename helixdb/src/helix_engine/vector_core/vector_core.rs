@@ -461,56 +461,6 @@ impl HNSW for VectorCore {
         query: &HVector,
         k: usize,
     ) -> Result<Vec<(String, f64)>, VectorError> {
-        // TODO: make sure input vector is the same dim as all the other vecs
-        //let reduced_vec = self.reduce_dims(query.get_data());
-        //let query = HVector::from_slice(query.get_id().to_string(), 0, reduced_vec);
-
-        println!("vecs in db: {:?}", self.vectors_db.len(txn)?);
-
-        let mut entry_point = match self.get_entry_point(txn) {
-            Ok(ep) => ep,
-            Err(_) => {
-                // return empty HVector
-                return Ok(vec![]);
-            }
-        };
-
-        println!("entry point: {:?}", entry_point);
-
-        let query_id = query.get_id();
-
-        let ef = k.max(self.config.ef_construction).max(10);
-
-        let curr_level = entry_point.get_level();
-
-        for level in (1..=curr_level).rev() {
-            let nearest = self.search_layer(txn, &query, &entry_point, 10, level)?;
-            if !nearest.is_empty() {
-                println!("nearest id: {:?}", nearest.peek().unwrap().id);
-                entry_point = self.get_vector(txn, &nearest.peek().unwrap().id, 0)?;
-            }
-        }
-
-        let mut candidates = self.search_layer(txn, &query, &entry_point, ef * 3, 0)?;
-        println!("num cands: {}", candidates.len());
-
-        if candidates.is_empty() {
-            candidates = self.search_layer(txn, &query, &entry_point, ef * 5, 0)?;
-
-            if candidates.is_empty() {
-                let all_vectors = self.get_all_vectors(txn)?;
-                for vector in all_vectors {
-                    if vector.level == 0 {
-                        let distance = vector.distance_to(&query);
-                        candidates.push(DistancedId {
-                            id: vector.get_id().to_string(),
-                            distance,
-                        });
-                    }
-                }
-            }
-        }
-
         let mut results = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             if let Ok(vector) = self.get_vector(txn, &candidate.id, 0) {
@@ -545,6 +495,7 @@ impl HNSW for VectorCore {
         // TODO: make sure input vector is the same dim as all the other vecs
         //let reduced_vec = self.reduce_dims(data);
         //let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
+
         let id = uuid::Uuid::new_v4().to_string();
         let vector = HVector::from_slice(id.clone(), random_level, data.to_vec());
         let id = id.as_str();

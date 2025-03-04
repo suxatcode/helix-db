@@ -144,6 +144,13 @@ impl HVector {
         sum.sqrt()
     }
 
+    // TODO: compare from_to with map euc_dist
+
+    //#[inline(always)]
+    //fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
+    //    v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
+    //}
+
     #[inline(always)]
     fn scalar_distance(&self, other: &HVector) -> f64 {
         let mut sum = 0.0;
@@ -250,4 +257,6 @@ mod vector_tests {
         let distance = HVector::distance(&v1, &v2);
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
+
+    
 }
