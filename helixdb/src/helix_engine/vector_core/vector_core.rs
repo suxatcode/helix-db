@@ -80,39 +80,6 @@
     }
 
     fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<String, VectorError> {
-        let random_level = self.get_random_level();
-
-        //let reduced_vec = self.reduce_dims(data);
-        //let vector = HVector::from_slice(id.to_string(), 0, reduced_vec.clone());
-
-        let id = uuid::Uuid::new_v4().to_string();
-        let vector = HVector::from_slice(id.clone(), random_level, data.to_vec());
-        let id = id.as_str();
-        self.put_vector(txn, id, &vector)?;
-
-        if random_level > 0 {
-            let level0_vector = HVector::from_slice(id.to_string(), 0, data.to_vec());
-            self.put_vector(txn, id, &level0_vector)?;
-        }
-
-        let mut entry_point = match self.get_entry_point(txn) {
-            Ok(ep) => ep,
-            Err(_) => {
-                let entry_point = HVector::from_slice(id.to_string(), random_level, data.to_vec());
-                self.set_entry_point(txn, &entry_point)?;
-                entry_point
-            }
-        };
-
-        let curr_id = entry_point.get_id().to_string();
-        let mut curr_level = entry_point.get_level();
-
-        if random_level > curr_level {
-            entry_point = HVector::from_slice(id.to_string(), random_level, data.to_vec());
-            self.set_entry_point(txn, &entry_point)?;
-            curr_level = random_level;
-        }
-
         let mut ep_id = curr_id;
 
         if ep_id != id {
