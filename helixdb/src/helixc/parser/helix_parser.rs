@@ -831,7 +831,6 @@ impl HelixParser {
     fn parse_new_field_pair(pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
         let print_pair = pair.clone();
         let mut pairs = pair.into_inner();
-        // println!("pairs: {:?}", pairs);
         let name = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
@@ -922,7 +921,6 @@ impl HelixParser {
     }
 
     fn parse_object_step(pair: Pair<Rule>) -> Result<Object, ParserError> {
-        println!("\n\npair: {:?}\n\n", pair);
         let mut fields = Vec::new();
         let mut should_spread = false;
         for p in pair.into_inner() {
@@ -930,7 +928,6 @@ impl HelixParser {
                 should_spread = true;
                 continue;
             }
-            println!("\n\nobject step: {:?}\n\n", p);
             let mut pairs = p.into_inner();
             let prop_key = pairs.next().unwrap().as_str().to_string();
             let field_addition = match pairs.next() {
@@ -1704,6 +1701,7 @@ mod tests {
             RETURN result
         "#;
         let result = HelixParser::parse_source(input).unwrap();
+        println!("\n\nresult: {:?}\n\n", result);
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 1);
         assert_eq!(query.return_values.len(), 1);

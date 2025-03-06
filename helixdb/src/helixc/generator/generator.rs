@@ -1,5 +1,5 @@
 use crate::helix_engine::types::GraphError;
-use crate::helixc::parser::helix_parser::StartNode;
+use crate::helixc::parser::helix_parser::{Object, StartNode};
 use crate::helixc::parser::helix_parser::{
     AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, Expression, Field, FieldAddition,
     FieldType, FieldValue, GraphStep, IdType, NodeSchema, Query, Source,
@@ -46,7 +46,7 @@ impl CodeGenerator {
         output.push_str("    protocol::response::Response,\n");
         output.push_str("    protocol::traversal_value::TraversalValue,\n");
         output.push_str(
-            "    protocol::{filterable::Filterable, value::Value, return_values::ReturnValue},\n",
+            "    protocol::{filterable::Filterable, value::Value, return_values::ReturnValue, remapping::Remapping},\n",
         );
         output.push_str("};\n");
         output.push_str("use sonic_rs::{Deserialize, Serialize};\n\n");
@@ -149,6 +149,10 @@ impl CodeGenerator {
                 query.name
             ));
         }
+
+        // 
+        output.push_str(&self.indent());
+        output.push_str("let mut return_vals: HashMap<String, HashMap<String, Remapping>> = HashMap::new();\n");
 
         // Setup database transaction
         output.push_str(&self.indent());
@@ -627,18 +631,18 @@ impl CodeGenerator {
                 output.push_str("tr.get_id();\n");
             }
             Step::Update(update) => {
-                // let props = update
-                //     .fields
-                //     .iter()
-                //     .map(|(k, v)| {
-                //         format!("\"{}\".to_string() => {}", k, self.generate_field_addition(v))
-                //     })
-                //     .collect::<Vec<_>>()
-                //     .join(", ");
-                // output.push_str(&format!(
-                //     "tr.update_props(&mut txn, props!{{ {} }});\n",
-                //     props
-                // ));
+                let props = update
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!("\"{}\".to_string() => {}", f.name, self.generate_field_addition(&f.value))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                output.push_str(&format!(
+                    "tr.update_props(&mut txn, props!{{ {} }});\n",
+                    props
+                ));
             }
             _ => {}
         }
@@ -1017,6 +1021,12 @@ impl CodeGenerator {
             }
             _ => String::new(),
         }
+    }
+
+
+    fn generate_object_step(&self, object_step: &Object) -> String {
+        let mut output = String::new();
+        output
     }
 }
 
