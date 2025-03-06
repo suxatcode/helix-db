@@ -12,8 +12,9 @@ get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | where_step | object_step | count) }
-last_step           = { "::" ~ (bool_operations | ID | update | exclude_field ) }
+step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count) }
+last_step           = { "::" ~ (bool_operations | ID | update | closure_step | object_step | exclude_field) }
+// mapping_step        = { "::" ~ ( object_step | exclude_field )* }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
@@ -98,11 +99,12 @@ ID           = { "ID" }
 update_field = { identifier ~ ":" ~ (evaluates_to_anything | anonymous_traversal) }
 update       = { "UPDATE" ~ "(" ~ "{" ~ update_field ~ ("," ~ update_field)* ~ "}" ~ ")" }
 
-object_step   = { "{" ~ mapping_field ~ ("," ~ mapping_field)* ~ (spread_object)? ~ "}" }
-exclude_field = { "!" ~ "{" ~ identifier ~ ("," ~ identifier)* ~ (spread_object)? ~ "}" }
+object_step   = { "{" ~ mapping_field ~ ("," ~ mapping_field)* ~ ("," ~ spread_object)? ~ "}" }
+exclude_field = { "!" ~ "{" ~ identifier ~ ("," ~ identifier)* ~ ("," ~ spread_object)? ~ "}" }
+closure_step  = { "|" ~ identifier ~ "|" ~ object_step }
 spread_object = { ".." }
 
-mapping_field = { identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step)) }
+mapping_field = { (identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step))) | identifier }
 
 // Schema definitions
 node_def   = { "V::" ~ identifier_upper ~ node_body }

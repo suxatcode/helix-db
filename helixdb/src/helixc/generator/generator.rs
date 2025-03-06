@@ -627,18 +627,18 @@ impl CodeGenerator {
                 output.push_str("tr.get_id();\n");
             }
             Step::Update(update) => {
-                let props = update
-                    .fields
-                    .iter()
-                    .map(|(k, v)| {
-                        format!("\"{}\".to_string() => {}", k, self.generate_field_addition(v))
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                output.push_str(&format!(
-                    "tr.update_props(&mut txn, props!{{ {} }});\n",
-                    props
-                ));
+                // let props = update
+                //     .fields
+                //     .iter()
+                //     .map(|(k, v)| {
+                //         format!("\"{}\".to_string() => {}", k, self.generate_field_addition(v))
+                //     })
+                //     .collect::<Vec<_>>()
+                //     .join(", ");
+                // output.push_str(&format!(
+                //     "tr.update_props(&mut txn, props!{{ {} }});\n",
+                //     props
+                // ));
             }
             _ => {}
         }
@@ -828,7 +828,7 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_field_addition(&self, field_addition: &FieldAddition) -> String {
+    fn generate_field_addition(&self, field_addition: &FieldValue) -> String {
         let mut output = String::new();
         output
     }

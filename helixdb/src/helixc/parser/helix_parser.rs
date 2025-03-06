@@ -120,9 +120,9 @@ pub enum Step {
     Count,
     ID,
     Update(Update),
-    Add(Add),
+    Object(Object),
     Exclude(Exclude),
-    Map(Map),
+    Closure(Closure),
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +136,8 @@ pub enum FieldValue {
     Traversal(Box<Traversal>),
     Expression(Expression),
     Fields(Vec<FieldAddition>),
+    Literal(Value),
+    Empty,
 }
 
 #[derive(Debug, Clone)]
@@ -227,12 +229,13 @@ impl From<String> for IdType {
 
 #[derive(Debug, Clone)]
 pub struct Update {
-    pub fields: Vec<(String, FieldAddition)>,
+    pub fields: Vec<FieldAddition>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Add {
-    pub fields: Vec<(String, FieldAddition)>,
+pub struct Object {
+    pub fields: Vec<(String, FieldValue)>,
+    pub should_spread: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -241,9 +244,11 @@ pub struct Exclude {
 }
 
 #[derive(Debug, Clone)]
-pub struct Map {
-    pub fields: Vec<(String, FieldAddition)>,
+pub struct Closure {
+    pub identifier: String,
+    pub object: Object,
 }
+
 
 impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
@@ -756,7 +761,8 @@ impl HelixParser {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
             Rule::graph_step => Ok(Step::Vertex(Self::parse_graph_step(inner))),
-            Rule::object_step => Ok(Step::Props(Self::parse_object_step(inner))),
+            Rule::object_step => Ok(Step::Object(Self::parse_object_step(inner)?)),
+            Rule::closure_step => Ok(Step::Closure(Self::parse_closure(inner)?)),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::count => Ok(Step::Count),
@@ -788,9 +794,7 @@ impl HelixParser {
         }
     }
 
-    fn parse_object_step(pair: Pair<Rule>) -> Vec<String> {
-        pair.into_inner().map(|p| p.as_str().to_string()).collect()
-    }
+    
 
     fn parse_bool_operation(pair: Pair<Rule>) -> Result<BooleanOp, ParserError> {
         let inner = pair.into_inner().next().unwrap();
@@ -820,12 +824,14 @@ impl HelixParser {
 
     fn parse_field_additions(pair: Pair<Rule>) -> Result<Vec<FieldAddition>, ParserError> {
         pair.into_inner()
-            .map(|p| Self::parse_new_field(p))
+            .map(|p| Self::parse_new_field_pair(p))
             .collect()
     }
 
-    fn parse_new_field(pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
+    fn parse_new_field_pair(pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
+        let print_pair = pair.clone();
         let mut pairs = pair.into_inner();
+        // println!("pairs: {:?}", pairs);
         let name = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
@@ -836,10 +842,31 @@ impl HelixParser {
             Rule::anonymous_traversal => {
                 FieldValue::Traversal(Box::new(Self::parse_traversal(value_pair)?))
             }
+            Rule::object_step => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
+            Rule::string_literal => {
+                FieldValue::Literal(Value::String(Self::parse_string_literal(value_pair)?))
+            }
+            Rule::integer => FieldValue::Literal(Value::Integer(
+                value_pair
+                    .as_str()
+                    .parse()
+                    .map_err(|_| ParserError::from("Invalid integer literal"))?,
+            )),
+            Rule::float => FieldValue::Literal(Value::Float(
+                value_pair
+                    .as_str()
+                    .parse()
+                    .map_err(|_| ParserError::from("Invalid float literal"))?,
+            )),
+            Rule::boolean => FieldValue::Literal(Value::Boolean(value_pair.as_str() == "true")),
+            Rule::none => FieldValue::Empty,
+            Rule::mapping_field => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
             _ => {
                 return Err(ParserError::from(format!(
-                    "Unexpected field value type: {:?}",
-                    value_pair.as_rule()
+                    "Unexpected field pair type: {:?} \n {:?} \n\n {:?}",
+                    value_pair.as_rule(),
+                    value_pair,
+                    print_pair
                 )))
             }
         };
@@ -847,20 +874,106 @@ impl HelixParser {
         Ok(FieldAddition { name, value })
     }
 
+    fn parse_new_field_value(pair: Pair<Rule>) -> Result<FieldValue, ParserError> {
+        let print_pair = pair.clone();
+        let value_pair = pair.into_inner().next().unwrap();
+        let value: FieldValue = match value_pair.as_rule() {
+            Rule::evaluates_to_anything => {
+                FieldValue::Expression(Self::parse_expression(value_pair)?)
+            }
+            Rule::anonymous_traversal => {
+                FieldValue::Traversal(Box::new(Self::parse_traversal(value_pair)?))
+            }
+            Rule::object_step => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
+            Rule::string_literal => {
+                FieldValue::Literal(Value::String(Self::parse_string_literal(value_pair)?))
+            }
+            Rule::integer => FieldValue::Literal(Value::Integer(
+                value_pair
+                    .as_str()
+                    .parse()
+                    .map_err(|_| ParserError::from("Invalid integer literal"))?,
+            )),
+            Rule::float => FieldValue::Literal(Value::Float(
+                value_pair
+                    .as_str()
+                    .parse()
+                    .map_err(|_| ParserError::from("Invalid float literal"))?,
+            )),
+            Rule::boolean => FieldValue::Literal(Value::Boolean(value_pair.as_str() == "true")),
+            Rule::none => FieldValue::Empty,
+            Rule::mapping_field => FieldValue::Fields(Self::parse_field_additions(value_pair)?),
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected field value type: {:?} \n {:?} \n\n {:?}",
+                    value_pair.as_rule(),
+                    value_pair,
+                    print_pair
+                )))
+            }
+        };
+
+        Ok(value)
+    }
+
     fn parse_update(pair: Pair<Rule>) -> Result<Update, ParserError> {
-        let mut fields = Vec::new();
-        for p in pair.into_inner() {
-            let mut pairs = p.into_inner();
-            println!("pairs: {:?}", pairs);
-            let prop_key = pairs.next().unwrap().as_str().to_string();
-            let field_addition = Self::parse_new_field(pairs.next().unwrap())?;
-            fields.push((prop_key, field_addition));
-        }
+        let fields = Self::parse_field_additions(pair)?;
         Ok(Update { fields })
     }
 
+    fn parse_object_step(pair: Pair<Rule>) -> Result<Object, ParserError> {
+        println!("\n\npair: {:?}\n\n", pair);
+        let mut fields = Vec::new();
+        let mut should_spread = false;
+        for p in pair.into_inner() {
+            if p.as_rule() == Rule::spread_object {
+                should_spread = true;
+                continue;
+            }
+            println!("\n\nobject step: {:?}\n\n", p);
+            let mut pairs = p.into_inner();
+            let prop_key = pairs.next().unwrap().as_str().to_string();
+            let field_addition = match pairs.next() {
+                Some(p) => match p.as_rule() {
+                    Rule::evaluates_to_anything => {
+                        FieldValue::Expression(Self::parse_expression(p)?)
+                    }
+                    Rule::anonymous_traversal => {
+                        FieldValue::Traversal(Box::new(Self::parse_traversal(p)?))
+                    }
+                    Rule::mapping_field => FieldValue::Fields(Self::parse_field_additions(p)?),
+                    Rule::object_step => FieldValue::Fields(
+                        Self::parse_object_step(p)?
+                            .fields
+                            .iter()
+                            .map(|(k, v)| FieldAddition {
+                                name: k.clone(),
+                                value: v.clone(),
+                            })
+                            .collect(),
+                    ),
+
+                    _ => Self::parse_new_field_value(p)?,
+                },
+                None if prop_key.len() > 0 => FieldValue::Literal(Value::String(prop_key.clone())),
+                None => FieldValue::Empty,
+            };
+            fields.push((prop_key, field_addition));
+        }
+        Ok(Object {
+            fields,
+            should_spread,
+        })
+    }
+
+    fn parse_closure(pair: Pair<Rule>) -> Result<Closure, ParserError> {
+        let mut pairs = pair.clone().into_inner();
+        let identifier = pairs.next().unwrap().as_str().to_string();
+        let object = Self::parse_object_step(pairs.next().unwrap())?;
+        Ok(Closure { identifier, object })
+    }
+
     fn parse_exclude(pair: Pair<Rule>) -> Result<Exclude, ParserError> {
-        println!("pair: {:?}", pair);
         let mut fields = Vec::new();
         for p in pair.into_inner() {
             fields.push(p.as_str().to_string());
@@ -1448,7 +1561,7 @@ mod tests {
         "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
-        assert_eq!(query.statements.len(), 1);
+        assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
     }
 
@@ -1480,7 +1593,7 @@ mod tests {
                 },
                 friends: _::Out<Follows>::InV::{
                     name,
-                    mutualFriends: _::Out<Follows>::Count
+                    mutualFriends: _::Out<Follows>::COUNT
                 }
             }
             RETURN result
@@ -1511,7 +1624,7 @@ mod tests {
         QUERY spreadFields() =>
             user <- V<User>("123")
             result <- user::{
-                newField: "value"
+                newField: "value",
                 ..
             }
             RETURN result
@@ -1531,7 +1644,7 @@ mod tests {
                 name: "New Name",
                 age: 30,
                 lastUpdated: "2024-03-01",
-                friendCount: _::Out<Follows>::Count
+                friendCount: _::Out<Follows>::COUNT
             })
             RETURN updated
         "#;
@@ -1563,12 +1676,12 @@ mod tests {
             // Test combination of different operations
             user <- V<User>("123")
             friends <- user::Out<Follows>::InV<User>
-            active <- friends::WHERE(_::Props(active)::EQ(true))
+            active <- friends::WHERE(_::{active}::EQ(true))
             result <- active::{
-                name: _::Props(name),
+                name,
                 posts: _::Out<Created>::InV<Post>::!{deleted}::{
-                    title: _::Props(title),
-                    likes: _::In<Likes>::Count
+                    title: title,
+                    likes: _::In<Likes>::COUNT
                 }
             }
             RETURN result
@@ -1576,6 +1689,38 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 4);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_closure() {
+        let input = r#"
+        QUERY multipleLayers() =>
+            result <- V<User>::|user|{
+                posts: _::Out<Created>::{
+                    user_id: user::ID
+                }
+            }
+            RETURN result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 1);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_complex_return_traversal() {
+        let input = r#"
+        QUERY returnTraversal() =>
+            RETURN V<User>::|user|{
+                posts: _::Out<Created>::{
+                    user_id: user::ID
+                }
+            }::!{createdAt, lastUpdated}::{username: name, ..}
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
     }
 }
