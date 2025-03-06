@@ -62,14 +62,14 @@ impl Ord for Candidate {
 impl Default for HNSWConfig {
     fn default() -> Self {
         Self {
-            m: 16,
+            m: 20,
             m_max: 32,
             ef_construction: 200,
             max_elements: 1_000_000,
-            m_l: 1.0 / std::f64::consts::LN_2,
+            m_l: 0.36,
             distance_multiplier: 1.5,
             target_dimension: None,
-            max_level: 0,
+            max_level: 5,
         }
     }
 }
@@ -133,10 +133,12 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn out_edges_key(source_id: &str, sink_id: &str) -> Vec<u8> {
+    fn out_edges_key(source_id: &str, sink_id: &str, level: usize) -> Vec<u8> {
         [
             OUT_EDGES_PREFIX,
             source_id.as_bytes(),
+            b":",
+            &level.to_string().into_bytes(),
             b":",
             sink_id.as_bytes(),
         ]
@@ -175,26 +177,34 @@ impl VectorCore {
     }
 
     #[inline]
-    fn get_new_level(&self) -> usize {
-        // maybe ?
-        //let mut rng = rand::thread_rng();
-        //let uniform_random = rng.random::<f64>();
-        //let level = (-uniform_random.ln() * self.config.m_l).floor() as usize;
+    pub fn get_new_level(&self) -> usize {
+        // // Atomically update the RNG seed
+        // let mut seed = self.rng_seed.fetch_add(1, AtomicOrdering::Relaxed);
+        // if seed == 0 {
+        //     seed = 1;
+        // }
+        
+        // // XorShift64* algorithm
+        // seed ^= seed >> 12;
+        // seed ^= seed << 25;
+        // seed ^= seed >> 27;
+        // let random_value = seed.wrapping_mul(0x2545F4914F6CDD1D);
+        
+        // // Convert to [0,1) range
+        // let r = (random_value as f64) / (u64::MAX as f64);
+        
+        // // Level calculation with exponential distribution
+        // // Use a constant like 1/ln(M) where M is base parameter (often 2-16)
+        // // Alternatively, you can use a fixed value like self.config.m_l
+        // let level = (-r.ln() * self.config.m_l).floor() as usize;
+        
+        // // Cap the maximum level to prevent extremely rare but very high levels
+        // println!("level: {:?}, max_level: {:?}", level, self.config.max_level);
+        // level.min(self.config.max_level)
 
-        let mut seed = self.rng_seed.load(AtomicOrdering::Relaxed);
-        if seed == 0 {
-            seed = 1;
-        }
-
-        seed ^= seed >> 12;
-        seed ^= seed << 25;
-        seed ^= seed >> 27;
-
-        self.rng_seed.store(seed, AtomicOrdering::Relaxed);
-
-        let r = ((seed as f64) / (u64::MAX as f64)).abs();
-        let level = (-r.ln() * self.config.m_l).floor() as usize;
-        level
+        let mut rng = rand::rng();
+        let level = (-rng.random::<f64>().ln()).floor() as usize;
+        level.min(self.config.max_level)
     }
 
     #[inline]
@@ -223,9 +233,11 @@ impl VectorCore {
 
     #[inline(always)]
     fn get_vector(&self, txn: &RoTxn, id: &str, level: usize) -> Result<HVector, VectorError> {
-        match self.vectors_db.get(txn, &Self::vector_key(id, level))? {
+        let key = Self::vector_key(id, level);
+        match self.vectors_db.get(txn, key.as_ref())? {
             Some(bytes) => deserialize(&bytes).map_err(VectorError::from),
-            None => Err(VectorError::VectorNotFound),
+            None if level > 0 => self.get_vector(txn, id, 0),
+            None => Err(VectorError::VectorNotFound(id.to_string())),
         }
     }
 
@@ -242,7 +254,7 @@ impl VectorCore {
 
     #[inline(always)]
     fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<HVector>, VectorError> {
-        let out_key = Self::out_edges_key(id, "");
+        let out_key = Self::out_edges_key(id, "", level);
 
         let iter = self
             .out_edges_db
@@ -250,26 +262,32 @@ impl VectorCore {
             .prefix_iter(&txn, &out_key)?;
 
         let mut neighbors = Vec::with_capacity(512);
-        let prefix_len = OUT_EDGES_PREFIX.len() + id.len() + 1;
+        let prefix_len = OUT_EDGES_PREFIX.len() + id.len() + 1 + level.to_string().len() + 1;
 
         for result in iter {
             // key = source_id:sink_id
             let (key, _) = result?;
-            let id = std::str::from_utf8(&key[prefix_len..])?;
-            neighbors.push(self.get_vector(txn, id, level)?); // TODO: can this be better
+            let neighbor_id = std::str::from_utf8(&key[prefix_len..])?;
+            if neighbor_id == id {
+                continue;
+            }
+            neighbors.push(self.get_vector(txn, neighbor_id, level)?); // TODO: can this be better
         }
 
         Ok(neighbors)
     }
 
     #[inline(always)]
-    fn set_neighbours(&self, txn: &mut RwTxn, id: &str, neighbors: &BinaryHeap<HVector>) -> Result<(), VectorError> {
+    fn set_neighbours(&self, txn: &mut RwTxn, id: &str, neighbors: &BinaryHeap<HVector>, level: usize) -> Result<(), VectorError> {
         neighbors
             .iter()
             .try_for_each(|neighbor| -> Result<(), VectorError> {
                 let neighbor_id = neighbor.get_id();
-                let out_key = Self::out_edges_key(id, neighbor_id);
-                let in_key = Self::out_edges_key(neighbor_id, id);
+                if neighbor_id == id {
+                    return Ok(());
+                }
+                let out_key = Self::out_edges_key(id, neighbor_id, level);
+                let in_key = Self::out_edges_key(neighbor_id, id, level);
 
                 self.out_edges_db.put(txn, &out_key, &())?;
                 self.out_edges_db.put(txn, &in_key, &())?;
@@ -284,51 +302,38 @@ impl VectorCore {
         candidates: &BinaryHeap<HVector>,
         level: usize,
         extend_cands: bool,
-        keep_prund_cands: bool,
+        _keep_prund_cands: bool, // we remove this option for clarity
     ) -> Result<BinaryHeap<HVector>, VectorError> {
         let m = if level == 0 {
             self.config.m
         } else {
             self.config.m_max
         };
-
-        let mut neighbors: BinaryHeap<HVector> = BinaryHeap::with_capacity(m);
-        let mut visited: IndexMap<String, HVector> = IndexMap::with_capacity(m);
-
-        if extend_cands {
-            for cand in candidates {
-                for neighbor in self.get_neighbors(txn, cand.get_id(), level)? {
-                    if !visited.contains_key(neighbor.get_id()) {
-                        visited.insert(neighbor.get_id().to_string(), neighbor.clone());
-                    }
+    
+        // Start by including the candidates themselves.
+        let mut all_candidates = IndexMap::new();
+        for candidate in candidates {
+            all_candidates.insert(candidate.get_id().to_string(), candidate.clone());
+            if extend_cands {
+                // Get neighbors from the graph for each candidate.
+                for neighbor in self.get_neighbors(txn, candidate.get_id(), level)? {
+                    all_candidates.entry(neighbor.get_id().to_string()).or_insert(neighbor);
                 }
             }
         }
-
-        visited.sort_by(|_,a,_,b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(Ordering::Equal)
-        });
-
-        let mut visited_d: BinaryHeap<HVector> = BinaryHeap::with_capacity(m);
-        while visited.len() > 0 && neighbors.len() < m {
-            let e = visited.pop().unwrap();
-
-            if e.1.distance < neighbors.pop().unwrap().distance {
-                neighbors.push(e.1);
-            } else {
-                visited_d.push(e.1);
-            }
+    
+        // Convert to a Vec and sort by distance (ascending order).
+        let mut sorted_candidates: Vec<_> = all_candidates.into_iter().map(|(_id, vec)| vec).collect();
+        sorted_candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+    
+        // Select the best m candidates.
+        let selected = sorted_candidates.into_iter().take(m);
+        let mut neighbor_heap = BinaryHeap::with_capacity(m);
+        for candidate in selected {
+            neighbor_heap.push(candidate);
         }
-
-        if keep_prund_cands {
-            while visited_d.len() > 0 && neighbors.len() < m {
-                neighbors.push(visited_d.peek().unwrap().clone());
-            }
-        }
-
-        Ok(neighbors)
+    
+        Ok(neighbor_heap)
     }
 
     fn search_level(
@@ -425,12 +430,17 @@ impl VectorCore {
 
     // paper: https://arxiv.org/pdf/1603.09320
     pub fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<HVector, VectorError> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = uuid::Uuid::new_v4().as_simple().to_string();
         //let reduced_vec = self.reduce_dims(data);
         //let data_query = HVector::from_slice(id.clone(), 0, reduced_vec.clone()); // TODO: Optimise this
-        let data_query = HVector::from_slice(id.clone(), 0, data.to_vec());
-
         let new_level = self.get_new_level();
+
+        let mut data_query = HVector::from_slice(id.clone(), 0, data.to_vec());
+        self.put_vector(txn, &data_query)?;
+        data_query.level = new_level;
+        self.put_vector(txn, &data_query)?;
+
+
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
@@ -451,12 +461,15 @@ impl VectorCore {
         for level in (0..=l.min(new_level)).rev() {
             let nearest = self.search_level(txn, &data_query, &curr_ep, self.config.ef_construction, level)?;
             let neighbors = self.select_neighbors(txn, &nearest, level, true, true)?;
+
+            
+            self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?; // TODO possibly remove?
             // TODO: add bi-directional connections from neighbors to q at level
             for e in neighbors {
                 let e_conn = BinaryHeap::from(self.get_neighbors(txn, e.get_id(), level)?);
                 if e_conn.len() > self.config.m_max {
                     let e_new_conn = self.select_neighbors(txn, &e_conn, level, true, true)?;
-                    self.set_neighbours(txn, e.get_id(), &e_new_conn)?;
+                    self.set_neighbours(txn, e.get_id(), &e_new_conn, level)?;
                 }
             }
         }
@@ -465,7 +478,7 @@ impl VectorCore {
             self.set_entry_point(txn, &data_query)?;
         }
 
-        self.put_vector(txn, &data_query)?;
+        
 
         Ok(data_query)
     }

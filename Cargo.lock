@@ -1060,6 +1060,7 @@ dependencies = [
  "dirs 6.0.0",
  "flume",
  "heed3",
+ "indexmap",
  "inventory",
  "pest",
  "pest_derive",

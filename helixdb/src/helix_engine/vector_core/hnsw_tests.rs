@@ -4,7 +4,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
 use polars::prelude::*;
 
 use super::vector::HVector;
-use crate::helix_engine::vector_core::vector_core::VectorCore;
+use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -72,7 +72,8 @@ fn load_dbpedia_vectors(file_path: &str, limit: usize) -> Result<Vec<(String, Ve
 fn test_accuracy_with_dbpedia_openai() {
     // cargo test test_accuracy_with_dbpedia_openai -- --nocapture
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
-    let file_path = "../data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
+    let file_path = "src/helix_engine/data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
+
     let n_base = 10_000; // number of base vectors (subset) (increase for better testing)
     let n_query = 1;     // number of query vectors
     let k = 10;          // number of neighbors to retrieve
@@ -91,7 +92,7 @@ fn test_accuracy_with_dbpedia_openai() {
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let db = VectorCore::new(&env, &mut txn, None).unwrap();
+    let db = VectorCore::new(&env, &mut txn, Some(HNSWConfig::default())).unwrap();
     let mut inserted_ids = Vec::new();
     for (_id, data) in base_vectors.iter().take(10) {
         let inserted_vec = db.insert(&mut txn, data).unwrap();
@@ -133,5 +134,40 @@ fn test_accuracy_with_dbpedia_openai() {
     // note: well tuned vector dbs typically achieve recall rates between 0.8 and 0.99
     let average_recall = total_recall / n_query as f64;
     println!("Average recall@{}: {:.4}", k, average_recall);
-    //assert!(average_recall > 0.8, "Recall too low: {}", average_recall);
+    assert!(average_recall > 0.8, "Recall too low: {}", average_recall);
+}
+
+
+#[test]
+fn test_random_level_generation() {
+    use std::collections::HashMap;
+    
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+    let db = VectorCore::new(&env, &mut txn, Some(HNSWConfig::default())).unwrap();
+    
+    let num_samples = 10000;
+    let mut level_distribution: HashMap<usize, usize> = HashMap::new();
+    
+    for _ in 0..num_samples {
+        let level = db.get_new_level();
+        *level_distribution.entry(level).or_insert(0) += 1;
+    }
+    
+    println!("Level distribution from {} samples:", num_samples);
+    
+    // Sort the levels for consistent output
+    let mut levels: Vec<usize> = level_distribution.keys().cloned().collect();
+    levels.sort();
+    
+    for level in levels {
+        let count = level_distribution.get(&level).unwrap();
+        let percentage = (*count as f64 / num_samples as f64) * 100.0;
+        println!("Level {}: {} occurrences ({}%)", level, count, percentage.round());
+    }
+    
+    txn.commit().unwrap();
+    
+    // Remove or modify this assertion based on what you want to test
+    // assert!(false);
 }

@@ -140,7 +140,7 @@ impl From<VectorError> for GraphError {
 
 #[derive(Debug)]
 pub enum VectorError {
-    VectorNotFound,
+    VectorNotFound(String),
     InvalidVectorLength,
     InvalidVectorData,
     InvalidVectorId,
@@ -155,7 +155,7 @@ pub enum VectorError {
 impl fmt::Display for VectorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            VectorError::VectorNotFound => write!(f, "Vector not found"),
+            VectorError::VectorNotFound(id) => write!(f, "Vector not found: {}", id),
             VectorError::InvalidVectorLength => write!(f, "Invalid vector length"),
             VectorError::InvalidVectorData => write!(f, "Invalid vector data"),
             VectorError::InvalidVectorId => write!(f, "Invalid vector id"),
