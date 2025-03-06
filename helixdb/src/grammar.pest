@@ -12,8 +12,8 @@ get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | object_step | where_step | count) }
-last_step           = { "::" ~ (bool_operations | ID | update | exclude_field | object_step) }
+step                = { "::" ~ (graph_step | where_step | object_step | count) }
+last_step           = { "::" ~ (bool_operations | ID | update | exclude_field ) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
@@ -52,8 +52,6 @@ evaluates_to_number = {
 
 // Return statement
 return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
-
-// Add fields
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
@@ -104,7 +102,7 @@ object_step   = { "{" ~ mapping_field ~ ("," ~ mapping_field)* ~ (spread_object)
 exclude_field = { "!" ~ "{" ~ identifier ~ ("," ~ identifier)* ~ (spread_object)? ~ "}" }
 spread_object = { ".." }
 
-mapping_field = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | exclude_field | object_step) | identifier }
+mapping_field = { identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step)) }
 
 // Schema definitions
 node_def   = { "V::" ~ identifier_upper ~ node_body }

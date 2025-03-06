@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
 use pest::{
@@ -75,6 +73,7 @@ pub struct Assignment {
     pub variable: String,
     pub value: Expression,
 }
+
 #[derive(Debug, Clone)]
 pub enum Expression {
     Traversal(Box<Traversal>),
@@ -219,7 +218,6 @@ impl From<IdType> for String {
     }
 }
 
-/// Use From for literals to remove '"'
 impl From<String> for IdType {
     fn from(mut s: String) -> IdType {
         s.retain(|c| c != '"');
@@ -573,7 +571,7 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_expression_vec(mut pairs: Pairs<Rule>) -> Result<Vec<Expression>, ParserError> {
+    fn parse_expression_vec(pairs: Pairs<Rule>) -> Result<Vec<Expression>, ParserError> {
         let mut expressions = Vec::new();
         for p in pairs {
             match p.as_rule() {
@@ -1223,7 +1221,7 @@ mod tests {
         "#;
         let result = match HelixParser::parse_source(input) {
             Ok(result) => result,
-            Err(e) => {
+            Err(_e) => {
                 panic!();
             }
         };
@@ -1459,12 +1457,125 @@ mod tests {
         let input = r#"
         QUERY mapInReturn() =>
             user <- V<User>("123")
-            RETURN user::{name: "name", age: "age"}
+            RETURN user::{
+                name, 
+                age
+            }
         "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 1);
         assert_eq!(query.return_values.len(), 1);
     }
-    
+
+    #[test]
+    fn test_complex_object_operations() {
+        let input = r#"
+        QUERY complexObjects() =>
+            user <- V<User>("123")
+            result <- user::{
+                basic: {
+                    name,
+                    age
+                },
+                friends: _::Out<Follows>::InV::{
+                    name,
+                    mutualFriends: _::Out<Follows>::Count
+                }
+            }
+            RETURN result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_exclude_fields() {
+        let input = r#"
+        QUERY excludeFields() =>
+            user <- V<User>("123")
+            filtered <- user::!{password, secretKey}
+            RETURN filtered
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_spread_operator() {
+        let input = r#"
+        QUERY spreadFields() =>
+            user <- V<User>("123")
+            result <- user::{
+                newField: "value"
+                ..
+            }
+            RETURN result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_complex_update_operations() {
+        let input = r#"
+        QUERY updateUser() =>
+            user <- V<User>("123")
+            updated <- user::UPDATE({
+                name: "New Name",
+                age: 30,
+                lastUpdated: "2024-03-01",
+                friendCount: _::Out<Follows>::Count
+            })
+            RETURN updated
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 2);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_nested_traversals() {
+        let input = r#"
+        QUERY nestedTraversals() =>
+            start <- V<User>("123")
+            result <- start::Out<Follows>::InV<User>::Out<Likes>::InV<Post>::{title}
+            filtered <- result::WHERE(_::{likes}::GT(10))
+            RETURN filtered
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 3);
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_combined_operations() {
+        let input = r#"
+        QUERY combinedOps() =>
+            // Test combination of different operations
+            user <- V<User>("123")
+            friends <- user::Out<Follows>::InV<User>
+            active <- friends::WHERE(_::Props(active)::EQ(true))
+            result <- active::{
+                name: _::Props(name),
+                posts: _::Out<Created>::InV<Post>::!{deleted}::{
+                    title: _::Props(title),
+                    likes: _::In<Likes>::Count
+                }
+            }
+            RETURN result
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.statements.len(), 4);
+        assert_eq!(query.return_values.len(), 1);
+    }
 }
