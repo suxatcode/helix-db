@@ -59,7 +59,7 @@ impl HVector {
             is_deleted: false,
             level: 0,
             data,
-            distance: 0,
+            distance: 0.0,
         }
     }
 
@@ -70,7 +70,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0,
+            distance: 0.0,
         }
     }
 
@@ -116,7 +116,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0,
+            distance: 0.0,
         })
     }
 

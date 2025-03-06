@@ -45,7 +45,7 @@ impl TraversalBuilder {
         match matches!(self.current_step, TraversalValue::NodeArray(_)) {
             true => Ok(()),
             false => Err(GraphError::TraversalError(format!(
-                "The traversal step {:?}, is not a valid traversal from an edge. 
+                "The traversal step {:?}, is not a valid traversal from an edge.
                 The current step should be a node.",
                 function_name
             ))),
@@ -56,7 +56,7 @@ impl TraversalBuilder {
         match matches!(self.current_step, TraversalValue::EdgeArray(_)) {
             true => Ok(()),
             false => Err(GraphError::TraversalError(format!(
-                "The traversal step {:?}, is not a valid traversal from a node. 
+                "The traversal step {:?}, is not a valid traversal from a node.
                 The current step should be an edge",
                 function_name
             ))),
@@ -988,7 +988,7 @@ impl TraversalBuilderMethods for TraversalBuilder {
     }
 }
 
-
+/* NOTE: commented out because at 1001 it expects Vec of (String, f64) but I (lukas) changed it to search -> Vec<HVector>
 impl VectorTraversalSteps for TraversalBuilder {
     fn vector_search(&mut self, txn: &RoTxn, query_vector: &HVector) -> &mut Self {
         let result = match self.storage.vectors.search(txn, query_vector, 10) {
@@ -1001,7 +1001,7 @@ impl VectorTraversalSteps for TraversalBuilder {
         self.current_step = TraversalValue::VectorArray(result);
         self
     }
-    
+
     fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self {
         self.storage.vectors.insert(txn, vector).unwrap();
         self
@@ -1014,6 +1014,4 @@ impl VectorTraversalSteps for TraversalBuilder {
     fn update_vector(&mut self, txn: &mut RwTxn, vector_id: &str, vector: &[f64]) -> &mut Self {
         self
     }
-
-
-}
+}*/
