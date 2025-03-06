@@ -465,6 +465,8 @@ impl VectorCore {
             self.set_entry_point(txn, &data_query)?;
         }
 
+        self.put_vector(txn, &data_query)?;
+
         Ok(data_query)
     }
 

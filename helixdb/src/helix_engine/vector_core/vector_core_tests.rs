@@ -1,8 +1,5 @@
 use heed3::{Env, EnvOpenOptions};
-use std::collections::HashSet;
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
-use polars::prelude::*;
-
 use super::vector::HVector;
 use crate::helix_engine::vector_core::vector_core::VectorCore;
 
@@ -33,29 +30,55 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
     vectors
 }
 
-fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
-    v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
+#[test]
+fn test_vector_core_creation() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
+
+    let hnsw = VectorCore::new(&env, &mut txn, None);
+    assert!(hnsw.is_ok());
+
+    let hnsw = VectorCore::new(&env, &mut txn, Some(Default::default()));
+    assert!(hnsw.is_ok());
+
+    txn.commit().unwrap();
 }
 
-fn load_dbpedia_vectors(file_path: &str, limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
-    let df = ParquetReader::new(std::fs::File::open(file_path)?)
-        .finish()?
-        .lazy()
-        .limit(limit as u32)
-        .collect()?;
+#[test]
+fn test_get_new_level_distribution() {
+    let env = setup_temp_env();
+    let mut txn = env.write_txn().unwrap();
 
-    let ids = df.column("_id")?.str()?;
-    let embeddings = df.column("openai")?.list()?;
+    let hnsw = VectorCore::new(&env, &mut txn, None);
+    assert!(hnsw.is_ok());
 
-    let mut vectors = Vec::new();
-    for (i, (_id, embedding)) in ids.into_iter().zip(embeddings.into_iter()).enumerate() {
-        let f64_series = embedding
-            .unwrap()
-            .cast(&DataType::Float64)
-            .unwrap();
-        let chunked = f64_series.f64().unwrap();
-        let vector: Vec<f64> = chunked.into_no_null_iter().collect();
-        vectors.push((i.to_string(), vector));
-    }
-    Ok(vectors)
+    let hnsw = VectorCore::new(&env, &mut txn, Some(Default::default()));
+    assert!(hnsw.is_ok());
+
+    txn.commit().unwrap();
 }
+
+
+//test get_new_level
+
+//get_entry_point
+
+//set_entry_point
+
+//get_vector
+
+//put_vector
+
+//get_neighbors
+
+//set_neighbours
+
+//select_neighbors
+
+//search_level
+
+//search
+
+//insert
+
+//get_all_vectors
