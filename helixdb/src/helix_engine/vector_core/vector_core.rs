@@ -1,4 +1,3 @@
-use super::hnsw::HNSW;
 use crate::helix_engine::vector_core::vector::HVector;
 use crate::helix_engine::{storage_core::storage_core::OUT_EDGES_PREFIX, types::VectorError};
 use bincode::{deserialize, serialize};
@@ -8,7 +7,6 @@ use heed3::{
 };
 use indexmap::IndexMap;
 use rand::prelude::Rng;
-use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -31,44 +29,17 @@ pub struct HNSWConfig {
     pub m_l: f64,                 // level generation factor
     pub distance_multiplier: f64, // distance multiplier for pruning
     pub max_level: usize,         // max number of levels in index
-    pub target_dimension: Option<usize>,
-}
-
-pub struct VectorCore {
-    vectors_db: Database<Bytes, Bytes>,
-    out_edges_db: Database<Bytes, Unit>,
-    rng_seed: AtomicU64,
-    config: HNSWConfig,
-    // TODO: optim configs here, not in hnswconfig
-}
-
-#[derive(PartialEq)]
-struct Candidate {
-    id: String,
-    distance: f64,
-}
-impl Eq for Candidate {}
-impl PartialOrd for Candidate {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.distance.partial_cmp(&self.distance)
-    }
-}
-impl Ord for Candidate {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
-    }
 }
 
 impl Default for HNSWConfig {
     fn default() -> Self {
         Self {
-            m: 20,
+            m: 16,
             m_max: 32,
-            ef_construction: 200,
+            ef_construction: 512,
             max_elements: 1_000_000,
             m_l: 0.36,
             distance_multiplier: 1.5,
-            target_dimension: None,
             max_level: 5,
         }
     }
@@ -78,46 +49,99 @@ impl HNSWConfig {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
-    pub fn calc_target_dim(original_dim: usize) -> usize {
-        let sqrt_dim = (original_dim as f64).sqrt().ceil() as usize;
-        let log_dim = ((original_dim as f64).log2() * 2.0).ceil() as usize;
-        let percent_dim = (original_dim as f64 * 0.2).ceil() as usize;
+pub struct VecConfig {
+    og_dimensions: usize,
+    reduced_dimensions: Option<usize>,
+    quantization: Option<usize>,
+}
+
+impl Default for VecConfig {
+    fn default() -> Self {
+        Self {
+            og_dimensions: 0,
+            reduced_dimensions: None,
+            quantization: None,
+        }
+    }
+}
+
+impl VecConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn new_dims_reduced(og_dims: usize) -> Self {
+        Self {
+            og_dimensions: og_dims,
+            reduced_dimensions: Some(Self::calc_target_dim(og_dims)),
+            quantization: None,
+        }
+    }
+
+    fn calc_target_dim(og_dims: usize) -> usize {
+        let sqrt_dim = (og_dims as f64).sqrt().ceil() as usize;
+        let log_dim = ((og_dims as f64).log2() * 2.0).ceil() as usize;
+        let percent_dim = (og_dims as f64 * 0.2).ceil() as usize;
 
         let mut dims = vec![sqrt_dim, log_dim, percent_dim];
         dims.sort_unstable();
         let target_dim = dims[1];
 
-        target_dim.clamp(3, original_dim.min(256))
+        target_dim.clamp(3, og_dims.min(256))
     }
+}
 
-    pub fn with_dim_reduce(original_dim: usize, n: Option<usize>) -> Self {
-        Self {
-            target_dimension: Some(match n {
-                Some(dim) => dim,
-                None => Self::calc_target_dim(original_dim),
-            }),
-            ..Self::default()
-        }
+#[derive(PartialEq)]
+struct Candidate {
+    id: String,
+    distance: f64,
+}
+
+impl Eq for Candidate {}
+
+impl PartialOrd for Candidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        other.distance.partial_cmp(&self.distance)
     }
+}
+
+impl Ord for Candidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+pub struct VectorCore {
+    vectors_db: Database<Bytes, Bytes>,
+    out_edges_db: Database<Bytes, Unit>,
+    rng_seed: AtomicU64,
+    hnsw_config: HNSWConfig,
+    optims_config: VecConfig,
 }
 
 impl VectorCore {
     pub fn new(
         env: &Env,
         txn: &mut RwTxn,
-        config: Option<HNSWConfig>,
+        dimensions: usize,
+        i_hnsw_config: Option<HNSWConfig>,
+        i_optims_config: Option<VecConfig>,
     ) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
 
-        let config = config.unwrap_or_default();
+        let hnsw_config = i_hnsw_config.unwrap_or_default();
+        let mut optims_config = i_optims_config.unwrap_or_default();
+        optims_config.og_dimensions = dimensions;
 
         Ok(Self {
             vectors_db,
             out_edges_db,
             rng_seed: AtomicU64::new(0),
-            config,
+            hnsw_config,
+            optims_config,
         })
     }
 
@@ -145,35 +169,21 @@ impl VectorCore {
         .concat()
     }
 
-    /// (pooling operation reduce)
-    fn reduce_dims(&self, data: &[f64]) -> Vec<f64> {
-        // TODO: assert dim is correct and same as all others
-        // TODO: implement this on HVector? like HVector::
-        let target_dim = match self.config.target_dimension {
-            None => return data.to_vec(),
+    fn set_dims(&self, id: &String, data: &[f64]) -> HVector {
+        let mut n_vec: HVector = HVector::from_slice(id.clone(), 0, data.to_vec());
+
+        let target_dim = match self.optims_config.reduced_dimensions {
+            None => return n_vec,
             Some(dim) => dim,
         };
 
         if data.len() <= target_dim {
-            return data.to_vec();
+            return n_vec;
         }
 
-        let chunk_size = (data.len() as f64 / target_dim as f64).ceil() as usize;
-        let mut reduced = Vec::with_capacity(target_dim);
+        n_vec.reduce_dims(target_dim);
 
-        for chunk_idx in 0..target_dim {
-            let start = chunk_idx * chunk_size;
-            let end = (start + chunk_size).min(data.len());
-
-            if start >= data.len() {
-                break;
-            }
-
-            let avg = data[start..end].iter().sum::<f64>() / (end - start) as f64;
-            reduced.push(avg);
-        }
-
-        reduced
+        n_vec
     }
 
     #[inline]
@@ -183,28 +193,28 @@ impl VectorCore {
         // if seed == 0 {
         //     seed = 1;
         // }
-        
+
         // // XorShift64* algorithm
         // seed ^= seed >> 12;
         // seed ^= seed << 25;
         // seed ^= seed >> 27;
         // let random_value = seed.wrapping_mul(0x2545F4914F6CDD1D);
-        
+
         // // Convert to [0,1) range
         // let r = (random_value as f64) / (u64::MAX as f64);
-        
+
         // // Level calculation with exponential distribution
         // // Use a constant like 1/ln(M) where M is base parameter (often 2-16)
         // // Alternatively, you can use a fixed value like self.config.m_l
         // let level = (-r.ln() * self.config.m_l).floor() as usize;
-        
+
         // // Cap the maximum level to prevent extremely rare but very high levels
         // println!("level: {:?}, max_level: {:?}", level, self.config.max_level);
         // level.min(self.config.max_level)
 
         let mut rng = rand::rng();
         let level = (-rng.random::<f64>().ln()).floor() as usize;
-        level.min(self.config.max_level)
+        level.min(self.hnsw_config.max_level)
     }
 
     #[inline]
@@ -302,37 +312,29 @@ impl VectorCore {
         candidates: &BinaryHeap<HVector>,
         level: usize,
         extend_cands: bool,
-        _keep_prund_cands: bool, // we remove this option for clarity
+        _keep_prund_cands: bool, // TODO: we remove this option for clarity (but in paper is there)
     ) -> Result<BinaryHeap<HVector>, VectorError> {
-        let m = if level == 0 {
-            self.config.m
-        } else {
-            self.config.m_max
-        };
-    
-        // Start by including the candidates themselves.
+        let m = if level == 0 { self.hnsw_config.m } else { self.hnsw_config.m_max };
+
         let mut all_candidates = IndexMap::new();
         for candidate in candidates {
             all_candidates.insert(candidate.get_id().to_string(), candidate.clone());
             if extend_cands {
-                // Get neighbors from the graph for each candidate.
                 for neighbor in self.get_neighbors(txn, candidate.get_id(), level)? {
                     all_candidates.entry(neighbor.get_id().to_string()).or_insert(neighbor);
                 }
             }
         }
-    
-        // Convert to a Vec and sort by distance (ascending order).
+
         let mut sorted_candidates: Vec<_> = all_candidates.into_iter().map(|(_id, vec)| vec).collect();
         sorted_candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-    
-        // Select the best m candidates.
+
         let selected = sorted_candidates.into_iter().take(m);
         let mut neighbor_heap = BinaryHeap::with_capacity(m);
         for candidate in selected {
             neighbor_heap.push(candidate);
         }
-    
+
         Ok(neighbor_heap)
     }
 
@@ -393,10 +395,8 @@ impl VectorCore {
         Ok(results)
     }
 
-    pub fn search(&self, txn: &RoTxn, query: &HVector, k: usize) -> Result<Vec<HVector>, VectorError> {
-        // TODO: do a check first before going through reduce dims to avoid clone if not needed
-        //let reduced_vec = self.reduce_dims(query.get_data()); // TODO: general optim traits thing
-        //let query = HVector::from_slice("".to_string(), 0, reduced_vec.clone());
+    pub fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
+        let query = self.set_dims(&"".to_string(), query);
 
         let mut entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
@@ -405,7 +405,7 @@ impl VectorCore {
             }
         };
 
-        let ef = k.max(self.config.ef_construction);
+        let ef = k.max(self.hnsw_config.ef_construction);
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
@@ -431,15 +431,13 @@ impl VectorCore {
     // paper: https://arxiv.org/pdf/1603.09320
     pub fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<HVector, VectorError> {
         let id = uuid::Uuid::new_v4().as_simple().to_string();
-        //let reduced_vec = self.reduce_dims(data);
-        //let data_query = HVector::from_slice(id.clone(), 0, reduced_vec.clone()); // TODO: Optimise this
         let new_level = self.get_new_level();
 
-        let mut data_query = HVector::from_slice(id.clone(), 0, data.to_vec());
+        let mut data_query = self.set_dims(&id, data);
+
         self.put_vector(txn, &data_query)?;
         data_query.level = new_level;
         self.put_vector(txn, &data_query)?;
-
 
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
@@ -459,15 +457,14 @@ impl VectorCore {
         }
 
         for level in (0..=l.min(new_level)).rev() {
-            let nearest = self.search_level(txn, &data_query, &curr_ep, self.config.ef_construction, level)?;
+            let nearest = self.search_level(txn, &data_query, &curr_ep, self.hnsw_config.ef_construction, level)?;
             let neighbors = self.select_neighbors(txn, &nearest, level, true, true)?;
 
-            
-            self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?; // TODO possibly remove?
+            self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?; // TODO: possibly remove?
             // TODO: add bi-directional connections from neighbors to q at level
             for e in neighbors {
                 let e_conn = BinaryHeap::from(self.get_neighbors(txn, e.get_id(), level)?);
-                if e_conn.len() > self.config.m_max {
+                if e_conn.len() > self.hnsw_config.m_max {
                     let e_new_conn = self.select_neighbors(txn, &e_conn, level, true, true)?;
                     self.set_neighbours(txn, e.get_id(), &e_new_conn, level)?;
                 }
@@ -477,8 +474,6 @@ impl VectorCore {
         if new_level > l {
             self.set_entry_point(txn, &data_query)?;
         }
-
-        
 
         Ok(data_query)
     }
@@ -494,11 +489,4 @@ impl VectorCore {
         }
         Ok(vectors)
     }
-
-
-    /* TODO
-    fn delete(&self, txn: &mut RwTxn, ...) -> Result<String, VectorError> {
-        // self.search or something
-    }
-    */
 }

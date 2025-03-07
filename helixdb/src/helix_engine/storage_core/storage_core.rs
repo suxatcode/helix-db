@@ -82,10 +82,9 @@ impl HelixGraphStorage {
             }
         }
         println!("Secondary Indices: {:?}", secondary_indices);
-        
-        let config = HNSWConfig::default();
-        let vectors = VectorCore::new(&graph_env, &mut wtxn, Some(config))?;
-        
+
+        let vectors = VectorCore::new(&graph_env, &mut wtxn, 0, None, None)?;
+
         wtxn.commit()?;
         Ok(Self {
             graph_env,
