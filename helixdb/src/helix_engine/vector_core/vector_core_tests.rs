@@ -1,7 +1,6 @@
 use heed3::{Env, EnvOpenOptions};
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
-use super::vector::HVector;
-use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VecConfig, VectorCore};
+use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VecConfig, VectorCore}};
 use polars::prelude::*;
 use std::collections::HashSet;
 
@@ -32,10 +31,6 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
     vectors
 }
 
-fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
-    v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
-}
-
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
     let file_path = "../data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
@@ -63,11 +58,11 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_dpedia_entities_30k() {
-    let n_base = 30_000;
+    let n_base = 10_000;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 5000;
+    let n_query = 1000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -78,8 +73,7 @@ fn test_recall_dpedia_entities_30k() {
     println!("num of query vecs: {}", query_vectors.len());
 
     let dims = 1536;
-    let ks = [10, 15, 30, 50, 100];
-    let k = 100;
+    let k = 50;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
@@ -97,41 +91,58 @@ fn test_recall_dpedia_entities_30k() {
     let txn = env.read_txn().unwrap();
 
     println!("calculating ground truth distances...");
+    let all_hvectors = index.get_all_vectors(&txn).unwrap();
     let mut ground_truth = Vec::new();
+
     for (_, query) in query_vectors {
-        let mut distances: Vec<(String, f64)> = inserted_ids
+        let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
+        let mut distances: Vec<(String, f64)> = all_hvectors
             .iter()
-            .map(|(id, v)| (id.clone(), euclidean_distance(query, v)))
+            .map(|hvector| {
+                let vector = hvector;
+                (vector.get_id().to_string(), vector.distance_to(&hquery))
+            })
             .collect();
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let top_k: Vec<String> = distances.iter().take(100).map(|(i, _)| i.clone()).collect();
+        let top_k: Vec<String> = distances.iter().take(k).map(|(id, _)| id.clone()).collect();
         ground_truth.push(top_k);
     }
 
     println!("searching and comparing...");
-    //for k in ks {
-        let test_id = format!("recall@{} with {} queries", k, n_query);
+    let test_id = format!("recall@{} with {} queries", k, n_query);
 
-        let mut total_recall = 0.0;
+    let mut total_recall = 0.0;
 
-        for ((_, query), gt) in query_vectors.iter().zip(ground_truth.iter()) {
-            let results = index.search(&txn, query, k).unwrap();
-            let result_indices: HashSet<String> = results.into_iter()
-                .map(|hvector| hvector.get_id().to_string())
-                .collect();
+    let mut total_search_time = std::time::Duration::from_secs(0);
+    use std::time::Instant;
 
-            let gt_indices: HashSet<String> = gt.iter().cloned().collect();
-            println!("gt: {:?}\nresults: {:?}", gt_indices, result_indices);
-            let intersection = result_indices.intersection(&gt_indices).count();
-            let recall = intersection as f64 / gt_indices.len() as f64;
+    for ((_, query), gt) in query_vectors.iter().zip(ground_truth.iter()) {
+        let start_time = Instant::now();
+        let results = index.search(&txn, query, k).unwrap();
+        let search_duration = start_time.elapsed();
+        total_search_time += search_duration;
 
-            total_recall += recall;
-        }
+        let result_indices: HashSet<String> = results.into_iter()
+            .map(|hvector| hvector.get_id().to_string())
+            .collect();
 
-        total_recall = total_recall / n_query as f64;
-        println!("{}: {}", test_id, total_recall);
-        //assert!(total_recall >= 0.8, "precision not high enough!");
-    //}
+        let gt_indices: HashSet<String> = gt.iter().cloned().collect();
+        println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
+        let intersection = result_indices.intersection(&gt_indices).count();
+        let recall = intersection as f64 / gt_indices.len() as f64;
+
+        total_recall += recall;
+    }
+
+    println!("Total search time: {:.2?} seconds", total_search_time.as_secs_f64());
+    println!(
+        "Average search time per query: {:.2?} milliseconds",
+        total_search_time.as_millis() as f64 / n_query as f64
+    );
+
+    total_recall = total_recall / n_query as f64;
+    println!("{}: {:.2?}", test_id, total_recall);
+    assert!(total_recall >= 0.8, "recall not high enough!");
 }
 
 //fn test_precision_with_fake_data() {

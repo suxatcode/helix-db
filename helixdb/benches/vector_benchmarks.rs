@@ -3,12 +3,15 @@ use helixdb::helix_engine::vector_core::{
     vector::HVector,
     vector_core::{HNSWConfig, VectorCore},
 };
+use polars::prelude::*;
 
+use std::collections::HashSet;
 use heed3::{EnvOpenOptions, Env};
 use rand::{
     rngs::StdRng,
     SeedableRng,
     Rng,
+    prelude::SliceRandom,
 };
 use std::time::Duration;
 use tempfile::TempDir;
@@ -48,7 +51,44 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
     vectors
 }
 
-/// Benchmark insertion of vectors with different dimensions
+fn bench_vector_search(c: &mut Criterion) {
+    let mut group = c.benchmark_group("vector_search");
+    group.sample_size(20);
+
+    for &dim in &[128, 1024, 4096, 8192] {
+        let index_size = 1000;
+        let queries_per_iter = 10;
+
+        let id = BenchmarkId::new(format!("search_{}q_{}idx", queries_per_iter, index_size), dim);
+        group.bench_with_input(id, &dim, |b, &dim| {
+            eprintln!("benchmarking {} queries against index of {} vectors with {} dimensions",
+                     queries_per_iter, index_size, dim);
+
+            let (env, _temp_dir) = setup_temp_env();
+            let mut txn = env.write_txn().unwrap();
+            let hnsw = VectorCore::new(&env, &mut txn, dim, Some(HNSWConfig::optimized(index_size)), None).unwrap();
+            let vectors = generate_random_vectors(index_size, dim, 42);
+            eprintln!("building index with {} vectors of {} dimensions...", vectors.len(), dim);
+            for (_id, data) in &vectors {
+                hnsw.insert(&mut txn, data).unwrap();
+            }
+            txn.commit().unwrap();
+            eprintln!("index built successfully");
+
+            let query_vectors = generate_random_vectors(queries_per_iter, dim, 1);
+            b.iter(|| {
+                let txn = env.read_txn().unwrap();
+                for (_, data) in &query_vectors {
+                    let results = hnsw.search(&txn, &data, 10).unwrap();
+                    black_box(results);
+                }
+            });
+        });
+    }
+
+    group.finish();
+}
+
 fn bench_vector_insertion(c: &mut Criterion) {
     let mut group = c.benchmark_group("vector_insertion");
     group.measurement_time(Duration::from_secs(20));
@@ -73,7 +113,7 @@ fn bench_vector_insertion(c: &mut Criterion) {
                 },
                 |(env, hnsw, vectors)| {
                     let mut txn = env.write_txn().unwrap();
-                    for (id, data) in vectors.iter().take(vectors_per_iter) {
+                    for (_id, data) in vectors.iter().take(vectors_per_iter) {
                         hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
@@ -86,51 +126,6 @@ fn bench_vector_insertion(c: &mut Criterion) {
 }
 
 /*
-/// Benchmark search with different dimensions
-fn bench_vector_search(c: &mut Criterion) {
-    let mut group = c.benchmark_group("vector_search");
-    group.measurement_time(Duration::from_secs(20));
-    group.sample_size(10);
-
-    for &dim in &[128, 1024, 4096, 8192] {
-        let index_size = 1000;
-        let queries_per_iter = 10;
-
-        let id = BenchmarkId::new(format!("search_{}q_{}idx", queries_per_iter, index_size), dim);
-        group.bench_with_input(id, &dim, |b, &dim| {
-            eprintln!("Benchmarking {} queries against index of {} vectors with {} dimensions",
-                     queries_per_iter, index_size, dim);
-
-            // Setup: Create index with vectors
-            let (env, _temp_dir) = setup_temp_env();
-            let mut txn = env.write_txn().unwrap();
-            let hnsw = VectorCore::new(&env, &mut txn, None).unwrap();
-
-            let vectors = generate_random_vectors(index_size, dim, 42);
-            eprintln!("Building index with {} vectors of {} dimensions...", vectors.len(), dim);
-
-            for (id, data) in &vectors {
-                hnsw.insert(&mut txn, data).unwrap();
-            }
-            txn.commit().unwrap();
-            eprintln!("Index built successfully");
-
-            let query_vectors = generate_random_vectors(queries_per_iter, dim, 100);
-
-            b.iter(|| {
-                let txn = env.read_txn().unwrap();
-                for (_, data) in &query_vectors {
-                    let query = HVector::new("query".to_string(), data.clone());
-                    let results = hnsw.search(&txn, &query, 10).unwrap();
-                    black_box(results);
-                }
-            });
-        });
-    }
-
-    group.finish();
-}
-
 /// Benchmark high throughput operations
 fn bench_high_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("high_throughput");
@@ -486,6 +481,7 @@ fn bench_large_dataset(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_vector_search,
     bench_vector_insertion,
 );
 

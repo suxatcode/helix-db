@@ -129,7 +129,6 @@ impl Ord for Candidate {
 pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
-    rng_seed: AtomicU64,
     hnsw_config: HNSWConfig,
     optims_config: VecConfig,
 }
@@ -152,7 +151,6 @@ impl VectorCore {
         Ok(Self {
             vectors_db,
             out_edges_db,
-            rng_seed: AtomicU64::new(0),
             hnsw_config,
             optims_config,
         })
@@ -408,32 +406,6 @@ impl VectorCore {
         Ok(results)
     }
 
-    fn insert_bidirectional_connections(
-        &self,
-        txn: &mut RwTxn,
-        query: &HVector,
-        neighbors: &BinaryHeap<HVector>,
-        level: usize
-    ) -> Result<(), VectorError> {
-        for e in neighbors {
-            let n_e_neighbors = self.get_neighbors(txn, e.get_id(), level)?;
-            let mut e_neighbors: BinaryHeap<HVector> = BinaryHeap::from(n_e_neighbors);
-
-            if !e_neighbors.iter().any(|n| n.get_id() == query.get_id()) {
-                e_neighbors.push(query.clone()); // Assuming q implements Clone
-
-                if e_neighbors.len() > self.hnsw_config.m_max {
-                    let trimmed_neighbors = self.select_neighbors(txn, &e_neighbors, level, true, true)?;
-                    self.set_neighbours(txn, e.get_id(), &trimmed_neighbors, level)?;
-                } else {
-                    self.set_neighbours(txn, e.get_id(), &e_neighbors, level)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
         let query = self.set_dims(&"".to_string(), query);
 
@@ -444,7 +416,8 @@ impl VectorCore {
             }
         };
 
-        let ef_search = self.hnsw_config.ef_c * k;
+        //let ef_search = self.hnsw_config.ef_c * k;
+        let ef_search = k;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
@@ -500,8 +473,6 @@ impl VectorCore {
             let neighbors = self.select_neighbors(txn, &nearest, level, true, true)?;
 
             self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?;
-            //self.insert_bidirectional_connections(txn, &data_query, &neighbors, level)?;
-
             for e in neighbors {
                 let e_conn = BinaryHeap::from(self.get_neighbors(txn, e.get_id(), level)?);
                 if e_conn.len() > self.hnsw_config.m_max {
@@ -518,7 +489,7 @@ impl VectorCore {
         Ok(data_query)
     }
 
-    fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
+    pub fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
