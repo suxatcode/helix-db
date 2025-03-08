@@ -22,12 +22,12 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
-    pub m: usize,                 // maximum number of connections per element
-    pub m_max: usize,             // maximum number of connections for upper layers
+    pub m: usize,                 // max num of bi-directional links per element
+    pub m_max: usize,             // max num of links for upper layers
     pub ef_construction: usize,   // size of the dynamic candidate list for construction
+    pub ef_c: usize,              // ef_search factor (usually 10 so that 10*k)
     pub max_elements: usize,      // maximum number of elements in the index
     pub m_l: f64,                 // level generation factor
-    pub distance_multiplier: f64, // distance multiplier for pruning
     pub max_level: usize,         // max number of levels in index
 }
 
@@ -37,9 +37,9 @@ impl Default for HNSWConfig {
             m: 16,
             m_max: 32,
             ef_construction: 512,
+            ef_c: 10,
             max_elements: 1_000_000,
             m_l: 0.36,
-            distance_multiplier: 1.5,
             max_level: 5,
         }
     }
@@ -48,6 +48,19 @@ impl Default for HNSWConfig {
 impl HNSWConfig {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn optimized(n: usize) -> Self {
+        let o_m = 5.min(48.max(10 + 20*(((10_000 as f64).log10()/(n as f64).log10())).floor() as usize));
+        Self {
+            m: o_m,
+            m_max: 2*o_m,
+            ef_construction: 512,
+            ef_c: 10,
+            max_elements: n,
+            m_l: 1.0/(o_m as f64).log10(),
+            max_level: ((n as f64).log10()/(o_m as f64).log10()).floor() as usize,
+        }
     }
 }
 
@@ -395,6 +408,32 @@ impl VectorCore {
         Ok(results)
     }
 
+    fn insert_bidirectional_connections(
+        &self,
+        txn: &mut RwTxn,
+        query: &HVector,
+        neighbors: &BinaryHeap<HVector>,
+        level: usize
+    ) -> Result<(), VectorError> {
+        for e in neighbors {
+            let n_e_neighbors = self.get_neighbors(txn, e.get_id(), level)?;
+            let mut e_neighbors: BinaryHeap<HVector> = BinaryHeap::from(n_e_neighbors);
+
+            if !e_neighbors.iter().any(|n| n.get_id() == query.get_id()) {
+                e_neighbors.push(query.clone()); // Assuming q implements Clone
+
+                if e_neighbors.len() > self.hnsw_config.m_max {
+                    let trimmed_neighbors = self.select_neighbors(txn, &e_neighbors, level, true, true)?;
+                    self.set_neighbours(txn, e.get_id(), &trimmed_neighbors, level)?;
+                } else {
+                    self.set_neighbours(txn, e.get_id(), &e_neighbors, level)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
         let query = self.set_dims(&"".to_string(), query);
 
@@ -405,17 +444,17 @@ impl VectorCore {
             }
         };
 
-        let ef = k.max(self.hnsw_config.ef_construction);
+        let ef_search = self.hnsw_config.ef_c * k;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let nearest = self.search_level(txn, &query, &mut entry_point, ef, level)?;
+            let nearest = self.search_level(txn, &query, &mut entry_point, ef_search, level)?;
             if !nearest.is_empty() {
                 std::mem::replace(&mut entry_point, nearest.peek().unwrap().clone()); // TODO: do better (no clone)
             }
         }
 
-        let candidates = self.search_level(txn, &query, &mut entry_point, ef * 5, 0)?; // TODO: if we get nothing, add a change in precision mechanism for ef
+        let candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?; // TODO: if we get nothing, add a change in precision mechanism for ef
 
         let mut results: Vec<HVector> = Vec::with_capacity(candidates.len());
         candidates.iter().for_each(|c| {
@@ -460,8 +499,9 @@ impl VectorCore {
             let nearest = self.search_level(txn, &data_query, &curr_ep, self.hnsw_config.ef_construction, level)?;
             let neighbors = self.select_neighbors(txn, &nearest, level, true, true)?;
 
-            self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?; // TODO: possibly remove?
-            // TODO: add bi-directional connections from neighbors to q at level
+            self.set_neighbours(txn, &data_query.get_id(), &neighbors, level)?;
+            //self.insert_bidirectional_connections(txn, &data_query, &neighbors, level)?;
+
             for e in neighbors {
                 let e_conn = BinaryHeap::from(self.get_neighbors(txn, e.get_id(), level)?);
                 if e_conn.len() > self.hnsw_config.m_max {

@@ -62,12 +62,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 }
 
 #[test]
-fn test_recall_dpedia_entities_10k() {
-    let n_base = 10_000;
+fn test_recall_dpedia_entities_30k() {
+    let n_base = 30_000;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 1000;
+    let n_query = 5000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -78,11 +78,15 @@ fn test_recall_dpedia_entities_10k() {
     println!("num of query vecs: {}", query_vectors.len());
 
     let dims = 1536;
-    let ks = [5, 10, 12, 15, 20, 50];
+    let ks = [10, 15, 30, 50, 100];
+    let k = 100;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
-    let index = VectorCore::new(&env, &mut txn, dims, None, None).unwrap();
+
+    let hnsw_config = HNSWConfig::optimized(n_base);
+    println!("hnsw config: {:?}", hnsw_config);
+    let index = VectorCore::new(&env, &mut txn, dims, Some(hnsw_config), None).unwrap();
 
     let mut inserted_ids = Vec::new();
     for (_id, data) in base_vectors.iter().take(10) {
@@ -100,12 +104,12 @@ fn test_recall_dpedia_entities_10k() {
             .map(|(id, v)| (id.clone(), euclidean_distance(query, v)))
             .collect();
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let top_k: Vec<String> = distances.iter().take(ks[ks.len()-1]).map(|(i, _)| i.clone()).collect();
+        let top_k: Vec<String> = distances.iter().take(100).map(|(i, _)| i.clone()).collect();
         ground_truth.push(top_k);
     }
 
     println!("searching and comparing...");
-    for k in ks {
+    //for k in ks {
         let test_id = format!("recall@{} with {} queries", k, n_query);
 
         let mut total_recall = 0.0;
@@ -116,9 +120,10 @@ fn test_recall_dpedia_entities_10k() {
                 .map(|hvector| hvector.get_id().to_string())
                 .collect();
 
-            let gt_indices: HashSet<String> = gt.iter().take(k).cloned().collect();
+            let gt_indices: HashSet<String> = gt.iter().cloned().collect();
+            println!("gt: {:?}\nresults: {:?}", gt_indices, result_indices);
             let intersection = result_indices.intersection(&gt_indices).count();
-            let recall = intersection as f64 / k as f64;
+            let recall = intersection as f64 / gt_indices.len() as f64;
 
             total_recall += recall;
         }
@@ -126,7 +131,7 @@ fn test_recall_dpedia_entities_10k() {
         total_recall = total_recall / n_query as f64;
         println!("{}: {}", test_id, total_recall);
         //assert!(total_recall >= 0.8, "precision not high enough!");
-    }
+    //}
 }
 
 //fn test_precision_with_fake_data() {
