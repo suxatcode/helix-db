@@ -5,7 +5,7 @@ use serde::Serializer;
 use sonic_rs::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum TraversalValue {
     Empty,

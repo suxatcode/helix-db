@@ -194,6 +194,7 @@ pub enum IdType {
 pub enum ValueType {
     Literal(Value),
     Identifier(String),
+    Object(Object),
 }
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
@@ -204,6 +205,7 @@ impl From<Value> for ValueType {
             Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
             Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
             Value::Empty => ValueType::Literal(Value::Empty),
+            _ => unreachable!(),
         }
     }
 }

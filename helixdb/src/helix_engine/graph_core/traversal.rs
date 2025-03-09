@@ -6,7 +6,8 @@ use crate::helix_engine::{
         storage_core::HelixGraphStorage,
         storage_methods::{SearchMethods, StorageMethods},
     },
-    types::GraphError, vector_core::{hnsw::HNSW, vector::HVector},
+    types::GraphError,
+    vector_core::{hnsw::HNSW, vector::HVector},
 };
 use crate::protocol::{
     count::Count,
@@ -781,7 +782,7 @@ impl TraversalMethods for TraversalBuilder {
     {
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             for node in nodes {
-                map_fn(node, txn);
+                let _ = map_fn(node, txn);
             }
         }
         self
@@ -988,7 +989,6 @@ impl TraversalBuilderMethods for TraversalBuilder {
     }
 }
 
-
 impl VectorTraversalSteps for TraversalBuilder {
     fn vector_search(&mut self, txn: &RoTxn, query_vector: &HVector) -> &mut Self {
         let result = match self.storage.vectors.search(txn, query_vector, 10) {
@@ -1001,7 +1001,7 @@ impl VectorTraversalSteps for TraversalBuilder {
         self.current_step = TraversalValue::VectorArray(result);
         self
     }
-    
+
     fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self {
         self.storage.vectors.insert(txn, vector).unwrap();
         self
@@ -1014,6 +1014,4 @@ impl VectorTraversalSteps for TraversalBuilder {
     fn update_vector(&mut self, txn: &mut RwTxn, vector_id: &str, vector: &[f64]) -> &mut Self {
         self
     }
-
-
 }

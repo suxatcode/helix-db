@@ -10,8 +10,9 @@ use std::{collections::HashMap, fmt};
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Remapping {
-    original_name: String,
-    return_value: ReturnValue,
+    pub exclude: bool,
+    pub new_name: Option<String>,
+    pub return_value: ReturnValue,
 }
 
 impl Serialize for Remapping {
@@ -24,7 +25,32 @@ impl Serialize for Remapping {
 }
 
 impl Remapping {
-    pub fn new(original_name: String, return_value: ReturnValue) -> Self {
-        Self { original_name, return_value }
+    pub fn new(new_name: Option<String>, return_value: ReturnValue) -> Self {
+        Self {
+            exclude: false,
+            new_name,
+            return_value,
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ResponseRemapping {
+    pub remappings: HashMap<String, Remapping>,
+    pub should_spread: bool,
+}
+
+impl Serialize for ResponseRemapping {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        self.remappings.serialize(serializer)
+    }
+}
+
+impl ResponseRemapping {
+    pub fn new(remappings: HashMap<String, Remapping>, should_spread: bool) -> Self {
+        Self { remappings, should_spread }
     }
 }
