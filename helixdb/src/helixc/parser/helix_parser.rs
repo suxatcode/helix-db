@@ -620,6 +620,7 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
+        println!("Parsing expression: {:?}", p);
         let pair = p
             .into_inner()
             .next()
@@ -664,6 +665,7 @@ impl HelixParser {
             Rule::evaluates_to_bool => Ok(Self::parse_boolean_expression(pair)?),
             Rule::AddV => Ok(Expression::AddVertex(Self::parse_add_vertex(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(Self::parse_add_edge(pair)?)),
+            Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
                 "Unexpected expression type: {:?}",
                 pair.as_rule()

@@ -651,21 +651,21 @@ impl CodeGenerator {
                 // Assume the current variable (e.g. from an earlier assignment) is named "current_var"
                 output.push_str(&format!(
                     "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"object\".to_string(), {});\n",
-                    self.generate_object_remapping(obj)
+                    self.generate_object_remapping(true, None, obj)
                 ));
             }
             Step::Closure(closure) => {
                 output.push_str(&format!(
                     "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"closure\".to_string(), {});\n",
-                    self.generate_closure_remapping(closure)
+                    self.generate_object_remapping(true, Some(&closure.identifier), &closure.object)
                 ));
             }
-            Step::Exclude(exclude) => {
-                output.push_str(&format!(
-                    "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"exclude\".to_string(), {});\n",
-                    self.generate_exclude_remapping(exclude)
-                ));
-            }
+            // Step::Exclude(exclude) => {
+            //     output.push_str(&format!(
+            //         "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"exclude\".to_string(), {});\n",
+            //         self.generate_exclude_remapping(exclude)
+            //     ));
+            // }
             _ => {}
         }
 
@@ -1046,106 +1046,112 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_object_remapping(&mut self, object: &Object) -> String {
-        let mut code = String::new();
-        code.push_str("Remapping::Object({\n");
-        code.push_str(&mut self.indent());
-        code.push_str("    {\n");
-        code.push_str(&mut self.indent());
-        code.push_str("        let mut map = HashMap::new();\n");
-        for (field, field_value) in &object.fields {
-            let field_remap = self.generate_field_value_remapping(field_value);
-            code.push_str(&mut self.indent());
-            code.push_str(&format!(
-                "        map.insert(\"{}\".to_string(), {});\n",
-                field, field_remap
-            ));
-        }
-        code.push_str(&mut self.indent());
-        code.push_str("        map\n");
-        code.push_str(&mut self.indent());
-        code.push_str("    }\n");
-        code.push_str("})");
-        code
-    }
-
-    fn generate_field_value_remapping(&mut self, field_value: &FieldValue) -> String {
-        match field_value {
-            FieldValue::Literal(val) => {
-                // Assuming Value has a variant String – if so, use it for renaming.
-                // (You might adjust this logic based on your actual Value enum.)
-                format!("Remapping::Rename(\"{:?}\".to_string())", val)
-            }
-            FieldValue::Expression(expr) => {
-                let expr_code = self.generate_expression(expr);
-                format!("Remapping::Expression({})", expr_code)
-            }
-            FieldValue::Fields(nested_fields) => {
-                self.generate_field_additions_remapping(nested_fields)
-            }
-            FieldValue::Traversal(traversal) => {
-                let traversal_code = self.generate_traversal(traversal);
-                format!("Remapping::Traversal({})", traversal_code)
-            }
-            FieldValue::Empty => "Remapping::Empty".to_string(),
-        }
-    }
-
-    fn generate_field_additions_remapping(
+    fn generate_object_remapping(
         &mut self,
-        field_additions: &Vec<FieldAddition>,
+        is_node: bool,
+        var_name: Option<&str>,
+        object: &Object,
     ) -> String {
-        let mut code = String::new();
-        code.push_str("Remapping::Object({\n");
-        code.push_str(&mut self.indent());
-        code.push_str("    {\n");
-        code.push_str(&mut self.indent());
-        code.push_str("        let mut map = HashMap::new();\n");
-        for addition in field_additions {
-            let addition_remap = self.generate_field_value_remapping(&addition.value);
-            code.push_str(&mut self.indent());
-            code.push_str(&format!(
-                "        map.insert(\"{}\".to_string(), {});\n",
-                addition.name, addition_remap
-            ));
+        /*
+        tr.for_each_node(&txn, |node, txn| {
+            // generate traversal if there is one
+
+            // generate for that traversal if there is one
+
+            // generate the remapping
+            let remapping = Remapping::new(false, <new_name>, <return_value>);
+            remapping_vals.borrow_mut().insert(<key>, remapping);
+        });
+         */
+        let mut output = String::new();
+        let var_name = match var_name {
+            Some(var) => var,
+            None => "item",
+        };
+        let item_type = match is_node {
+            true => "node",
+            false => "edge",
+        };
+        output.push_str(&mut self.indent());
+        output.push_str(&format!(
+            "tr.for_each_{}(&txn, |{}, txn| {{\n",
+            item_type, var_name
+        ));
+        output.push_str(&mut self.indent());
+        for (key, field) in object.fields.iter() {
+            output.push_str(&mut self.indent());
+            output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
+            match field {
+                FieldValue::Traversal(traversal) => {
+                    output.push_str(&mut self.indent());
+                    output.push_str(&mut self.generate_traversal(traversal));
+                }
+                _ => {}
+            }
+            output.push_str(&mut self.indent());
+
+            // generate remapping
+            output.push_str(&self.generate_remapping(key));
         }
-        code.push_str(&mut self.indent());
-        code.push_str("        map\n");
-        code.push_str(&mut self.indent());
-        code.push_str("    }\n");
-        code.push_str("})");
-        code
+        output.push_str("remmaping_vals.borrow_mut().insert(");
+        output.push_str(&self.indent());
+        output.push_str(&format!("{}.id.clone()", var_name));
+        output.push_str(&self.indent());
+        output.push_str("ResponseRemapping::new(");
+        output.push_str(&self.indent());
+        output.push_str("HashMap::from([");
+
+        for (key, field) in object.fields.iter() {
+            output.push_str(&format!("(\"{key}\".to_string(), {}_remapping),", key));
+        }
+        output.push_str(&self.indent());
+        output.push_str("]),");
+        output.push_str(&self.indent());
+        output.push_str(&format!("{}", object.should_spread));
+        output.push_str(&self.indent());
+        output.push_str("),");
+        output.push_str(&self.indent());
+        output.push_str(");");
+
+        output.push_str("});\n");
+        output
     }
 
-    fn generate_closure_remapping(
-        &mut self,
-        closure: &crate::helixc::parser::helix_parser::Closure,
-    ) -> String {
-        let object_remap = self.generate_object_remapping(&closure.object);
-        format!(
-            "Remapping::Closure {{ identifier: \"{}\".to_string(), mapping: Box::new({}) }}",
-            closure.identifier, object_remap
-        )
+    fn generate_remapping(&mut self, key: &String) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        let opt_key = match key.as_str() {
+            "" => "None".to_string(),
+            _ => format!("Some({key})"),
+        };
+        output.push_str(&format!(
+            "let {}_remapping = Remapping::new(false, {}, Some({}));\n",
+            key,
+            opt_key,
+            self.generate_return_value(key)
+        ));
+        output
     }
 
-    fn generate_exclude_remapping(
-        &mut self,
-        exclude: &crate::helixc::parser::helix_parser::Exclude,
-    ) -> String {
-        let fields = exclude
-            .fields
-            .iter()
-            .map(|f| format!("\"{}\".to_string()", f))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("Remapping::Exclude(vec![{}])", fields)
+    fn generate_return_value(&mut self, key: &String) -> String {
+        let mut output = String::new();
+
+        output.push_str("ReturnValue::from_traversal_value_array_with_mixin(");
+        output.push_str(&self.indent());
+        output.push_str(&format!("{key},"));
+        output.push_str(&self.indent());
+        output.push_str("remapping_vals.borrow_mut(),");
+        output.push_str(&self.indent());
+        output.push_str(")");
+
+        output
     }
 }
 
 /// thoughts are:
 /// - create a hashmap for the remappings for each var name
 /// - insert at the end of the function before the return
-/// 
+///
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());

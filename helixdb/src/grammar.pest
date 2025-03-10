@@ -12,22 +12,21 @@ get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count) }
-last_step           = { "::" ~ (bool_operations | ID | update | closure_step | object_step | exclude_field) }
-// mapping_step        = { "::" ~ ( object_step | exclude_field )* }
+step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID) }
+last_step           = { "::" ~ (bool_operations | update) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
     AddV
   | AddE
   | exists
+  | none
   | traversal
   | id_traversal
   | string_literal
   | float
   | integer
   | boolean
-  | none
   | and
   | or
   | identifier
@@ -52,7 +51,7 @@ evaluates_to_number = {
 }
 
 // Return statement
-return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
+return_stmt = { "RETURN" ~  evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
@@ -136,4 +135,4 @@ AddV         = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field?
 AddE         = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ (from_to | to_from) }
 from_to      = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 to_from      = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
-drop         = { "DROP" ~ (traversal | id_traversal | identifier) }
+drop         = { "DROP" ~ (traversal | id_traversal | identifier)? }
