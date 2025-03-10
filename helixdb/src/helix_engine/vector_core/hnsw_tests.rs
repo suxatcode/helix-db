@@ -1,6 +1,8 @@
 use heed3::{Env, EnvOpenOptions};
 use std::collections::HashSet;
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
+
+#[cfg(feature = "testing")]
 use polars::prelude::*;
 
 use super::hnsw::HNSW;
@@ -39,6 +41,7 @@ fn euclidean_distance(v1: &[f64], v2: &[f64]) -> f64 {
     v1.iter().zip(v2.iter()).map(|(&a, &b)| (a - b).powi(2)).sum::<f64>().sqrt()
 }
 
+#[cfg(feature = "testing")]
 fn load_dbpedia_vectors(file_path: &str, limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     let df = ParquetReader::new(std::fs::File::open(file_path)?)
         .finish()?
@@ -577,6 +580,7 @@ fn test_hnsw_different_dimensions() {
 
 /// test to run alone for testing with actual data (for now)
 #[test]
+#[cfg(feature = "testing")]
 fn test_accuracy_with_dbpedia_openai() {
     // cargo test test_accuracy_with_dbpedia_openai -- --nocapture
     // from data/ dir

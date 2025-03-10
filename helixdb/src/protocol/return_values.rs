@@ -77,7 +77,10 @@ where
                 HashMap::with_capacity(Node::NUM_PROPERTIES + item.properties_ref().len())
             }
             FilterableType::Edge => {
-                HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len())
+                let mut properties = HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
+                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
+                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
+                properties
             }
         };
         properties.insert("id".to_string(), ReturnValue::from(item.id().to_string()));
@@ -85,10 +88,6 @@ where
             "label".to_string(),
             ReturnValue::from(item.label().to_string()),
         );
-        if let FilterableType::Edge = item.type_name() {
-            properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
-            properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
-        }
         properties.extend(
             item.properties()
                 .into_iter()

@@ -1142,6 +1142,11 @@ impl CodeGenerator {
     }
 }
 
+/// thoughts are:
+/// - create a hashmap for the remappings for each var name
+/// - insert at the end of the function before the return
+/// 
+
 fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();

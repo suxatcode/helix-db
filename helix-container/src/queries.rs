@@ -44,10 +44,17 @@ pub fn find_influential_users(
             remapping_vals.borrow_mut().insert(
                 post.id.clone(),
                 ResponseRemapping::new(
-                    HashMap::from([(
-                        "creatorId".to_string(),
-                        Remapping::new(None, ReturnValue::Value(Value::from(usr.id.clone()))),
-                    )]),
+                    HashMap::from([
+                        (
+                            "creatorId".to_string(),
+                            Remapping::new(
+                                false,
+                                None,
+                                Some(ReturnValue::Value(Value::from(usr.id.clone()))),
+                            ),
+                        ),
+                        ("label".to_string(), Remapping::new(true, None, None)),
+                    ]),
                     true,
                 ),
             );
@@ -55,13 +62,24 @@ pub fn find_influential_users(
         });
         let posts = tr.finish()?;
         let remapping = Remapping::new(
+            false,
             None,
-            ReturnValue::from_traversal_value_array_with_mixin(posts, remapping_vals.borrow_mut()),
+            Some(ReturnValue::from_traversal_value_array_with_mixin(
+                posts,
+                remapping_vals.borrow_mut(),
+            )),
         );
         remapping_vals.borrow_mut().insert(
             usr.id.clone(),
-            ResponseRemapping::new(HashMap::from([("posts".to_string(), remapping)]), false),
+            ResponseRemapping::new(
+                HashMap::from([
+                    ("posts".to_string(), remapping),
+                    ("label".to_string(), Remapping::new(true, None, None)),
+                ]),
+                true,
+            ),
         );
+
         Ok(())
     });
     let users = tr.finish()?;

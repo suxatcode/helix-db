@@ -25,11 +25,15 @@ impl Serialize for Remapping {
 }
 
 impl Remapping {
-    pub fn new(new_name: Option<String>, return_value: ReturnValue) -> Self {
+    pub fn new(exclude: bool, new_name: Option<String>, return_value: Option<ReturnValue>) -> Self {
+        assert!(
+            !exclude || (!new_name.is_some() || !return_value.is_some()),
+            "Cannot have both exclude and new_name set"
+        );
         Self {
-            exclude: false,
+            exclude,
             new_name,
-            return_value,
+            return_value: return_value.unwrap_or_default(),
         }
     }
 }
@@ -51,6 +55,15 @@ impl Serialize for ResponseRemapping {
 
 impl ResponseRemapping {
     pub fn new(remappings: HashMap<String, Remapping>, should_spread: bool) -> Self {
-        Self { remappings, should_spread }
+        Self {
+            remappings,
+            should_spread,
+        }
+    }
+
+    pub fn insert(&mut self, key: String, remapping: Remapping) {
+        self.remappings.insert(key, remapping);
     }
 }
+
+
