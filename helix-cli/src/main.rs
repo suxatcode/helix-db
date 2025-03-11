@@ -16,7 +16,7 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-use tempfile::{TempDir, NamedTempFile};
+use tempfile::{NamedTempFile, TempDir};
 
 use std::path::PathBuf;
 pub mod args;
@@ -37,7 +37,10 @@ fn check_helix_installation() -> Result<PathBuf, String> {
 
     // Check if helix-container exists and is a directory
     if !container_path.exists() || !container_path.is_dir() {
-        return Err("Helix container is missing. Please run `helix install` to repair the installation.".to_string());
+        return Err(
+            "Helix container is missing. Please run `helix install` to repair the installation."
+                .to_string(),
+        );
     }
 
     // Check if Cargo.toml exists in helix-container
@@ -84,7 +87,7 @@ fn create_spinner(message: &str) -> ProgressBar {
         ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
             .template("{prefix:>12.cyan.bold} {spinner:.green} {wide_msg}")
-            .unwrap()
+            .unwrap(),
     );
     spinner.set_message(message.to_string());
     spinner.set_prefix("🔄");
@@ -132,13 +135,10 @@ fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
             "Failed to capture curl output"
         })?;
 
-    let status = Command::new("bash")
-        .stdin(status)
-        .status()
-        .map_err(|e| {
-            finish_spinner_with_message(&spinner, false, "Failed to execute install script");
-            e
-        })?;
+    let status = Command::new("bash").stdin(status).status().map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to execute install script");
+        e
+    })?;
 
     if status.success() {
         finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
@@ -289,7 +289,11 @@ fn main() {
                 return;
             }
 
-            finish_spinner_with_message(&spinner, true, &format!("Successfully compiled {} queries", numb_of_files));
+            finish_spinner_with_message(
+                &spinner,
+                true,
+                &format!("Successfully compiled {} queries", numb_of_files),
+            );
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
@@ -306,10 +310,18 @@ fn main() {
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully wrote queries file");
+                        finish_spinner_with_message(
+                            &spinner,
+                            true,
+                            "Successfully wrote queries file",
+                        );
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to write queries file");
+                        finish_spinner_with_message(
+                            &spinner,
+                            false,
+                            "Failed to write queries file",
+                        );
                         println!("\t└── {}", e);
                         return;
                     }
@@ -350,7 +362,7 @@ fn main() {
                     }
                 }
 
-               let spinner = create_spinner("Starting Helix instance");
+                let spinner = create_spinner("Starting Helix instance");
                 // spinner.set_style(
                 //     ProgressStyle::default_spinner()
                 //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
@@ -370,7 +382,11 @@ fn main() {
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully started Helix instance");
+                        finish_spinner_with_message(
+                            &spinner,
+                            true,
+                            "Successfully started Helix instance",
+                        );
                         println!(" ");
                         println!("\t└── Instance ID: {}", instance.id);
                         println!("\t└── Port: {}", instance.port);
@@ -380,7 +396,11 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to start Helix instance");
+                        finish_spinner_with_message(
+                            &spinner,
+                            false,
+                            "Failed to start Helix instance",
+                        );
                         println!("\t└── {}", e);
                     }
                 }
@@ -433,7 +453,11 @@ fn main() {
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    finish_spinner_with_message(&spinner, true, "Successfully restarted Helix instance");
+                    finish_spinner_with_message(
+                        &spinner,
+                        true,
+                        "Successfully restarted Helix instance",
+                    );
                     println!("\t└── Instance ID: {}", instance.id);
                     println!("\t└── Port: {}", instance.port);
                     println!("\t└── Available endpoints:");
@@ -442,7 +466,11 @@ fn main() {
                     }
                 }
                 Ok(None) => {
-                    finish_spinner_with_message(&spinner, false, "Instance not found or binary missing");
+                    finish_spinner_with_message(
+                        &spinner,
+                        false,
+                        "Instance not found or binary missing",
+                    );
                     println!(
                         "\t└── Could not find instance with ID: {}",
                         command.instance_id
@@ -520,8 +548,15 @@ fn main() {
             fs::create_dir_all(&cache_dir).unwrap();
 
             let file_path = cache_dir.join(format!("queries.rs",));
-            fs::write(file_path, code).unwrap();
-            println!("\nCompiled {} files!\n", numb_of_files);
+            fs::write(&file_path, code).unwrap();
+            match format_rust_file(&file_path) {
+                Ok(_) => println!("\nCompiled and formatted {} files!\n", numb_of_files),
+                Err(e) => println!(
+                    "\nCompiled {} files! (formatting failed: {})\n",
+                    numb_of_files, e
+                ),
+            };
+
             successes
                 .iter()
                 .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
@@ -777,4 +812,14 @@ fn check_is_dir(path: &str) -> bool {
             return false;
         }
     }
+}
+
+fn format_rust_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let status = Command::new("rustfmt").arg(file_path).status()?;
+
+    if !status.success() {
+        return Err(format!("rustfmt failed with exit code: {}", status).into());
+    }
+
+    Ok(())
 }
