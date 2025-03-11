@@ -1,4 +1,3 @@
-use crate::helix_engine::types::GraphError;
 use crate::helixc::parser::helix_parser::{
     AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, Expression, Field, FieldAddition,
     FieldType, FieldValue, GraphStep, IdType, NodeSchema, Query, Source,
@@ -6,13 +5,8 @@ use crate::helixc::parser::helix_parser::{
     Statement, Step, Traversal, ValueType,
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
-use crate::protocol::response::Response;
-use crate::protocol::return_values::ReturnValue;
-use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::value::Value;
 use std::collections::HashMap;
-use std::os::macos::raw::stat;
-use std::sync::Arc;
 
 pub struct CodeGenerator {
     indent_level: usize,
