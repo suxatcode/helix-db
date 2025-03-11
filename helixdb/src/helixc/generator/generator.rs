@@ -570,12 +570,12 @@ impl CodeGenerator {
                 let start = match start {
                     Expression::IntegerLiteral(val) => format!("{}", val),
                     Expression::Identifier(id) => format!("data.{}", id),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
                 let end = match end {
                     Expression::IntegerLiteral(val) => format!("{}", val),
                     Expression::Identifier(id) => format!("data.{}", id),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
 
                 output.push_str(&format!("tr.range(&txn, {}, {});\n", start, end));
@@ -677,11 +677,7 @@ impl CodeGenerator {
                 ));
             }
             Step::Exclude(exclude) => {
-                // output.push_str(&self.generate_object_remapping(
-                //     true,
-                //     Some(&closure.identifier),
-                //     &closure.object,
-                // ));
+                output.push_str(&self.generate_exclude_remapping(true, None, exclude));
             }
             _ => {}
         }
@@ -1077,15 +1073,55 @@ impl CodeGenerator {
         var_name: Option<&str>,
         exclude: &Exclude,
     ) -> String {
+        let var_name = match var_name {
+            Some(var) => var,
+            None => "item",
+        };
+        let item_type = match is_node {
+            true => "node",
+            false => "edge",
+        };
+
         let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str(&format!(
+            "tr.for_each_{}(&txn, |{}, txn| {{\n",
+            item_type, var_name
+        ));
+        for field in exclude.fields.iter() {
+            output.push_str(&format!(
+                "let {}_remapping = Remapping::new(true, Some(\"{}\".to_string()), None);\n",
+                to_snake_case(field),
+                field
+            ));
+        }
+
         output.push_str(&mut self.indent());
         output.push_str("remapping_vals.borrow_mut().insert(\n");
         output.push_str(&self.indent());
-        output.push_str(&format!("{}.id.clone(),\n", var_name.unwrap()));
+        output.push_str(&format!("{}.id.clone(),\n", var_name));
         output.push_str(&self.indent());
         output.push_str("ResponseRemapping::new(\n");
         output.push_str(&self.indent());
-
+        output.push_str(&format!("HashMap::from([\n",));
+        for field in exclude.fields.iter() {
+            output.push_str(&format!(
+                "(\"{}\".to_string(), {}_remapping),\n",
+                field,
+                to_snake_case(field)
+            ));
+        }
+        output.push_str(&self.indent());
+        output.push_str("]),");
+        output.push_str(&self.indent());
+        output.push_str(&format!("{}", false));
+        output.push_str(&self.indent());
+        output.push_str("),");
+        output.push_str(&self.indent());
+        output.push_str(");");
+        output.push_str(&self.indent());
+        output.push_str("Ok(())");
+        output.push_str("});\n");
         output
     }
 
