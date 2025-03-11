@@ -51,8 +51,9 @@ impl HNSWConfig {
     }
 
     pub fn optimized(n: usize) -> Self {
-        //let o_m = 5.max(48.min(10 + 20*(((10_000 as f64).log10()/(n as f64).log10())).floor() as usize));
-        let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
+        let d = (10.0 + 20.0 * (10_000.0_f64.log10()/(n as f64).log10())).floor() as usize;
+        let o_m = 5.max(48.min(d));
+        //let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
         Self {
             m: o_m,
             m_max: 2*o_m,

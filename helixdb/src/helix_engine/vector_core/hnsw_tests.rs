@@ -3,6 +3,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
 use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VecConfig, VectorCore}};
 use polars::prelude::*;
 use std::collections::HashSet;
+use std::fs::{self, File};
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -88,43 +89,69 @@ fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
-    if limit > 30_000 {
-        return Err(PolarsError::OutOfBounds("can't load more than 30,000 vecs from this dataset".into()));
+    if limit > 1_000_000 {
+        return Err(PolarsError::OutOfBounds(
+            "can't load more than 1,000,000 vecs from this dataset".into(),
+        ));
     }
 
-    let file_path = "../data/train-00000-of-00026-3c7b99d1c7eda36e.parquet";
-    let df = ParquetReader::new(std::fs::File::open(file_path)?)
-        .finish()?
-        .lazy()
-        .limit(limit as u32)
-        .collect()?;
+    let data_dir = "../data/";
+    let mut all_vectors = Vec::new();
+    let mut total_loaded = 0;
 
-    let ids = df.column("_id")?.str()?;
-    let embeddings = df.column("openai")?.list()?;
+    for entry in fs::read_dir(data_dir)? {
+        let entry = entry?;
+        let path = entry.path();
 
-    let mut vectors = Vec::new();
-    for (i, (_id, embedding)) in ids.into_iter().zip(embeddings.into_iter()).enumerate() {
-        let f64_series = embedding
-            .unwrap()
-            .cast(&DataType::Float64)
-            .unwrap();
-        let chunked = f64_series.f64().unwrap();
-        let vector: Vec<f64> = chunked.into_no_null_iter().collect();
-        vectors.push((i.to_string(), vector));
+        println!("loading entry: {:?}", path);
+
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "parquet") {
+            let df = ParquetReader::new(File::open(&path)?)
+                .finish()?
+                .lazy()
+                .limit((limit - total_loaded) as u32)
+                .collect()?;
+
+            let ids = df.column("_id")?.str()?;
+            let embeddings = df.column("openai")?.list()?;
+
+            for (_id, embedding) in ids.into_iter().zip(embeddings.into_iter()) {
+                if total_loaded >= limit {
+                    break;
+                }
+
+                let embedding = embedding.unwrap();
+                let f64_series = embedding.cast(&DataType::Float64).unwrap();
+                let chunked = f64_series.f64().unwrap();
+                let vector: Vec<f64> = chunked.into_no_null_iter().collect();
+
+                all_vectors.push((
+                    _id.unwrap().to_string(),
+                    vector
+                ));
+
+                total_loaded += 1;
+            }
+
+            if total_loaded >= limit {
+                break;
+            }
+        }
     }
-    Ok(vectors)
+
+    Ok(all_vectors)
 }
 
 // cargo test test_name -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 30_000;
+    let n_base = 1_000_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 2000;
+    let n_query = 10_000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -140,7 +167,7 @@ fn test_recall_precision_real_data() {
     let mut txn = env.write_txn().unwrap();
 
     let hnsw_config = HNSWConfig::optimized(n_base);
-    println!("hnsw config: {:?}", hnsw_config);
+    println!("{:?}", hnsw_config);
     let index = VectorCore::new(&env, &mut txn, dims, Some(hnsw_config), None).unwrap();
 
     let mut inserted_ids = Vec::new();
@@ -178,8 +205,8 @@ fn test_recall_precision_real_data() {
         //println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
         let true_positives = result_indices.intersection(&gt_indices).count();
 
-        let recall = true_positives as f64 / gt_indices.len() as f64;
-        let precision = true_positives as f64 / result_indices.len() as f64;
+        let recall: f64 = true_positives as f64 / gt_indices.len() as f64;
+        let precision:f64 = true_positives as f64 / result_indices.len() as f64;
 
         total_recall += recall;
         total_precision += precision;
@@ -193,7 +220,7 @@ fn test_recall_precision_real_data() {
 
     total_recall = total_recall / n_query as f64;
     total_precision = total_precision / n_query as f64;
-    println!("{}: avg. recall: {:.2?}, avg. precision: {:.2?}", test_id, total_recall, total_precision);
+    println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
 }
 
