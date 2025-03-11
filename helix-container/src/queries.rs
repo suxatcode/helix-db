@@ -42,23 +42,22 @@ pub fn find_influential_users(
         tr.out(&txn, "Posts");
         tr.for_each_node(&txn, |item, txn| {
             let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(item.clone()));
-            let creatorId = tr.finish()?.get_id()?;
-            let creatorId_remapping = Remapping::new(
+            let creator_id = tr.finish()?.get_id()?;
+            let creator_id_remapping = Remapping::new(
                 false,
                 Some("creatorId".to_string()),
-                Some(ReturnValue::from(creatorId)),
+                Some(ReturnValue::from(creator_id)),
             );
             remapping_vals.borrow_mut().insert(
                 item.id.clone(),
                 ResponseRemapping::new(
-                    HashMap::from([("creatorId".to_string(), creatorId_remapping)]),
+                    HashMap::from([("creatorId".to_string(), creator_id_remapping)]),
                     true,
                 ),
             );
             Ok(())
         });
         let posts = tr.finish()?;
-
         let posts_remapping = Remapping::new(
             false,
             Some("posts".to_string()),
@@ -67,10 +66,46 @@ pub fn find_influential_users(
                 remapping_vals.borrow_mut(),
             )),
         );
+        let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(usr.clone()));
+        tr.for_each_node(&txn, |item, txn| {
+            let name = item.check_property("Name");
+            let name_remapping = Remapping::new(
+                false,
+                None,
+                Some(match name {
+                    Some(value) => ReturnValue::from(value.clone()),
+                    None => {
+                        return Err(GraphError::ConversionError(
+                            "Property not found on name".to_string(),
+                        ))
+                    }
+                }),
+            );
+            remapping_vals.borrow_mut().insert(
+                item.id.clone(),
+                ResponseRemapping::new(
+                    HashMap::from([("Name".to_string(), name_remapping)]),
+                    false,
+                ),
+            );
+            Ok(())
+        });
+        let user_name = tr.finish()?;
+        let user_name_remapping = Remapping::new(
+            false,
+            Some("userName".to_string()),
+            Some(ReturnValue::from_traversal_value_array_with_mixin(
+                user_name,
+                remapping_vals.borrow_mut(),
+            )),
+        );
         remapping_vals.borrow_mut().insert(
             usr.id.clone(),
             ResponseRemapping::new(
-                HashMap::from([("posts".to_string(), posts_remapping)]),
+                HashMap::from([
+                    ("posts".to_string(), posts_remapping),
+                    ("userName".to_string(), user_name_remapping),
+                ]),
                 true,
             ),
         );
@@ -86,6 +121,7 @@ pub fn find_influential_users(
 
     Ok(())
 }
+
 
 #[handler]
 pub fn add_posts(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {

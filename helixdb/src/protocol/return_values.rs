@@ -54,6 +54,18 @@ impl From<String> for ReturnValue {
     }
 }
 
+impl From<bool> for ReturnValue {
+    fn from(boolean: bool) -> Self {
+        ReturnValue::Value(Value::Boolean(boolean))
+    }
+}
+
+impl From<&str> for ReturnValue {
+    fn from(string: &str) -> Self {
+        ReturnValue::Value(Value::String(string.to_string()))
+    }
+}
+
 impl From<i32> for ReturnValue {
     fn from(integer: i32) -> Self {
         ReturnValue::Value(Value::Integer(integer))

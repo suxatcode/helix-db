@@ -5,7 +5,7 @@ use crate::helixc::parser::helix_parser::{
     StartNode::{Anonymous, Edge, Variable, Vertex},
     Statement, Step, Traversal, ValueType,
 };
-use crate::helixc::parser::helix_parser::{Object, StartNode};
+use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::response::Response;
 use crate::protocol::return_values::ReturnValue;
 use crate::protocol::traversal_value::TraversalValue;
@@ -305,6 +305,7 @@ impl CodeGenerator {
         // Generate start node
         match &traversal.start {
             Vertex { types, ids } => {
+                println!("types: {:?}", types);
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
@@ -663,12 +664,13 @@ impl CodeGenerator {
                     &closure.object,
                 ));
             }
-            // Step::Exclude(exclude) => {
-            //     output.push_str(&format!(
-            //         "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"exclude\".to_string(), {});\n",
-            //         self.generate_exclude_remapping(exclude)
-            //     ));
-            // }
+            Step::Exclude(exclude) => {
+                // output.push_str(&self.generate_object_remapping(
+                //     true,
+                //     Some(&closure.identifier),
+                //     &closure.object,
+                // ));
+            }
             _ => {}
         }
 
@@ -976,11 +978,20 @@ impl CodeGenerator {
 
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&mut self.indent());
-            if let Expression::Identifier(id) = expr {
-                output.push_str(&format!(
-                    "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n",
-                    id, id
-                ));
+            match expr {
+                Expression::Identifier(id) => {
+                    output.push_str(&format!(
+                        "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n",
+                        id, id
+                    ));
+                }
+                Expression::StringLiteral(value) => {
+                    output.push_str(&format!(
+                        "return_vals.insert(\"message\".to_string(), ReturnValue::from(\"{}\"));\n",
+                        value,
+                    ));
+                }
+                _ => {}
             }
         }
 
@@ -1048,6 +1059,24 @@ impl CodeGenerator {
         }
     }
 
+    fn generate_exclude_remapping(
+        &mut self,
+        is_node: bool,
+        var_name: Option<&str>,
+        exclude: &Exclude,
+    ) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str("remapping_vals.borrow_mut().insert(\n");
+        output.push_str(&self.indent());
+        output.push_str(&format!("{}.id.clone(),\n", var_name.unwrap()));
+        output.push_str(&self.indent());
+        output.push_str("ResponseRemapping::new(\n");
+        output.push_str(&self.indent());
+
+        output
+    }
+
     fn generate_object_remapping(
         &mut self,
         is_node: bool,
@@ -1065,7 +1094,9 @@ impl CodeGenerator {
             remapping_vals.borrow_mut().insert(<key>, remapping);
         });
          */
+
         let mut output = String::new();
+
         let var_name = match var_name {
             Some(var) => var,
             None => "item",
@@ -1104,19 +1135,35 @@ impl CodeGenerator {
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_expression(expr));
                     output.push_str(&mut self.indent());
-                    if let Expression::Traversal(traversal) = expr {
-                        match traversal.steps.last().unwrap() {
+                    match expr {
+                        Expression::Traversal(traversal) => match traversal.steps.last().unwrap() {
                             Step::ID => {
-                                output
-                                    .push_str(&format!("let {} = tr.finish()?.get_id()?;\n", key));
+                                output.push_str(&format!(
+                                    "let {} = tr.finish()?.get_id()?;\n",
+                                    to_snake_case(key)
+                                ));
                             }
                             _ => {
-                                output.push_str(&format!("let {} = tr.finish()?;\n", key));
+                                output.push_str(&format!(
+                                    "let {} = tr.finish()?;\n",
+                                    to_snake_case(key)
+                                ));
                             }
+                        },
+
+                        _ => {
+                            output
+                                .push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
                         }
-                    } else {
-                        output.push_str(&format!("let {} = tr.finish()?;\n", key));
                     }
+                }
+                FieldValue::Literal(value) => {
+                    output.push_str(&format!(
+                        "let {} = {}.check_property({});\n",
+                        to_snake_case(key),
+                        var_name,
+                        self.value_to_rust(value)
+                    ));
                 }
                 _ => {
                     println!("unhandled field type: {:?}", field);
@@ -1137,7 +1184,11 @@ impl CodeGenerator {
         output.push_str("HashMap::from([\n");
 
         for (key, field) in object.fields.iter() {
-            output.push_str(&format!("(\"{key}\".to_string(), {}_remapping),\n", key));
+            output.push_str(&format!(
+                "(\"{}\".to_string(), {}_remapping),\n",
+                key,
+                to_snake_case(key)
+            ));
         }
         output.push_str(&self.indent());
         output.push_str("]),");
@@ -1158,23 +1209,31 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         let opt_key = match key.as_str() {
             "" => "None".to_string(),
-            _ => format!("Some(\"{key}\".to_string())\n"),
+            _ => format!("Some(\"{}\".to_string())\n", key),
         };
         println!("field: {:?}", field);
         match field {
             FieldValue::Traversal(_) | FieldValue::Expression(_) => {
                 output.push_str(&format!(
                     "let {}_remapping = Remapping::new(false, {}, Some({}));\n",
-                    key,
+                    to_snake_case(key),
                     opt_key,
                     self.generate_return_value(key, field)
                 ));
             }
             FieldValue::Literal(value) => {
                 output.push_str(&format!(
-                    "let {}_remapping = Remapping::new(false, None, Some({}));\n",
-                    key,
-                    self.value_to_rust(value)
+                    r#"let {}_remapping = Remapping::new(false, None, Some(
+                        match {} {{
+                            Some(value) => ReturnValue::from(value.clone()),
+                            None => return Err(GraphError::ConversionError(
+                                "Property not found on {}".to_string(),
+                            )),
+                        }}
+                    ));"#,
+                    to_snake_case(key),
+                    to_snake_case(key),
+                    to_snake_case(key),
                 ));
             }
             _ => {
@@ -1193,12 +1252,12 @@ impl CodeGenerator {
         match field {
             FieldValue::Traversal(tr) => match tr.steps.last().unwrap() {
                 Step::ID => {
-                    output.push_str(&format!("ReturnValue::from({})\n", key));
+                    output.push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
                 }
                 _ => {
                     output.push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
                     output.push_str(&self.indent());
-                    output.push_str(&format!("{key},\n"));
+                    output.push_str(&format!("{},\n", to_snake_case(key)));
                     output.push_str(&self.indent());
                     output.push_str("remapping_vals.borrow_mut(),\n");
                     output.push_str(&self.indent());
@@ -1209,13 +1268,14 @@ impl CodeGenerator {
                 if let Expression::Traversal(tr) = expr {
                     match tr.steps.last().unwrap() {
                         Step::ID => {
-                            output.push_str(&format!("ReturnValue::from({})\n", key));
+                            output
+                                .push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
                         }
                         _ => {
                             output
                                 .push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
                             output.push_str(&self.indent());
-                            output.push_str(&format!("{key},\n"));
+                            output.push_str(&format!("{},\n", to_snake_case(key)));
                             output.push_str(&self.indent());
                             output.push_str("remapping_vals.borrow_mut(),\n");
                             output.push_str(&self.indent());
@@ -1225,7 +1285,7 @@ impl CodeGenerator {
                 }
             }
             FieldValue::Literal(_) => {
-                output.push_str(&format!("ReturnValue::from({})\n", key));
+                output.push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
             }
             _ => {
                 println!("unhandled field type: {:?}", field);
