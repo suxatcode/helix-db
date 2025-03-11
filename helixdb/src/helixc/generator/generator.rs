@@ -1169,8 +1169,8 @@ impl CodeGenerator {
                     output.push_str(&mut self.generate_traversal(traversal));
                     output.push_str(&mut self.indent());
                     println!("traversal: {:?}", traversal);
-                    match traversal.steps.last().unwrap() {
-                        Step::ID => {
+                    match traversal.steps.last() {
+                        Some(Step::ID) => {
                             output.push_str(&format!("let {} = tr.finish()?.get_id()?;\n", key));
                         }
                         _ => {
@@ -1298,8 +1298,8 @@ impl CodeGenerator {
         // if last step of traversal or traversal in expression is id, ReturnValue::from({key})
 
         match field {
-            FieldValue::Traversal(tr) => match tr.steps.last().unwrap() {
-                Step::ID => {
+            FieldValue::Traversal(tr) => match tr.steps.last() {
+                Some(Step::ID) => {
                     output.push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
                 }
                 _ => {
