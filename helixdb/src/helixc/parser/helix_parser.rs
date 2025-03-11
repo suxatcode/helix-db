@@ -123,7 +123,7 @@ pub enum Step {
     Object(Object),
     Exclude(Exclude),
     Closure(Closure),
-    Range(usize, usize),
+    Range((Expression, Expression)),
 }
 
 #[derive(Debug, Clone)]
@@ -768,10 +768,10 @@ impl HelixParser {
             Rule::object_step => Ok(Step::Object(Self::parse_object_step(inner)?)),
             Rule::closure_step => Ok(Step::Closure(Self::parse_closure(inner)?)),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::range_step => {
-                let (start, end) = Self::parse_range(pair)?;
-                Ok(Step::Range(start, end))
-            }
+            Rule::range_step => 
+
+                Ok(Step::Range(Self::parse_range(pair)?)),
+            
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::count => Ok(Step::Count),
             Rule::ID => Ok(Step::ID),
@@ -781,16 +781,16 @@ impl HelixParser {
         }
     }
 
-    fn parse_range(pair: Pair<Rule>) -> Result<(usize, usize), ParserError> {
+    fn parse_range(pair: Pair<Rule>) -> Result<(Expression, Expression), ParserError> {
         let mut inner = pair.into_inner().next().unwrap().into_inner();
         println!("inner: {:?}", inner);
-        let start = match Self::parse_expression(inner.next().unwrap())? {
-            Expression::IntegerLiteral(i) => i as usize,
-            _ => return Err(ParserError::from("Invalid start value")),
+        let start = match Self::parse_expression(inner.next().unwrap()) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
         };
-        let end = match Self::parse_expression(inner.next().unwrap())? {
-            Expression::IntegerLiteral(i) => i as usize,
-            _ => return Err(ParserError::from("Invalid end value")),
+        let end = match Self::parse_expression(inner.next().unwrap()) {
+            Ok(val) => val,
+            Err(e) => return Err(e),
         };
 
         Ok((start, end))

@@ -11,6 +11,7 @@ use crate::protocol::return_values::ReturnValue;
 use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::value::Value;
 use std::collections::HashMap;
+use std::os::macos::raw::stat;
 use std::sync::Arc;
 
 pub struct CodeGenerator {
@@ -565,7 +566,18 @@ impl CodeGenerator {
                     }
                 }
             },
-            Step::Range(start, end) => {
+            Step::Range((start, end)) => {
+                let start = match start {
+                    Expression::IntegerLiteral(val) => format!("{}", val),
+                    Expression::Identifier(id) => format!("data.{}", id),
+                    _ => unreachable!()
+                };
+                let end = match end {
+                    Expression::IntegerLiteral(val) => format!("{}", val),
+                    Expression::Identifier(id) => format!("data.{}", id),
+                    _ => unreachable!()
+                };
+
                 output.push_str(&format!("tr.range(&txn, {}, {});\n", start, end));
             }
             Step::Where(expr) => {
