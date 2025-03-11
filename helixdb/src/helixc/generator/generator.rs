@@ -564,6 +564,9 @@ impl CodeGenerator {
                     }
                 }
             },
+            Step::Range(start, end) => {
+                output.push_str(&format!("tr.range(&txn, {}, {});\n", start, end));
+            }
             Step::Where(expr) => {
                 match &**expr {
                     Expression::BooleanLiteral(b) => {

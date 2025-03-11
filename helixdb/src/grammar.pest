@@ -12,7 +12,7 @@ get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID) }
+step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step) }
 last_step           = { "::" ~ (bool_operations | update) }
 
 // Evaluation rules for different types
@@ -79,7 +79,8 @@ type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
 id_arg    = { (identifier | string_literal) }
 id_args   = { (id_arg) ~ ("," ~ id_arg)* }
 
-// Props step
+// Range step
+range_step = { "RANGE" ~ "(" ~ (evaluates_to_number) ~ "," ~ (evaluates_to_number) ~ ")" }
 
 // Boolean operations
 and             = { "AND" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }

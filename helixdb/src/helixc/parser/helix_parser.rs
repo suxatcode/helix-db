@@ -123,6 +123,7 @@ pub enum Step {
     Object(Object),
     Exclude(Exclude),
     Closure(Closure),
+    Range(usize, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -767,6 +768,10 @@ impl HelixParser {
             Rule::object_step => Ok(Step::Object(Self::parse_object_step(inner)?)),
             Rule::closure_step => Ok(Step::Closure(Self::parse_closure(inner)?)),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
+            Rule::range_step => {
+                let (start, end) = Self::parse_range(inner)?;
+                Ok(Step::Range(start, end))
+            }
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::count => Ok(Step::Count),
             Rule::ID => Ok(Step::ID),
@@ -774,6 +779,20 @@ impl HelixParser {
             Rule::exclude_field => Ok(Step::Exclude(Self::parse_exclude(inner)?)),
             _ => Err(ParserError::from("Unexpected step type")),
         }
+    }
+
+    fn parse_range(pair: Pair<Rule>) -> Result<(usize, usize), ParserError> {
+        let mut inner = pair.into_inner().next().unwrap().into_inner();
+        let start = match Self::parse_expression(inner.next().unwrap())? {
+            Expression::IntegerLiteral(i) => i as usize,
+            _ => return Err(ParserError::from("Invalid start value")),
+        };
+        let end = match Self::parse_expression(inner.next().unwrap())? {
+            Expression::IntegerLiteral(i) => i as usize,
+            _ => return Err(ParserError::from("Invalid end value")),
+        };
+
+        Ok((start, end))
     }
 
     fn parse_graph_step(pair: Pair<Rule>) -> GraphStep {
@@ -793,6 +812,7 @@ impl HelixParser {
             s if s.starts_with("Out") => GraphStep::Out(types),
             s if s.starts_with("In") => GraphStep::In(types),
             s if s.starts_with("Both") => GraphStep::Both(types),
+            // s if s.starts_with("Range") => GraphStep::Range(),
             _ => unreachable!(),
         }
     }
