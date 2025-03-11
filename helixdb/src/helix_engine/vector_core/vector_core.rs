@@ -51,7 +51,8 @@ impl HNSWConfig {
     }
 
     pub fn optimized(n: usize) -> Self {
-        let o_m = 5.min(48.max(10 + 20*(((10_000 as f64).log10()/(n as f64).log10())).floor() as usize));
+        //let o_m = 5.max(48.min(10 + 20*(((10_000 as f64).log10()/(n as f64).log10())).floor() as usize));
+        let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
         Self {
             m: o_m,
             m_max: 2*o_m,
@@ -103,6 +104,10 @@ impl VecConfig {
         let target_dim = dims[1];
 
         target_dim.clamp(3, og_dims.min(256))
+    }
+
+    pub fn get_reduced_dims(&self) -> Option<usize> {
+        self.reduced_dimensions
     }
 }
 
@@ -416,8 +421,7 @@ impl VectorCore {
             }
         };
 
-        //let ef_search = self.hnsw_config.ef_c * k;
-        let ef_search = k;
+        let ef_search = self.hnsw_config.ef_c * k;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
