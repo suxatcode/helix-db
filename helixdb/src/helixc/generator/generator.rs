@@ -29,6 +29,7 @@ impl CodeGenerator {
     pub fn generate_headers(&mut self) -> String {
         let mut output = String::new();
         output.push_str("use std::collections::{HashMap, HashSet};\n");
+        output.push_str("use std::cell::RefCell;\n");
         output.push_str("use std::sync::Arc;\n");
         output.push_str("use std::time::Instant;\n\n");
         output.push_str("use get_routes::handler;\n");
@@ -45,6 +46,7 @@ impl CodeGenerator {
         output.push_str("    protocol::count::Count,\n");
         output.push_str("    protocol::response::Response,\n");
         output.push_str("    protocol::traversal_value::TraversalValue,\n");
+        output.push_str("    protocol::remapping::ResponseRemapping,\n");
         output.push_str(
             "    protocol::{filterable::Filterable, value::Value, return_values::ReturnValue, remapping::Remapping},\n",
         );
@@ -152,7 +154,7 @@ impl CodeGenerator {
 
         //
         output.push_str(&mut self.indent());
-        output.push_str("let mut remapping_vals: HashMap<String, HashMap<String, Remapping>> = HashMap::new();\n");
+        output.push_str("let mut remapping_vals: RefCell<HashMap<String, ResponseRemapping>> = RefCell::new(HashMap::new());\n");
 
         // Setup database transaction
         output.push_str(&mut self.indent());
@@ -627,7 +629,7 @@ impl CodeGenerator {
                 output.push_str("tr.count();\n");
             }
             Step::ID => {
-                output.push_str("tr.get_id();\n");
+                output.push_str("tr.id();\n");
             }
             Step::Update(update) => {
                 let props = update
@@ -649,15 +651,13 @@ impl CodeGenerator {
             }
             Step::Object(obj) => {
                 // Assume the current variable (e.g. from an earlier assignment) is named "current_var"
-                output.push_str(&format!(
-                    "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"object\".to_string(), {});\n",
-                    self.generate_object_remapping(true, None, obj)
-                ));
+                output.push_str(&self.generate_object_remapping(true, None, obj));
             }
             Step::Closure(closure) => {
-                output.push_str(&format!(
-                    "remapping_vals.entry(\"current_var\".to_string()).or_insert(HashMap::new()).insert(\"closure\".to_string(), {});\n",
-                    self.generate_object_remapping(true, Some(&closure.identifier), &closure.object)
+                output.push_str(&self.generate_object_remapping(
+                    true,
+                    Some(&closure.identifier),
+                    &closure.object,
                 ));
             }
             // Step::Exclude(exclude) => {
@@ -975,7 +975,7 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
             if let Expression::Identifier(id) = expr {
                 output.push_str(&format!(
-                    "return_vals.insert(\"{}\".to_string(), ReturnValue::TraversalValues({}));\n",
+                    "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n",
                     id, id
                 ));
             }
@@ -1017,7 +1017,6 @@ impl CodeGenerator {
             Value::Integer(i) => i.to_string(),
             Value::Float(f) => f.to_string(),
             Value::Boolean(b) => b.to_string(),
-            Value::Empty => "Value::Empty".to_string(),
             Value::Array(arr) => format!(
                 "vec![{}]",
                 arr.iter()
@@ -1080,29 +1079,62 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         for (key, field) in object.fields.iter() {
             output.push_str(&mut self.indent());
-            output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
+            println!("field: {:?}", field);
             match field {
                 FieldValue::Traversal(traversal) => {
+                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_traversal(traversal));
+                    output.push_str(&mut self.indent());
+                    println!("traversal: {:?}", traversal);
+                    match traversal.steps.last().unwrap() {
+                        Step::ID => {
+                            output.push_str(&format!("let {} = tr.finish()?.get_id()?;\n", key));
+                        }
+                        _ => {
+                            output.push_str(&format!("let {} = tr.finish()?;\n", key));
+                        }
+                    }
                 }
-                _ => {}
+                FieldValue::Expression(expr) => {
+                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
+                    output.push_str(&mut self.indent());
+                    output.push_str(&mut self.generate_expression(expr));
+                    output.push_str(&mut self.indent());
+                    if let Expression::Traversal(traversal) = expr {
+                        match traversal.steps.last().unwrap() {
+                            Step::ID => {
+                                output
+                                    .push_str(&format!("let {} = tr.finish()?.get_id()?;\n", key));
+                            }
+                            _ => {
+                                output.push_str(&format!("let {} = tr.finish()?;\n", key));
+                            }
+                        }
+                    } else {
+                        output.push_str(&format!("let {} = tr.finish()?;\n", key));
+                    }
+                }
+                _ => {
+                    println!("unhandled field type: {:?}", field);
+                    panic!("unhandled field type");
+                }
             }
             output.push_str(&mut self.indent());
 
             // generate remapping
-            output.push_str(&self.generate_remapping(key));
+            output.push_str(&self.generate_remapping(key, field));
         }
-        output.push_str("remmaping_vals.borrow_mut().insert(");
+        output.push_str("remapping_vals.borrow_mut().insert(\n");
         output.push_str(&self.indent());
-        output.push_str(&format!("{}.id.clone()", var_name));
+        output.push_str(&format!("{}.id.clone(),\n", var_name));
         output.push_str(&self.indent());
-        output.push_str("ResponseRemapping::new(");
+        output.push_str("ResponseRemapping::new(\n");
         output.push_str(&self.indent());
-        output.push_str("HashMap::from([");
+        output.push_str("HashMap::from([\n");
 
         for (key, field) in object.fields.iter() {
-            output.push_str(&format!("(\"{key}\".to_string(), {}_remapping),", key));
+            output.push_str(&format!("(\"{key}\".to_string(), {}_remapping),\n", key));
         }
         output.push_str(&self.indent());
         output.push_str("]),");
@@ -1112,37 +1144,91 @@ impl CodeGenerator {
         output.push_str("),");
         output.push_str(&self.indent());
         output.push_str(");");
-
+        output.push_str(&self.indent());
+        output.push_str("Ok(())");
         output.push_str("});\n");
         output
     }
 
-    fn generate_remapping(&mut self, key: &String) -> String {
+    fn generate_remapping(&mut self, key: &String, field: &FieldValue) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
         let opt_key = match key.as_str() {
             "" => "None".to_string(),
-            _ => format!("Some({key})"),
+            _ => format!("Some(\"{key}\".to_string())\n"),
         };
-        output.push_str(&format!(
-            "let {}_remapping = Remapping::new(false, {}, Some({}));\n",
-            key,
-            opt_key,
-            self.generate_return_value(key)
-        ));
+        println!("field: {:?}", field);
+        match field {
+            FieldValue::Traversal(_) | FieldValue::Expression(_) => {
+                output.push_str(&format!(
+                    "let {}_remapping = Remapping::new(false, {}, Some({}));\n",
+                    key,
+                    opt_key,
+                    self.generate_return_value(key, field)
+                ));
+            }
+            FieldValue::Literal(value) => {
+                output.push_str(&format!(
+                    "let {}_remapping = Remapping::new(false, None, Some({}));\n",
+                    key,
+                    self.value_to_rust(value)
+                ));
+            }
+            _ => {
+                println!("unhandled field type: {:?}", field);
+                panic!("unhandled field type");
+            }
+        }
         output
     }
 
-    fn generate_return_value(&mut self, key: &String) -> String {
+    fn generate_return_value(&mut self, key: &String, field: &FieldValue) -> String {
         let mut output = String::new();
 
-        output.push_str("ReturnValue::from_traversal_value_array_with_mixin(");
-        output.push_str(&self.indent());
-        output.push_str(&format!("{key},"));
-        output.push_str(&self.indent());
-        output.push_str("remapping_vals.borrow_mut(),");
-        output.push_str(&self.indent());
-        output.push_str(")");
+        // if last step of traversal or traversal in expression is id, ReturnValue::from({key})
+
+        match field {
+            FieldValue::Traversal(tr) => match tr.steps.last().unwrap() {
+                Step::ID => {
+                    output.push_str(&format!("ReturnValue::from({})\n", key));
+                }
+                _ => {
+                    output.push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
+                    output.push_str(&self.indent());
+                    output.push_str(&format!("{key},\n"));
+                    output.push_str(&self.indent());
+                    output.push_str("remapping_vals.borrow_mut(),\n");
+                    output.push_str(&self.indent());
+                    output.push_str(")\n");
+                }
+            },
+            FieldValue::Expression(expr) => {
+                if let Expression::Traversal(tr) = expr {
+                    match tr.steps.last().unwrap() {
+                        Step::ID => {
+                            output.push_str(&format!("ReturnValue::from({})\n", key));
+                        }
+                        _ => {
+                            output
+                                .push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
+                            output.push_str(&self.indent());
+                            output.push_str(&format!("{key},\n"));
+                            output.push_str(&self.indent());
+                            output.push_str("remapping_vals.borrow_mut(),\n");
+                            output.push_str(&self.indent());
+                            output.push_str(")\n");
+                        }
+                    }
+                }
+            }
+            FieldValue::Literal(_) => {
+                output.push_str(&format!("ReturnValue::from({})\n", key));
+            }
+            _ => {
+                println!("unhandled field type: {:?}", field);
+                panic!("unhandled field type");
+            }
+        }
 
         output
     }

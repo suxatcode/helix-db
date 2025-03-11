@@ -77,7 +77,8 @@ where
                 HashMap::with_capacity(Node::NUM_PROPERTIES + item.properties_ref().len())
             }
             FilterableType::Edge => {
-                let mut properties = HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
+                let mut properties =
+                    HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
                 properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
                 properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
                 properties
@@ -151,7 +152,14 @@ impl ReturnValue {
         match traversal_value {
             TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
             TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
-            _ => unreachable!(),
+            TraversalValue::ValueArray(values) => {
+                println!("values: {:?}", values);
+                unreachable!()
+            }
+            _ => {
+                println!("traversal_value: {:?}", traversal_value);
+                unreachable!()
+            }
         }
     }
 

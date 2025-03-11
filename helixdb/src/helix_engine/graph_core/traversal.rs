@@ -114,6 +114,37 @@ impl TraversalBuilder {
         self.store_error(e);
         self
     }
+
+    pub fn id(&mut self) -> &mut Self {
+        match &self.current_step {
+            TraversalValue::NodeArray(nodes) => match nodes.first() {
+                Some(node) => {
+                    self.current_step = TraversalValue::ValueArray(vec![(
+                        "id".to_string(),
+                        Value::from(node.id.clone()),
+                    )]);
+                }
+                None => {
+                    self.current_step = TraversalValue::Empty;
+                }
+            },
+            TraversalValue::EdgeArray(edges) => match edges.first() {
+                Some(edge) => {
+                    self.current_step = TraversalValue::ValueArray(vec![(
+                        "id".to_string(),
+                        Value::from(edge.id.clone()),
+                    )]);
+                }
+                None => {
+                    self.current_step = TraversalValue::Empty;
+                }
+            },
+            _ => {
+                self.current_step = TraversalValue::Empty;
+            }
+        }
+        self
+    }
 }
 
 impl SourceTraversalSteps for TraversalBuilder {

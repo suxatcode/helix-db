@@ -620,7 +620,6 @@ impl HelixParser {
     }
 
     fn parse_expression(p: Pair<Rule>) -> Result<Expression, ParserError> {
-        println!("Parsing expression: {:?}", p);
         let pair = p
             .into_inner()
             .next()

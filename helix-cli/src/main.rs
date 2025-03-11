@@ -561,7 +561,7 @@ fn main() {
                         };
                         match HelixParser::parse_source(&contents) {
                             Ok(source) => {
-                                println!("Source: {:?}", source);
+                                // println!("Source: {:?}", source);
                                 successes.insert(
                                     file.file_name().to_string_lossy().into_owned(),
                                     source,
@@ -611,7 +611,7 @@ fn main() {
                         };
                         match HelixParser::parse_source(&contents) {
                             Ok(source) => {
-                                println!("Source: {:?}", source);
+                                // println!("Source: {:?}", source);
                                 successes.insert(
                                     file.file_name().to_string_lossy().into_owned(),
                                     source,
