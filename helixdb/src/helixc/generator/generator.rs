@@ -629,7 +629,7 @@ impl CodeGenerator {
                 output.push_str("tr.count();\n");
             }
             Step::ID => {
-                output.push_str("tr.id();\n");
+                // output.push_str("tr.id();\n");
             }
             Step::Update(update) => {
                 let props = update

@@ -156,6 +156,7 @@ impl ReturnValue {
                 println!("values: {:?}", values);
                 unreachable!()
             }
+            TraversalValue::Empty => ReturnValue::Value(Value::Empty),
             _ => {
                 println!("traversal_value: {:?}", traversal_value);
                 unreachable!()

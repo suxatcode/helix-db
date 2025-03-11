@@ -813,7 +813,10 @@ impl TraversalMethods for TraversalBuilder {
     {
         if let TraversalValue::NodeArray(nodes) = &self.current_step {
             for node in nodes {
-                let _ = map_fn(node, txn);
+                match map_fn(node, txn) {
+                    Ok(_) => (),
+                    Err(err) => panic!("Error in for_each_node: {:?}", err),
+                }
             }
         }
         self
