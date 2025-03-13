@@ -1,18 +1,11 @@
 use crate::helix_engine::vector_core::vector::HVector;
 use crate::helix_engine::{storage_core::storage_core::OUT_EDGES_PREFIX, types::VectorError};
 use bincode::{deserialize, serialize};
-use heed3::{
-    types::{Bytes, Unit},
-    Database, Env, RoTxn, RwTxn,
-};
+use heed3::{types::{Bytes, Unit}, Database, Env, RoTxn, RwTxn};
 use indexmap::IndexMap;
 use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
-    sync::atomic::{AtomicU64, Ordering as AtomicOrdering},
-};
+use std::{cmp::Ordering, collections::{BinaryHeap, HashSet}};
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
@@ -69,7 +62,6 @@ impl HNSWConfig {
 pub struct VecConfig {
     og_dimensions: usize,
     reduced_dimensions: Option<usize>,
-    quantization: Option<usize>,
 }
 
 impl Default for VecConfig {
@@ -77,7 +69,6 @@ impl Default for VecConfig {
         Self {
             og_dimensions: 0,
             reduced_dimensions: None,
-            quantization: None,
         }
     }
 }
@@ -91,7 +82,6 @@ impl VecConfig {
         Self {
             og_dimensions: og_dims,
             reduced_dimensions: Some(Self::calc_target_dim(og_dims)),
-            quantization: None,
         }
     }
 
@@ -205,30 +195,6 @@ impl VectorCore {
 
     #[inline]
     pub fn get_new_level(&self) -> usize {
-        // // Atomically update the RNG seed
-        // let mut seed = self.rng_seed.fetch_add(1, AtomicOrdering::Relaxed);
-        // if seed == 0 {
-        //     seed = 1;
-        // }
-
-        // // XorShift64* algorithm
-        // seed ^= seed >> 12;
-        // seed ^= seed << 25;
-        // seed ^= seed >> 27;
-        // let random_value = seed.wrapping_mul(0x2545F4914F6CDD1D);
-
-        // // Convert to [0,1) range
-        // let r = (random_value as f64) / (u64::MAX as f64);
-
-        // // Level calculation with exponential distribution
-        // // Use a constant like 1/ln(M) where M is base parameter (often 2-16)
-        // // Alternatively, you can use a fixed value like self.config.m_l
-        // let level = (-r.ln() * self.config.m_l).floor() as usize;
-
-        // // Cap the maximum level to prevent extremely rare but very high levels
-        // println!("level: {:?}, max_level: {:?}", level, self.config.max_level);
-        // level.min(self.config.max_level)
-
         let mut rng = rand::rng();
         let level = (-rng.random::<f64>().ln()).floor() as usize;
         level.min(self.hnsw_config.max_level)
@@ -504,5 +470,12 @@ impl VectorCore {
             vectors.push(vector);
         }
         Ok(vectors)
+    }
+
+    pub fn load_data(&mut self, txn: &mut RwTxn, vectors: Vec<(String, Vec<f64>)>) -> Result<(), VectorError> {
+        for (_, data) in vectors.iter() {
+            self.insert(txn, data).unwrap();
+        }
+        Ok(())
     }
 }
