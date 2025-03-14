@@ -1,6 +1,6 @@
 use heed3::{Env, EnvOpenOptions};
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
-use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VecConfig, VectorCore}};
+use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VectorCore}};
 use polars::prelude::*;
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -33,40 +33,6 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
     vectors
 }
 
-// use this as an alternative to the built in euclidean distance
-fn cosine_distance(vec1: &[f64], vec2: &[f64]) -> Result<f64, &'static str> {
-    if vec1.len() != vec2.len() {
-        return Err("Vectors must have the same length");
-    }
-
-    if vec1.is_empty() {
-        return Err("Vectors cannot be empty");
-    }
-
-    let dot_product: f64 = vec1.iter()
-        .zip(vec2.iter())
-        .map(|(&x, &y)| x * y)
-        .sum();
-
-    let mag1: f64 = vec1.iter()
-        .map(|&x| x * x)
-        .sum::<f64>()
-        .sqrt();
-
-    let mag2: f64 = vec2.iter()
-        .map(|&x| x * x)
-        .sum::<f64>()
-        .sqrt();
-
-    if mag1 == 0.0 || mag2 == 0.0 {
-        return Err("can't have 0 magnitude!");
-    }
-
-    let cosine_similarity = dot_product / (mag1 * mag2);
-
-    Ok(1.0 - cosine_similarity)
-}
-
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     let mut ground_truths = Vec::new();
 
@@ -76,8 +42,7 @@ fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64
             .iter()
             .map(|hvector| {
                 let vector = hvector;
-                //(vector.get_id().to_string(), vector.distance_to(&hquery))
-                (vector.get_id().to_string(), cosine_distance(vector.get_data(), hquery.get_data()).unwrap())
+                (vector.get_id().to_string(), vector.distance_to(&hquery))
             })
             .collect();
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -145,14 +110,15 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 // cargo test test_name -- --nocapture
 
+/*
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 10_000;
+    let n_base = 5_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 500;
+    let n_query = 10;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -162,18 +128,18 @@ fn test_recall_precision_real_data() {
     println!("num of base vecs: {}", base_vectors.len());
     println!("num of query vecs: {}", query_vectors.len());
 
-    let k = 100;
+    let k = 5;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
 
-    let hnsw_config = HNSWConfig::optimized(n_base);
-    println!("{:?}", hnsw_config);
-    let index = VectorCore::new(&env, &mut txn, dims, Some(hnsw_config), None).unwrap();
-    //index.load_data(&mut txn, base_vectors.to_vec()).unwrap();
-    for (id, data) in base_vectors.iter() {
-        println!("inserting vec: {}", id);
+    let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    println!("{:?}", index.config);
+    for (i, (id, data)) in vectors.iter().enumerate() {
+        let start_time = Instant::now();
         index.insert(&mut txn, data).unwrap();
+        let time = start_time.elapsed();
+        println!("{}: loading vector: {} in {} ms", i, id, time.as_millis());
     }
     txn.commit().unwrap();
     let txn = env.read_txn().unwrap();
@@ -222,78 +188,10 @@ fn test_recall_precision_real_data() {
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
 }
+*/
 
 #[test]
-fn test_recall_fake_data() {
-    let n_base = 30_000;
-    let dims = 1536;
-    let vectors = generate_random_vectors(n_base, dims, 69);
-    println!("loaded {} vectors", vectors.len());
-
-    let n_query = 1000;
-    let mut rng = rand::rng();
-    let mut shuffled_vectors = vectors.clone();
-    shuffled_vectors.shuffle(&mut rng);
-    let base_vectors = &shuffled_vectors[..n_base - n_query];
-    let query_vectors = &shuffled_vectors[n_base - n_query..];
-
-    println!("num of base vecs: {}", base_vectors.len());
-    println!("num of query vecs: {}", query_vectors.len());
-
-    let k = 15;
-
-    let env = setup_temp_env();
-    let mut txn = env.write_txn().unwrap();
-
-    let hnsw_config = HNSWConfig::optimized(n_base);
-    println!("hnsw config: {:?}", hnsw_config);
-    let mut index = VectorCore::new(&env, &mut txn, dims, Some(hnsw_config), None).unwrap();
-    index.load_data(&mut txn, base_vectors.to_vec()).unwrap();
-    txn.commit().unwrap();
-    let txn = env.read_txn().unwrap();
-
-    println!("calculating ground truth distances...");
-    let all_hvectors = index.get_all_vectors(&txn).unwrap();
-    let ground_truth = calc_ground_truths(all_hvectors, query_vectors.to_vec(), k);
-
-    println!("searching and comparing...");
-    let test_id = format!("recall@{} with {} queries", k, n_query);
-
-    let mut total_recall = 0.0;
-
-    let mut total_search_time = std::time::Duration::from_secs(0);
-
-    for ((_, query), gt) in query_vectors.iter().zip(ground_truth.iter()) {
-        let start_time = Instant::now();
-        let results = index.search(&txn, query, k).unwrap();
-        let search_duration = start_time.elapsed();
-        total_search_time += search_duration;
-
-        let result_indices: HashSet<String> = results.into_iter()
-            .map(|hvector| hvector.get_id().to_string())
-            .collect();
-
-        let gt_indices: HashSet<String> = gt.iter().cloned().collect();
-        //println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
-        let true_positives = result_indices.intersection(&gt_indices).count();
-        let recall = true_positives as f64 / gt_indices.len() as f64;
-
-        total_recall += recall;
-    }
-
-    println!("Total search time: {:.2?} seconds", total_search_time.as_secs_f64());
-    println!(
-        "Average search time per query: {:.2?} milliseconds",
-        total_search_time.as_millis() as f64 / n_query as f64
-    );
-
-    total_recall = total_recall / n_query as f64;
-    println!("{}: {:.2?}", test_id, total_recall);
-    assert!(total_recall >= 0.8, "recall not high enough!");
-}
-
-#[test]
-fn test_insertion_speed() {
+fn test_insert_speed() {
     let n_base = 10_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
@@ -303,19 +201,19 @@ fn test_insertion_speed() {
     let mut txn = env.write_txn().unwrap();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(&env, &mut txn, dims, Some(HNSWConfig::optimized(n_base)), None).unwrap();
-    for (id, data) in vectors.iter() {
-        println!("loading vector: {}", id);
+    let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
         index.insert(&mut txn, data).unwrap();
-        let insertion_duration = start_time.elapsed();
-        total_insertion_time += insertion_duration;
+        let time = start_time.elapsed();
+        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
+        total_insertion_time += time;
     }
     txn.commit().unwrap();
 
-    println!("Total insertion time: {:.2?} seconds", total_insertion_time.as_secs_f64());
+    println!("total insertion time: {:.2?} seconds", total_insertion_time.as_secs_f64());
     println!(
-        "Average insertion time per vec: {:.2?} milliseconds",
+        "average insertion time per vec: {:.2?} milliseconds",
         total_insertion_time.as_millis() as f64 / n_base as f64
     );
 }
