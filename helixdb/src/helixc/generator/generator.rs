@@ -100,12 +100,13 @@ impl CodeGenerator {
         output
     }
 
-    fn field_type_to_rust(&mut self, field_type: &FieldType) -> &str {
+    fn field_type_to_rust(&self, field_type: &FieldType) -> String {
         match field_type {
-            FieldType::String => "String",
-            FieldType::Integer => "i32",
-            FieldType::Float => "f64",
-            FieldType::Boolean => "bool",
+            FieldType::String => "String".to_string(),
+            FieldType::Integer => "i32".to_string(),
+            FieldType::Float => "f64".to_string(),
+            FieldType::Boolean => "bool".to_string(),
+            FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field))
         }
     }
 

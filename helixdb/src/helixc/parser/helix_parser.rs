@@ -44,6 +44,7 @@ pub enum FieldType {
     Integer,
     Float,
     Boolean,
+    Array(Box<FieldType>),
 }
 
 #[derive(Debug, Clone)]
@@ -252,7 +253,6 @@ pub struct Closure {
     pub object: Object,
 }
 
-
 impl HelixParser {
     pub fn parse_source(input: &str) -> Result<Source, ParserError> {
         let file = match HelixParser::parse(Rule::source, input) {
@@ -311,16 +311,30 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_field_def(pair: Pair<Rule>) -> Field {
-        let mut pairs = pair.into_inner();
-        let name = pairs.next().unwrap().as_str().to_string();
-        let field_type = match pairs.next().unwrap().as_str() {
+    fn parse_field_type(type_str: &str) -> FieldType {
+        match type_str {
             "String" => FieldType::String,
             "Integer" => FieldType::Integer,
             "Float" => FieldType::Float,
             "Boolean" => FieldType::Boolean,
+            _ => {
+                if type_str.starts_with("[") && type_str.ends_with("]") {
+                    return FieldType::Array(Box::new(Self::parse_field_type(
+                        &type_str[1..type_str.len() - 1],
+                    )));
+                } else {
+                    unreachable!()
+                }
+            }
             _ => unreachable!(),
-        };
+        }
+    }
+
+    fn parse_field_def(pair: Pair<Rule>) -> Field {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+
+        let field_type = Self::parse_field_type(pairs.next().unwrap().as_str());
 
         Field { name, field_type }
     }
@@ -374,13 +388,8 @@ impl HelixParser {
             .map(|p| {
                 let mut inner = p.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
-                let param_type = match inner.next().unwrap().as_str() {
-                    "String" => FieldType::String,
-                    "Integer" => FieldType::Integer,
-                    "Float" => FieldType::Float,
-                    "Boolean" => FieldType::Boolean,
-                    _ => unreachable!(),
-                };
+                let param_type = Self::parse_field_type(inner.next().unwrap().as_str());
+
                 Parameter { name, param_type }
                 //hi
             })
@@ -768,10 +777,8 @@ impl HelixParser {
             Rule::object_step => Ok(Step::Object(Self::parse_object_step(inner)?)),
             Rule::closure_step => Ok(Step::Closure(Self::parse_closure(inner)?)),
             Rule::where_step => Ok(Step::Where(Box::new(Self::parse_expression(inner)?))),
-            Rule::range_step => 
+            Rule::range_step => Ok(Step::Range(Self::parse_range(pair)?)),
 
-                Ok(Step::Range(Self::parse_range(pair)?)),
-            
             Rule::bool_operations => Ok(Step::BooleanOperation(Self::parse_bool_operation(inner)?)),
             Rule::count => Ok(Step::Count),
             Rule::ID => Ok(Step::ID),
@@ -817,8 +824,6 @@ impl HelixParser {
             _ => unreachable!(),
         }
     }
-
-    
 
     fn parse_bool_operation(pair: Pair<Rule>) -> Result<BooleanOp, ParserError> {
         let inner = pair.into_inner().next().unwrap();
@@ -1744,5 +1749,47 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_array_as_param_type() {
+        let input = r#"
+        QUERY trWithArrayParam(ids: [String], names:[String], ages: [Integer], createdAt: String) => 
+            AddV<User>({Name: "test"})
+            RETURN "SUCCESS"
+        "#;
+
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.return_values.len(), 1);
+
+        assert!(query.parameters.iter().any(|param| match param.param_type {
+            FieldType::String => true,
+            _ => false,
+        }));
+        assert!(query.parameters.iter().any(|param| match param.param_type {
+            FieldType::Array(ref field) => match &**field {
+                FieldType::String =>
+                    if param.name == "names" || param.name == "ids" {
+                        true
+                    } else {
+                        false
+                    },
+                _ => false,
+            },
+            _ => false,
+        }));
+        assert!(query.parameters.iter().any(|param| match param.param_type {
+            FieldType::Array(ref field) => match &**field {
+                FieldType::Integer =>
+                    if param.name == "ages" {
+                        true
+                    } else {
+                        false
+                    },
+                _ => false,
+            },
+            _ => false,
+        }))
     }
 }

@@ -51,7 +51,7 @@ evaluates_to_number = {
 }
 
 // Return statement
-return_stmt = { "RETURN" ~  evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
+return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
 
 // Vertex-related steps
 start_vertex = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
@@ -104,7 +104,7 @@ exclude_field = { "!" ~ "{" ~ identifier ~ ("," ~ identifier)* ~ ("," ~ spread_o
 closure_step  = { "|" ~ identifier ~ "|" ~ object_step }
 spread_object = { ".." }
 
-mapping_field = { (identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step ))) | identifier }
+mapping_field = { (identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step))) | identifier }
 
 // Schema definitions
 node_def   = { "V::" ~ identifier_upper ~ node_body }
@@ -116,10 +116,11 @@ field_defs = { field_def ~ ("," ~ field_def)* }
 properties = { "Properties" ~ ":" ~ "{" ~ field_defs? ~ "}" }
 
 // Values and literals
+array            = @{ "[" ~ type_name ~ "]" }
 string_literal   = ${ "\"" ~ inner_string ~ "\"" }
 inner_string     = @{ (!("\"" | "\\") ~ ANY)* }
 boolean          =  { "true" | "false" }
-type_name        = @{ "String" | "Integer" | "Float" | "Boolean" }
+type_name        = @{ "String" | "Integer" | "Float" | "Boolean" | array }
 identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 integer          = @{ ASCII_DIGIT+ }
