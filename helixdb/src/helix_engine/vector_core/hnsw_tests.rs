@@ -110,10 +110,9 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 // cargo test test_name -- --nocapture
 
-/*
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 5_000;
+    let n_base = 200;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
@@ -128,7 +127,7 @@ fn test_recall_precision_real_data() {
     println!("num of base vecs: {}", base_vectors.len());
     println!("num of query vecs: {}", query_vectors.len());
 
-    let k = 5;
+    let k = 8;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
@@ -139,7 +138,7 @@ fn test_recall_precision_real_data() {
         let start_time = Instant::now();
         index.insert(&mut txn, data).unwrap();
         let time = start_time.elapsed();
-        println!("{}: loading vector: {} in {} ms", i, id, time.as_millis());
+        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
     }
     txn.commit().unwrap();
     let txn = env.read_txn().unwrap();
@@ -167,7 +166,7 @@ fn test_recall_precision_real_data() {
             .collect();
 
         let gt_indices: HashSet<String> = gt.iter().cloned().collect();
-        //println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
+        println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
         let true_positives = result_indices.intersection(&gt_indices).count();
 
         let recall: f64 = true_positives as f64 / gt_indices.len() as f64;
@@ -188,7 +187,6 @@ fn test_recall_precision_real_data() {
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
 }
-*/
 
 #[test]
 fn test_insert_speed() {

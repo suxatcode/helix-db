@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::{BinaryHeap, HashSet}};
+use std::time::Instant;
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
@@ -15,13 +16,13 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
-    pub m: usize,                 // max num of bi-directional links per element
-    pub m_max: usize,             // max num of links for upper layers
-    pub ef_construction: usize,   // size of the dynamic candidate list for construction
-    pub ef_c: usize,              // ef_search factor (usually 10 so that 10*k)
-    pub max_elements: usize,      // maximum number of elements in the index
-    pub m_l: f64,                 // level generation factor
-    pub max_level: usize,         // max number of levels in index
+    pub m: usize,            // max num of bi-directional links per element
+    pub m_max: usize,        // max num of links for upper layers
+    pub ef_construct: usize, // size of the dynamic candidate list for construction
+    pub ef_c: usize,         // ef_search factor (usually 10 so that 10*k)
+    pub max_elements: usize, // maximum number of elements in the index
+    pub m_l: f64,            // level generation factor
+    pub max_level: usize,    // max number of levels in index
 }
 
 impl HNSWConfig {
@@ -32,7 +33,7 @@ impl HNSWConfig {
         Self {
             m: o_m,
             m_max: 2*o_m,
-            ef_construction: 256,
+            ef_construct: 10,
             ef_c: 10,
             max_elements: n,
             m_l: 1.0/(o_m as f64).log10(),
@@ -162,6 +163,38 @@ impl VectorCore {
     #[inline(always)]
     fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<HVector>, VectorError> {
         let out_key = Self::out_edges_key(id, "", level);
+        let mut neighbors = Vec::with_capacity(self.config.m_max.min(512));
+
+        let iter = self
+            .out_edges_db
+            .lazily_decode_data()
+            .prefix_iter(txn, &out_key)?;
+
+        let prefix_len = out_key.len();
+        let id_bytes = id.as_bytes();
+
+        for result in iter {
+            if let Ok((key, _)) = result {
+                let neighbor_id = unsafe {
+                    std::str::from_utf8_unchecked(&key[prefix_len..])
+                };
+
+                if neighbor_id.as_bytes() != id_bytes {
+                    if let Ok(vector) = self.get_vector(txn, neighbor_id, level) {
+                        neighbors.push(vector);
+                    }
+                }
+            }
+        }
+
+        neighbors.shrink_to_fit();
+        Ok(neighbors)
+    }
+
+    /*
+    #[inline(always)]
+    fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<HVector>, VectorError> {
+        let out_key = Self::out_edges_key(id, "", level);
 
         let iter = self
             .out_edges_db
@@ -183,6 +216,7 @@ impl VectorCore {
 
         Ok(neighbors)
     }
+    */
 
     #[inline(always)]
     fn set_neighbours(&self, txn: &mut RwTxn, id: &str, neighbors: &BinaryHeap<HVector>, level: usize) -> Result<(), VectorError> {
@@ -205,27 +239,17 @@ impl VectorCore {
 
     fn select_neighbors(
         &self,
-        txn: &RoTxn,
-        candidates: &BinaryHeap<HVector>,
+        cands: &BinaryHeap<HVector>,
         level: usize,
-        extend_cands: bool,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
         let m = if level == 0 { self.config.m } else { self.config.m_max };
 
-        let mut all_candidates = IndexMap::new();
-        for candidate in candidates {
-            all_candidates.insert(candidate.get_id().to_string(), candidate.clone());
-            if extend_cands {
-                for neighbor in self.get_neighbors(txn, candidate.get_id(), level)? {
-                    all_candidates.entry(neighbor.get_id().to_string()).or_insert(neighbor);
-                }
-            }
-        }
+        let mut candidates: Vec<_> = cands.into_iter().cloned().collect();
 
-        let mut sorted_candidates: Vec<_> = all_candidates.into_iter().map(|(_id, vec)| vec).collect();
-        sorted_candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
 
-        let selected = sorted_candidates.into_iter().take(m);
+        let selected = candidates.into_iter().take(m);
+
         let mut neighbor_heap = BinaryHeap::with_capacity(m);
         for candidate in selected {
             neighbor_heap.push(candidate);
@@ -291,7 +315,6 @@ impl VectorCore {
         Ok(results)
     }
 
-    /*
     pub fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
         let query = HVector::from_slice("".to_string(), 0, query.to_vec());
 
@@ -324,7 +347,6 @@ impl VectorCore {
         results.truncate(k);
         Ok(results)
     }
-    */
 
     // paper: https://arxiv.org/pdf/1603.09320
     pub fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<(), VectorError> {
@@ -354,15 +376,28 @@ impl VectorCore {
         }
 
         for level in (0..=l.min(new_level)).rev() {
-            let nearest = self.search_level(txn, &query, &curr_ep, self.config.ef_construction, level)?;
-            let neighbors = self.select_neighbors(txn, &nearest, level, true)?;
+            let start_time = Instant::now();
+            let nearest = self.search_level(txn, &query, &curr_ep, self.config.ef_construct, level)?;
+            let time = start_time.elapsed();
+            println!("1: {} ms", time.as_millis());
+
+            let start_time = Instant::now();
+            let neighbors = self.select_neighbors(&nearest, level)?;
+            let time = start_time.elapsed();
+            println!("2: {} ms", time.as_millis());
 
             self.set_neighbours(txn, &query.get_id(), &neighbors, level)?;
+
             for e in neighbors {
                 let id = e.get_id();
-                let e_conn = BinaryHeap::from(self.get_neighbors(txn, e.get_id(), level)?);
+
+                let start_time = Instant::now();
+                let e_conn = BinaryHeap::from(self.get_neighbors(txn, id, level)?);
+                let time = start_time.elapsed();
+                println!("3: {} ms", time.as_millis());
+
                 if e_conn.len() > self.config.m_max {
-                    let e_new_conn = self.select_neighbors(txn, &e_conn, level, true)?;
+                    let e_new_conn = self.select_neighbors(&e_conn, level)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
                 } else {
                     self.set_neighbours(txn, id, &e_conn, level)?;
