@@ -106,7 +106,8 @@ impl CodeGenerator {
             FieldType::Integer => "i32".to_string(),
             FieldType::Float => "f64".to_string(),
             FieldType::Boolean => "bool".to_string(),
-            FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field))
+            FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field)),
+            _ => "".to_string()
         }
     }
 
@@ -1377,6 +1378,7 @@ mod tests {
             RETURN user
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
@@ -1394,6 +1396,7 @@ mod tests {
             RETURN user
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
@@ -1412,6 +1415,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1429,6 +1433,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         println!("Source:\n{:?}", source);
         let mut generator = CodeGenerator::new();
@@ -1452,6 +1457,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         println!("Source:\n{:?}", source);
         let mut generator = CodeGenerator::new();
@@ -1474,6 +1480,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1496,6 +1503,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1522,6 +1530,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         println!("Source:\n{:?}", source);
@@ -1544,6 +1553,7 @@ mod tests {
             RETURN users
         "#;
 
+        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1567,6 +1577,7 @@ mod tests {
             ))
             RETURN users
         "#;
+
 
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();

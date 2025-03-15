@@ -1,5 +1,6 @@
 use super::helix_parser::Rule;
 use core::fmt;
+use std::fmt::write;
 
 pub trait Parser {
     fn parse(&self, input: &str) -> Result<(), String>;
@@ -9,6 +10,7 @@ pub trait Parser {
 pub enum ParserError {
     ParseError(String),
     LexError(String),
+    ParamDoesNotMatchSchema(String)
 }
 
 impl fmt::Display for ParserError {
@@ -16,6 +18,7 @@ impl fmt::Display for ParserError {
         match self {
             ParserError::ParseError(e) => write!(f, "Parse error: {}", e),
             ParserError::LexError(e) => write!(f, "Lex error: {}", e),
+            ParserError::ParamDoesNotMatchSchema(p) => write!(f, "Parameter with name: {} does not exist in the schema", p),
         }
     }
 }
@@ -44,6 +47,7 @@ impl std::fmt::Debug for ParserError {
         match self {
             ParserError::ParseError(e) => write!(f, "Parse error: {}", e),
             ParserError::LexError(e) => write!(f, "Lex error: {}", e),
+            ParserError::ParamDoesNotMatchSchema(p) => write!(f, "Parameter with name: {} does not exist in the schema", p),
         }
     }
 } 
