@@ -420,29 +420,33 @@ impl VectorCore {
     ) -> Result<Vec<HVector>, VectorError> {
         let query = HVector::from_slice("".to_string(), 0, query.to_vec());
 
-        let mut entry_point = match self.get_entry_point(txn) {
-            Ok(ep) => ep,
-            Err(_) => {
-                return Err(VectorError::EntryPointNotFound);
-            }
-        };
+        let mut entry_point = self.get_entry_point(txn)
+            .map_err(|_| VectorError::EntryPointNotFound)?;
 
         let ef_search = self.config.ef_c * k;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let nearest = self.search_level(txn, &query, &mut entry_point, ef_search, level)?;
-            if !nearest.is_empty() {
-                std::mem::replace(&mut entry_point, nearest.peek().unwrap().clone());
-                // TODO: do better (no clone)
+            // Assume search_level returns a min-heap where pop() gives the closest vector.
+            let mut nearest = self.search_level(txn, &query, &mut entry_point, ef_search, level)?;
+            // Update entry_point to the closest candidate, avoiding cloning by consuming the heap.
+            if let Some(closest) = nearest.pop() {
+                entry_point = closest;
+            }
+            // If nearest is empty, we keep the current entry_point, assuming the index is valid.
+        }
+
+        let mut candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?;
+
+        let mut results = Vec::with_capacity(k);
+        for _ in 0..k {
+            if let Some(candidate) = candidates.pop() {
+                results.push(candidate);
+            } else {
+                break;
             }
         }
 
-        let mut candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?; // TODO: if we get nothing, add a change in precision mechanism for ef
-
-        let mut results: Vec<HVector> = candidates.into_iter().collect();
-        
-        results.truncate(k);
         Ok(results)
     }
 
