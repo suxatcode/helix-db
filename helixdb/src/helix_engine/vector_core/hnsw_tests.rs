@@ -61,7 +61,8 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         ));
     }
 
-    let data_dir = "../data/";
+    let data_dir = "./src/helix_engine/data/";
+    // let data_dir = "../data/";
     let mut all_vectors = Vec::new();
     let mut total_loaded = 0;
 
@@ -69,7 +70,7 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         let entry = entry?;
         let path = entry.path();
 
-        println!("loading entry: {:?}", path);
+        // println!("loading entry: {:?}", path);
 
         if path.is_file() && path.extension().map_or(false, |ext| ext == "parquet") {
             let df = ParquetReader::new(File::open(&path)?)
@@ -127,7 +128,7 @@ fn test_recall_precision_real_data() {
     println!("num of base vecs: {}", base_vectors.len());
     println!("num of query vecs: {}", query_vectors.len());
 
-    let k = 8;
+    let k = 24;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
@@ -190,7 +191,7 @@ fn test_recall_precision_real_data() {
 
 #[test]
 fn test_insert_speed() {
-    let n_base = 10_000;
+    let n_base = 10000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
@@ -204,7 +205,7 @@ fn test_insert_speed() {
         let start_time = Instant::now();
         index.insert(&mut txn, data).unwrap();
         let time = start_time.elapsed();
-        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
+        // println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
     }
     txn.commit().unwrap();
@@ -214,4 +215,5 @@ fn test_insert_speed() {
         "average insertion time per vec: {:.2?} milliseconds",
         total_insertion_time.as_millis() as f64 / n_base as f64
     );
+    assert!(false);
 }

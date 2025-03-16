@@ -1,12 +1,18 @@
 use crate::helix_engine::vector_core::vector::HVector;
 use crate::helix_engine::{storage_core::storage_core::OUT_EDGES_PREFIX, types::VectorError};
 use bincode::{deserialize, serialize};
-use heed3::{types::{Bytes, Unit}, Database, Env, RoTxn, RwTxn};
+use heed3::{
+    types::{Bytes, Unit},
+    Database, Env, RoTxn, RwTxn,
+};
 use indexmap::IndexMap;
 use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::{BinaryHeap, HashSet}};
 use std::time::Instant;
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet},
+};
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
@@ -27,17 +33,17 @@ pub struct HNSWConfig {
 
 impl HNSWConfig {
     pub fn new(n: usize) -> Self {
-        let d = (10.0 + 20.0 * (10_000.0_f64.log10()/(n as f64).log10())).floor() as usize;
+        let d = (10.0 + 20.0 * (10_000.0_f64.log10() / (n as f64).log10())).floor() as usize;
         let o_m = 5.max(48.min(d));
         //let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
         Self {
             m: o_m,
-            m_max: 2*o_m,
+            m_max: 2 * o_m,
             ef_construct: 10,
             ef_c: 10,
             max_elements: n,
-            m_l: 1.0/(o_m as f64).log10(),
-            max_level: ((n as f64).log10()/(o_m as f64).log10()).floor() as usize,
+            m_l: 1.0 / (o_m as f64).log10(),
+            max_level: ((n as f64).log10() / (o_m as f64).log10()).floor() as usize,
         }
     }
 }
@@ -69,11 +75,7 @@ pub struct VectorCore {
 }
 
 impl VectorCore {
-    pub fn new(
-        env: &Env,
-        txn: &mut RwTxn,
-        n: usize,
-    ) -> Result<Self, VectorError> {
+    pub fn new(env: &Env, txn: &mut RwTxn, n: usize) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
         let config = HNSWConfig::new(n);
@@ -123,8 +125,8 @@ impl VectorCore {
             None => return Err(VectorError::EntryPointNotFound),
         };
 
-        let vector: HVector = deserialize(entry_point_bytes)
-            .map_err(|_| VectorError::InvalidEntryPoint)?;
+        let vector: HVector =
+            deserialize(entry_point_bytes).map_err(|_| VectorError::InvalidEntryPoint)?;
 
         Ok(vector)
     }
@@ -161,7 +163,13 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn get_neighbors(&self, txn: &RoTxn, id: &str, level: usize) -> Result<Vec<HVector>, VectorError> {
+    fn get_neighbors(
+        &self,
+        txn: &RoTxn,
+        id: &str,
+        level: usize,
+    ) -> Result<Vec<HVector>, VectorError> {
+        let start_time = Instant::now();
         let out_key = Self::out_edges_key(id, "", level);
         let mut neighbors = Vec::with_capacity(self.config.m_max.min(512));
 
@@ -175,9 +183,7 @@ impl VectorCore {
 
         for result in iter {
             if let Ok((key, _)) = result {
-                let neighbor_id = unsafe {
-                    std::str::from_utf8_unchecked(&key[prefix_len..])
-                };
+                let neighbor_id = unsafe { std::str::from_utf8_unchecked(&key[prefix_len..]) };
 
                 if neighbor_id.as_bytes() != id_bytes {
                     if let Ok(vector) = self.get_vector(txn, neighbor_id, level) {
@@ -186,7 +192,8 @@ impl VectorCore {
                 }
             }
         }
-
+        let time = start_time.elapsed();
+        // println!("get_neighbors: {} ms", time.as_millis());
         neighbors.shrink_to_fit();
         Ok(neighbors)
     }
@@ -219,7 +226,26 @@ impl VectorCore {
     */
 
     #[inline(always)]
-    fn set_neighbours(&self, txn: &mut RwTxn, id: &str, neighbors: &BinaryHeap<HVector>, level: usize) -> Result<(), VectorError> {
+    fn set_neighbours(
+        &self,
+        txn: &mut RwTxn,
+        id: &str,
+        neighbors: &BinaryHeap<HVector>,
+        level: usize,
+    ) -> Result<(), VectorError> {
+        let start_time = Instant::now();
+        let prefix = Self::out_edges_key(id, "", level);
+
+        let keys_to_delete: Vec<Vec<u8>> = self
+            .out_edges_db
+            .prefix_iter(txn, prefix.as_ref())?
+            .filter_map(|result| result.ok().map(|(key, _)| key.to_vec()))
+            .collect();
+
+        for key in keys_to_delete {
+            self.out_edges_db.delete(txn, &key)?;
+        }
+
         neighbors
             .iter()
             .try_for_each(|neighbor| -> Result<(), VectorError> {
@@ -234,6 +260,8 @@ impl VectorCore {
                 self.out_edges_db.put(txn, &in_key, &())?;
                 Ok(())
             })?;
+        let time = start_time.elapsed();
+        // println!("set_neighbors: {} ms", time.as_millis());
         Ok(())
     }
 
@@ -242,11 +270,20 @@ impl VectorCore {
         cands: &BinaryHeap<HVector>,
         level: usize,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
-        let m = if level == 0 { self.config.m } else { self.config.m_max };
+        let start_time = Instant::now();
+        let m = if level == 0 {
+            self.config.m
+        } else {
+            self.config.m_max
+        };
 
         let mut candidates: Vec<_> = cands.into_iter().cloned().collect();
 
-        candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(Ordering::Equal)
+        });
 
         let selected = candidates.into_iter().take(m);
 
@@ -254,6 +291,9 @@ impl VectorCore {
         for candidate in selected {
             neighbor_heap.push(candidate);
         }
+
+        let time = start_time.elapsed();
+        // println!("select_neighbors: {} ms", time.as_millis());
 
         Ok(neighbor_heap)
     }
@@ -266,6 +306,7 @@ impl VectorCore {
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
+        let start_time = Instant::now();
         let mut visited: HashSet<String> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
@@ -287,9 +328,15 @@ impl VectorCore {
             {
                 break;
             }
-
+            let neighbour_start_time = Instant::now();
             let neighbors = self.get_neighbors(txn, &curr_cand.id, level)?;
+            let neighbour_time = neighbour_start_time.elapsed();
+            // println!(
+            //     "search_level:\n\tget_neighbors: {} ms",
+            //     neighbour_time.as_millis()
+            // );
 
+            let loop_start_time = Instant::now();
             for mut neighbor in neighbors {
                 if !visited.contains(neighbor.get_id()) {
                     visited.insert(neighbor.get_id().to_string());
@@ -312,10 +359,18 @@ impl VectorCore {
             }
         }
 
+        let time = start_time.elapsed();
+        // println!("search_level: {} ms", time.as_millis());
+
         Ok(results)
     }
 
-    pub fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
+    pub fn search(
+        &self,
+        txn: &RoTxn,
+        query: &[f64],
+        k: usize,
+    ) -> Result<Vec<HVector>, VectorError> {
         let query = HVector::from_slice("".to_string(), 0, query.to_vec());
 
         let mut entry_point = match self.get_entry_point(txn) {
@@ -331,7 +386,8 @@ impl VectorCore {
         for level in (1..=curr_level).rev() {
             let nearest = self.search_level(txn, &query, &mut entry_point, ef_search, level)?;
             if !nearest.is_empty() {
-                std::mem::replace(&mut entry_point, nearest.peek().unwrap().clone()); // TODO: do better (no clone)
+                std::mem::replace(&mut entry_point, nearest.peek().unwrap().clone());
+                // TODO: do better (no clone)
             }
         }
 
@@ -364,7 +420,7 @@ impl VectorCore {
             Err(_) => {
                 query.distance = 0.0;
                 self.set_entry_point(txn, &query)?;
-                return Ok(())
+                return Ok(());
             }
         };
 
@@ -377,14 +433,13 @@ impl VectorCore {
 
         for level in (0..=l.min(new_level)).rev() {
             let start_time = Instant::now();
-            let nearest = self.search_level(txn, &query, &curr_ep, self.config.ef_construct, level)?;
+            let nearest =
+                self.search_level(txn, &query, &curr_ep, self.config.ef_construct, level)?;
             let time = start_time.elapsed();
-            println!("1: {} ms", time.as_millis());
 
             let start_time = Instant::now();
             let neighbors = self.select_neighbors(&nearest, level)?;
             let time = start_time.elapsed();
-            println!("2: {} ms", time.as_millis());
 
             self.set_neighbours(txn, &query.get_id(), &neighbors, level)?;
 
@@ -394,7 +449,6 @@ impl VectorCore {
                 let start_time = Instant::now();
                 let e_conn = BinaryHeap::from(self.get_neighbors(txn, id, level)?);
                 let time = start_time.elapsed();
-                println!("3: {} ms", time.as_millis());
 
                 if e_conn.len() > self.config.m_max {
                     let e_new_conn = self.select_neighbors(&e_conn, level)?;
@@ -408,7 +462,7 @@ impl VectorCore {
         if new_level > l {
             self.set_entry_point(txn, &query)?;
         }
-
+        // println!();
         Ok(())
     }
 
