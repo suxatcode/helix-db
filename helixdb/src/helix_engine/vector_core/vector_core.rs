@@ -152,6 +152,16 @@ impl VectorCore {
     }
 
     #[inline(always)]
+    fn get_vector_ref<'a>(&'a self, txn: &'a RoTxn, id: &str, level: usize) -> Result<&'a [u8], VectorError> {
+        let key = Self::vector_key(id, level);
+        match self.vectors_db.get(txn, key.as_ref())? {
+            Some(bytes) => Ok(bytes),
+            None if level > 0 => self.get_vector_ref(txn, id, 0),
+            None => Err(VectorError::VectorNotFound(id.to_string())),
+        }
+    }
+
+    #[inline(always)]
     fn put_vector(&self, txn: &mut RwTxn, vector: &HVector) -> Result<(), VectorError> {
         self.vectors_db
             .put(
@@ -187,6 +197,42 @@ impl VectorCore {
 
                 if neighbor_id.as_bytes() != id_bytes {
                     if let Ok(vector) = self.get_vector(txn, neighbor_id, level) {
+                        neighbors.push(vector);
+                    }
+                }
+            }
+        }
+        let time = start_time.elapsed();
+        // println!("get_neighbors: {} ms", time.as_millis());
+        neighbors.shrink_to_fit();
+        Ok(neighbors)
+    }
+
+    #[inline(always)]
+    fn get_neighbors_ref<'a>(
+        &'a self,
+        txn: &'a RoTxn,
+        id: &str,
+        level: usize,
+    ) -> Result<Vec<&'a [u8]>, VectorError> {
+        let start_time = Instant::now();
+        let out_key = Self::out_edges_key(id, "", level);
+        let mut neighbors = Vec::with_capacity(self.config.m_max.min(512));
+
+        let iter = self
+            .out_edges_db
+            .lazily_decode_data()
+            .prefix_iter(txn, &out_key)?;
+
+        let prefix_len = out_key.len();
+        let id_bytes = id.as_bytes();
+
+        for result in iter {
+            if let Ok((key, _)) = result {
+                let neighbor_id = unsafe { std::str::from_utf8_unchecked(&key[prefix_len..]) };
+
+                if neighbor_id.as_bytes() != id_bytes {
+                    if let Ok(vector) = self.get_vector_ref(txn, neighbor_id, level) {
                         neighbors.push(vector);
                     }
                 }
@@ -299,11 +345,11 @@ impl VectorCore {
         Ok(neighbor_heap)
     }
 
-    fn search_level(
-        &self,
+    fn search_level<'a, 'b>(
+        &'a self,
         txn: &RoTxn,
-        query: &HVector,
-        entry_point: &HVector,
+        query: &'b HVector,
+        entry_point: &'a HVector,
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
@@ -330,7 +376,7 @@ impl VectorCore {
                 break;
             }
             let neighbour_start_time = Instant::now();
-            let neighbors = self.get_neighbors(txn, &curr_cand.id, level)?;
+            let neighbors = self.get_neighbors_ref(txn, &curr_cand.id, level)?;
             let neighbour_time = neighbour_start_time.elapsed();
             // println!(
             //     "search_level:\n\tget_neighbors: {} ms",
@@ -339,6 +385,7 @@ impl VectorCore {
 
             let loop_start_time = Instant::now();
             for mut neighbor in neighbors {
+                let mut neighbor: HVector = deserialize(neighbor).unwrap();
                 if !visited.contains(neighbor.get_id()) {
                     visited.insert(neighbor.get_id().to_string());
 
@@ -353,7 +400,7 @@ impl VectorCore {
                             continue;
                         }
                         neighbor.distance = distance;
-                        results.push(neighbor.clone());
+                        results.push(neighbor);
                     }
                 }
             }
@@ -391,15 +438,10 @@ impl VectorCore {
             }
         }
 
-        let candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?; // TODO: if we get nothing, add a change in precision mechanism for ef
+        let mut candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?; // TODO: if we get nothing, add a change in precision mechanism for ef
 
-        let mut results: Vec<HVector> = Vec::with_capacity(candidates.len());
-        candidates.iter().for_each(|c| {
-            let mut n_c = c.clone();
-            n_c.distance = n_c.distance_to(&query);
-            results.push(n_c);
-        });
-
+        let mut results: Vec<HVector> = candidates.into_iter().collect();
+        
         results.truncate(k);
         Ok(results)
     }

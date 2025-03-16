@@ -278,3 +278,5 @@ mod vector_tests {
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
 }
+
+
