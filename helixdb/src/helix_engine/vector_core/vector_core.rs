@@ -226,11 +226,11 @@ impl VectorCore {
     */
 
     #[inline(always)]
-    fn set_neighbours(
+    fn set_neighbours<'a>(
         &self,
         txn: &mut RwTxn,
         id: &str,
-        neighbors: &BinaryHeap<HVector>,
+        neighbors: &'a BinaryHeap<&HVector>,
         level: usize,
     ) -> Result<(), VectorError> {
         let start_time = Instant::now();
@@ -268,19 +268,19 @@ impl VectorCore {
         Ok(())
     }
 
-    fn select_neighbors(
-        &self,
-        cands: &BinaryHeap<HVector>,
+    fn select_neighbors<'a, 'b>(
+        &'a self,
+        cands: &'b BinaryHeap<HVector>,
         level: usize,
-    ) -> Result<BinaryHeap<HVector>, VectorError> {
+    ) -> Result<BinaryHeap<&'b HVector>, VectorError> {
         let start_time = Instant::now();
-        let m = if level == 0 {
+        let m: usize = if level == 0 {
             self.config.m
         } else {
             self.config.m_max
         };
 
-        let mut candidates: Vec<_> = cands.into_iter().cloned().collect();
+        let mut candidates: Vec<_> = cands.iter().collect();
 
         candidates.sort_by(|a, b| {
             a.distance
@@ -288,10 +288,8 @@ impl VectorCore {
                 .unwrap_or(Ordering::Equal)
         });
 
-        let selected = candidates.into_iter().take(m);
-
-        let mut neighbor_heap = BinaryHeap::with_capacity(m);
-        for candidate in selected {
+        let mut neighbor_heap: BinaryHeap<&HVector> = BinaryHeap::with_capacity(m);
+        for candidate in candidates.iter().take(m) {
             neighbor_heap.push(candidate);
         }
 
@@ -351,12 +349,11 @@ impl VectorCore {
                         distance,
                     });
                     if results.len() < ef || distance < results.peek().unwrap().distance {
+                        if results.len() > ef {
+                            continue;
+                        }
                         neighbor.distance = distance;
                         results.push(neighbor.clone());
-
-                        if results.len() > ef {
-                            results.pop();
-                        }
                     }
                 }
             }
@@ -450,14 +447,17 @@ impl VectorCore {
                 let id = e.get_id();
 
                 let start_time = Instant::now();
-                let e_conn = BinaryHeap::from(self.get_neighbors(txn, id, level)?);
+                let e_conns = self.get_neighbors(txn, id, level)?;
+                // BinaryHeap::from(self.get_neighbors(txn, id, level)?);
                 let time = start_time.elapsed();
 
-                if e_conn.len() > self.config.m_max {
-                    let e_new_conn = self.select_neighbors(&e_conn, level)?;
+                if e_conns.len() > self.config.m_max {
+                    let e_conns: BinaryHeap<HVector> = e_conns.into_iter().collect();
+                    let e_new_conn = self.select_neighbors(&e_conns, level)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
                 } else {
-                    self.set_neighbours(txn, id, &e_conn, level)?;
+                    let e_conns: BinaryHeap<&HVector> = e_conns.iter().collect();
+                    self.set_neighbours(txn, id, &e_conns, level)?;
                 }
             }
         }
@@ -465,6 +465,7 @@ impl VectorCore {
         if new_level > l {
             self.set_entry_point(txn, &query)?;
         }
+        // println!();
         Ok(query)
     }
 
