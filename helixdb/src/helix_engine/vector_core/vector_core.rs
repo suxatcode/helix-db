@@ -39,7 +39,7 @@ impl HNSWConfig {
         Self {
             m: o_m,
             m_max: 2 * o_m,
-            ef_construct: 10,
+            ef_construct: 256,
             ef_c: 10,
             max_elements: n,
             m_l: 1.0 / (o_m as f64).log10(),
@@ -405,7 +405,7 @@ impl VectorCore {
     }
 
     // paper: https://arxiv.org/pdf/1603.09320
-    pub fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<(), VectorError> {
+    pub fn insert(&self, txn: &mut RwTxn, data: &[f64]) -> Result<HVector, VectorError> {
         let id = uuid::Uuid::new_v4().as_simple().to_string();
         let new_level = self.get_new_level();
 
@@ -420,7 +420,7 @@ impl VectorCore {
             Err(_) => {
                 query.distance = 0.0;
                 self.set_entry_point(txn, &query)?;
-                return Ok(());
+                return Ok(query);
             }
         };
 
@@ -462,8 +462,7 @@ impl VectorCore {
         if new_level > l {
             self.set_entry_point(txn, &query)?;
         }
-        // println!();
-        Ok(())
+        Ok(query)
     }
 
     pub fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
@@ -474,6 +473,20 @@ impl VectorCore {
             let (_, value) = result?;
             let vector: HVector = deserialize(&value)?;
             vectors.push(vector);
+        }
+        Ok(vectors)
+    }
+
+    pub fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError> {
+        let mut vectors = Vec::new();
+
+        let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
+        for result in prefix_iter {
+            let (_, value) = result?;
+            let vector: HVector = deserialize(&value)?;
+            if vector.level == level {
+                vectors.push(vector);
+            }
         }
         Ok(vectors)
     }
