@@ -142,6 +142,7 @@ pub enum Step {
     Exclude(Exclude),
     Closure(Closure),
     Range((Expression, Expression)),
+    AddEdge(AddEdge),
 }
 
 #[derive(Debug, Clone)]
@@ -195,12 +196,13 @@ pub struct AddEdge {
     pub edge_type: Option<String>,
     pub fields: Option<Vec<(String, ValueType)>>,
     pub connection: EdgeConnection,
+    pub from_identifier: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct EdgeConnection {
-    pub from_id: IdType,
-    pub to_id: IdType,
+    pub from_id: Option<IdType>,
+    pub to_id: Option<IdType>,
 }
 
 #[derive(Debug, Clone)]
@@ -468,7 +470,7 @@ impl HelixParser {
             .map(|p| match p.as_rule() {
                 Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
                 Rule::AddV => Ok(Statement::AddVertex(self.parse_add_vertex(p)?)),
-                Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p)?)),
+                Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
@@ -557,7 +559,11 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_add_edge(&self, pair: Pair<Rule>) -> Result<AddEdge, ParserError> {
+    fn parse_add_edge(
+        &self,
+        pair: Pair<Rule>,
+        from_identifier: bool,
+    ) -> Result<AddEdge, ParserError> {
         let mut edge_type = None;
         let mut fields = None;
         let mut connection = None;
@@ -573,9 +579,6 @@ impl HelixParser {
                 Rule::to_from => {
                     connection = Some(self.parse_to_from(p)?);
                 }
-                Rule::from_to => {
-                    connection = Some(self.parse_from_to(p)?);
-                }
                 _ => {
                     return Err(ParserError::from(format!(
                         "Unexpected rule in AddE: {:?}",
@@ -589,57 +592,48 @@ impl HelixParser {
             edge_type,
             fields,
             connection: connection.ok_or_else(|| ParserError::from("Missing edge connection"))?,
+            from_identifier,
         })
     }
 
-    fn parse_id_args(&self, pair: Pair<Rule>) -> Result<IdType, ParserError> {
+    fn parse_id_args(&self, pair: Pair<Rule>) -> Result<Option<IdType>, ParserError> {
         let p = pair
             .into_inner()
             .next()
             .ok_or_else(|| ParserError::from("Missing ID"))?;
+        println!("p: {:?}", p);
         match p.as_rule() {
-            Rule::identifier => Ok(IdType::Identifier(p.as_str().to_string())),
-            Rule::string_literal | Rule::inner_string => Ok(IdType::from(p.as_str().to_string())),
-            _ => unreachable!(),
+            Rule::identifier => Ok(Some(IdType::Identifier(p.as_str().to_string()))),
+            Rule::string_literal | Rule::inner_string => {
+                Ok(Some(IdType::from(p.as_str().to_string())))
+            }
+            _ => Err(ParserError::from(format!(
+                "Unexpected rule in parse_id_args: {:?}",
+                p.as_rule()
+            ))),
         }
     }
 
     fn parse_to_from(&self, pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
         let mut pairs = pair.into_inner();
-        let to_id = self.parse_id_args(
-            pairs
-                .next()
-                .ok_or_else(|| ParserError::from("Missing to IDs"))?
-                .into_inner()
-                .next()
-                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
-        )?;
-        let from_id = self.parse_id_args(
-            pairs
-                .next()
-                .ok_or_else(|| ParserError::from("Missing from IDs"))?
-                .into_inner()
-                .next()
-                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
-        )?;
-
-        Ok(EdgeConnection { to_id, from_id })
-    }
-
-    fn parse_from_to(&self, pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
-        let mut pairs = pair.into_inner();
-        let from_id = self.parse_id_args(
-            pairs
-                .next()
-                .ok_or_else(|| ParserError::from("Missing to IDs"))?,
-        )?;
-        let to_id = self.parse_id_args(
-            pairs
-                .next()
-                .ok_or_else(|| ParserError::from("Missing from IDs"))?,
-        )?;
-
-        Ok(EdgeConnection { from_id, to_id })
+        let mut from_id = None;
+        let mut to_id = None;
+        println!("pairs: {:?}", pairs);
+        for p in pairs {
+            match p.as_rule() {
+                Rule::from => {
+                    from_id = self.parse_id_args(p.into_inner().next().unwrap())?;
+                }
+                Rule::to => {
+                    to_id = self.parse_id_args(p.into_inner().next().unwrap())?;
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(EdgeConnection {
+            from_id: from_id,
+            to_id: to_id,
+        })
     }
 
     fn parse_get_statement(&self, pair: Pair<Rule>) -> Result<Assignment, ParserError> {
@@ -735,7 +729,7 @@ impl HelixParser {
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
             Rule::AddV => Ok(Expression::AddVertex(self.parse_add_vertex(pair)?)),
-            Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair)?)),
+            Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
                 "Unexpected expression type: {:?}",
@@ -846,7 +840,11 @@ impl HelixParser {
             Rule::ID => Ok(Step::ID),
             Rule::update => Ok(Step::Update(self.parse_update(inner)?)),
             Rule::exclude_field => Ok(Step::Exclude(self.parse_exclude(inner)?)),
-            _ => Err(ParserError::from("Unexpected step type")),
+            Rule::AddE => Ok(Step::AddEdge(self.parse_add_edge(inner, true)?)),
+            _ => Err(ParserError::from(format!(
+                "Unexpected step type: {:?}",
+                inner.as_rule()
+            ))),
         }
     }
 
@@ -1879,15 +1877,19 @@ mod tests {
 
         println!("{:?}", query.parameters);
         let mut param_type = "";
-        assert!(query.parameters.iter().any(|param| match param.param_type {
-            FieldType::Identifier(ref id) => match id.as_str() {
-                "User" => true,
-                _ => {
-                    param_type = id;
-                    false
+        assert!(
+            query.parameters.iter().any(|param| match param.param_type {
+                FieldType::Identifier(ref id) => match id.as_str() {
+                    "User" => true,
+                    _ => {
+                        param_type = id;
+                        false
+                    }
                 },
-            },
-            _ => false,
-        }), "Param of type {} was not found", param_type);
+                _ => false,
+            }),
+            "Param of type {} was not found",
+            param_type
+        );
     }
 }

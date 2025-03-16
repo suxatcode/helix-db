@@ -1,6 +1,6 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, Expression, Field, FieldAddition,
-    FieldType, FieldValue, GraphStep, IdType, NodeSchema, Query, Source,
+    AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field,
+    FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Query, Source,
     StartNode::{Anonymous, Edge, Variable, Vertex},
     Statement, Step, Traversal, ValueType,
 };
@@ -72,6 +72,12 @@ impl CodeGenerator {
             output.push_str("\n");
         }
 
+        // Generate edge schema definitions
+        for edge_schema in &source.edge_schemas {
+            output.push_str(&mut self.generate_edge_schema(edge_schema));
+            output.push_str("\n");
+        }
+
         // Generate query implementations
         for query in &source.queries {
             output.push_str(&mut self.generate_query(query));
@@ -84,6 +90,7 @@ impl CodeGenerator {
     fn generate_node_schema(&mut self, schema: &NodeSchema) -> String {
         let mut output = String::new();
         output.push_str(&format!("// Node Schema: {}\n", schema.name));
+        output.push_str("#[derive(Serialize, Deserialize)]\n");
         output.push_str("struct ");
         output.push_str(&schema.name);
         output.push_str(" {\n");
@@ -91,7 +98,27 @@ impl CodeGenerator {
         for field in &schema.fields {
             output.push_str(&format!(
                 "    {}: {},\n",
-                field.name,
+                to_snake_case(&field.name),
+                self.field_type_to_rust(&field.field_type)
+            ));
+        }
+
+        output.push_str("}\n");
+        output
+    }
+
+    fn generate_edge_schema(&mut self, schema: &EdgeSchema) -> String {
+        let mut output = String::new();
+        output.push_str(&format!("// Edge Schema: {}\n", schema.name));
+        output.push_str("#[derive(Serialize, Deserialize)]\n");
+        output.push_str("struct ");
+        output.push_str(&schema.name);
+        output.push_str(" {\n");
+
+        for field in schema.properties.as_ref().unwrap_or(&vec![]) {
+            output.push_str(&format!(
+                "    {}: {},\n",
+                to_snake_case(&field.name),
                 self.field_type_to_rust(&field.field_type)
             ));
         }
@@ -107,7 +134,8 @@ impl CodeGenerator {
             FieldType::Float => "f64".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field)),
-            _ => "".to_string()
+            FieldType::Identifier(id) => format!("{}", id),
+            _ => "".to_string(),
         }
     }
 
@@ -920,7 +948,8 @@ impl CodeGenerator {
             "props!{}".to_string()
         };
 
-        let from_id = match &add_edge.connection.from_id {
+        // TODO: change
+        let from_id = match &add_edge.connection.from_id.as_ref().unwrap() {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
@@ -931,7 +960,7 @@ impl CodeGenerator {
             }
         };
 
-        let to_id = match &add_edge.connection.to_id {
+        let to_id = match &add_edge.connection.to_id.as_ref().unwrap() {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
@@ -1378,7 +1407,6 @@ mod tests {
             RETURN user
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
@@ -1396,7 +1424,6 @@ mod tests {
             RETURN user
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
@@ -1415,7 +1442,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1433,7 +1459,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         println!("Source:\n{:?}", source);
         let mut generator = CodeGenerator::new();
@@ -1457,7 +1482,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         println!("Source:\n{:?}", source);
         let mut generator = CodeGenerator::new();
@@ -1480,7 +1504,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1503,7 +1526,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1530,7 +1552,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         println!("Source:\n{:?}", source);
@@ -1553,7 +1574,6 @@ mod tests {
             RETURN users
         "#;
 
-        
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
@@ -1577,7 +1597,6 @@ mod tests {
             ))
             RETURN users
         "#;
-
 
         let source = HelixParser::parse_source(input).unwrap();
         let mut generator = CodeGenerator::new();

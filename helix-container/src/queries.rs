@@ -23,11 +23,47 @@ use helixdb::{
 };
 use sonic_rs::{Deserialize, Serialize};
 
+// Node Schema: User
+#[derive(Serialize, Deserialize)]
+struct User {
+    name: String,
+    followers_count: i32,
+    verified: bool,
+}
+
+// Node Schema: Post
+#[derive(Serialize, Deserialize)]
+struct Post {
+    content: String,
+    author: i32,
+    timestamp: i32,
+}
+
+// Edge Schema: Authored
+#[derive(Serialize, Deserialize)]
+struct Authored {
+    timestamp: i32,
+}
+
+// Edge Schema: Follows
+#[derive(Serialize, Deserialize)]
+struct Follows {
+    timestamp: i32,
+}
+
 #[handler]
-pub fn find_influential_users(
+pub fn tr_with_array_param(
     input: &HandlerInput,
     response: &mut Response,
 ) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct trWithArrayParamData {
+        users: Vec<User>,
+        meal_i_d: String,
+    }
+
+    let data: trWithArrayParamData = sonic_rs::from_slice(&input.request.body).unwrap();
+
     let mut remapping_vals: RefCell<HashMap<String, ResponseRemapping>> =
         RefCell::new(HashMap::new());
     let db = Arc::clone(&input.graph.storage);
@@ -36,38 +72,10 @@ pub fn find_influential_users(
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
-    tr.v_from_types(&txn, &["User"]);
-    tr.for_each_node(&txn, |item, txn| {
-        let name_remapping = Remapping::new(true, Some("Name".to_string()), None);
-        remapping_vals.borrow_mut().insert(
-            item.id.clone(),
-            ResponseRemapping::new(HashMap::from([("Name".to_string(), name_remapping)]), false),
-        );
-        Ok(())
-    });
-    let users = tr.finish()?;
+    let e = tr.finish()?;
 
-    return_vals.insert(
-        "users".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(users, remapping_vals.borrow_mut()),
-    );
+    return_vals.insert("message".to_string(), ReturnValue::from("SUCCESS"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
     Ok(())
-}
-
-// Node Schema: User
-struct User {
-    Id: i32,
-    Name: String,
-    FollowersCount: i32,
-    Verified: bool,
-}
-
-// Node Schema: Post
-struct Post {
-    Id: i32,
-    Content: String,
-    Author: i32,
-    Timestamp: i32,
 }

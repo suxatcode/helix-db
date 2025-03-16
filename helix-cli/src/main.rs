@@ -517,33 +517,33 @@ fn main() {
             }
 
             let numb_of_files = files.len();
-            let mut successes = HashMap::new();
-            let mut errors = HashMap::new();
             let mut code = String::new();
             let mut generator = CodeGenerator::new();
             code.push_str(&generator.generate_headers());
-            for file in files {
-                let contents = match fs::read_to_string(file.path()) {
-                    Ok(contents) => contents,
-                    Err(e) => {
-                        println!("{}", e);
-                        return;
-                    }
-                };
-                match HelixParser::parse_source(&contents) {
-                    Ok(source) => {
-                        // println!("{:?}", parser);
-                        code.push_str(&generator.generate_source(&source));
 
-                        // write to ~/.helix/cache/generated/
+            let mut contents: String = files
+                .iter()
+                .map(|file| -> String {
+                    match fs::read_to_string(file.path()) {
+                        Ok(contents) => contents,
+                        Err(e) => {
+                            panic!("{}", e);
+                        }
+                    }
+                })
+                .fold(String::new(), |acc, contents| acc + &contents);
 
-                        successes.insert(file.file_name().to_string_lossy().into_owned(), source);
-                    }
-                    Err(e) => {
-                        errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                    }
+            match HelixParser::parse_source(&contents) {
+                Ok(source) => {
+                    // println!("{:?}", parser);
+                    code.push_str(&generator.generate_source(&source));
+                }
+                Err(e) => {
+                    println!("{}", e);
+                    return;
                 }
             }
+
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
@@ -557,12 +557,6 @@ fn main() {
                 ),
             };
 
-            successes
-                .iter()
-                .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-            errors
-                .iter()
-                .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
             println!();
         }
 

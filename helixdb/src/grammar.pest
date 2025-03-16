@@ -12,7 +12,7 @@ get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
 traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
-step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step) }
+step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step | AddE) }
 last_step           = { "::" ~ (bool_operations | update) }
 
 // Evaluation rules for different types
@@ -134,7 +134,9 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 create_field = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
 new_field    = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | create_field) }
 AddV         = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
-AddE         = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ (from_to | to_from) }
-from_to      = { "::" ~ "From" ~ ("(" ~ id_arg ~ ")") ~ "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
-to_from      = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" ~ "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
-drop         = { "DROP" ~ (traversal | id_traversal | identifier)? }
+AddE         = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
+to_from      = { to ~ from? | from ~ to? }
+to           = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
+from         = { "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
+
+drop = { "DROP" ~ (traversal | id_traversal | identifier)? }
