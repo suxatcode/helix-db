@@ -39,7 +39,7 @@ impl HNSWConfig {
         Self {
             m: o_m,
             m_max: 2 * o_m,
-            ef_construct: 10,
+            ef_construct: 400,
             ef_c: 10,
             max_elements: n,
             m_l: 1.0 / (o_m as f64).log10(),
@@ -236,15 +236,11 @@ impl VectorCore {
         let start_time = Instant::now();
         let prefix = Self::out_edges_key(id, "", level);
 
-        let keys_to_delete: Vec<Vec<u8>> = self
+        let mut keys_to_delete: HashSet<Vec<u8>> = self
             .out_edges_db
             .prefix_iter(txn, prefix.as_ref())?
             .filter_map(|result| result.ok().map(|(key, _)| key.to_vec()))
             .collect();
-
-        for key in keys_to_delete {
-            self.out_edges_db.delete(txn, &key)?;
-        }
 
         neighbors
             .iter()
@@ -254,12 +250,19 @@ impl VectorCore {
                     return Ok(());
                 }
                 let out_key = Self::out_edges_key(id, neighbor_id, level);
-                let in_key = Self::out_edges_key(neighbor_id, id, level);
-
+                keys_to_delete.remove(&out_key);
                 self.out_edges_db.put(txn, &out_key, &())?;
+
+                let in_key = Self::out_edges_key(neighbor_id, id, level);
+                keys_to_delete.remove(&in_key);
                 self.out_edges_db.put(txn, &in_key, &())?;
+
                 Ok(())
             })?;
+
+        for key in keys_to_delete {
+            self.out_edges_db.delete(txn, &key)?;
+        }
         let time = start_time.elapsed();
         // println!("set_neighbors: {} ms", time.as_millis());
         Ok(())

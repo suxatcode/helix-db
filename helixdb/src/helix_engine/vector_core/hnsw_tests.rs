@@ -113,12 +113,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 200;
+    let n_base = 10000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 10;
+    let n_query = 1000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -205,7 +205,7 @@ fn test_insert_speed() {
         let start_time = Instant::now();
         index.insert(&mut txn, data).unwrap();
         let time = start_time.elapsed();
-        // println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
+        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
     }
     txn.commit().unwrap();
