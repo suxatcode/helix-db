@@ -36,6 +36,8 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     let mut ground_truths = Vec::new();
 
+    println!("vectors len: {}", vectors.len());
+
     for (_, query) in query_vectors {
         let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
         let mut distances: Vec<(String, f64)> = vectors
@@ -109,7 +111,7 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
     Ok(all_vectors)
 }
 
-// cargo test test_name -- --nocapture
+// cargo --release test test_name -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
@@ -128,24 +130,36 @@ fn test_recall_precision_real_data() {
     println!("num of base vecs: {}", base_vectors.len());
     println!("num of query vecs: {}", query_vectors.len());
 
-    let k = 24;
+    let k = 50;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
 
+    let mut all_hvectors: Vec<HVector> = Vec::new();
+
+    let mut total_insertion_time = std::time::Duration::from_secs(0);
     let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
-    println!("{:?}", index.config);
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        index.insert(&mut txn, data).unwrap();
+        let vec = index.insert(&mut txn, data).unwrap();
         let time = start_time.elapsed();
         println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
+        total_insertion_time += time;
+
+        all_hvectors.push(vec);
     }
     txn.commit().unwrap();
     let txn = env.read_txn().unwrap();
+    println!("{:?}", index.config);
+
+    println!("total insertion time: {:.2?} seconds", total_insertion_time.as_secs_f64());
+    println!(
+        "average insertion time per vec: {:.2?} milliseconds",
+        total_insertion_time.as_millis() as f64 / n_base as f64
+    );
 
     println!("calculating ground truth distances...");
-    let all_hvectors = index.get_all_vectors(&txn).unwrap();
+    //let all_hvectors = index.get_all_vectors_at_level(&txn, 0).unwrap();
     let ground_truth = calc_ground_truths(all_hvectors, query_vectors.to_vec(), k);
 
     println!("searching and comparing...");
@@ -167,7 +181,7 @@ fn test_recall_precision_real_data() {
             .collect();
 
         let gt_indices: HashSet<String> = gt.iter().cloned().collect();
-        println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
+        //println!("gt: {:?}\nresults: {:?}\n", gt_indices, result_indices);
         let true_positives = result_indices.intersection(&gt_indices).count();
 
         let recall: f64 = true_positives as f64 / gt_indices.len() as f64;
