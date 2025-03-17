@@ -25,7 +25,6 @@ pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
     pub m_max: usize,        // max num of links for upper layers
     pub ef_construct: usize, // size of the dynamic candidate list for construction
-    pub ef_c: usize,         // ef_search factor (usually 10 so that 10*k)
     pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
     pub max_level: usize,    // max number of levels in index
@@ -39,10 +38,9 @@ impl HNSWConfig {
         Self {
             m: o_m,
             m_max: 2 * o_m,
-            ef_construct: 192,
-            ef_c: 10,
+            ef_construct: 386,
             max_elements: n,
-            m_l: 1.0 / (o_m as f64).log10(),
+            m_l: 1.0 / (o_m as f64).ln(), // TODO: log10() or ln() here?
             max_level: ((n as f64).log10() / (o_m as f64).log10()).floor() as usize,
         }
     }
@@ -113,7 +111,8 @@ impl VectorCore {
     #[inline]
     pub fn get_new_level(&self) -> usize {
         let mut rng = rand::rng();
-        let level = (-rng.random::<f64>().ln()).floor() as usize;
+        let r: f64 = rng.random::<f64>();
+        let level = (-r.ln() * self.config.m_l).floor() as usize;
         level.min(self.config.max_level)
     }
 
@@ -423,12 +422,12 @@ impl VectorCore {
         let mut entry_point = self.get_entry_point(txn)
             .map_err(|_| VectorError::EntryPointNotFound)?;
 
-        let ef_search = self.config.ef_c * k;
+        let ef = (k * 10).max(100);
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
             // Assume search_level returns a min-heap where pop() gives the closest vector.
-            let mut nearest = self.search_level(txn, &query, &mut entry_point, ef_search, level)?;
+            let mut nearest = self.search_level(txn, &query, &mut entry_point, ef, level)?;
             // Update entry_point to the closest candidate, avoiding cloning by consuming the heap.
             if let Some(closest) = nearest.pop() {
                 entry_point = closest;
@@ -436,7 +435,7 @@ impl VectorCore {
             // If nearest is empty, we keep the current entry_point, assuming the index is valid.
         }
 
-        let mut candidates = self.search_level(txn, &query, &mut entry_point, ef_search, 0)?;
+        let mut candidates = self.search_level(txn, &query, &mut entry_point, ef, 0)?;
 
         let mut results = Vec::with_capacity(k);
         for _ in 0..k {
