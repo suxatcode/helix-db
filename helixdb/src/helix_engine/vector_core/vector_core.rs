@@ -39,7 +39,7 @@ impl HNSWConfig {
         Self {
             m: o_m,
             m_max: 2 * o_m,
-            ef_construct: 256,
+            ef_construct: 192,
             ef_c: 10,
             max_elements: n,
             m_l: 1.0 / (o_m as f64).log10(),

@@ -12,7 +12,7 @@ fn setup_temp_env() -> Env {
 
     unsafe {
         EnvOpenOptions::new()
-            .map_size(512 * 1024 * 1024) // 10MB
+            .map_size(2 * 1024 * 1024 * 1024) // 2GB
             .max_dbs(10)
 
             .open(path)
@@ -35,8 +35,6 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
 
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     let mut ground_truths = Vec::new();
-
-    println!("vectors len: {}", vectors.len());
 
     for (_, query) in query_vectors {
         let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
@@ -115,12 +113,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 10000;
+    let n_base = 50_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 1000;
+    let n_query = 5_000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -138,7 +136,19 @@ fn test_recall_precision_real_data() {
     let mut all_hvectors: Vec<HVector> = Vec::new();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    let mut index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    let o_m = 16;
+    let config = HNSWConfig {
+        m: o_m,
+        m_max: 2*o_m,
+        ef_construct: 256,
+        ef_c: 10,
+        max_elements: n_base,
+        m_l: 1.0 / (o_m as f64).log10(),
+        max_level: ((n_base as f64).log10() / (o_m as f64).log10()).floor() as usize,
+    };
+    index.config = config;
+
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
         let vec = index.insert(&mut txn, data).unwrap();
@@ -159,7 +169,6 @@ fn test_recall_precision_real_data() {
     );
 
     println!("calculating ground truth distances...");
-    //let all_hvectors = index.get_all_vectors_at_level(&txn, 0).unwrap();
     let ground_truth = calc_ground_truths(all_hvectors, query_vectors.to_vec(), k);
 
     println!("searching and comparing...");
