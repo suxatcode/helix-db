@@ -32,9 +32,7 @@ pub struct HNSWConfig {
 
 impl HNSWConfig {
     pub fn new(n: usize) -> Self {
-        let d = (10.0 + 20.0 * (10_000.0_f64.log10() / (n as f64).log10())).floor() as usize;
-        let o_m = 5.max(48.min(d));
-        //let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
+        let o_m = (2.0 * (n as f64).ln().ceil()) as usize;
         Self {
             m: o_m,
             m_max: 2 * o_m,
@@ -70,6 +68,7 @@ pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
+    // TODO: put thread rng here
 }
 
 impl VectorCore {
@@ -422,7 +421,7 @@ impl VectorCore {
         let mut entry_point = self.get_entry_point(txn)
             .map_err(|_| VectorError::EntryPointNotFound)?;
 
-        let ef = (k * 10).max(100);
+        let ef = (k * 10).max(800);
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {

@@ -128,7 +128,7 @@ fn test_recall_precision_real_data() {
     println!("num of base vecs: {}", base_vectors.len());
     println!("num of query vecs: {}", query_vectors.len());
 
-    let k = 50;
+    let k = 10;
 
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
@@ -136,7 +136,18 @@ fn test_recall_precision_real_data() {
     let mut all_hvectors: Vec<HVector> = Vec::new();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    let mut index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    let o_m = 16;
+    let config = HNSWConfig {
+        m: o_m,
+        m_max: 2 * o_m,
+        ef_construct: 256,
+        max_elements: n_base,
+        m_l: 1.0 / (o_m as f64).log10(), // TODO: log10() or ln() here?
+        max_level: ((n_base as f64).log10() / (o_m as f64).log10()).floor() as usize,
+    };
+    index.config = config;
+
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
         let vec = index.insert(&mut txn, data).unwrap();
