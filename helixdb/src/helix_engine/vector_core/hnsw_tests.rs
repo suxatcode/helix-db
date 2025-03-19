@@ -61,8 +61,8 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         ));
     }
 
-    let data_dir = "./src/helix_engine/data/";
-    // let data_dir = "../data/";
+    //let data_dir = "./src/helix_engine/data/";
+    let data_dir = "../data/";
     let mut all_vectors = Vec::new();
     let mut total_loaded = 0;
 
@@ -136,21 +136,15 @@ fn test_recall_precision_real_data() {
     let mut all_hvectors: Vec<HVector> = Vec::new();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let mut index = VectorCore::new(&env, &mut txn, n_base).unwrap();
-    let o_m = 16;
-    let config = HNSWConfig {
-        m: o_m,
-        m_max: 2 * o_m,
-        ef_construct: 256,
-        max_elements: n_base,
-        m_l: 1.0 / (o_m as f64).log10(), // TODO: log10() or ln() here?
-        max_level: ((n_base as f64).log10() / (o_m as f64).log10()).floor() as usize,
-    };
-    index.config = config;
+    let index = VectorCore::new(
+        &env,
+        &mut txn,
+        HNSWConfig::new_with_params(n_base, 16, 256, 800),
+    ).unwrap();
 
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        let vec = index.insert(&mut txn, data).unwrap();
+        let vec = index.insert(&mut txn, data, None).unwrap();
         let time = start_time.elapsed();
         println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
@@ -222,10 +216,10 @@ fn test_insert_speed() {
     let mut txn = env.write_txn().unwrap();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(&env, &mut txn, n_base).unwrap();
+    let index = VectorCore::new(&env, &mut txn, HNSWConfig::new(n_base)).unwrap();
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        index.insert(&mut txn, data).unwrap();
+        index.insert(&mut txn, data, Some(id.clone())).unwrap();
         let time = start_time.elapsed();
         println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
