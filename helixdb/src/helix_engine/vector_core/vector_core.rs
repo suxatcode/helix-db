@@ -512,6 +512,7 @@ impl<T> Extend<T> for BinaryHeap<T> {
         }
     }
 
+    #[inline(always)]
     fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
     where
         T: Ord,
