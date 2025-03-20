@@ -6,7 +6,7 @@ use crate::helix_engine::types::VectorError;
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
     id: String,
-    is_deleted: bool,
+    pub is_deleted: bool,
     pub level: usize,
     pub distance: f64,
     data: Vec<f64>,

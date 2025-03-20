@@ -12,7 +12,7 @@ fn setup_temp_env() -> Env {
 
     unsafe {
         EnvOpenOptions::new()
-            .map_size(2 * 1024 * 1024 * 1024) // 2GB
+            .map_size(20 * 1024 * 1024 * 1024) // 2GB
             .max_dbs(10)
 
             .open(path)
@@ -118,7 +118,7 @@ fn test_recall_precision_real_data() {
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 5_000;
+    let n_query = 10_000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -203,6 +203,7 @@ fn test_recall_precision_real_data() {
     total_precision = total_precision / n_query as f64;
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
+    assert!(false);
 }
 
 #[test]
