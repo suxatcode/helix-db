@@ -577,39 +577,28 @@ fn main() {
                         return;
                     }
 
-                    let numb_of_files = files.len();
-                    let mut successes = HashMap::new();
-                    let mut errors = HashMap::new();
-                    for file in files {
-                        let contents = match fs::read_to_string(file.path()) {
-                            Ok(contents) => contents,
-                            Err(e) => {
-                                println!("{}", e);
-                                return;
+                    let contents: String = files
+                        .iter()
+                        .map(|file| -> String {
+                            match fs::read_to_string(file.path()) {
+                                Ok(contents) => contents,
+                                Err(e) => {
+                                    panic!("{}", e);
+                                }
                             }
-                        };
-                        match HelixParser::parse_source(&contents) {
-                            Ok(source) => {
-                                // println!("Source: {:?}", source);
-                                successes.insert(
-                                    file.file_name().to_string_lossy().into_owned(),
-                                    source,
-                                );
-                                // println!("{:?}", parser);
-                            }
-                            Err(e) => {
-                                errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                            }
+                        })
+                        .fold(String::new(), |acc, contents| acc + &contents);
+
+                    match HelixParser::parse_source(&contents) {
+                        Ok(_) => {
+                            println!("\t✅ Successfully parsed source");
+                        }
+                        Err(e) => {
+                            println!("\t❌ Failed to parse source");
+                            println!("\t└── {}", e);
+                            return;
                         }
                     }
-
-                    println!("\nLinted {} files!\n", numb_of_files);
-                    successes
-                        .iter()
-                        .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-                    errors
-                        .iter()
-                        .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
                     println!();
                 }
                 None => {
@@ -627,39 +616,28 @@ fn main() {
                         return;
                     }
 
-                    let numb_of_files = files.len();
-                    let mut successes = HashMap::new();
-                    let mut errors = HashMap::new();
-                    for file in files {
-                        let contents = match fs::read_to_string(file.path()) {
-                            Ok(contents) => contents,
-                            Err(e) => {
-                                println!("{}", e);
-                                return;
+                    let contents: String = files
+                        .iter()
+                        .map(|file| -> String {
+                            match fs::read_to_string(file.path()) {
+                                Ok(contents) => contents,
+                                Err(e) => {
+                                    panic!("{}", e);
+                                }
                             }
-                        };
-                        match HelixParser::parse_source(&contents) {
-                            Ok(source) => {
-                                // println!("Source: {:?}", source);
-                                successes.insert(
-                                    file.file_name().to_string_lossy().into_owned(),
-                                    source,
-                                );
-                                // println!("{:?}", parser);
-                            }
-                            Err(e) => {
-                                errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                            }
+                        })
+                        .fold(String::new(), |acc, contents| acc + &contents);
+
+                    match HelixParser::parse_source(&contents) {
+                        Ok(_) => {
+                            println!("\t✅ Successfully parsed source");
+                        }
+                        Err(e) => {
+                            println!("\t❌ Failed to parse source");
+                            println!("\t└── {}", e);
+                            return;
                         }
                     }
-
-                    println!("\nLinted {} files!\n", numb_of_files);
-                    successes
-                        .iter()
-                        .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-                    errors
-                        .iter()
-                        .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
                     println!();
                 }
             };
