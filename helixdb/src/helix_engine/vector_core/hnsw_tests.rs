@@ -37,6 +37,7 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
 }
 */
 
+/*
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     let mut ground_truths = Vec::new();
 
@@ -56,6 +57,7 @@ fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64
 
     ground_truths
 }
+*/
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
@@ -120,6 +122,7 @@ struct CsvRow {
 
 fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     // TODO: don't need (String, Vec<f64>) just the String
+    // NOTE: all vecs need to be the same not just the ground truths
     let file_path = "../dpedia_openai_ground_truths.csv";
     let file = File::open(file_path).unwrap();
     let mut rdr = csv::Reader::from_reader(file);
@@ -134,22 +137,17 @@ fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<Str
         ground_truth_map.insert(record.id, nearest_ids);
     }
 
-    let gt_vec: Vec<String> = ground_truth_map.keys().cloned().collect();
-    let query_ids: Vec<String> = queries
-        .into_iter()
-        .map(|(id, _)| id.to_string())
-        .collect();
+    //let gt_vec: Vec<String> = ground_truth_map.keys().cloned().collect();
+    //let query_ids: Vec<String> = queries
+    //    .into_iter()
+    //    .map(|(id, _)| id.to_string())
+    //    .collect();
 
-    let v1: HashSet<_> = gt_vec.into_iter().collect();
-    let v2: HashSet<_> = query_ids.into_iter().collect();
+    //let v1: HashSet<_> = gt_vec.into_iter().collect();
+    //let v2: HashSet<_> = query_ids.into_iter().collect();
+    //let intersections = v1.intersection(&v2).count();
+    //println!("intersections: {:?}", intersections);
 
-    let intersections = v1.intersection(&v2).count();
-
-    println!("intersections: {:?}", intersections);
-
-    let ground_truths = Vec::new(); // tmp
-
-    /*
     let mut ground_truths = Vec::with_capacity(queries.len());
     for query in queries {
         let query_id = query.0.to_string();
@@ -161,7 +159,6 @@ fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<Str
         let top_k: Vec<String> = nearest_ids.into_iter().take(k).collect();
         ground_truths.push(top_k);
     }
-    */
 
     ground_truths
 }
@@ -170,12 +167,12 @@ fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<Str
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 10_000;
+    let n_base = 50_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 1_000;
+    let n_query = 10_000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);

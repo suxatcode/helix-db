@@ -16,7 +16,7 @@ def load_vectors(n_vectors_to_load: int = 1_000_000) -> tuple[np.ndarray, list]:
     data_dir = 'data/'
     os.makedirs(data_dir, exist_ok=True)
 
-    parquet_files = sorted([f for f in os.listdir(data_dir) if f.endswith('.parquet')])
+    parquet_files = [f for f in os.listdir(data_dir) if f.endswith('.parquet')]
     if not parquet_files:
         print(f'no Parquet files found in {data_dir}. downloading from Hugging Face...')
         dataset = load_dataset('KShivendu/dbpedia-entities-openai-1M', split='train')
@@ -84,4 +84,4 @@ def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
     print("output saved to 'dpedia_openai_ground_truths.csv'")
 
 if __name__ == '__main__':
-    compute_nearest_neighbors()
+    compute_nearest_neighbors(n_vectors_to_load=50_000)
