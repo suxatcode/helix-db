@@ -450,15 +450,28 @@ impl HelixParser {
     }
 
     fn parse_parameters(&self, pair: Pair<Rule>) -> Result<Vec<Parameter>, ParserError> {
-        pair.into_inner()
-            .map(|p| -> Result<Parameter, ParserError> {
+        let mut seen = HashSet::new();
+        pair.clone().into_inner()
+            .map(|p: Pair<'_, Rule>| -> Result<Parameter, ParserError> {
                 let mut inner = p.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
                 let param_type =
                     self.parse_field_type(inner.next().unwrap().as_str(), Some(&self.source))?;
+                if seen.insert(name.clone()) {
+                    Ok(Parameter { name, param_type })
+                } else {
+                    Err(ParserError::from(format!(
+                        r#"Duplicate parameter name: {}
+                            Please use unique parameter names.
 
-                Ok(Parameter { name, param_type })
-                //hi
+                            Error happened at line {} column {} here: {}
+                        "#,
+                        name,
+                        pair.line_col().0,
+                        pair.line_col().1,
+                        pair.as_str(),
+                    )))
+                }
             })
             .collect::<Result<Vec<_>, _>>()
     }
@@ -599,7 +612,6 @@ impl HelixParser {
             .into_inner()
             .next()
             .ok_or_else(|| ParserError::from("Missing ID"))?;
-        println!("p: {:?}", p);
         match p.as_rule() {
             Rule::identifier => Ok(Some(IdType::Identifier(p.as_str().to_string()))),
             Rule::string_literal | Rule::inner_string => {
@@ -643,6 +655,7 @@ impl HelixParser {
     }
 
     fn parse_return_statement(&self, pair: Pair<Rule>) -> Result<Vec<Expression>, ParserError> {
+        println!("pair: {:?}", pair.clone().into_inner());
         pair.into_inner()
             .map(|p| self.parse_expression(p))
             .collect()

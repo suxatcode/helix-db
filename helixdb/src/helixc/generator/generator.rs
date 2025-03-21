@@ -221,6 +221,12 @@ impl CodeGenerator {
             output.push_str(&mut self.generate_statement(statement, &query));
         }
 
+        
+        // Generate return statement
+        if !query.return_values.is_empty() {
+            output.push_str(&mut self.generate_return_values(&query.return_values, &query));
+        }
+
         if query.statements.iter().any(|s| {
             matches!(s, Statement::AddVertex(_))
                 || matches!(s, Statement::AddEdge(_))
@@ -236,10 +242,6 @@ impl CodeGenerator {
         }) {
             output.push_str(&mut self.indent());
             output.push_str("txn.commit()?;\n");
-        }
-        // Generate return statement
-        if !query.return_values.is_empty() {
-            output.push_str(&mut self.generate_return_values(&query.return_values));
         }
 
         // Close function
@@ -278,7 +280,7 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
 
         match assignment.value {
-            _ => output.push_str(&format!("let {} = tr.finish()?;\n\n", var_name)),
+            _ => output.push_str(&format!("let {} = tr.finish()?;\n\n", to_snake_case(var_name))),
         }
 
         output
@@ -295,7 +297,7 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(id) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "tr.current_step = TraversalValue::from({});\n",
+                        "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));",
                         var_name
                     ));
                 }
@@ -337,7 +339,6 @@ impl CodeGenerator {
         // Generate start node
         match &traversal.start {
             Vertex { types, ids } => {
-                println!("types: {:?}", types);
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
@@ -1129,12 +1130,8 @@ impl CodeGenerator {
                     // println!("ID: {:?} {:?}", id, parameters);
                     parameters
                         .iter()
-                        .find(|param| {
-                            println!("PARAM: {:?} {:?} {:?}", param.name, id, param.name == *id);
-                            param.name == *id
-                        })
+                        .find(|param| param.name == *id)
                         .map(|value| {
-                            println!("VALUE: {:?}", value);
                             output.push_str(&format!("data.{}", &to_snake_case(&value.name)));
                         });
                 }
@@ -1239,7 +1236,9 @@ impl CodeGenerator {
     fn generate_drop(&mut self, expr: &Expression, query: &Query) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n");
+        output.push_str(
+            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
+        );
         match expr {
             Expression::Traversal(traversal) => {
                 output.push_str(&mut self.generate_traversal(traversal, query));
@@ -1271,11 +1270,12 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_return_values(&mut self, return_values: &[Expression]) -> String {
+    fn generate_return_values(&mut self, return_values: &[Expression], query: &Query) -> String {
         let mut output = String::new();
-
+        println!("return_values: {:?}", return_values);
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&mut self.indent());
+            // output.push_str(&self.expression_to_return_value(expr));
             match expr {
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
@@ -1289,7 +1289,25 @@ impl CodeGenerator {
                         value,
                     ));
                 }
-                _ => {}
+                Expression::None => {
+                    output.push_str(&format!(
+                        "return_vals.insert(\"message\".to_string(), ReturnValue::Empty);\n",
+                    ));
+                }
+                Expression::Traversal(traversal) => {
+                    output.push_str(&mut self.generate_traversal(traversal, query));
+                    output.push_str(&mut self.indent());
+                    output.push_str("let return_val = tr.finish()?;\n");
+                    output.push_str(&mut self.indent());
+                    output.push_str(&format!(
+                        "return_vals.insert(\"\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
+                    ));
+                }
+                
+                _ => {
+                    println!("Unhandled return value: {:?}", expr);
+                    unreachable!()
+                }
             }
         }
 
@@ -1381,7 +1399,7 @@ impl CodeGenerator {
         for field in exclude.fields.iter() {
             output.push_str(&format!(
                 "let {}_remapping = Remapping::new(true, Some(\"{}\".to_string()), None);\n",
-                to_snake_case(field),
+                to_snake_case(field).trim_end_matches("_"),
                 field
             ));
         }
@@ -1398,7 +1416,7 @@ impl CodeGenerator {
             output.push_str(&format!(
                 "(\"{}\".to_string(), {}_remapping),\n",
                 field,
-                to_snake_case(field)
+                to_snake_case(field).trim_end_matches("_")
             ));
         }
         output.push_str(&self.indent());
@@ -1452,7 +1470,6 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         for (key, field) in object.fields.iter() {
             output.push_str(&mut self.indent());
-            println!("field: {:?}", field);
             match field {
                 FieldValue::Traversal(traversal) => {
                     output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
@@ -1466,13 +1483,13 @@ impl CodeGenerator {
                                 if field_name.as_str() == "id" {
                                     output.push_str(&format!(
                                         "let {} = tr.finish()?.get_id()?;\n",
-                                        key
+                                        to_snake_case(key)
                                     ));
                                 }
                             }
                         }
                         _ => {
-                            output.push_str(&format!("let {} = tr.finish()?;\n", key));
+                            output.push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
                         }
                     }
                 }
@@ -1630,6 +1647,7 @@ impl CodeGenerator {
                 if let Expression::Traversal(tr) = expr {
                     match tr.steps.last().unwrap() {
                         Step::Object(obj) => {
+                            println!("obj: {:?}", obj);
                             if let Some((field_name, _)) = obj.fields.first() {
                                 if field_name.as_str() == "id" {
                                     output.push_str(&format!(
@@ -1660,7 +1678,7 @@ impl CodeGenerator {
                 panic!("unhandled field type");
             }
         }
-
+        println!("output: {:?}", output);
         output
     }
 }
@@ -1673,15 +1691,23 @@ impl CodeGenerator {
 fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
+    let mut prev_is_upper = false;
 
     while let Some(c) = chars.next() {
         if c.is_uppercase() {
-            if !result.is_empty() {
+            // Add underscore if:
+            // 1. Not at start of string and previous char wasn't uppercase (camelCase -> camel_case)
+            // 2. Previous char was uppercase but next char is lowercase (UserIDs -> user_ids)
+            if !result.is_empty()
+                && (!prev_is_upper || chars.peek().map_or(false, |next| next.is_lowercase()))
+            {
                 result.push('_');
             }
             result.push(c.to_lowercase().next().unwrap());
+            prev_is_upper = true;
         } else {
             result.push(c);
+            prev_is_upper = false;
         }
     }
 
@@ -1910,5 +1936,17 @@ mod tests {
         assert!(generated.contains("value1"));
         assert!(generated.contains("value2"));
         assert!(generated.contains("value3"));
+    }
+
+    #[test]
+    fn test_to_snake_case() {
+        assert_eq!(to_snake_case("camelCase"), "camel_case");
+        assert_eq!(to_snake_case("UserIDs"), "user_ids");
+        assert_eq!(to_snake_case("SimpleXMLParser"), "simple_xml_parser");
+        assert_eq!(to_snake_case("type"), "type_");
+        assert_eq!(to_snake_case("ID"), "id");
+        assert_eq!(to_snake_case("UserID"), "user_id");
+        assert_eq!(to_snake_case("XMLHttpRequest"), "xml_http_request");
+        assert_eq!(to_snake_case("iOS"), "i_os");
     }
 }
