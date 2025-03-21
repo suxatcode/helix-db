@@ -132,11 +132,9 @@ pub enum StartNode {
 pub enum Step {
     Vertex(GraphStep),
     Edge(GraphStep),
-    Props(Vec<String>),
     Where(Box<Expression>),
     BooleanOperation(BooleanOp),
     Count,
-    ID,
     Update(Update),
     Object(Object),
     Exclude(Exclude),
@@ -837,7 +835,10 @@ impl HelixParser {
 
             Rule::bool_operations => Ok(Step::BooleanOperation(self.parse_bool_operation(inner)?)),
             Rule::count => Ok(Step::Count),
-            Rule::ID => Ok(Step::ID),
+            Rule::ID => Ok(Step::Object(Object {
+                fields: vec![("id".to_string(), FieldValue::Empty)],
+                should_spread: false,
+            })),
             Rule::update => Ok(Step::Update(self.parse_update(inner)?)),
             Rule::exclude_field => Ok(Step::Exclude(self.parse_exclude(inner)?)),
             Rule::AddE => Ok(Step::AddEdge(self.parse_add_edge(inner, true)?)),

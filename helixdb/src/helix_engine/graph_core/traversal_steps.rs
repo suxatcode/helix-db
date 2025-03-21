@@ -114,7 +114,7 @@ pub trait TraversalMethods {
     fn count(&mut self) -> &mut Self;
 
     /// Flattens everything in the current traversal step and updates the current traversal step to be a slice of itself.
-    fn range(&mut self, start: usize, end: usize) -> &mut Self;
+    fn range(&mut self, start: i32, end: i32) -> &mut Self;
 
     /// Filters the current traversal step
     ///

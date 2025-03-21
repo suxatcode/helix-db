@@ -695,7 +695,9 @@ impl TraversalMethods for TraversalBuilder {
         }));
         self
     }
-    fn range(&mut self, start: usize, end: usize) -> &mut Self {
+    fn range(&mut self, start: i32, end: i32) -> &mut Self {
+        let start = start as usize;
+        let end = end as usize;
         match &self.current_step {
             TraversalValue::NodeArray(nodes) => {
                 if nodes.len() == 0 {
