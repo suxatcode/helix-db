@@ -1,130 +1,87 @@
-# note: there are no duplicate ids (I tested this)
-
 import os
+import pyarrow.parquet as pq
 import numpy as np
+import torch
 import pandas as pd
 from tqdm import tqdm
-from scipy.spatial.distance import cdist
-import huggingface_hub
-import time
-import shutil
+from datasets import load_dataset
 
-def download_dataset(dataset_path, repo_id="KShivendu/dbpedia-entities-openai-1M"):
-    """Download dataset from Hugging Face if it doesn't exist locally."""
-    print(f"Downloading dataset from {repo_id} to {dataset_path}...")
-    huggingface_hub.snapshot_download(
-        repo_id=repo_id,
-        local_dir=dataset_path,
-        repo_type="dataset"
-    )
-    print("Download complete!")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
-def load_parquet_files(data_dir):
-    """Load all parquet files from the directory into a single DataFrame."""
-    print(f"Loading parquet files from {data_dir}...")
-    
-    # Find all parquet files in the directory
-    parquet_files = [f for f in os.listdir(data_dir) if f.endswith('.parquet')]
-    
+def load_vectors(n_vectors_to_load: int = 1_000_000) -> tuple[np.ndarray, list]:
+    if n_vectors_to_load > 1_000_000:
+        raise ValueError('cant load more than 1,000,000 vectors from this dataset')
+
+    data_dir = 'data/'
+    os.makedirs(data_dir, exist_ok=True)
+
+    parquet_files = sorted([f for f in os.listdir(data_dir) if f.endswith('.parquet')])
     if not parquet_files:
-        raise FileNotFoundError(f"No parquet files found in {data_dir}")
-    
-    # Load and concatenate all parquet files
-    dfs = []
-    for file in tqdm(parquet_files, desc="Loading files"):
-        file_path = os.path.join(data_dir, file)
-        df = pd.read_parquet(file_path)
-        dfs.append(df)
-    
-    # Concatenate all dataframes
-    return pd.concat(dfs, ignore_index=True)
+        print(f'no Parquet files found in {data_dir}. downloading from Hugging Face...')
+        dataset = load_dataset('KShivendu/dbpedia-entities-openai-1M', split='train')
+        for i, shard in enumerate(tqdm(dataset.shard(num_shards=26, index=0, contiguous=True),
+                                       total=26, desc='saving dataset to parquet files')):
+            shard.to_parquet(os.path.join(data_dir, f'file{i+1}.parquet'))
+        parquet_files = sorted([f for f in os.listdir(data_dir) if f.endswith('.parquet')])
+        print(f'downloaded and saved {len(parquet_files)} parquet files to {data_dir}')
+    else:
+        print(f'found {len(parquet_files)} parquet files in {data_dir}')
 
-def find_top_k_similar_vectors(embeddings, ids, k=100, batch_size=1000):
-    """
-    Find top k similar vectors for each vector in the dataset using batched processing.
-    
-    Args:
-        embeddings: numpy array of embeddings
-        ids: list of corresponding ids
-        k: number of neighbors to find
-        batch_size: number of vectors to process in each batch
-    
-    Returns:
-        DataFrame with columns 'id', 'similar_ids' containing the top k similar vector ids
-    """
-    n = embeddings.shape[0]
-    results = []
-    
-    print("poop")
-    for i in tqdm(range(0, n, batch_size), desc="Processing batches"):
-        # Define the current batch
-        end_idx = min(i + batch_size, n)
-        batch_embeddings = embeddings[i:end_idx]
-        
-        # Calculate distances from this batch to all embeddings
-        # Using Euclidean distance
-        distances = cdist(batch_embeddings, embeddings, metric='euclidean')
-        
-        # For each vector in the batch, get the indices of the k+1 closest vectors (including itself)
-        for j, dist_row in enumerate(distances):
-            # Get top k+1 indices sorted by distance (closest first)
-            closest_indices = np.argsort(dist_row)[:k+1]
-            
-            # Skip the first index if it's the vector itself (0 distance)
-            if closest_indices[0] == i + j:
-                closest_indices = closest_indices[1:k+1]
-            else:
-                closest_indices = closest_indices[:k]
-            
-            # Get the IDs of the closest vectors
-            vector_id = ids[i + j]
-            similar_ids = [ids[idx] for idx in closest_indices]
-            
-            results.append({'id': vector_id, 'similar_ids': similar_ids})
-            
-        # Free up memory
-        del distances
-    
-    return pd.DataFrame(results)
+    vectors = []
+    id_list = []
+    total_loaded = 0
 
-def main():
-    # Define directory for data
-    data_dir = "data"
-    
-    # Create directory if it doesn't exist
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-        download_dataset(data_dir)
-    
-    # Check if the directory is empty (no parquet files)
-    parquet_files = [f for f in os.listdir(data_dir) if f.endswith('.parquet')]
-    if not parquet_files:
-        download_dataset(data_dir)
-    
-    # Load all parquet files
-    df = load_parquet_files(data_dir)
-    
-    print(f"Loaded {len(df)} vectors with embeddings")
-    
-    # Extract embeddings and IDs
-    embeddings = np.stack(df['openai'].values)
-    ids = df['_id'].values
-    
-    print(f"Embedding shape: {embeddings.shape}")
-    
-    # Find top 100 similar vectors for each vector
-    print("Finding top 100 similar vectors for each vector...")
-    similarity_df = find_top_k_similar_vectors(embeddings, ids, k=100)
-    
-    # Save results to CSV
-    output_file = "ground_truths.csv"
-    print(f"Saving results to {output_file}...")
-    similarity_df.to_csv(output_file, index=False)
-    
-    print("Done!")
+    for file_name in tqdm(parquet_files, desc='loading parquet files'):
+        if total_loaded >= n_vectors_to_load:
+            break
 
-if __name__ == "__main__":
-    start_time = time.time()
-    main()
-    end_time = time.time()
-    print(f"Total execution time: {end_time - start_time:.2f} seconds")
+        file_path = os.path.join(data_dir, file_name)
+        table = pq.read_table(file_path)
+        embeddings = np.stack(table['openai'].to_numpy())
+        ids = table['_id'].to_pandas().tolist()
+
+        remaining = n_vectors_to_load - total_loaded
+        n_to_take = min(len(ids), remaining)
+        vectors.append(embeddings[:n_to_take])
+        id_list.extend(ids[:n_to_take])
+        total_loaded += n_to_take
+
+    vectors = np.vstack(vectors).astype(np.float32)
+    print(f'loaded {len(id_list)} vectors with dimension {vectors.shape[1]}')
+    return vectors, id_list
+
+def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
+    vectors, id_list = load_vectors(n_vectors_to_load)
+    vectors_tensor = torch.tensor(vectors).to(device)
+    n_vectors = vectors_tensor.shape[0]
+
+    batch_size = 1000 # based on gpu memory
+    nearest_ids_list = []
+
+    for start in tqdm(range(0, n_vectors, batch_size), desc='computing nearest neighbors'):
+        end = min(start + batch_size, n_vectors)
+        batch_vectors = vectors_tensor[start:end]
+
+        distances = torch.cdist(batch_vectors, vectors_tensor, p=2)
+
+        _, indices = torch.topk(distances, k=101, largest=False, dim=1)
+        neighbor_indices = indices[:, 1:101] # take 100 neighbors, skip self
+
+        neighbor_indices = neighbor_indices.cpu().numpy()
+        for i in range(neighbor_indices.shape[0]):
+            neighbor_ids = [id_list[idx] for idx in neighbor_indices[i]]
+            nearest_ids_list.append(neighbor_ids)
+
+    df = pd.DataFrame({
+        '_id': id_list,
+        'nearest_ids': nearest_ids_list
+    })
+    df['nearest_ids'] = df['nearest_ids'].apply(lambda x: ','.join(map(str, x)))
+
+    print('saving results to csv file...')
+    df.to_csv('dpedia_openai_ground_truths.csv', index=False)
+    print("output saved to 'dpedia_openai_ground_truths.csv'")
+
+if __name__ == '__main__':
+    compute_nearest_neighbors()

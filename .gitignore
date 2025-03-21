@@ -15,3 +15,6 @@ count.sh
 push.sh
 .vscode/
 data/
+venv/
+
+dpedia_openai_ground_truths.csv

@@ -23,13 +23,13 @@ chrono = "0.4.39"
 clap = { version = "4.5.29", features = ["derive"] }
 socket2 = "0.5"
 flume = "0.11.1"
-polars = { version = "0.36", features = ["parquet", "lazy"] }
-indexmap = "2.7.1"
 
 [dev-dependencies]
 criterion = "0.5"
 rand = "0.9.0"
 tempfile = "3.2"
+csv = "1.1"
+polars = { version = "0.36", features = ["parquet", "lazy"] }
 
 [features]
 engine=[]

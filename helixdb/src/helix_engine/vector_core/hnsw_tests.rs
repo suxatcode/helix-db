@@ -2,9 +2,11 @@ use heed3::{Env, EnvOpenOptions};
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
 use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VectorCore}};
 use polars::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fs::{self, File};
 use std::time::Instant;
+use csv;
+use serde::Deserialize;
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -12,7 +14,7 @@ fn setup_temp_env() -> Env {
 
     unsafe {
         EnvOpenOptions::new()
-            .map_size(20 * 1024 * 1024 * 1024) // 2GB
+            .map_size(20 * 1024 * 1024 * 1024) // 20 GB
             .max_dbs(10)
 
             .open(path)
@@ -20,6 +22,7 @@ fn setup_temp_env() -> Env {
     }
 }
 
+/*
 fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, Vec<f64>)> {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut vectors = Vec::with_capacity(count);
@@ -32,6 +35,7 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
 
     vectors
 }
+*/
 
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     let mut ground_truths = Vec::new();
@@ -70,8 +74,6 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         let entry = entry?;
         let path = entry.path();
 
-        // println!("loading entry: {:?}", path);
-
         if path.is_file() && path.extension().map_or(false, |ext| ext == "parquet") {
             let df = ParquetReader::new(File::open(&path)?)
                 .finish()?
@@ -109,16 +111,71 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
     Ok(all_vectors)
 }
 
+#[derive(Debug, Deserialize)]
+struct CsvRow {
+    #[serde(rename = "_id")]
+    id: String,
+    nearest_ids: String,
+}
+
+fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
+    // TODO: don't need (String, Vec<f64>) just the String
+    let file_path = "../dpedia_openai_ground_truths.csv";
+    let file = File::open(file_path).unwrap();
+    let mut rdr = csv::Reader::from_reader(file);
+
+    let mut ground_truth_map = HashMap::new();
+    for result in rdr.deserialize() {
+        let record: CsvRow = result.unwrap();
+        let nearest_ids: Vec<String> = record.nearest_ids
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
+        ground_truth_map.insert(record.id, nearest_ids);
+    }
+
+    let gt_vec: Vec<String> = ground_truth_map.keys().cloned().collect();
+    let query_ids: Vec<String> = queries
+        .into_iter()
+        .map(|(id, _)| id.to_string())
+        .collect();
+
+    let v1: HashSet<_> = gt_vec.into_iter().collect();
+    let v2: HashSet<_> = query_ids.into_iter().collect();
+
+    let intersections = v1.intersection(&v2).count();
+
+    println!("intersections: {:?}", intersections);
+
+    let ground_truths = Vec::new(); // tmp
+
+    /*
+    let mut ground_truths = Vec::with_capacity(queries.len());
+    for query in queries {
+        let query_id = query.0.to_string();
+        let nearest_ids = ground_truth_map
+            .get(&query_id)
+            .cloned()
+            .unwrap_or_else(|| Vec::new());
+
+        let top_k: Vec<String> = nearest_ids.into_iter().take(k).collect();
+        ground_truths.push(top_k);
+    }
+    */
+
+    ground_truths
+}
+
 // cargo --release test test_name -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 50_000;
+    let n_base = 10_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 10_000;
+    let n_query = 1_000;
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -133,23 +190,19 @@ fn test_recall_precision_real_data() {
     let env = setup_temp_env();
     let mut txn = env.write_txn().unwrap();
 
-    let mut all_hvectors: Vec<HVector> = Vec::new();
-
     let mut total_insertion_time = std::time::Duration::from_secs(0);
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 16, 256, 800),
+        HNSWConfig::new_with_params(n_base, 16, 256, 1000),
     ).unwrap();
 
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        let vec = index.insert(&mut txn, data, None).unwrap();
+        let vec = index.insert(&mut txn, data, Some(id.clone())).unwrap();
         let time = start_time.elapsed();
         println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
-
-        all_hvectors.push(vec);
     }
     txn.commit().unwrap();
     let txn = env.read_txn().unwrap();
@@ -161,8 +214,8 @@ fn test_recall_precision_real_data() {
         total_insertion_time.as_millis() as f64 / n_base as f64
     );
 
-    println!("calculating ground truth distances...");
-    let ground_truth = calc_ground_truths(all_hvectors, query_vectors.to_vec(), k);
+    println!("loading ground truths from csv file!");
+    let ground_truths = load_ground_truths(query_vectors.to_vec(), k);
 
     println!("searching and comparing...");
     let test_id = format!("k = {} with {} queries", k, n_query);
@@ -172,7 +225,7 @@ fn test_recall_precision_real_data() {
 
     let mut total_search_time = std::time::Duration::from_secs(0);
 
-    for ((_, query), gt) in query_vectors.iter().zip(ground_truth.iter()) {
+    for ((_, query), gt) in query_vectors.iter().zip(ground_truths.iter()) {
         let start_time = Instant::now();
         let results = index.search(&txn, query, k).unwrap();
         let search_duration = start_time.elapsed();
@@ -203,7 +256,7 @@ fn test_recall_precision_real_data() {
     total_precision = total_precision / n_query as f64;
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
-    assert!(false);
+    //assert!(false);
 }
 
 #[test]
