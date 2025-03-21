@@ -42,6 +42,12 @@ impl From<Value> for ReturnValue {
     }
 }
 
+impl From<&Value> for ReturnValue {
+    fn from(value: &Value) -> Self {
+        ReturnValue::Value(value.clone())
+    }
+}
+
 impl From<Count> for ReturnValue {
     fn from(count: Count) -> Self {
         ReturnValue::Value(Value::Integer(count.value() as i32))

@@ -221,7 +221,6 @@ impl CodeGenerator {
             output.push_str(&mut self.generate_statement(statement, &query));
         }
 
-        
         // Generate return statement
         if !query.return_values.is_empty() {
             output.push_str(&mut self.generate_return_values(&query.return_values, &query));
@@ -280,7 +279,10 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
 
         match assignment.value {
-            _ => output.push_str(&format!("let {} = tr.finish()?;\n\n", to_snake_case(var_name))),
+            _ => output.push_str(&format!(
+                "let {} = tr.finish()?;\n\n",
+                to_snake_case(var_name)
+            )),
         }
 
         output
@@ -298,7 +300,7 @@ impl CodeGenerator {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
                         "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));",
-                        var_name
+                        to_snake_case(var_name)
                     ));
                 }
             }
@@ -387,8 +389,8 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(var) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "tr.current_step = TraversalValue::from({}.clone());\n",
-                        var_name
+                        "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n",
+                        to_snake_case(var_name)
                     ));
                 }
             }
@@ -1205,7 +1207,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.get_id()?", var_name)
+                    format!("&{}.get_id()?", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1216,7 +1218,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.get_id()?", var_name)
+                    format!("&{}.get_id()?", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1303,7 +1305,7 @@ impl CodeGenerator {
                         "return_vals.insert(\"\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
                     ));
                 }
-                
+
                 _ => {
                     println!("Unhandled return value: {:?}", expr);
                     unreachable!()
@@ -1472,7 +1474,7 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
             match field {
                 FieldValue::Traversal(traversal) => {
-                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
+                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", to_snake_case(var_name)));
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_traversal(traversal, query));
                     output.push_str(&mut self.indent());
@@ -1489,12 +1491,13 @@ impl CodeGenerator {
                             }
                         }
                         _ => {
-                            output.push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
+                            output
+                                .push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
                         }
                     }
                 }
                 FieldValue::Expression(expr) => {
-                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", var_name));
+                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", to_snake_case(var_name)));
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_expression(expr, query));
                     output.push_str(&mut self.indent());
@@ -1541,7 +1544,7 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
 
             // generate remapping
-            output.push_str(&self.generate_remapping(key, field));
+            output.push_str(&self.generate_remapping(key, field, query));
         }
         output.push_str("remapping_vals.borrow_mut().insert(\n");
         output.push_str(&self.indent());
@@ -1572,7 +1575,7 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_remapping(&mut self, key: &String, field: &FieldValue) -> String {
+    fn generate_remapping(&mut self, key: &String, field: &FieldValue, query: &Query) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
         let opt_key = match key.as_str() {
@@ -1586,7 +1589,7 @@ impl CodeGenerator {
                     "let {}_remapping = Remapping::new(false, {}, Some({}));\n",
                     to_snake_case(key),
                     opt_key,
-                    self.generate_return_value(key, field)
+                    self.generate_return_value(key, field, query)
                 ));
             }
             FieldValue::Literal(value) => {
@@ -1618,7 +1621,7 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_return_value(&mut self, key: &String, field: &FieldValue) -> String {
+    fn generate_return_value(&mut self, key: &String, field: &FieldValue, query: &Query) -> String {
         let mut output = String::new();
 
         // if last step of traversal or traversal in expression is id, ReturnValue::from({key})
@@ -1630,6 +1633,19 @@ impl CodeGenerator {
                         if field_name.as_str() == "id" {
                             output
                                 .push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
+                        } else {
+                            output.push_str(&format!(
+                                r#"ReturnValue::from(
+                                    match item.check_property("{}") {{
+                                        Some(value) => value,
+                                        None => return Err(GraphError::ConversionError(
+                                            "Property not found on {}".to_string(),
+                                        )),
+                                    }}
+                                )
+                                "#,
+                                field_name, field_name
+                            ));
                         }
                     }
                 }
@@ -1643,42 +1659,69 @@ impl CodeGenerator {
                     output.push_str(")\n");
                 }
             },
-            FieldValue::Expression(expr) => {
-                if let Expression::Traversal(tr) = expr {
-                    match tr.steps.last().unwrap() {
-                        Step::Object(obj) => {
-                            println!("obj: {:?}", obj);
-                            if let Some((field_name, _)) = obj.fields.first() {
-                                if field_name.as_str() == "id" {
-                                    output.push_str(&format!(
-                                        "ReturnValue::from({})\n",
-                                        to_snake_case(key)
-                                    ));
-                                }
+            FieldValue::Expression(expr) => match expr {
+                Expression::Traversal(tr) => match tr.steps.last().unwrap() {
+                    Step::Object(obj) => {
+                        println!("obj: {:?}", obj);
+                        if let Some((field_name, _)) = obj.fields.first() {
+                            if field_name.as_str() == "id" {
+                                output.push_str(&format!(
+                                    "ReturnValue::from({}.get_id()?)\n",
+                                    to_snake_case(key)
+                                ));
+                            } else {
+                                output.push_str(&format!(
+                                    r#"ReturnValue::from(
+                                        match item.check_property("{}") {{
+                                            Some(value) => value,
+                                            None => return Err(GraphError::ConversionError(
+                                                "Property not found on {}".to_string(),
+                                            )),
+                                        }}
+                                    )
+                                    "#,
+                                    field_name, field_name
+                                ));
                             }
                         }
-                        _ => {
-                            output
-                                .push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
-                            output.push_str(&self.indent());
-                            output.push_str(&format!("{},\n", to_snake_case(key)));
-                            output.push_str(&self.indent());
-                            output.push_str("remapping_vals.borrow_mut(),\n");
-                            output.push_str(&self.indent());
-                            output.push_str(")\n");
-                        }
                     }
+                    _ => {
+                        output.push_str("ReturnValue::from_traversal_value_array_with_mixin(\n");
+                        output.push_str(&self.indent());
+                        output.push_str(&format!("{},\n", to_snake_case(key)));
+                        output.push_str(&self.indent());
+                        output.push_str("remapping_vals.borrow_mut(),\n");
+                        output.push_str(&self.indent());
+                        output.push_str(")\n");
+                    }
+                },
+                Expression::None => {
+                    output.push_str(&format!("ReturnValue::Empty\n"));
                 }
-            }
+                Expression::Identifier(id) => {
+                    output.push_str(&format!(
+                        "ReturnValue::from({}.get_id()?)\n",
+                        to_snake_case(key)
+                    ));
+                }
+                _ => {
+                    println!("key: {:?}, field: {:?}", key, field);
+                    output.push_str(&format!(
+                        "ReturnValue::from(item.check_property(\"{}\"))\n",
+                        key
+                    ));
+                }
+            },
             FieldValue::Literal(_) => {
-                output.push_str(&format!("ReturnValue::from({})\n", to_snake_case(key)));
+                /// to rust value
+                output.push_str(&format!("ReturnValue::from(\"{}\")\n", key));
             }
             _ => {
                 println!("unhandled field type: {:?}", field);
                 panic!("unhandled field type");
             }
         }
-        println!("output: {:?}", output);
+        println!("output: {:?}, field: {:?}", output, field);
         output
     }
 }
