@@ -172,7 +172,7 @@ fn test_recall_precision_real_data() {
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 10_000;
+    let n_query = 5_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -191,7 +191,7 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 16, 256, 1000),
+        HNSWConfig::new_with_params(n_base, 16, 256, 100),
     ).unwrap();
 
     for (i, (id, data)) in vectors.iter().enumerate() {
@@ -211,7 +211,7 @@ fn test_recall_precision_real_data() {
         total_insertion_time.as_millis() as f64 / n_base as f64
     );
 
-    println!("loading ground truths from csv file!");
+    println!("loading ground truths from csv file");
     let ground_truths = load_ground_truths(query_vectors.to_vec(), k);
 
     println!("searching and comparing...");

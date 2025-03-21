@@ -65,13 +65,28 @@ def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
 
         distances = torch.cdist(batch_vectors, vectors_tensor, p=2)
 
-        _, indices = torch.topk(distances, k=101, largest=False, dim=1)
-        neighbor_indices = indices[:, 1:101] # take 100 neighbors, skip self
+        distances_topk, indices = torch.topk(distances, k=101, largest=False, dim=1)
 
-        neighbor_indices = neighbor_indices.cpu().numpy()
-        for i in range(neighbor_indices.shape[0]):
-            neighbor_ids = [id_list[idx] for idx in neighbor_indices[i]]
+        distances_topk = distances_topk[:, 1:101]
+        indices = indices[:, 1:101]
+
+        for i in range(distances_topk.shape[0]):
+            dists = distances_topk[i]
+            idxs = indices[i]
+
+            sorted_indices = idxs[torch.argsort(dists)]
+            sorted_indices = sorted_indices.cpu().numpy()
+
+            neighbor_ids = [id_list[idx] for idx in sorted_indices]
             nearest_ids_list.append(neighbor_ids)
+
+        #_, indices = torch.topk(distances, k=101, largest=False, dim=1)
+        #neighbor_indices = indices[:, 1:101] # take 100 neighbors, skip self
+
+        #neighbor_indices = neighbor_indices.cpu().numpy()
+        #for i in range(neighbor_indices.shape[0]):
+        #    neighbor_ids = [id_list[idx] for idx in neighbor_indices[i]]
+        #    nearest_ids_list.append(neighbor_ids)
 
     df = pd.DataFrame({
         '_id': id_list,

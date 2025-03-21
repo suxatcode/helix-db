@@ -439,12 +439,7 @@ impl VectorCore {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn = self.select_neighbors(txn, &query, e_conns, level, true)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
-                } 
-                // dont need according to paper
-                // else {
-                //     let e_conns = BinaryHeap::from(e_conns);
-                //     self.set_neighbours(txn, id, &e_conns, level)?;
-                // }
+                }
             }
         }
 
