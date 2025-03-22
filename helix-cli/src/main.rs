@@ -16,7 +16,7 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-use tempfile::{TempDir, NamedTempFile};
+use tempfile::{NamedTempFile, TempDir};
 
 use std::path::PathBuf;
 pub mod args;
@@ -37,7 +37,10 @@ fn check_helix_installation() -> Result<PathBuf, String> {
 
     // Check if helix-container exists and is a directory
     if !container_path.exists() || !container_path.is_dir() {
-        return Err("Helix container is missing. Please run `helix install` to repair the installation.".to_string());
+        return Err(
+            "Helix container is missing. Please run `helix install` to repair the installation."
+                .to_string(),
+        );
     }
 
     // Check if Cargo.toml exists in helix-container
@@ -84,7 +87,7 @@ fn create_spinner(message: &str) -> ProgressBar {
         ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
             .template("{prefix:>12.cyan.bold} {spinner:.green} {wide_msg}")
-            .unwrap()
+            .unwrap(),
     );
     spinner.set_message(message.to_string());
     spinner.set_prefix("🔄");
@@ -132,13 +135,10 @@ fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
             "Failed to capture curl output"
         })?;
 
-    let status = Command::new("bash")
-        .stdin(status)
-        .status()
-        .map_err(|e| {
-            finish_spinner_with_message(&spinner, false, "Failed to execute install script");
-            e
-        })?;
+    let status = Command::new("bash").stdin(status).status().map_err(|e| {
+        finish_spinner_with_message(&spinner, false, "Failed to execute install script");
+        e
+    })?;
 
     if status.success() {
         finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
@@ -289,7 +289,11 @@ fn main() {
                 return;
             }
 
-            finish_spinner_with_message(&spinner, true, &format!("Successfully compiled {} queries", numb_of_files));
+            finish_spinner_with_message(
+                &spinner,
+                true,
+                &format!("Successfully compiled {} queries", numb_of_files),
+            );
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
@@ -306,10 +310,18 @@ fn main() {
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully wrote queries file");
+                        finish_spinner_with_message(
+                            &spinner,
+                            true,
+                            "Successfully wrote queries file",
+                        );
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to write queries file");
+                        finish_spinner_with_message(
+                            &spinner,
+                            false,
+                            "Failed to write queries file",
+                        );
                         println!("\t└── {}", e);
                         return;
                     }
@@ -350,7 +362,7 @@ fn main() {
                     }
                 }
 
-               let spinner = create_spinner("Starting Helix instance");
+                let spinner = create_spinner("Starting Helix instance");
                 // spinner.set_style(
                 //     ProgressStyle::default_spinner()
                 //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
@@ -370,7 +382,11 @@ fn main() {
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully started Helix instance");
+                        finish_spinner_with_message(
+                            &spinner,
+                            true,
+                            "Successfully started Helix instance",
+                        );
                         println!(" ");
                         println!("\t└── Instance ID: {}", instance.id);
                         println!("\t└── Port: {}", instance.port);
@@ -380,7 +396,11 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to start Helix instance");
+                        finish_spinner_with_message(
+                            &spinner,
+                            false,
+                            "Failed to start Helix instance",
+                        );
                         println!("\t└── {}", e);
                     }
                 }
@@ -433,7 +453,11 @@ fn main() {
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    finish_spinner_with_message(&spinner, true, "Successfully restarted Helix instance");
+                    finish_spinner_with_message(
+                        &spinner,
+                        true,
+                        "Successfully restarted Helix instance",
+                    );
                     println!("\t└── Instance ID: {}", instance.id);
                     println!("\t└── Port: {}", instance.port);
                     println!("\t└── Available endpoints:");
@@ -442,7 +466,11 @@ fn main() {
                     }
                 }
                 Ok(None) => {
-                    finish_spinner_with_message(&spinner, false, "Instance not found or binary missing");
+                    finish_spinner_with_message(
+                        &spinner,
+                        false,
+                        "Instance not found or binary missing",
+                    );
                     println!(
                         "\t└── Could not find instance with ID: {}",
                         command.instance_id
@@ -489,45 +517,46 @@ fn main() {
             }
 
             let numb_of_files = files.len();
-            let mut successes = HashMap::new();
-            let mut errors = HashMap::new();
             let mut code = String::new();
             let mut generator = CodeGenerator::new();
             code.push_str(&generator.generate_headers());
-            for file in files {
-                let contents = match fs::read_to_string(file.path()) {
-                    Ok(contents) => contents,
-                    Err(e) => {
-                        println!("{}", e);
-                        return;
-                    }
-                };
-                match HelixParser::parse_source(&contents) {
-                    Ok(source) => {
-                        // println!("{:?}", parser);
-                        code.push_str(&generator.generate_source(&source));
 
-                        // write to ~/.helix/cache/generated/
+            let mut contents: String = files
+                .iter()
+                .map(|file| -> String {
+                    match fs::read_to_string(file.path()) {
+                        Ok(contents) => contents,
+                        Err(e) => {
+                            panic!("{}", e);
+                        }
+                    }
+                })
+                .fold(String::new(), |acc, contents| acc + &contents);
 
-                        successes.insert(file.file_name().to_string_lossy().into_owned(), source);
-                    }
-                    Err(e) => {
-                        errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                    }
+            match HelixParser::parse_source(&contents) {
+                Ok(source) => {
+                    // println!("{:?}", parser);
+                    code.push_str(&generator.generate_source(&source));
+                }
+                Err(e) => {
+                    println!("{}", e);
+                    return;
                 }
             }
+
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
             let file_path = cache_dir.join(format!("queries.rs",));
-            fs::write(file_path, code).unwrap();
-            println!("\nCompiled {} files!\n", numb_of_files);
-            successes
-                .iter()
-                .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-            errors
-                .iter()
-                .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
+            fs::write(&file_path, code).unwrap();
+            match format_rust_file(&file_path) {
+                Ok(_) => println!("\nCompiled and formatted {} files!\n", numb_of_files),
+                Err(e) => println!(
+                    "\nCompiled {} files! (formatting failed: {})\n",
+                    numb_of_files, e
+                ),
+            };
+
             println!();
         }
 
@@ -548,38 +577,28 @@ fn main() {
                         return;
                     }
 
-                    let numb_of_files = files.len();
-                    let mut successes = HashMap::new();
-                    let mut errors = HashMap::new();
-                    for file in files {
-                        let contents = match fs::read_to_string(file.path()) {
-                            Ok(contents) => contents,
-                            Err(e) => {
-                                println!("{}", e);
-                                return;
+                    let contents: String = files
+                        .iter()
+                        .map(|file| -> String {
+                            match fs::read_to_string(file.path()) {
+                                Ok(contents) => contents,
+                                Err(e) => {
+                                    panic!("{}", e);
+                                }
                             }
-                        };
-                        match HelixParser::parse_source(&contents) {
-                            Ok(source) => {
-                                successes.insert(
-                                    file.file_name().to_string_lossy().into_owned(),
-                                    source,
-                                );
-                                // println!("{:?}", parser);
-                            }
-                            Err(e) => {
-                                errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                            }
+                        })
+                        .fold(String::new(), |acc, contents| acc + &contents);
+
+                    match HelixParser::parse_source(&contents) {
+                        Ok(_) => {
+                            println!("\t✅ Successfully parsed source");
+                        }
+                        Err(e) => {
+                            println!("\t❌ Failed to parse source");
+                            println!("\t└── {}", e);
+                            return;
                         }
                     }
-
-                    println!("\nLinted {} files!\n", numb_of_files);
-                    successes
-                        .iter()
-                        .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-                    errors
-                        .iter()
-                        .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
                     println!();
                 }
                 None => {
@@ -597,38 +616,28 @@ fn main() {
                         return;
                     }
 
-                    let numb_of_files = files.len();
-                    let mut successes = HashMap::new();
-                    let mut errors = HashMap::new();
-                    for file in files {
-                        let contents = match fs::read_to_string(file.path()) {
-                            Ok(contents) => contents,
-                            Err(e) => {
-                                println!("{}", e);
-                                return;
+                    let contents: String = files
+                        .iter()
+                        .map(|file| -> String {
+                            match fs::read_to_string(file.path()) {
+                                Ok(contents) => contents,
+                                Err(e) => {
+                                    panic!("{}", e);
+                                }
                             }
-                        };
-                        match HelixParser::parse_source(&contents) {
-                            Ok(source) => {
-                                successes.insert(
-                                    file.file_name().to_string_lossy().into_owned(),
-                                    source,
-                                );
-                                // println!("{:?}", parser);
-                            }
-                            Err(e) => {
-                                errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                            }
+                        })
+                        .fold(String::new(), |acc, contents| acc + &contents);
+
+                    match HelixParser::parse_source(&contents) {
+                        Ok(_) => {
+                            println!("\t✅ Successfully parsed source");
+                        }
+                        Err(e) => {
+                            println!("\t❌ Failed to parse source");
+                            println!("\t└── {}", e);
+                            return;
                         }
                     }
-
-                    println!("\nLinted {} files!\n", numb_of_files);
-                    successes
-                        .iter()
-                        .for_each(|(name, _)| println!("\t✅ {}: \tNo errors", name));
-                    errors
-                        .iter()
-                        .for_each(|(name, error)| println!("\t❌ {}: \t{}", name, error));
                     println!();
                 }
             };
@@ -746,6 +755,83 @@ fn main() {
                 None => println!("No test provided"),
             }
         }
+        args::CommandType::Init(command) => {
+            println!("Initialising Helix project...");
+            let path = match command.path {
+                Some(path) => PathBuf::from(path),
+                None => PathBuf::from("."),
+            };
+
+            // create directory
+            fs::create_dir_all(&path).unwrap();
+
+            // create queries directory
+            let queries_dir = path.join("queries");
+            fs::create_dir_all(&queries_dir).unwrap();
+
+            // create schema.hx
+            let schema_path = queries_dir.join("schema.hx");
+            fs::write(&schema_path, r#"// Start building your schema here.
+//
+// The schema is used to to ensure a level of type safety in your queries.
+//
+// The schema is made up of Vertex types, denoted by V::, 
+// and Edge types, denoted by E::
+// 
+// Under the Vertex types you can define fields that 
+// will be stored in the database.
+//
+// Under the Edge types you can define what type of node 
+// the edge will connect to and from, and also the 
+// properties that you want to store on the edge.
+// 
+// Example:
+//
+// V::User {
+//     Name: String,
+//     Label: String,
+//     Age: Integer,
+//     IsAdmin: Boolean,
+// }
+// 
+// E::Knows {
+//     From: User,
+//     To: User,
+//     Properties: {
+//         Since: Integer,
+//     }
+// }
+//
+//
+// For more information on how to write queries, 
+// see the documentation at https://docs.helix-db.com 
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+"#).unwrap();
+
+            // create queries/main.hx
+            let main_path = queries_dir.join("main.hx");
+            fs::write(main_path, r#"// Start writing your queries here.
+//
+// You can use the schema to help you write your queries.
+//
+// Queries take the form:
+//     QUERY {query name}({input name}: {input type}) => 
+//         {variable} <- {traversal}
+//         RETURN {variable}
+//
+// Example:
+//     QUERY GetUserFriends(user_id: String) =>
+//         friends <- V<User>(user_id)::Out<Knows>
+//         RETURN friends
+//
+//
+// For more information on how to write queries, 
+// see the documentation at https://docs.helix-db.com 
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+"#).unwrap();
+
+            println!("Helix project initialised at {}", path.display());
+        }
     }
 }
 
@@ -775,4 +861,14 @@ fn check_is_dir(path: &str) -> bool {
             return false;
         }
     }
+}
+
+fn format_rust_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let status = Command::new("rustfmt").arg(file_path).status()?;
+
+    if !status.success() {
+        return Err(format!("rustfmt failed with exit code: {}", status).into());
+    }
+
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
 use bincode::{deserialize, serialize};
 use heed3::{types::*, Database, Env, EnvOpenOptions, RoTxn, RwTxn};
@@ -42,6 +43,7 @@ pub struct HelixGraphStorage {
     pub out_edges_db: Database<Bytes, Bytes>,
     pub in_edges_db: Database<Bytes, Bytes>,
     pub secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
+    pub vectors: VectorCore,
 }
 
 impl HelixGraphStorage {
@@ -80,8 +82,11 @@ impl HelixGraphStorage {
             }
         }
         println!("Secondary Indices: {:?}", secondary_indices);
+        
+        let config = HNSWConfig::default();
+        let vectors = VectorCore::new(&graph_env, &mut wtxn, Some(config))?;
+        
         wtxn.commit()?;
-
         Ok(Self {
             graph_env,
             nodes_db,
@@ -91,6 +96,7 @@ impl HelixGraphStorage {
             out_edges_db,
             in_edges_db,
             secondary_indices,
+            vectors,
         })
     }
 

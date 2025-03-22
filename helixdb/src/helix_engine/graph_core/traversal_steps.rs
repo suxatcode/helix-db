@@ -1,15 +1,13 @@
 use heed3::{RoTxn, RwTxn};
-use crate::protocol::{
-    items::{Edge, Node},
-    value::Value,
-    traversal_value::TraversalValue
-};
+use crate::{helix_engine::vector_core::vector::HVector, protocol::{
+    items::{Edge, Node}, traversal_value::TraversalValue, value::Value
+}};
 
 use crate::helix_engine::types::GraphError;
 
 use super::traversal::TransactionCommit;
 
-pub trait RSourceTraversalSteps {
+pub trait SourceTraversalSteps {
     /// Adds all nodes in the graph to current traversal step
     ///
     /// Note: This can be a VERY expensive operation
@@ -36,9 +34,7 @@ pub trait RSourceTraversalSteps {
         index: &str,
         value: &Value,
     ) -> &mut Self;
-}
 
-pub trait WSourceTraversalSteps {
     /// Creates a new node in the graph and adds it to current traversal step
     fn add_v(
         &mut self,
@@ -58,7 +54,7 @@ pub trait WSourceTraversalSteps {
     ) -> &mut Self;
 }
 
-pub trait RTraversalSteps {
+pub trait TraversalSteps {
     /// Adds the nodes at the end of an outgoing edge to the current traversal step that match a given edge label if given one
     fn out(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
     /// Adds the outgoing edges from the current node to the current traversal step that match a given edge label if given one
@@ -91,9 +87,7 @@ pub trait RTraversalSteps {
 
     /// Adds the nodes at the ends of both the incoming and outgoing edges from the current node to the current traversal step
     fn both_v(&mut self, txn: &RoTxn) -> &mut Self;
-}
 
-pub trait WTraversalSteps {
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e_to(
         &mut self,
@@ -120,7 +114,7 @@ pub trait TraversalMethods {
     fn count(&mut self) -> &mut Self;
 
     /// Flattens everything in the current traversal step and updates the current traversal step to be a slice of itself.
-    fn range(&mut self, start: usize, end: usize) -> &mut Self;
+    fn range(&mut self, start: i32, end: i32) -> &mut Self;
 
     /// Filters the current traversal step
     ///
@@ -132,7 +126,7 @@ pub trait TraversalMethods {
     ///
     /// use helixdb::props;
     /// use helixdb::helix_engine::{
-    ///     graph_core::traversal_steps::{TraversalMethods, RSourceTraversalSteps, WSourceTraversalSteps},
+    ///     graph_core::traversal_steps::{TraversalMethods, SourceTraversalSteps},
     ///     graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts},
     ///     graph_core::traversal::TraversalBuilder,
     ///     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -263,16 +257,7 @@ pub trait TraversalMethods {
         F: Fn(&Edge) -> Result<(), GraphError>;
 }
 
-pub trait RTraversalBuilderMethods {
-    //// / Finishes the result and returns the final current traversal step
-    fn result<'a, T>(self, txn: &mut T) -> Result<TraversalValue, GraphError>
-    where
-        T: AsMut<RoTxn<'a>>;
-
-    fn execute(self) -> Result<(), GraphError>;
-}
-
-pub trait WTraversalBuilderMethods {
+pub trait TraversalBuilderMethods {
     // /// Finishes the result and returns the final current traversal step
     fn result<T>(self, txn: T) -> Result<TraversalValue, GraphError>
     where
@@ -302,4 +287,14 @@ pub trait TraversalSearchMethods {
     fn shortest_mutual_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self;
 
     fn shortest_mutual_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self;
+}
+
+pub trait VectorTraversalSteps {
+    fn vector_search(&mut self, txn: &RoTxn, query: &HVector) -> &mut Self;
+
+    fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self;
+
+    fn delete_vector(&mut self, txn: &mut RwTxn, vector_id: &str) -> &mut Self;
+
+    fn update_vector(&mut self, txn: &mut RwTxn, vector_id: &str, vector: &[f64]) -> &mut Self;
 }

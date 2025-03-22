@@ -28,6 +28,9 @@ pub enum CommandType {
     /// Install the Helix repo
     Install(InstallCommand),
 
+    /// Initialise a new Helix project
+    Init(InitCommand),
+
     /// Test a Helix project
     Test(TestCommand),
 
@@ -86,6 +89,13 @@ pub struct LintCommand {
 #[derive(Debug, Args)]
 #[clap(name = "install", about = "Install the Helix repo")]
 pub struct InstallCommand {
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "init", about = "Initialise a new Helix project")]
+pub struct InitCommand {
+    #[clap(short, long, help = "The path to the project")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Args)]

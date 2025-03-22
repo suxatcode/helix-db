@@ -2,16 +2,15 @@ use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::helix_engine::storage_core::storage_methods::StorageMethods;
 use crate::helix_engine::types::GraphError;
 use crate::props;
+use crate::protocol::filterable::{Filterable, FilterableType};
+use crate::protocol::remapping::{Remapping, ResponseRemapping};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::str;
 use std::sync::{Arc, RwLock};
 
 use super::traversal::TraversalBuilder;
-use super::traversal_steps::{
-    RSourceTraversalSteps, RTraversalBuilderMethods, RTraversalSteps, TraversalMethods,
-    WSourceTraversalSteps, WTraversalBuilderMethods, WTraversalSteps,
-};
+use super::traversal_steps::{TraversalBuilderMethods, TraversalMethods, TraversalSteps};
 use crate::helixc::parser::helix_parser::{
     BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
     Traversal,
@@ -53,7 +52,6 @@ impl HelixGraphEngineOpts {
             secondary_indices: None,
         }
     }
-    
 }
 
 impl HelixGraphEngine {
@@ -704,4 +702,6 @@ impl HelixGraphEngine {
     //         }
     //     }
     // }
+
+   
 }

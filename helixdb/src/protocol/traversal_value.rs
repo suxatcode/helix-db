@@ -1,9 +1,11 @@
+use crate::helix_engine::vector_core::vector::HVector;
+
 use super::{count::Count, items::Edge, filterable::Filterable, items::Node, value::Value};
 use serde::Serializer;
 use sonic_rs::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum TraversalValue {
     Empty,
@@ -12,6 +14,7 @@ pub enum TraversalValue {
     EdgeArray(Vec<Edge>),
     ValueArray(Vec<(String, Value)>),
     Paths(Vec<(Vec<Node>, Vec<Edge>)>),
+    VectorArray(Vec<(String, f64)>),
 }
 
 impl FromIterator<TraversalValue> for TraversalValue {
@@ -20,7 +23,7 @@ impl FromIterator<TraversalValue> for TraversalValue {
         let mut edges = Vec::with_capacity(10);
         let mut values = Vec::with_capacity(10);
         let mut paths = Vec::with_capacity(10);
-
+        let mut vectors = Vec::with_capacity(10);
         for value in iter {
             match value {
                 TraversalValue::Count(count) => return TraversalValue::Count(count),
@@ -28,6 +31,7 @@ impl FromIterator<TraversalValue> for TraversalValue {
                 TraversalValue::EdgeArray(mut edge_vec) => edges.append(&mut edge_vec),
                 TraversalValue::ValueArray(mut value_vec) => values.append(&mut value_vec),
                 TraversalValue::Paths(mut path_vecs) => paths.append(&mut path_vecs),
+                TraversalValue::VectorArray(mut vector_vec) => vectors.append(&mut vector_vec),
                 TraversalValue::Empty => (),
             }
         }
@@ -86,6 +90,7 @@ impl std::fmt::Debug for TraversalValue {
             TraversalValue::EdgeArray(edges) => edges.fmt(f),
             TraversalValue::ValueArray(values) => values.fmt(f),
             TraversalValue::Paths(paths) => paths.fmt(f),
+            TraversalValue::VectorArray(vectors) => vectors.fmt(f),
         }
     }
 }
@@ -102,6 +107,7 @@ impl Serialize for TraversalValue {
             TraversalValue::EdgeArray(edges) => edges.serialize(serializer),
             TraversalValue::ValueArray(values) => values.serialize(serializer),
             TraversalValue::Paths(paths) => paths.serialize(serializer),
+            TraversalValue::VectorArray(vectors) => vectors.serialize(serializer),
         }
     }
 }

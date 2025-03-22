@@ -2,10 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use helixdb::helix_engine::{
     graph_core::{
         traversal::TraversalBuilder,
-        traversal_steps::{
-            RSourceTraversalSteps, RTraversalSteps, WSourceTraversalSteps,
-            WTraversalBuilderMethods, WTraversalSteps,
-        },
+        traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps},
     },
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
 };
