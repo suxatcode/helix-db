@@ -755,6 +755,83 @@ fn main() {
                 None => println!("No test provided"),
             }
         }
+        args::CommandType::Init(command) => {
+            println!("Initialising Helix project...");
+            let path = match command.path {
+                Some(path) => PathBuf::from(path),
+                None => PathBuf::from("."),
+            };
+
+            // create directory
+            fs::create_dir_all(&path).unwrap();
+
+            // create queries directory
+            let queries_dir = path.join("queries");
+            fs::create_dir_all(&queries_dir).unwrap();
+
+            // create schema.hx
+            let schema_path = queries_dir.join("schema.hx");
+            fs::write(&schema_path, r#"// Start building your schema here.
+//
+// The schema is used to to ensure a level of type safety in your queries.
+//
+// The schema is made up of Vertex types, denoted by V::, 
+// and Edge types, denoted by E::
+// 
+// Under the Vertex types you can define fields that 
+// will be stored in the database.
+//
+// Under the Edge types you can define what type of node 
+// the edge will connect to and from, and also the 
+// properties that you want to store on the edge.
+// 
+// Example:
+//
+// V::User {
+//     Name: String,
+//     Label: String,
+//     Age: Integer,
+//     IsAdmin: Boolean,
+// }
+// 
+// E::Knows {
+//     From: User,
+//     To: User,
+//     Properties: {
+//         Since: Integer,
+//     }
+// }
+//
+//
+// For more information on how to write queries, 
+// see the documentation at https://docs.helix-db.com 
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+"#).unwrap();
+
+            // create queries/main.hx
+            let main_path = queries_dir.join("main.hx");
+            fs::write(main_path, r#"// Start writing your queries here.
+//
+// You can use the schema to help you write your queries.
+//
+// Queries take the form:
+//     QUERY {query name}({input name}: {input type}) => 
+//         {variable} <- {traversal}
+//         RETURN {variable}
+//
+// Example:
+//     QUERY GetUserFriends(user_id: String) =>
+//         friends <- V<User>(user_id)::Out<Knows>
+//         RETURN friends
+//
+//
+// For more information on how to write queries, 
+// see the documentation at https://docs.helix-db.com 
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+"#).unwrap();
+
+            println!("Helix project initialised at {}", path.display());
+        }
     }
 }
 

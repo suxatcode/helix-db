@@ -17,11 +17,58 @@ HelixDB is a high-performance database system designed with a focus on developer
 
 ## Getting Started
 
-[Documentation and installation instructions coming soon]
+#### Helix CLI
+
+The Helix CLI tool can be used to check, compile and deploy Helix locally.
+
+1. Install CLI
+
+   ```bash
+   curl -sSL "https://install.helix-db.com" | bash
+   ```
+
+2. Install Helix
+
+   ```bash
+   helix install
+   ```
+
+3. Setup
+
+   ```bash
+   helix init --path <path-to-create-files-at>
+   ```
+
+4. Write queries
+
+   Write your schema and queries in the newly created `.hx` files.
+   Head over to [our GitHub](https://github.com/HelixDB/helix-db) for more information about writing queries
+
+5. Check your queries (optional)
+
+   ```bash
+   cd <path-to-your-project>
+   helix check
+   ```
+
+6. Deploy your queries
+
+   ```bash
+   cd <path-to-your-project>
+   helix deploy --local
+   ```
+
+Other commands:
+
+- `helix instances` to see your local instances.
+- `helix stop <instance-id>` to stop your local instances.
+- `helix stop --all` to stop all your local instances.
+- `helix start <instance-id>` to start your local instances.
 
 ## Roadmap
 
 Our current focus areas include:
+
 - Expanding vector data type capabilities for AI/ML applications
 - Enhancing the query language with robust type checking
 - Improving build tools and developer experience
@@ -35,4 +82,3 @@ HelixDB is licensed under the GNU General Public License v3.0 (GPL-3.0).
 ## Commercial Support
 
 HelixDB is available as a managed service. Contact us for more information about enterprise support and deployment options.
-
