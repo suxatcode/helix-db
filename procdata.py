@@ -1,3 +1,4 @@
+# pip install torch numpy pyarrow datasets pandas tqdm
 import os
 import pyarrow as pa
 import pyarrow.parquet as pq

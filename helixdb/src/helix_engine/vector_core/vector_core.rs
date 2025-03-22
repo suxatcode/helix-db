@@ -1,6 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
-use bincode::{deserialize, serialize};
+use bincode::deserialize;
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
@@ -26,7 +26,7 @@ pub struct HNSWConfig {
     pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
     pub max_level: usize,    // max number of levels in index
-    pub ef: usize,
+    pub ef: usize,           // search param, num of cands to search
 }
 
 impl HNSWConfig {
@@ -362,8 +362,7 @@ impl VectorCore {
 
         let mut entry_point = self.get_entry_point(txn)?;
 
-        // let ef = (k * 10).max(self.config.ef);
-        let ef = self.config.ef;
+        let ef = (k * 10).max(self.config.ef);
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
@@ -431,10 +430,7 @@ impl VectorCore {
 
             for e in neighbors {
                 let id = e.get_id();
-
                 let e_conns = self.get_neighbors(txn, id, level)?;
-                // BinaryHeap::from(self.get_neighbors(txn, id, level)?);
-
                 if e_conns.len() > self.config.m_max {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn = self.select_neighbors(txn, &query, e_conns, level, true)?;
