@@ -7,7 +7,6 @@ use inventory;
 use std::{collections::HashMap, sync::Arc};
 
 mod queries;
-mod q;
 
 fn main() {
     let path = match std::env::var("HELIX_DATA_DIR") {
