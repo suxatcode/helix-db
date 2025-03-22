@@ -1,4 +1,5 @@
 import os
+import pyarrow as pa
 import pyarrow.parquet as pq
 import numpy as np
 import torch
@@ -13,6 +14,8 @@ def load_vectors(n_vectors_to_load: int = 1_000_000) -> tuple[np.ndarray, list]:
     if n_vectors_to_load > 1_000_000:
         raise ValueError('cant load more than 1,000,000 vectors from this dataset')
 
+    print(f'vectors to load: {n_vectors_to_load}')
+
     data_dir = 'data/'
     os.makedirs(data_dir, exist_ok=True)
 
@@ -20,9 +23,18 @@ def load_vectors(n_vectors_to_load: int = 1_000_000) -> tuple[np.ndarray, list]:
     if not parquet_files:
         print(f'no Parquet files found in {data_dir}. downloading from Hugging Face...')
         dataset = load_dataset('KShivendu/dbpedia-entities-openai-1M', split='train')
-        for i, shard in enumerate(tqdm(dataset.shard(num_shards=26, index=0, contiguous=True),
-                                       total=26, desc='saving dataset to parquet files')):
-            shard.to_parquet(os.path.join(data_dir, f'file{i+1}.parquet'))
+
+        df = dataset.to_pandas()
+        total_rows = len(df)
+        shard_size = total_rows // 26
+
+        for i in tqdm(range(26), desc="saving dataset to parquet files"):
+            start_idx = i * shard_size
+            end_idx = min((i + 1) * shard_size, total_rows) if i < 25 else total_rows
+            shard_df = df[start_idx:end_idx]
+            shard_table = pa.Table.from_pandas(shard_df)
+            pq.write_table(shard_table, os.path.join(data_dir, f"file{i+1}.parquet"))
+
         parquet_files = sorted([f for f in os.listdir(data_dir) if f.endswith('.parquet')])
         print(f'downloaded and saved {len(parquet_files)} parquet files to {data_dir}')
     else:
@@ -80,14 +92,6 @@ def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
             neighbor_ids = [id_list[idx] for idx in sorted_indices]
             nearest_ids_list.append(neighbor_ids)
 
-        #_, indices = torch.topk(distances, k=101, largest=False, dim=1)
-        #neighbor_indices = indices[:, 1:101] # take 100 neighbors, skip self
-
-        #neighbor_indices = neighbor_indices.cpu().numpy()
-        #for i in range(neighbor_indices.shape[0]):
-        #    neighbor_ids = [id_list[idx] for idx in neighbor_indices[i]]
-        #    nearest_ids_list.append(neighbor_ids)
-
     df = pd.DataFrame({
         '_id': id_list,
         'nearest_ids': nearest_ids_list
@@ -99,4 +103,4 @@ def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
     print("output saved to 'dpedia_openai_ground_truths.csv'")
 
 if __name__ == '__main__':
-    compute_nearest_neighbors(n_vectors_to_load=50_000)
+    compute_nearest_neighbors()
