@@ -1,10 +1,17 @@
+<p align="center">
+  <img src="./icon-1.png" alt="HelixDB Logo" width="200" height="200">
+</p>
+
 # HelixDB
 
 HelixDB is a multi-model database built for performance and simplicity.
 
+
 ## Overview
 
 HelixDB is a high-performance database system designed with a focus on developer experience and efficient data operations. Built in Rust and powered by LMDB as its storage engine, it combines the reliability of a proven storage layer with modern features tailored for AI and vector-based applications.
+
+We are currently using LMDB via Heed, a rust wrapper built by the amazing team over at [Meilisearch](https://github.com/meilisearch/heed).
 
 ## Key Features
 
