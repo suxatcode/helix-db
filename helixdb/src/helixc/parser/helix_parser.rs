@@ -81,9 +81,16 @@ pub struct Parameter {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Assignment(Assignment),
-    AddVertex(AddVertex),
+    AddVector(AddVector),
+    AddNode(AddNode),
     AddEdge(AddEdge),
     Drop(Expression),
+}
+
+#[derive(Debug, Clone)]
+pub struct AddVector {
+    pub name: String,
+    pub fields: Vec<Field>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +108,7 @@ pub enum Expression {
     FloatLiteral(f64),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
-    AddVertex(AddVertex),
+    AddNode(AddNode),
     AddEdge(AddEdge),
     And(Vec<Expression>),
     Or(Vec<Expression>),
@@ -116,7 +123,7 @@ pub struct Traversal {
 
 #[derive(Debug, Clone)]
 pub enum StartNode {
-    Vertex {
+    Node {
         types: Option<Vec<String>>,
         ids: Option<Vec<String>>,
     },
@@ -130,7 +137,7 @@ pub enum StartNode {
 
 #[derive(Debug, Clone)]
 pub enum Step {
-    Vertex(GraphStep),
+    Node(GraphStep),
     Edge(GraphStep),
     Where(Box<Expression>),
     BooleanOperation(BooleanOp),
@@ -184,7 +191,7 @@ pub enum BooleanOp {
 }
 
 #[derive(Debug, Clone)]
-pub struct AddVertex {
+pub struct AddNode {
     pub vertex_type: Option<String>,
     pub fields: Option<Vec<(String, ValueType)>>,
 }
@@ -480,7 +487,7 @@ impl HelixParser {
         pair.into_inner()
             .map(|p| match p.as_rule() {
                 Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
-                Rule::AddV => Ok(Statement::AddVertex(self.parse_add_vertex(p)?)),
+                Rule::AddV => Ok(Statement::AddNode(self.parse_add_vertex(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
                 _ => Err(ParserError::from(format!(
@@ -491,7 +498,7 @@ impl HelixParser {
             .collect()
     }
 
-    fn parse_add_vertex(&self, pair: Pair<Rule>) -> Result<AddVertex, ParserError> {
+    fn parse_add_vertex(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
         let mut vertex_type = None;
         let mut fields = None;
 
@@ -513,7 +520,7 @@ impl HelixParser {
             }
         }
 
-        Ok(AddVertex {
+        Ok(AddNode {
             vertex_type,
             fields,
         })
@@ -739,7 +746,7 @@ impl HelixParser {
                 .map_err(|_| ParserError::from("Invalid float literal")),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
-            Rule::AddV => Ok(Expression::AddVertex(self.parse_add_vertex(pair)?)),
+            Rule::AddV => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
@@ -805,7 +812,7 @@ impl HelixParser {
                         _ => unreachable!(),
                     }
                 }
-                Ok(StartNode::Vertex { types, ids })
+                Ok(StartNode::Node { types, ids })
             }
             Rule::start_edge => {
                 let pairs = pair.into_inner();
@@ -840,7 +847,7 @@ impl HelixParser {
     fn parse_step(&self, pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.clone().into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::graph_step => Ok(Step::Vertex(self.parse_graph_step(inner))),
+            Rule::graph_step => Ok(Step::Node(self.parse_graph_step(inner))),
             Rule::object_step => Ok(Step::Object(self.parse_object_step(inner)?)),
             Rule::closure_step => Ok(Step::Closure(self.parse_closure(inner)?)),
             Rule::where_step => Ok(Step::Where(Box::new(self.parse_expression(inner)?))),

@@ -1,8 +1,5 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field,
-    FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, Source,
-    StartNode::{Anonymous, Edge, Variable, Vertex},
-    Statement, Step, Traversal, ValueType,
+    AddEdge, AddNode, AddVector, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, Step, Traversal, ValueType
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
@@ -186,12 +183,12 @@ impl CodeGenerator {
         output.push_str("let db = Arc::clone(&input.graph.storage);\n");
         output.push_str(&mut self.indent());
         if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddVertex(_))
+            matches!(s, Statement::AddNode(_))
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddVertex(_))
+                        matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
                             || {
                                 let steps = match &assignment.value {
@@ -227,12 +224,12 @@ impl CodeGenerator {
         }
 
         if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddVertex(_))
+            matches!(s, Statement::AddNode(_))
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddVertex(_))
+                        matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
                     } else {
                         false
@@ -255,10 +252,20 @@ impl CodeGenerator {
     fn generate_statement(&mut self, statement: &Statement, query: &Query) -> String {
         match statement {
             Statement::Assignment(assignment) => self.generate_assignment(assignment, query),
-            Statement::AddVertex(add_vertex) => self.generate_add_vertex(add_vertex, None),
+            Statement::AddNode(add_vertex) => self.generate_add_vertex(add_vertex, None),
             Statement::AddEdge(add_edge) => self.generate_add_edge(add_edge),
             Statement::Drop(expr) => self.generate_drop(expr, query),
+            Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
         }
+    }
+
+    fn generate_add_vector(&mut self, add_vector: &AddVector) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str(&format!("let mut txn = db.graph_env.write_txn().unwrap();\n"));
+        output.push_str(&format!("txn.add_vector(&data.{});\n", add_vector.name));
+        output.push_str("txn.commit()?;\n");
+        output
     }
 
     fn generate_assignment(&mut self, assignment: &Assignment, query: &Query) -> String {
@@ -320,7 +327,7 @@ impl CodeGenerator {
                 output.push_str(&mut self.indent());
                 output.push_str(&b.to_string());
             }
-            Expression::AddVertex(add_vertex) => {
+            Expression::AddNode(add_vertex) => {
                 output.push_str(&mut self.generate_add_vertex(add_vertex, None));
             }
             Expression::AddEdge(add_edge) => {
@@ -340,7 +347,7 @@ impl CodeGenerator {
 
         // Generate start node
         match &traversal.start {
-            Vertex { types, ids } => {
+            Node { types, ids } => {
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
@@ -426,7 +433,7 @@ impl CodeGenerator {
                     }
                     output.push_str(&mut self.generate_step(step, query));
                 }
-                Step::Vertex(graph_step) => match graph_step {
+                Step::Node(graph_step) => match graph_step {
                     GraphStep::Out(types) => {
                         if let Some(types) = types {
                             output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
@@ -607,7 +614,7 @@ impl CodeGenerator {
             Step::BooleanOperation(bool_op) => {
                 output.push_str(&mut self.generate_boolean_operation(bool_op));
             }
-            Step::Vertex(graph_step) => match graph_step {
+            Step::Node(graph_step) => match graph_step {
                 GraphStep::Out(types) => {
                     if let Some(types) = types {
                         output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
@@ -1150,7 +1157,7 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_add_vertex(&mut self, add_vertex: &AddVertex, var_name: Option<&str>) -> String {
+    fn generate_add_vertex(&mut self, add_vertex: &AddNode, var_name: Option<&str>) -> String {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());

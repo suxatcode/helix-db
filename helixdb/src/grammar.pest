@@ -1,5 +1,5 @@
 // Main rules
-source = { SOI ~ (node_def | edge_def | query_def)* ~ EOI }
+source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 
 // Query definitions
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
@@ -9,7 +9,7 @@ query_body   = { (get_stmt | AddV | AddE | drop)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
-traversal           = { (start_vertex | start_edge) ~ step* ~ last_step? }
+traversal           = { (start_vertex | start_edge | start_vector) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
 step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step | AddE) }
@@ -54,7 +54,7 @@ evaluates_to_number = {
 return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
 
 // Vertex-related steps
-start_vertex = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
+start_vertex = { "N" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 graph_step   = {
     "OutE" ~ ("<" ~ type_args ~ ">")?
   | "InE" ~ ("<" ~ type_args ~ ">")?
@@ -69,6 +69,9 @@ graph_step   = {
 
 // Edge-related steps
 start_edge = { "E" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
+
+// Vector-related steps
+start_vector = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
@@ -107,8 +110,10 @@ spread_object = { ".." }
 mapping_field = { (identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step))) | identifier }
 
 // Schema definitions
-node_def   = { "V::" ~ identifier_upper ~ node_body }
+vector_def = { "V::" ~ identifier_upper }
+node_def   = { "N::" ~ identifier_upper ~ node_body }
 edge_def   = { "E::" ~ identifier_upper ~ edge_body }
+
 node_body  = { "{" ~ field_defs ~ "}" }
 edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
 field_def  = { (identifier ~ ":" ~ type_name) }
@@ -133,7 +138,7 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 // Add edged and vertices
 create_field = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
 new_field    = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | create_field) }
-AddV         = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
+AddV         = { "AddN" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
 AddE         = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
 to_from      = { to ~ from? | from ~ to? }
 to           = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
