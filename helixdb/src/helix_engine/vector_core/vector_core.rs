@@ -1,5 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
+use crate::helix_engine::vector_core::hnsw::HNSW;
 use bincode::deserialize;
 use heed3::{
     types::{Bytes, Unit},
@@ -81,7 +82,6 @@ pub struct VectorCore {
     vector_header_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
-    // TODO: put thread rng here
 }
 
 impl VectorCore {
@@ -122,8 +122,8 @@ impl VectorCore {
     }
 
     #[inline]
-    pub fn get_new_level(&self) -> usize {
-        let mut rng = rand::rng();
+    fn get_new_level(&self) -> usize {
+        let mut rng = rand::rng(); // TODO: don't init a new rand::rng here everytime
         let r: f64 = rng.random::<f64>();
         let level = (-r.ln() * self.config.m_l).floor() as usize;
         level.min(self.config.max_level)
@@ -351,8 +351,10 @@ impl VectorCore {
 
         Ok(results)
     }
+}
 
-    pub fn search(
+impl HNSW for VectorCore {
+    fn search(
         &self,
         txn: &RoTxn,
         query: &[f64],
@@ -387,12 +389,12 @@ impl VectorCore {
     }
 
     // paper: https://arxiv.org/pdf/1603.09320
-    pub fn insert(
+    fn insert(
         &self,
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<String>,
-    ) -> Result<HVector, VectorError> {
+    ) -> Result<(), VectorError> {
         let id = nid.unwrap_or(uuid::Uuid::new_v4().as_simple().to_string());
         let new_level = self.get_new_level();
 
@@ -407,7 +409,7 @@ impl VectorCore {
             Err(_) => {
                 self.set_entry_point(txn, &query)?;
                 query.distance = 0.0;
-                return Ok(query);
+                return Ok(());
             }
         };
 
@@ -443,10 +445,10 @@ impl VectorCore {
             self.set_entry_point(txn, &query)?;
         }
 
-        Ok(query)
+        Ok(())
     }
 
-    pub fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
+    fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
@@ -458,11 +460,7 @@ impl VectorCore {
         Ok(vectors)
     }
 
-    pub fn get_all_vectors_at_level(
-        &self,
-        txn: &RoTxn,
-        level: usize,
-    ) -> Result<Vec<HVector>, VectorError> {
+    fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
@@ -475,6 +473,12 @@ impl VectorCore {
         }
         Ok(vectors)
     }
+
+    // TODO: load lmdb data index from data and config.json
+    // TODO: save lmdb data index and params to config.josn
+    // TODO: load index (load all vecs already available at once)
+    // TODO: delete a node from the index
+    // TODO: create a new "HNSW::Index"
 }
 
 pub trait Extend<T> {

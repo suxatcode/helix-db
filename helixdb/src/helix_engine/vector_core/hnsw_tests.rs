@@ -1,6 +1,6 @@
 use heed3::{Env, EnvOpenOptions};
 use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
-use crate::helix_engine::vector_core::{vector::HVector, vector_core::{HNSWConfig, VectorCore}};
+use crate::helix_engine::vector_core::{vector::HVector, hnsw::HNSW, vector_core::{HNSWConfig, VectorCore}};
 use polars::prelude::*;
 use std::collections::{HashSet, HashMap};
 use std::fs::{self, File};
@@ -196,7 +196,7 @@ fn test_recall_precision_real_data() {
 
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        let vec = index.insert(&mut txn, data, Some(id.clone())).unwrap();
+        index.insert(&mut txn, data, Some(id.clone())).unwrap();
         let time = start_time.elapsed();
         println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
         total_insertion_time += time;
