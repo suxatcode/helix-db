@@ -1026,7 +1026,7 @@ impl TraversalBuilderMethods for TraversalBuilder {
 }
 
 impl VectorTraversalSteps for TraversalBuilder {
-    fn vector_search(&mut self, txn: &RoTxn, query_vector: &HVector) -> &mut Self {
+    fn vector_search(&mut self, txn: &RoTxn, query_vector: &[f64]) -> &mut Self {
         let result = match self.storage.vectors.search(txn, query_vector, 10) {
             Ok(result) => result,
             Err(err) => {
@@ -1039,7 +1039,7 @@ impl VectorTraversalSteps for TraversalBuilder {
     }
 
     fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self {
-        self.storage.vectors.insert(txn, vector).unwrap();
+        self.storage.vectors.insert(txn, vector, None).unwrap();
         self
     }
 

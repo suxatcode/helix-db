@@ -20,6 +20,7 @@ impl Default for HelixParser {
             source: Source {
                 node_schemas: Vec::new(),
                 edge_schemas: Vec::new(),
+                vector_schemas: Vec::new(),
                 queries: Vec::new(),
             },
         }
@@ -31,6 +32,7 @@ impl Default for HelixParser {
 pub struct Source {
     pub node_schemas: Vec<NodeSchema>,
     pub edge_schemas: Vec<EdgeSchema>,
+    pub vector_schemas: Vec<VectorSchema>,
     pub queries: Vec<Query>,
 }
 
@@ -38,6 +40,11 @@ pub struct Source {
 pub struct NodeSchema {
     pub name: String,
     pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VectorSchema {
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -85,12 +92,7 @@ pub enum Statement {
     AddNode(AddNode),
     AddEdge(AddEdge),
     Drop(Expression),
-}
-
-#[derive(Debug, Clone)]
-pub struct AddVector {
-    pub name: String,
-    pub fields: Vec<Field>,
+    SearchVector(SearchVector),
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +110,7 @@ pub enum Expression {
     FloatLiteral(f64),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
+    AddVector(AddVector),
     AddNode(AddNode),
     AddEdge(AddEdge),
     And(Vec<Expression>),
@@ -148,6 +151,7 @@ pub enum Step {
     Closure(Closure),
     Range((Expression, Expression)),
     AddEdge(AddEdge),
+    SearchVector(String),
 }
 
 #[derive(Debug, Clone)]
@@ -170,9 +174,9 @@ pub enum GraphStep {
     Out(Option<Vec<String>>),
     In(Option<Vec<String>>),
     Both(Option<Vec<String>>),
-    OutV,
-    InV,
-    BothV,
+    OutN,
+    InN,
+    BothN,
     OutE(Option<Vec<String>>),
     InE(Option<Vec<String>>),
     BothE(Option<Vec<String>>),
@@ -188,6 +192,24 @@ pub enum BooleanOp {
     LessThanOrEqual(Box<Expression>),
     Equal(Box<Expression>),
     NotEqual(Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub struct AddVector {
+    pub vector_type: Option<String>,
+    pub data: Option<VectorData>,
+}
+
+#[derive(Debug, Clone)]
+pub enum VectorData {
+    Vector(Vec<f64>),
+    Identifier(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchVector {
+    pub vector_type: Option<String>,
+    pub data: Option<VectorData>,
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +317,7 @@ impl HelixParser {
             source: Source {
                 node_schemas: Vec::new(),
                 edge_schemas: Vec::new(),
+                vector_schemas: Vec::new(),
                 queries: Vec::new(),
             },
         };
@@ -311,6 +334,10 @@ impl HelixParser {
                     .source
                     .edge_schemas
                     .push(parser.parse_edge_def(pair)?),
+                Rule::vector_def => parser
+                    .source
+                    .vector_schemas
+                    .push(parser.parse_vector_def(pair)?),
                 Rule::query_def => {
                     // parser.source.queries.push(parser.parse_query_def(pairs.next().unwrap())?),
                     remaining.insert(pair);
@@ -340,6 +367,11 @@ impl HelixParser {
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(NodeSchema { name, fields })
+    }
+    fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
+        let mut pairs = pair.into_inner();
+        let name = pairs.next().unwrap().as_str().to_string();
+        Ok(VectorSchema { name })
     }
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
         let field_defs = pair
@@ -458,7 +490,8 @@ impl HelixParser {
 
     fn parse_parameters(&self, pair: Pair<Rule>) -> Result<Vec<Parameter>, ParserError> {
         let mut seen = HashSet::new();
-        pair.clone().into_inner()
+        pair.clone()
+            .into_inner()
             .map(|p: Pair<'_, Rule>| -> Result<Parameter, ParserError> {
                 let mut inner = p.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
@@ -487,15 +520,92 @@ impl HelixParser {
         pair.into_inner()
             .map(|p| match p.as_rule() {
                 Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
-                Rule::AddV => Ok(Statement::AddNode(self.parse_add_vertex(p)?)),
+                Rule::AddN => Ok(Statement::AddNode(self.parse_add_vertex(p)?)),
+                Rule::AddV => Ok(Statement::AddVector(self.parse_add_vector(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
+                Rule::search_vector => Ok(Statement::SearchVector(self.parse_search_vector(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
                     p.as_rule()
                 ))),
             })
             .collect()
+    }
+
+    fn parse_add_vector(&self, pair: Pair<Rule>) -> Result<AddVector, ParserError> {
+        let mut vector_type = None;
+        let mut data = None;
+
+        for p in pair.into_inner() {
+            match p.as_rule() {
+                Rule::identifier_upper => {
+                    vector_type = Some(p.as_str().to_string());
+                }
+                Rule::vector_data => match p.clone().into_inner().next().unwrap().as_rule() {
+                    Rule::identifier => {
+                        data = Some(VectorData::Identifier(p.as_str().to_string()));
+                    }
+                    Rule::vec_literal => {
+                        data = Some(VectorData::Vector(self.parse_vec_literal(p)?));
+                    }
+                    _ => unreachable!(),
+                },
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in AddV: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )))
+                }
+            }
+        }
+
+        Ok(AddVector { vector_type, data })
+    }
+
+    fn parse_search_vector(&self, pair: Pair<Rule>) -> Result<SearchVector, ParserError> {
+        let mut vector_type = None;
+        let mut data = None;
+
+        for p in pair.into_inner() {
+            match p.as_rule() {
+                Rule::identifier_upper => {
+                    vector_type = Some(p.as_str().to_string());
+                }
+                Rule::vector_data => match p.clone().into_inner().next().unwrap().as_rule() {
+                    Rule::identifier => {
+                        data = Some(VectorData::Identifier(p.as_str().to_string()));
+                    }
+                    Rule::vec_literal => {
+                        data = Some(VectorData::Vector(self.parse_vec_literal(p)?));
+                    }
+                    _ => unreachable!(),
+                },
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in AddV: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )))
+                }
+            }
+        }
+
+        Ok(SearchVector { vector_type, data })
+    }
+
+    fn parse_vec_literal(&self, pair: Pair<Rule>) -> Result<Vec<f64>, ParserError> {
+        let mut pairs = pair.into_inner();
+        let mut vec = Vec::new();
+        for p in pairs {
+            vec.push(
+                p.as_str()
+                    .parse::<f64>()
+                    .map_err(|_| ParserError::from("Invalid float value"))?,
+            );
+        }
+        Ok(vec)
     }
 
     fn parse_add_vertex(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
@@ -746,7 +856,8 @@ impl HelixParser {
                 .map_err(|_| ParserError::from("Invalid float literal")),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
-            Rule::AddV => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
+            Rule::AddN => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
+            Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
@@ -895,9 +1006,9 @@ impl HelixParser {
             s if s.starts_with("OutE") => GraphStep::OutE(types),
             s if s.starts_with("InE") => GraphStep::InE(types),
             s if s.starts_with("BothE") => GraphStep::BothE(types),
-            s if s.starts_with("OutV") => GraphStep::OutV,
-            s if s.starts_with("InV") => GraphStep::InV,
-            s if s.starts_with("BothV") => GraphStep::BothV,
+            s if s.starts_with("OutN") => GraphStep::OutN,
+            s if s.starts_with("InN") => GraphStep::InN,
+            s if s.starts_with("BothN") => GraphStep::BothN,
             s if s.starts_with("Out") => GraphStep::Out(types),
             s if s.starts_with("In") => GraphStep::In(types),
             s if s.starts_with("Both") => GraphStep::Both(types),
@@ -1097,7 +1208,7 @@ mod tests {
     #[test]
     fn test_parse_node_schema() {
         let input = r#"
-        V::User {
+        N::User {
             Name: String,
             Age: Integer
         }
@@ -1163,7 +1274,7 @@ mod tests {
     fn test_parse_query() {
         let input = r#"
         QUERY FindUser(userName : String) => 
-            user <- V<User>
+            user <- N<User>
             RETURN user
         "#;
 
@@ -1181,7 +1292,7 @@ mod tests {
     fn test_query_with_parameters() {
         let input = r#"
         QUERY fetchUsers(name: String, age: Integer) =>
-            user <- V<USER>("123")
+            user <- N<USER>("123")
             nameField <- user::{Name}
             ageField <- user::{Age}
             RETURN nameField, ageField
@@ -1202,7 +1313,7 @@ mod tests {
     #[test]
     fn test_node_definition() {
         let input = r#"
-        V::USER {
+        N::USER {
             ID: String,
             Name: String,
             Age: Integer
@@ -1240,12 +1351,12 @@ mod tests {
     #[test]
     fn test_multiple_schemas() {
         let input = r#"
-        V::USER {
+        N::USER {
             ID: String,
             Name: String,
             Email: String
         }
-        V::POST {
+        N::POST {
             ID: String,
             Content: String
         }
@@ -1271,7 +1382,7 @@ mod tests {
     fn test_logical_operations() {
         let input = r#"
     QUERY logicalOps(id : String) =>
-        user <- V<USER>(id)
+        user <- N<USER>(id)
         condition <- user::{name}::EQ("Alice")
         condition2 <- user::{age}::GT(20)
         RETURN condition
@@ -1286,7 +1397,7 @@ mod tests {
     fn test_anonymous_traversal() {
         let input = r#"
     QUERY anonymousTraversal() =>
-        result <- V::OutE<FRIENDSHIP>::InV::{Age}
+        result <- N::OutE<FRIENDSHIP>::InN::{Age}
         RETURN result
     "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1301,7 +1412,7 @@ mod tests {
     QUERY getEdgeInfo() =>
         edge <- E<FRIENDSHIP>("999")
         fromUser <- edge::OutE
-        toUser <- edge::OutV
+        toUser <- edge::OutN
         RETURN fromUser, toUser
 
     "#;
@@ -1315,8 +1426,8 @@ mod tests {
     fn test_exists_query() {
         let input = r#"
         QUERY userExists(id : String) =>
-            user <- V<User>(id)
-            result <- EXISTS(user::OutE::InV<User>)
+            user <- N<User>(id)
+            result <- EXISTS(user::OutE::InN<User>)
             RETURN result
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1331,7 +1442,7 @@ mod tests {
     fn test_multiple_return_values() {
         let input = r#"
     QUERY returnMultipleValues() =>
-        user <- V<USER>("999")
+        user <- N<USER>("999")
         name <- user::{Name}
         age <- user::{Age}
         RETURN name, age
@@ -1346,7 +1457,7 @@ mod tests {
     fn test_add_fields() {
         let input = r#"
     QUERY enrichUserData() =>
-        user <- V<USER>("123")
+        user <- N<USER>("123")
         enriched <- user::{Name: "name", Follows: _::Out<Follows>::{Age}}
         RETURN enriched
     "#;
@@ -1359,8 +1470,8 @@ mod tests {
     fn test_query_with_count() {
         let input = r#"
     QUERY analyzeNetwork() =>
-        user <- V<USER>("999")
-        friends <- user::Out<FRIENDSHIP>::InV::WHERE(_::Out::COUNT::GT(0))
+        user <- N<USER>("999")
+        friends <- user::Out<FRIENDSHIP>::InN::WHERE(_::Out::COUNT::GT(0))
         friendCount <- activeFriends::COUNT
         RETURN friendCount
     "#;
@@ -1373,7 +1484,7 @@ mod tests {
     fn test_add_vertex_query() {
         let input = r#"
     QUERY analyzeNetwork() =>
-        user <- AddV<User>({Name: "Alice"})
+        user <- AddN<User>({Name: "Alice"})
         RETURN user
     "#;
         let result = match HelixParser::parse_source(input) {
@@ -1413,8 +1524,8 @@ mod tests {
     fn test_adding_with_identifiers() {
         let input = r#"
     QUERY addUsers() =>
-        user1 <- AddV<User>({Name: "Alice", Age: 30})
-        user2 <- AddV<User>({Name: "Bob", Age: 25})
+        user1 <- AddN<User>({Name: "Alice", Age: 30})
+        user2 <- AddN<User>({Name: "Bob", Age: 25})
         AddE<Follows>({Since: "1.0"})::From(user1)::To(user2)
         RETURN user1, user2
     "#;
@@ -1436,8 +1547,8 @@ mod tests {
     fn test_where_with_props() {
         let input = r#"
     QUERY getFollows() =>
-        user <- V<User>::WHERE(_::{Age}::GT(2))
-        user <- V<User>::WHERE(_::GT(2))
+        user <- N<User>::WHERE(_::{Age}::GT(2))
+        user <- N<User>::WHERE(_::GT(2))
         RETURN user, follows
         "#;
 
@@ -1455,10 +1566,10 @@ mod tests {
     fn test_drop_operation() {
         let input = r#"
         QUERY deleteUser(id: String) =>
-            user <- V<USER>(id)
+            user <- N<USER>(id)
             DROP user
             DROP user::OutE
-            DROP V::OutE
+            DROP N::OutE
             RETURN user
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1472,7 +1583,7 @@ mod tests {
     fn test_update_operation() {
         let input = r#"
         QUERY updateUser(id: String) =>
-            user <- V<USER>(id)
+            user <- N<USER>(id)
             x <- user::UPDATE({Name: "NewName"})
             l <- user::UPDATE({Name: "NewName", Age: 30})
             RETURN user
@@ -1488,14 +1599,14 @@ mod tests {
     fn test_complex_traversal_combinations() {
         let input = r#"
         QUERY complexTraversal() =>
-            result1 <- V<User>::OutE<Follows>::InV<User>::{name}
-            result2 <- V::WHERE(AND(
+            result1 <- N<User>::OutE<Follows>::InN<User>::{name}
+            result2 <- N::WHERE(AND(
                 _::{age}::GT(20),
                 OR(_::{name}::EQ("Alice"), _::{name}::EQ("Bob"))
             ))
-            result3 <- V<User>::{
-                friends: _::Out<Follows>::InV::{name},
-                avgFriendAge: _::Out<Follows>::InV::{age}::GT(25)
+            result3 <- N<User>::{
+                friends: _::Out<Follows>::InN::{name},
+                avgFriendAge: _::Out<Follows>::InN::{age}::GT(25)
             }
             RETURN result1, result2, result3
         "#;
@@ -1510,7 +1621,7 @@ mod tests {
     fn test_nested_property_operations() {
         let input = r#"
         QUERY nestedProps() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             // Test nested property operations
             result <- user::{
                 basic: {
@@ -1519,7 +1630,7 @@ mod tests {
                 },
                 social: {
                     friends: _::Out<Follows>::COUNT,
-                    groups: _::Out<BelongsTo>::InV<Group>::{name}
+                    groups: _::Out<BelongsTo>::InN<Group>::{name}
                 }
             }
             RETURN result
@@ -1548,13 +1659,13 @@ mod tests {
     fn test_mixed_type_operations() {
         let input = r#"
         QUERY mixedTypes() =>
-            v1 <- AddV<User>({
+            v1 <- AddN<User>({
                 name: "Alice",
                 age: 25,
                 active: true,
                 score: 4.5
             })
-            result <- V<User>::WHERE(OR(
+            result <- N<User>::WHERE(OR(
                 _::{age}::GT(20),
                 _::{score}::LT(5.0)
             ))
@@ -1571,7 +1682,7 @@ mod tests {
         // Test missing return statement
         let missing_return = r#"
         QUERY noReturn() =>
-            result <- V<User>()
+            result <- N<User>()
         "#;
 
         let result = HelixParser::parse_source(missing_return);
@@ -1580,7 +1691,7 @@ mod tests {
         // Test invalid property access
         let invalid_props = r#"
         QUERY invalidProps() =>
-            result <- V<User>::{}
+            result <- N<User>::{}
             RETURN result
         "#;
 
@@ -1591,7 +1702,7 @@ mod tests {
     #[test]
     fn test_complex_schema_definitions() {
         let input = r#"
-        V::ComplexUser {
+        N::ComplexUser {
             ID: String,
             Name: String,
             Age: Integer,
@@ -1626,14 +1737,14 @@ mod tests {
     fn test_query_chaining() {
         let input = r#"
         QUERY chainedOperations() =>
-            result <- V<User>("123")
+            result <- N<User>("123")
                 ::OutE<Follows>
-                ::InV<User>
+                ::InN<User>
                 ::{name}
                 ::EQ("Alice")
-            filtered <- V<User>::WHERE(
+            filtered <- N<User>::WHERE(
                 _::Out<Follows>
-                    ::InV<User>
+                    ::InN<User>
                     ::{age}
                     ::GT(25)
             )
@@ -1653,7 +1764,7 @@ mod tests {
     fn test_property_assignments() {
         let input = r#"
         QUERY testProperties(age: Integer) =>
-            user <- AddV<User>({
+            user <- AddN<User>({
                 name: "Alice",
                 age: age
             })
@@ -1668,7 +1779,7 @@ mod tests {
     fn test_map_operation() {
         let input = r#"
         QUERY mapOperation() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             mapped <- user::{name: "name", age: "age"}
             RETURN mapped
         "#;
@@ -1682,7 +1793,7 @@ mod tests {
     fn test_map_in_return() {
         let input = r#"
         QUERY mapInReturn() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             RETURN user::{
                 name, 
                 age
@@ -1698,13 +1809,13 @@ mod tests {
     fn test_complex_object_operations() {
         let input = r#"
         QUERY complexObjects() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             result <- user::{
                 basic: {
                     name,
                     age
                 },
-                friends: _::Out<Follows>::InV::{
+                friends: _::Out<Follows>::InN::{
                     name,
                     mutualFriends: _::Out<Follows>::COUNT
                 }
@@ -1721,7 +1832,7 @@ mod tests {
     fn test_exclude_fields() {
         let input = r#"
         QUERY excludeFields() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             filtered <- user::!{password, secretKey}
             RETURN filtered
         "#;
@@ -1735,7 +1846,7 @@ mod tests {
     fn test_spread_operator() {
         let input = r#"
         QUERY spreadFields() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             result <- user::{
                 newField: "value",
                 ..
@@ -1752,7 +1863,7 @@ mod tests {
     fn test_complex_update_operations() {
         let input = r#"
         QUERY updateUser() =>
-            user <- V<User>("123")
+            user <- N<User>("123")
             updated <- user::UPDATE({
                 name: "New Name",
                 age: 30,
@@ -1771,8 +1882,8 @@ mod tests {
     fn test_nested_traversals() {
         let input = r#"
         QUERY nestedTraversals() =>
-            start <- V<User>("123")
-            result <- start::Out<Follows>::InV<User>::Out<Likes>::InV<Post>::{title}
+            start <- N<User>("123")
+            result <- start::Out<Follows>::InN<User>::Out<Likes>::InN<Post>::{title}
             filtered <- result::WHERE(_::{likes}::GT(10))
             RETURN filtered
         "#;
@@ -1787,12 +1898,12 @@ mod tests {
         let input = r#"
         QUERY combinedOps() =>
             // Test combination of different operations
-            user <- V<User>("123")
-            friends <- user::Out<Follows>::InV<User>
+            user <- N<User>("123")
+            friends <- user::Out<Follows>::InN<User>
             active <- friends::WHERE(_::{active}::EQ(true))
             result <- active::{
                 name,
-                posts: _::Out<Created>::InV<Post>::!{deleted}::{
+                posts: _::Out<Created>::InN<Post>::!{deleted}::{
                     title: title,
                     likes: _::In<Likes>::COUNT
                 }
@@ -1809,7 +1920,7 @@ mod tests {
     fn test_closure() {
         let input = r#"
         QUERY multipleLayers() =>
-            result <- V<User>::|user|{
+            result <- N<User>::|user|{
                 posts: _::Out<Created>::{
                     user_id: user::ID
                 }
@@ -1827,7 +1938,7 @@ mod tests {
     fn test_complex_return_traversal() {
         let input = r#"
         QUERY returnTraversal() =>
-            RETURN V<User>::|user|{
+            RETURN N<User>::|user|{
                 posts: _::Out<Created>::{
                     user_id: user::ID
                 }
@@ -1842,7 +1953,7 @@ mod tests {
     fn test_array_as_param_type() {
         let input = r#"
         QUERY trWithArrayParam(ids: [String], names:[String], ages: [Integer], createdAt: String) => 
-            AddV<User>({Name: "test"})
+            AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
 
@@ -1883,12 +1994,12 @@ mod tests {
     #[test]
     fn test_schema_obj_as_param_type() {
         let input = r#"
-        V::User {
+        N::User {
             Name: String
         }
 
         QUERY trWithArrayParam(user: User) => 
-            AddV<User>({Name: "test"})
+            AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
 
@@ -1912,5 +2023,31 @@ mod tests {
             "Param of type {} was not found",
             param_type
         );
+    }
+
+    #[test]
+    fn test_add_vector() {
+        let input = r#"
+        V::User 
+
+        QUERY addVector(vector: [Float]) =>
+            RETURN AddV<User>(vector)
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_search_vector() {
+        let input = r#"
+        V::User 
+
+        QUERY searchVector(vector: [Float]) =>
+            RETURN SearchV<User>(vector)
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.return_values.len(), 1);
     }
 }

@@ -27,7 +27,7 @@ pub trait HNSW {
     /// # Returns
     ///
     /// An empty tuple
-    fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<String>) -> Result<(), VectorError>;
+    fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<String>) -> Result<HVector, VectorError>;
 
     /// Get all vectors from the index
     ///

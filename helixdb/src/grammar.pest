@@ -5,7 +5,7 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ type_name }
-query_body   = { (get_stmt | AddV | AddE | drop)* }
+query_body   = { (get_stmt | AddN | AddV | AddE | drop | search_vector)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
@@ -17,7 +17,8 @@ last_step           = { "::" ~ (bool_operations | update) }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
-    AddV
+    AddN
+  | AddV
   | AddE
   | exists
   | none
@@ -59,9 +60,9 @@ graph_step   = {
     "OutE" ~ ("<" ~ type_args ~ ">")?
   | "InE" ~ ("<" ~ type_args ~ ">")?
   | "BothE" ~ ("<" ~ type_args ~ ">")?
-  | "OutV" ~ ("<" ~ type_args ~ ">")?
-  | "InV" ~ ("<" ~ type_args ~ ">")?
-  | "BothV" ~ ("<" ~ type_args ~ ">")?
+  | "OutN" ~ ("<" ~ type_args ~ ">")?
+  | "InN" ~ ("<" ~ type_args ~ ">")?
+  | "BothN" ~ ("<" ~ type_args ~ ">")?
   | "Out" ~ ("<" ~ type_args ~ ">")?
   | "In" ~ ("<" ~ type_args ~ ">")?
   | "Both" ~ ("<" ~ type_args ~ ">")?
@@ -76,6 +77,9 @@ start_vector = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 // Where and Exists steps
 where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal | anonymous_traversal) ~ ")" }
+
+// Search
+search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ ("," ~ vector_data)? ~ ")" }
 
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }
@@ -136,12 +140,15 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 
 // Add edged and vertices
-create_field = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
-new_field    = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | create_field) }
-AddV         = { "AddN" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
-AddE         = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
-to_from      = { to ~ from? | from ~ to? }
-to           = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
-from         = { "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
+create_field  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
+new_field     = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | create_field) }
+AddN          = { "AddN" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
+AddE          = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
+AddV          = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ vector_data? ~ ")")? }
+vector_data = { identifier | vec_literal }
+vec_literal   = { "[" ~ (float) ~ ("," ~ (float))* ~ "]" }
+to_from       = { to ~ from? | from ~ to? }
+to            = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
+from          = { "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
 
 drop = { "DROP" ~ (traversal | id_traversal | identifier)? }
