@@ -46,7 +46,7 @@ impl TraversalBuilder {
         match matches!(self.current_step, TraversalValue::NodeArray(_)) {
             true => Ok(()),
             false => Err(GraphError::TraversalError(format!(
-                "The traversal step {:?}, is not a valid traversal from an edge. 
+                "The traversal step {:?}, is not a valid traversal from an edge.
                 The current step should be a node.",
                 function_name
             ))),
@@ -57,7 +57,7 @@ impl TraversalBuilder {
         match matches!(self.current_step, TraversalValue::EdgeArray(_)) {
             true => Ok(()),
             false => Err(GraphError::TraversalError(format!(
-                "The traversal step {:?}, is not a valid traversal from a node. 
+                "The traversal step {:?}, is not a valid traversal from a node.
                 The current step should be an edge",
                 function_name
             ))),

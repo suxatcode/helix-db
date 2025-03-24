@@ -1,19 +1,29 @@
-// vector struct to store raw data, dimension and de
-use serde::{Deserialize, Serialize};
-
+use std::cmp::Ordering;
+use serde::{Deserialize, Serialize}; // vector struct to store raw data, dimension and de
 use crate::helix_engine::types::VectorError;
 
-
-
 #[repr(C, align(16))]
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
     id: String,
-    is_deleted: bool,
+    pub is_deleted: bool,
     pub level: usize,
-    data: Vec<f64>, // TODO: consider default to f32 just for initial space/time save?
-                    // TODO: define `data_size` or similar and set there so that can change between
-                    // 64 and 32, etc.
+    pub distance: f64,
+    data: Vec<f64>,
+}
+
+impl Eq for HVector {}
+
+impl PartialOrd for HVector {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        other.distance.partial_cmp(&self.distance)
+    }
+}
+
+impl Ord for HVector {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
 }
 
 pub trait EuclidianDistance {
@@ -25,13 +35,10 @@ impl EuclidianDistance for HVector {
     fn distance(from: &HVector, to: &HVector) -> f64 {
         if from.len() == to.len() {
             #[cfg(target_arch = "aarch64")]
-            unsafe {
-                return from.simd_distance_unchecked(to);
-            }
+            unsafe { return from.simd_distance_unchecked(to); }
             #[cfg(not(target_arch = "aarch64"))]
             return from.scalar_distance(to);
         }
-
         from.scalar_distance(to)
     }
 }
@@ -44,6 +51,7 @@ impl HVector {
             is_deleted: false,
             level: 0,
             data,
+            distance: 0.0,
         }
     }
 
@@ -54,6 +62,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
+            distance: 0.0,
         }
     }
 
@@ -99,6 +108,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
+            distance: 0.0,
         })
     }
 
@@ -146,19 +156,36 @@ impl HVector {
 
     #[inline(always)]
     fn scalar_distance(&self, other: &HVector) -> f64 {
-        let mut sum = 0.0;
-        let n = self.len().min(other.len());
-
-        self.data[..n]
+        self.data
             .iter()
-            .zip(other.data[..n].iter())
-            .for_each(|(x, y)| {
-                let diff = x - y;
-                sum += diff * diff;
-            });
-
-        sum.sqrt()
+            .zip(other.data.iter())
+            .map(|(&a, &b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt()
     }
+
+    /// (pooling operation reduce)
+    #[inline(always)]
+    pub fn reduce_dims(&mut self, target_dim: usize) {
+        let chunk_size = (self.data.len() as f64 / target_dim as f64).ceil() as usize;
+        let mut reduced = Vec::with_capacity(target_dim);
+
+        for chunk_idx in 0..target_dim {
+            let start = chunk_idx * chunk_size;
+            let end = (start + chunk_size).min(self.data.len());
+
+            if start >= self.data.len() {
+                break;
+            }
+
+            let avg = self.data[start..end].iter().sum::<f64>() / (end - start) as f64;
+            reduced.push(avg);
+        }
+
+        self.data = reduced;
+    }
+
+    // TODO: scale up again
 }
 
 #[cfg(test)]
@@ -251,3 +278,5 @@ mod vector_tests {
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
 }
+
+

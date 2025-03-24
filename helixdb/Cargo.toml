@@ -30,6 +30,8 @@ polars = { version = "0.36", optional = true, features = ["parquet", "lazy"] }
 criterion = "0.5"
 rand = "0.9.0"
 tempfile = "3.2"
+csv = "1.1"
+polars = { version = "0.36", features = ["parquet", "lazy"] }
 
 [features]
 testing = ["polars"]
