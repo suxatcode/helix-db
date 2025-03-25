@@ -61,6 +61,9 @@ pub struct DeployCommand {
 
     #[clap(short, long, help = "Port to run the instance on")]
     pub port: Option<u16>,
+
+    #[clap(short, long, help = "Should generate python bindings")]
+    pub gen_py: bool,
 }
 
 #[derive(Debug, Args)]
@@ -71,6 +74,9 @@ pub struct CompileCommand {
 
     #[clap(short, long, help = "The output path")]
     pub output: Option<String>,
+
+    #[clap(short, long, help = "Should generate python bindings")]
+    pub gen_py: bool,
 
     // #[clap(short, long, help = "The target platform")]
     // pub target: Option<String>,
@@ -96,6 +102,9 @@ pub struct InstallCommand {
 pub struct InitCommand {
     #[clap(short, long, help = "The path to the project")]
     pub path: Option<String>,
+
+    #[clap(short, long, help = "Should initialize for python")]
+    pub py: bool,
 }
 
 #[derive(Debug, Args)]
@@ -143,7 +152,7 @@ impl std::fmt::Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CliError::Io(e) => write!(f, "IO error: {}", e),
-            CliError::New(msg) => write!(f, "Graph error: {}", msg),
+            CliError::New(msg) => write!(f, "{}", msg),
         }
     }
 }

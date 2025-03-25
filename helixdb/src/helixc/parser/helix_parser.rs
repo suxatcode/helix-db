@@ -73,6 +73,7 @@ pub enum FieldType {
 
 #[derive(Debug, Clone)]
 pub struct Query {
+    pub original_query: String,
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub statements: Vec<Statement>,
@@ -473,6 +474,7 @@ impl HelixParser {
     }
 
     fn parse_query_def(&self, pair: Pair<Rule>) -> Result<Query, ParserError> {
+        let original_query = pair.clone().as_str().to_string();
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let parameters = self.parse_parameters(pairs.next().unwrap())?;
@@ -485,6 +487,7 @@ impl HelixParser {
             parameters,
             statements,
             return_values,
+            original_query,
         })
     }
 
