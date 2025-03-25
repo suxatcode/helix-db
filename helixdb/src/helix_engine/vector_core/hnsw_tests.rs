@@ -5,18 +5,20 @@ use polars::prelude::*;
 use std::collections::{HashSet, HashMap};
 use std::fs::{self, File};
 use std::time::Instant;
-use csv;
-use serde::Deserialize;
+use rayon::prelude::*;
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
     let path = temp_dir.path().to_str().unwrap();
 
+    // home dir
+    let home_dir = dirs::home_dir().unwrap();
+    let path = format!("{}/dev/helix-db/helixdb_test", home_dir.to_str().unwrap());
+
     unsafe {
         EnvOpenOptions::new()
-            .map_size(20 * 1024 * 1024 * 1024) // 20 GB
+            .map_size(40 * 1024 * 1024 * 1024) // 40 GB
             .max_dbs(10)
-
             .open(path)
             .unwrap()
     }
@@ -37,27 +39,52 @@ fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, 
 }
 */
 
-/*
-fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
-    let mut ground_truths = Vec::new();
+fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize, num_threads: usize) -> Vec<Vec<String>> {
+    let total_queries = query_vectors.len();
+    let queries_per_thread = total_queries / num_threads;
+    let remainder = total_queries % num_threads;
 
-    for (_, query) in query_vectors {
-        let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
-        let mut distances: Vec<(String, f64)> = vectors
+    let ground_truths = std::sync::Arc::new(std::sync::Mutex::new(Vec::with_capacity(total_queries)));
+
+    (0..num_threads).into_par_iter().for_each(|thread_id| { // into_par_iter does the multi-threading here
+        let start = thread_id * queries_per_thread + std::cmp::min(thread_id, remainder);
+        let end = start + queries_per_thread + (if thread_id < remainder { 1 } else { 0 });
+
+        let thread_results: Vec<Vec<String>> = query_vectors[start..end]
             .iter()
-            .map(|hvector| {
-                let vector = hvector;
-                (vector.get_id().to_string(), vector.distance_to(&hquery))
+            .enumerate()
+            .map(|(local_idx, (id, query))| {
+                let global_idx = start + local_idx;
+                let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
+
+                let mut distances: Vec<(String, f64)> = vectors
+                    .iter()
+                    .map(|hvector| {
+                        (hvector.get_id().to_string(), hvector.distance_to(&hquery))
+                    })
+                    .collect();
+
+                distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+                let top_k: Vec<String> = distances.iter().take(k).map(|(id, _)| id.clone()).collect();
+
+                if global_idx % 500 == 0 {
+                    println!("thread_id: {}, {}: calcing ground truth for {}", thread_id, global_idx, id);
+                }
+
+                top_k
             })
             .collect();
-        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let top_k: Vec<String> = distances.iter().take(k).map(|(id, _)| id.clone()).collect();
-        ground_truths.push(top_k);
-    }
 
-    ground_truths
+        let mut ground_truths = ground_truths.lock().unwrap();
+        ground_truths.extend(thread_results);
+    });
+
+    std::sync::Arc::try_unwrap(ground_truths)
+        .unwrap()
+        .into_inner()
+        .unwrap()
 }
-*/
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
@@ -67,7 +94,6 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         ));
     }
 
-    //let data_dir = "./src/helix_engine/data/";
     let data_dir = "../data/";
     let mut all_vectors = Vec::new();
     let mut total_loaded = 0;
@@ -113,66 +139,16 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
     Ok(all_vectors)
 }
 
-#[derive(Debug, Deserialize)]
-struct CsvRow {
-    #[serde(rename = "_id")]
-    id: String,
-    nearest_ids: String,
-}
-
-fn load_ground_truths(queries: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
-    // TODO: don't need (String, Vec<f64>) just the String
-    // NOTE: all vecs need to be the same not just the ground truths
-    let file_path = "../dpedia_openai_ground_truths.csv";
-    let file = File::open(file_path).unwrap();
-    let mut rdr = csv::Reader::from_reader(file);
-
-    let mut ground_truth_map = HashMap::new();
-    for result in rdr.deserialize() {
-        let record: CsvRow = result.unwrap();
-        let nearest_ids: Vec<String> = record.nearest_ids
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
-        ground_truth_map.insert(record.id, nearest_ids);
-    }
-
-    //let gt_vec: Vec<String> = ground_truth_map.keys().cloned().collect();
-    //let query_ids: Vec<String> = queries
-    //    .into_iter()
-    //    .map(|(id, _)| id.to_string())
-    //    .collect();
-
-    //let v1: HashSet<_> = gt_vec.into_iter().collect();
-    //let v2: HashSet<_> = query_ids.into_iter().collect();
-    //let intersections = v1.intersection(&v2).count();
-    //println!("intersections: {:?}", intersections);
-
-    let mut ground_truths = Vec::with_capacity(queries.len());
-    for query in queries {
-        let query_id = query.0.to_string();
-        let nearest_ids = ground_truth_map
-            .get(&query_id)
-            .cloned()
-            .unwrap_or_else(|| Vec::new());
-
-        let top_k: Vec<String> = nearest_ids.into_iter().take(k).collect();
-        ground_truths.push(top_k);
-    }
-
-    ground_truths
-}
-
 // cargo --release test test_name -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 50_000;
+    let n_base = 200_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 5_000; // 10-20%
+    let n_query = 20_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -191,14 +167,21 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 16, 256, 100),
+        HNSWConfig::new_with_params(n_base, 32, 512, 768),
     ).unwrap();
 
+    let mut all_vectors: Vec<HVector> = Vec::new();
+
+    let over_all_time = Instant::now();
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        index.insert(&mut txn, data, Some(id.clone())).unwrap();
+        let vec = index.insert(&mut txn, data, Some(id.clone())).unwrap();
+        all_vectors.push(vec);
         let time = start_time.elapsed();
-        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
+        if i % 1000 == 0 {
+            println!("{} => inserting in {} ms, vector: {}", i, time.as_millis(), id);
+            println!("time taken so far: {:?}", over_all_time.elapsed());
+        }
         total_insertion_time += time;
     }
     txn.commit().unwrap();
@@ -211,17 +194,15 @@ fn test_recall_precision_real_data() {
         total_insertion_time.as_millis() as f64 / n_base as f64
     );
 
-    println!("loading ground truths from csv file");
-    let ground_truths = load_ground_truths(query_vectors.to_vec(), k);
+    println!("calculating ground truths");
+    let ground_truths = calc_ground_truths(all_vectors, query_vectors.to_vec(), k, 16);
 
     println!("searching and comparing...");
     let test_id = format!("k = {} with {} queries", k, n_query);
 
     let mut total_recall = 0.0;
     let mut total_precision = 0.0;
-
     let mut total_search_time = std::time::Duration::from_secs(0);
-
     for ((_, query), gt) in query_vectors.iter().zip(ground_truths.iter()) {
         let start_time = Instant::now();
         let results = index.search(&txn, query, k).unwrap();

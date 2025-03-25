@@ -394,7 +394,7 @@ impl HNSW for VectorCore {
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<String>,
-    ) -> Result<(), VectorError> {
+    ) -> Result<HVector, VectorError> {
         let id = nid.unwrap_or(uuid::Uuid::new_v4().as_simple().to_string());
         let new_level = self.get_new_level();
 
@@ -409,7 +409,7 @@ impl HNSW for VectorCore {
             Err(_) => {
                 self.set_entry_point(txn, &query)?;
                 query.distance = 0.0;
-                return Ok(());
+                return Ok(query);
             }
         };
 
@@ -445,7 +445,7 @@ impl HNSW for VectorCore {
             self.set_entry_point(txn, &query)?;
         }
 
-        Ok(())
+        Ok(query)
     }
 
     fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {

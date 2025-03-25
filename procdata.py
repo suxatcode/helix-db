@@ -104,4 +104,4 @@ def compute_nearest_neighbors(n_vectors_to_load: int = 1000000):
     print("output saved to 'dpedia_openai_ground_truths.csv'")
 
 if __name__ == '__main__':
-    compute_nearest_neighbors()
+    compute_nearest_neighbors(n_vectors_to_load=200_000)
