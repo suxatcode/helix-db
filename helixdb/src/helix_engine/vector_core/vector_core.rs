@@ -1,6 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
-use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
 use crate::helix_engine::vector_core::hnsw::HNSW;
+use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
 use bincode::deserialize;
 use heed3::{
     types::{Bytes, Unit},
@@ -23,7 +23,7 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
     pub m_max: usize,        // max num of links for upper layers
-    //pub m_max0: usize,       // TODO
+    pub m_max_0: usize,     // max num of links for lower layers
     pub ef_construct: usize, // size of the dynamic candidate list for construction
     pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
@@ -34,9 +34,12 @@ pub struct HNSWConfig {
 impl HNSWConfig {
     pub fn new(n: usize) -> Self {
         let m = (2.0 * (n as f64).ln().ceil()) as usize;
+        let m_max = 2 * m;
+        let m_max_0 = 2 * m_max;
         Self {
             m,
-            m_max: 2 * m,
+            m_max,
+            m_max_0,
             ef_construct: 386,
             max_elements: n,
             m_l: 1.0 / (m as f64).log10(),
@@ -46,9 +49,12 @@ impl HNSWConfig {
     }
 
     pub fn new_with_params(n: usize, m: usize, ef_construct: usize, ef: usize) -> Self {
+        let m_max = 2 * m;  
+        let m_max_0 = 2 * m_max;
         Self {
             m,
-            m_max: 2 * m,
+            m_max,
+            m_max_0,
             ef_construct,
             max_elements: n,
             m_l: 1.0 / (m as f64).log10(),
@@ -383,12 +389,13 @@ impl VectorCore {
                     distance,
                 });
 
-                if results.len() < ef || distance < results.iter().max().unwrap().distance {
-                    if results.len() > ef {
-                        continue;
-                    }
+                let f = results.iter().max().unwrap();
+                if results.len() < ef || distance < f.distance {
                     neighbor.distance = distance;
                     results.push(neighbor);
+                    if results.len() > ef {
+                        results = results.take_inord(ef);
+                    }
                 }
             }
         }
@@ -398,12 +405,7 @@ impl VectorCore {
 }
 
 impl HNSW for VectorCore {
-    fn search(
-        &self,
-        txn: &RoTxn,
-        query: &[f64],
-        k: usize,
-    ) -> Result<Vec<HVector>, VectorError> {
+    fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
         let query = HVector::from_slice("".to_string(), 0, query.to_vec());
 
         let mut entry_point = self.get_entry_point(txn)?;
@@ -476,7 +478,7 @@ impl HNSW for VectorCore {
             for e in neighbors {
                 let id = e.get_id();
                 let e_conns = self.get_neighbors(txn, id, level)?;
-                if e_conns.len() > self.config.m_max {
+                if e_conns.len() > if level == 0 { self.config.m_max_0 } else { self.config.m_max } {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn = self.select_neighbors(txn, &query, e_conns, level, true)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
@@ -503,7 +505,11 @@ impl HNSW for VectorCore {
         Ok(vectors)
     }
 
-    fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError> {
+    fn get_all_vectors_at_level(
+        &self,
+        txn: &RoTxn,
+        level: usize,
+    ) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
@@ -519,4 +525,5 @@ impl HNSW for VectorCore {
 
     // TODO: load index (load all vecs already available at once)
     // TODO: delete a node from the index
+    // TODO: create a new "HNSW::Index"
 }
