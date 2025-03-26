@@ -23,6 +23,7 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
     pub m_max: usize,        // max num of links for upper layers
+    //pub m_max0: usize,       // TODO
     pub ef_construct: usize, // size of the dynamic candidate list for construction
     pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
@@ -77,9 +78,52 @@ impl Ord for Candidate {
     }
 }
 
+pub trait Extend<T> {
+    /// Extend the heap with another heap
+    /// Used because using `.extend()` does not keep the order
+    fn extend_inord(&mut self, other: BinaryHeap<T>)
+    where
+        T: Ord;
+
+    /// Take the top k elements from the heap
+    /// Used because using `.iter()` does not keep the order
+    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
+    where
+        T: Ord;
+}
+
+impl<T> Extend<T> for BinaryHeap<T> {
+    #[inline(always)]
+    fn extend_inord(&mut self, mut other: BinaryHeap<T>)
+    where
+        T: Ord,
+    {
+        self.reserve(other.len());
+        for candidate in other.drain() {
+            self.push(candidate);
+        }
+    }
+
+    #[inline(always)]
+    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
+    where
+        T: Ord,
+    {
+        let mut result = BinaryHeap::with_capacity(k);
+        for _ in 0..k {
+            if let Some(candidate) = self.pop() {
+                result.push(candidate);
+            } else {
+                break;
+            }
+        }
+        result
+    }
+}
+
 pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
-    vector_header_db: Database<Bytes, Bytes>,
+    vector_header_db: Database<Bytes, Bytes>, // TODO: needed?
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
 }
@@ -388,7 +432,6 @@ impl HNSW for VectorCore {
         Ok(results)
     }
 
-    // paper: https://arxiv.org/pdf/1603.09320
     fn insert(
         &self,
         txn: &mut RwTxn,
@@ -474,52 +517,6 @@ impl HNSW for VectorCore {
         Ok(vectors)
     }
 
-    // TODO: load lmdb data index from data and config.json
-    // TODO: save lmdb data index and params to config.josn
     // TODO: load index (load all vecs already available at once)
     // TODO: delete a node from the index
-    // TODO: create a new "HNSW::Index"
-}
-
-pub trait Extend<T> {
-    /// Extend the heap with another heap
-    /// Used because using `.extend()` does not keep the order
-    fn extend_inord(&mut self, other: BinaryHeap<T>)
-    where
-        T: Ord;
-
-    /// Take the top k elements from the heap
-    /// Used because using `.iter()` does not keep the order
-    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
-    where
-        T: Ord;
-}
-
-impl<T> Extend<T> for BinaryHeap<T> {
-    #[inline(always)]
-    fn extend_inord(&mut self, mut other: BinaryHeap<T>)
-    where
-        T: Ord,
-    {
-        self.reserve(other.len());
-        for candidate in other.drain() {
-            self.push(candidate);
-        }
-    }
-
-    #[inline(always)]
-    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
-    where
-        T: Ord,
-    {
-        let mut result = BinaryHeap::with_capacity(k);
-        for _ in 0..k {
-            if let Some(candidate) = self.pop() {
-                result.push(candidate);
-            } else {
-                break;
-            }
-        }
-        result
-    }
 }

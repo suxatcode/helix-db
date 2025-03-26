@@ -67,7 +67,7 @@ fn bench_vector_insertion(c: &mut Criterion) {
                 || {
                     let (env, _temp_dir) = setup_temp_env();
                     let mut txn = env.write_txn().unwrap();
-                    let hnsw = VectorCore::new(&env, &mut txn, dim, None, None).unwrap();
+                    let hnsw = VectorCore::new(&env, &mut txn, HNSWConfig::new(100)).unwrap();
                     txn.commit().unwrap();
 
                     let vectors = generate_random_vectors(100, dim, 42);
@@ -76,7 +76,7 @@ fn bench_vector_insertion(c: &mut Criterion) {
                 |(env, hnsw, vectors)| {
                     let mut txn = env.write_txn().unwrap();
                     for (_id, data) in vectors.iter().take(vectors_per_iter) {
-                        hnsw.insert(&mut txn, data).unwrap();
+                        let _ = hnsw.insert(&mut txn, data).unwrap();
                     }
                     txn.commit().unwrap();
                 },

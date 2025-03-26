@@ -1,15 +1,15 @@
 use heed3::{Env, EnvOpenOptions};
-use rand::{rngs::StdRng, Rng, SeedableRng, prelude::SliceRandom};
+use rand::prelude::SliceRandom;
 use crate::helix_engine::vector_core::{vector::HVector, hnsw::HNSW, vector_core::{HNSWConfig, VectorCore}};
 use polars::prelude::*;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::time::Instant;
 use rayon::prelude::*;
 
 fn setup_temp_env() -> Env {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
+    //let temp_dir = tempfile::tempdir().unwrap();
+    //let path = temp_dir.path().to_str().unwrap();
 
     // home dir
     let home_dir = dirs::home_dir().unwrap();
@@ -24,89 +24,29 @@ fn setup_temp_env() -> Env {
     }
 }
 
-/*
-fn generate_random_vectors(count: usize, dim: usize, seed: u64) -> Vec<(String, Vec<f64>)> {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let mut vectors = Vec::with_capacity(count);
+fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize, num_threads: usize) -> Vec<Vec<String>> {
+    query_vectors
+    .par_iter()
+    .map(|(id, query)| {
+        let hquery = HVector::from_slice("".to_string(), 0, query.clone());
 
-    for i in 0..count {
-        let id = format!("vec_{}", i);
-        let data: Vec<f64> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
-        vectors.push((id, data));
-    }
-
-    vectors
-}
-*/
-
-fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
-    let mut ground_truths = Vec::new();
-
-    for (_, query) in query_vectors {
-        let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
         let mut distances: Vec<(String, f64)> = vectors
             .iter()
             .map(|hvector| {
-                let vector = hvector;
-                (vector.get_id().to_string(), vector.distance_to(&hquery))
+                (hvector.get_id().to_string(), hvector.distance_to(&hquery))
             })
             .collect();
+
         distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let top_k: Vec<String> = distances.iter().take(k).map(|(id, _)| id.clone()).collect();
-        ground_truths.push(top_k);
-    }
 
-    ground_truths
-}
-
-/*
-fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize, num_threads: usize) -> Vec<Vec<String>> {
-    let total_queries = query_vectors.len();
-    let queries_per_thread = total_queries / num_threads;
-    let remainder = total_queries % num_threads;
-
-    let ground_truths = std::sync::Arc::new(std::sync::Mutex::new(Vec::with_capacity(total_queries)));
-
-    (0..num_threads).into_par_iter().for_each(|thread_id| { // into_par_iter does the multi-threading here
-        let start = thread_id * queries_per_thread + std::cmp::min(thread_id, remainder);
-        let end = start + queries_per_thread + (if thread_id < remainder { 1 } else { 0 });
-
-        let thread_results: Vec<Vec<String>> = query_vectors[start..end]
+        distances
             .iter()
-            .enumerate()
-            .map(|(local_idx, (id, query))| {
-                let global_idx = start + local_idx;
-                let hquery = HVector::from_slice("".to_string(), 0, query.to_vec());
-
-                let mut distances: Vec<(String, f64)> = vectors
-                    .iter()
-                    .map(|hvector| {
-                        (hvector.get_id().to_string(), hvector.distance_to(&hquery))
-                    })
-                    .collect();
-
-                distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-
-                let top_k: Vec<String> = distances.iter().take(k).map(|(id, _)| id.clone()).collect();
-
-                if global_idx % 500 == 0 {
-                    println!("thread_id: {}, {}: calcing ground truth for {}", thread_id, global_idx, id);
-                }
-
-                top_k
-            })
-            .collect();
-
-        let mut ground_truths = ground_truths.lock().unwrap();
-        ground_truths.extend(thread_results);
-    });
-
-    std::sync::Arc::try_unwrap(ground_truths)
-        .unwrap()
-        .into_inner()
-        .unwrap()
+            .take(k)
+            .map(|(id, _)| id.clone())
+            .collect()
+    })
+    .collect()
 }
-*/
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
     // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
@@ -165,12 +105,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 10_000;
+    let n_base = 200_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 1_000; // 10-20%
+    let n_query = 20_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -189,7 +129,7 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 16, 128, 768),
+        HNSWConfig::new_with_params(n_base, 32, 512, 768),
     ).unwrap();
 
     let mut all_vectors: Vec<HVector> = Vec::new();
@@ -217,7 +157,7 @@ fn test_recall_precision_real_data() {
     );
 
     println!("calculating ground truths");
-    let ground_truths = calc_ground_truths(all_vectors, query_vectors.to_vec(), k);
+    let ground_truths = calc_ground_truths(all_vectors, query_vectors.to_vec(), k, 16);
 
     println!("searching and comparing...");
     let test_id = format!("k = {} with {} queries", k, n_query);
@@ -256,7 +196,6 @@ fn test_recall_precision_real_data() {
     total_precision = total_precision / n_query as f64;
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
-    //assert!(false);
 }
 
 #[test]
