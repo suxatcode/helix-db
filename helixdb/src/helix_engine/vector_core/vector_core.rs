@@ -50,7 +50,7 @@ impl HNSWConfig {
 
     pub fn new_with_params(n: usize, m: usize, ef_construct: usize, ef: usize) -> Self {
         let m_max = 2 * m;  
-        let m_max_0 = 2 * m_max;
+        let m_max_0 = (2 * m_max).max(2*m);
         Self {
             m,
             m_max,
@@ -96,6 +96,11 @@ pub trait Extend<T> {
     fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
     where
         T: Ord;
+
+    /// Take the top k elements from the heap and return a vector
+    fn to_vec(&mut self, k: usize) -> Vec<T>
+    where
+        T: Ord;
 }
 
 impl<T> Extend<T> for BinaryHeap<T> {
@@ -116,6 +121,22 @@ impl<T> Extend<T> for BinaryHeap<T> {
         T: Ord,
     {
         let mut result = BinaryHeap::with_capacity(k);
+        for _ in 0..k {
+            if let Some(candidate) = self.pop() {
+                result.push(candidate);
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
+    #[inline(always)]
+    fn to_vec(&mut self, k: usize) -> Vec<T> 
+    where
+        T: Ord,
+    {
+        let mut result = Vec::with_capacity(k);
         for _ in 0..k {
             if let Some(candidate) = self.pop() {
                 result.push(candidate);
@@ -173,6 +194,9 @@ impl VectorCore {
 
     #[inline]
     fn get_new_level(&self) -> usize {
+        // TODO: look at using the XOR shift algorithm for random number generation
+        // Storing global rng will not be threadsafe or possible as thread rng needs to be mutable
+        // Should instead using an atomic mutable seed and the XOR shift algorithm
         let mut rng = rand::rng(); // TODO: don't init a new rand::rng here everytime
         let r: f64 = rng.random::<f64>();
         let level = (-r.ln() * self.config.m_l).floor() as usize;
@@ -270,7 +294,7 @@ impl VectorCore {
                 }
             }
         }
-        neighbors.shrink_to_fit();
+        // neighbors.shrink_to_fit();
 
         Ok(neighbors)
     }
@@ -331,7 +355,7 @@ impl VectorCore {
         };
 
         if should_extend {
-            let mut result = BinaryHeap::with_capacity(m + cands.len());
+            let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
                 let neighbors = self.get_neighbors(txn, candidate.get_id(), level)?;
                 for mut neighbor in neighbors {
@@ -377,11 +401,11 @@ impl VectorCore {
             }
 
             for mut neighbor in self.get_neighbors(txn, &curr_cand.id, level)? {
-                if visited.contains(neighbor.get_id()) {
+                if !visited.insert(neighbor.get_id().to_string()) {
                     continue;
                 }
 
-                visited.insert(neighbor.get_id().to_string());
+
                 let distance = neighbor.distance_to(query);
 
                 candidates.push(Candidate {
@@ -410,11 +434,11 @@ impl HNSW for VectorCore {
 
         let mut entry_point = self.get_entry_point(txn)?;
 
-        let ef = (k * 10).max(self.config.ef);
+        let ef = self.config.ef; //(k * 10).max(self.config.ef);
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let mut nearest = self.search_level(txn, &query, &mut entry_point, ef, level)?;
+            let mut nearest = self.search_level(txn, &query, &mut entry_point, 1, level)?;
             if let Some(closest) = nearest.pop() {
                 entry_point = closest;
             }
@@ -422,16 +446,7 @@ impl HNSW for VectorCore {
 
         let mut candidates = self.search_level(txn, &query, &mut entry_point, ef, 0)?;
 
-        let mut results = Vec::with_capacity(k);
-        for _ in 0..k {
-            if let Some(candidate) = candidates.pop() {
-                results.push(candidate);
-            } else {
-                break;
-            }
-        }
-
-        Ok(results)
+        Ok(candidates.to_vec(k))
     }
 
     fn insert(

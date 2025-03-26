@@ -8,12 +8,12 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 fn setup_temp_env() -> Env {
-    //let temp_dir = tempfile::tempdir().unwrap();
-    //let path = temp_dir.path().to_str().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
 
-    // home dir
-    let home_dir = dirs::home_dir().unwrap();
-    let path = format!("{}/dev/helix-db/helixdb_test", home_dir.to_str().unwrap());
+    // // home dir
+    // let home_dir = dirs::home_dir().unwrap();
+    // let path = format!("{}/dev/helix-db/helixdb_test", home_dir.to_str().unwrap());
 
     unsafe {
         EnvOpenOptions::new()
