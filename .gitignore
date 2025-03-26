@@ -20,3 +20,4 @@ venv/
 dpedia_openai_ground_truths.csv
 dpedia_openai_ground_truths_1m.csv
 helixdb_test/
+other_data/
