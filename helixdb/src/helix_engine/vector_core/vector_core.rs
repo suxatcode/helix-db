@@ -327,11 +327,10 @@ impl VectorCore {
             }
 
             for mut neighbor in self.get_neighbors(txn, &curr_cand.id, level)? {
-                if visited.contains(neighbor.get_id()) {
+                if visited.insert(neighbor.get_id().to_string()) {
                     continue;
                 }
 
-                visited.insert(neighbor.get_id().to_string());
                 let distance = neighbor.distance_to(query);
 
                 candidates.push(Candidate {
@@ -339,7 +338,7 @@ impl VectorCore {
                     distance,
                 });
 
-                if results.len() < ef || distance < results.peek().unwrap().distance {
+                if results.len() < ef || distance < results.iter().max().unwrap().distance {
                     if results.len() > ef {
                         continue;
                     }
