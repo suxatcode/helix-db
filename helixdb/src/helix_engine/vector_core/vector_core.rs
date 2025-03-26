@@ -84,7 +84,7 @@ impl Ord for Candidate {
     }
 }
 
-pub trait Extend<T> {
+pub trait HeapOps<T> {
     /// Extend the heap with another heap
     /// Used because using `.extend()` does not keep the order
     fn extend_inord(&mut self, other: BinaryHeap<T>)
@@ -101,17 +101,23 @@ pub trait Extend<T> {
     fn to_vec(&mut self, k: usize) -> Vec<T>
     where
         T: Ord;
+
+    /// Get the maximum element from the heap
+    fn get_max(&self) -> Option<&T>
+    where
+        T: Ord;
+
 }
 
-impl<T> Extend<T> for BinaryHeap<T> {
+impl<T> HeapOps<T> for BinaryHeap<T> {
     #[inline(always)]
     fn extend_inord(&mut self, mut other: BinaryHeap<T>)
     where
         T: Ord,
-    {
+    {   
         self.reserve(other.len());
-        for candidate in other.drain() {
-            self.push(candidate);
+        for item in other.drain() {
+            self.push(item);
         }
     }
 
@@ -122,8 +128,8 @@ impl<T> Extend<T> for BinaryHeap<T> {
     {
         let mut result = BinaryHeap::with_capacity(k);
         for _ in 0..k {
-            if let Some(candidate) = self.pop() {
-                result.push(candidate);
+            if let Some(item) = self.pop() {
+                result.push(item);
             } else {
                 break;
             }
@@ -138,14 +144,23 @@ impl<T> Extend<T> for BinaryHeap<T> {
     {
         let mut result = Vec::with_capacity(k);
         for _ in 0..k {
-            if let Some(candidate) = self.pop() {
-                result.push(candidate);
+            if let Some(item) = self.pop() {
+                result.push(item);
             } else {
                 break;
             }
         }
         result
     }
+
+    #[inline(always)]
+    fn get_max(&self) -> Option<&T>
+    where
+        T: Ord,
+    {
+        self.iter().max()
+    }
+
 }
 
 pub struct VectorCore {
@@ -392,7 +407,10 @@ impl VectorCore {
         while !candidates.is_empty() {
             let curr_cand = candidates.pop().unwrap();
 
-            if results.len() >= ef && results.iter().max().map_or(false, |f| curr_cand.distance > f.distance)
+            if results.len() >= ef
+                && results
+                    .get_max()
+                    .map_or(false, |f| curr_cand.distance > f.distance)
             {
                 break;
             }
@@ -410,7 +428,7 @@ impl VectorCore {
                     distance,
                 });
 
-                let f = results.iter().max().unwrap();
+                let f = results.get_max().unwrap();
                 if results.len() < ef || distance < f.distance {
                     neighbor.distance = distance;
                     results.push(neighbor);
@@ -431,7 +449,7 @@ impl HNSW for VectorCore {
 
         let mut entry_point = self.get_entry_point(txn)?;
 
-        let ef = self.config.ef; //(k * 10).max(self.config.ef);
+        let ef = self.config.ef;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
@@ -483,7 +501,7 @@ impl HNSW for VectorCore {
 
             curr_ep = nearest.peek().unwrap().clone();
 
-            let neighbors = self.select_neighbors(txn, &query, nearest, level, false)?;
+            let neighbors = self.select_neighbors(txn, &query, nearest, level, true)?;
 
             self.set_neighbours(txn, &query.get_id(), &neighbors, level)?;
 
