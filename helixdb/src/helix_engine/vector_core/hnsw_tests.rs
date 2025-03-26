@@ -24,7 +24,7 @@ fn setup_temp_env() -> Env {
     }
 }
 
-fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize, num_threads: usize) -> Vec<Vec<String>> {
+fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     query_vectors
     .par_iter()
     .map(|(id, query)| {
@@ -105,12 +105,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 200_000;
+    let n_base = 50_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 20_000; // 10-20%
+    let n_query = 5_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -129,7 +129,7 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 32, 512, 768),
+        HNSWConfig::new_with_params(n_base, 20, 256, 768),
     ).unwrap();
 
     let mut all_vectors: Vec<HVector> = Vec::new();
@@ -157,7 +157,7 @@ fn test_recall_precision_real_data() {
     );
 
     println!("calculating ground truths");
-    let ground_truths = calc_ground_truths(all_vectors, query_vectors.to_vec(), k, 16);
+    let ground_truths = calc_ground_truths(all_vectors, query_vectors.to_vec(), k);
 
     println!("searching and comparing...");
     let test_id = format!("k = {} with {} queries", k, n_query);

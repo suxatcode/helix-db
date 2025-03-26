@@ -35,29 +35,29 @@ impl HNSWConfig {
     pub fn new(n: usize) -> Self {
         let m = (2.0 * (n as f64).ln().ceil()) as usize;
         let m_max = 2 * m;
-        let m_max_0 = 2 * m_max;
+        let m_max_0 = 2 * m;
         Self {
             m,
             m_max,
             m_max_0,
             ef_construct: 386,
             max_elements: n,
-            m_l: 1.0 / (m as f64).log10(),
+            m_l: 1.0 / (m as f64).ln(),
             max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
             ef: 800,
         }
     }
 
     pub fn new_with_params(n: usize, m: usize, ef_construct: usize, ef: usize) -> Self {
-        let m_max = 2 * m;  
-        let m_max_0 = (2 * m_max).max(2*m);
+        let m_max = 2 * m;
+        let m_max_0 = 2 * m;
         Self {
             m,
             m_max,
             m_max_0,
             ef_construct,
             max_elements: n,
-            m_l: 1.0 / (m as f64).log10(),
+            m_l: 1.0 / (m as f64).ln(),
             max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
             ef,
         }
@@ -132,7 +132,7 @@ impl<T> Extend<T> for BinaryHeap<T> {
     }
 
     #[inline(always)]
-    fn to_vec(&mut self, k: usize) -> Vec<T> 
+    fn to_vec(&mut self, k: usize) -> Vec<T>
     where
         T: Ord,
     {
@@ -392,10 +392,7 @@ impl VectorCore {
         while !candidates.is_empty() {
             let curr_cand = candidates.pop().unwrap();
 
-            if results.len() >= ef
-                && results
-                    .peek()
-                    .map_or(false, |f| curr_cand.distance > f.distance)
+            if results.len() >= ef && results.iter().max().map_or(false, |f| curr_cand.distance > f.distance)
             {
                 break;
             }
