@@ -21,43 +21,30 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
-    pub m_max: usize,        // max num of links for upper layers
     pub m_max_0: usize,      // max num of links for lower layers
     pub ef_construct: usize, // size of the dynamic candidate list for construction
-    pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
-    pub max_level: usize,    // max number of levels in index
     pub ef: usize,           // search param, num of cands to search
 }
 
 impl HNSWConfig {
     pub fn new(n: usize) -> Self {
         let m = (2.0 * (n as f64).ln().ceil()) as usize;
-        let m_max = 2 * m;
-        let m_max_0 = 2 * m;
         Self {
             m,
-            m_max,
-            m_max_0,
+            m_max_0: 2 * m,
             ef_construct: 386,
-            max_elements: n,
             m_l: 1.0 / (m as f64).ln(),
-            max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
             ef: 800,
         }
     }
 
-    pub fn new_with_params(n: usize, m: usize, ef_construct: usize, ef: usize) -> Self {
-        let m_max = 2 * m;
-        let m_max_0 = 2 * m;
+    pub fn new_with_params(m: usize, ef_construct: usize, ef: usize) -> Self {
         Self {
             m,
-            m_max,
-            m_max_0,
+            m_max_0: 2 * m,
             ef_construct,
-            max_elements: n,
             m_l: 1.0 / (m as f64).ln(),
-            max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
             ef,
         }
     }
@@ -200,10 +187,10 @@ impl VectorCore {
         // TODO: look at using the XOR shift algorithm for random number generation
         // Storing global rng will not be threadsafe or possible as thread rng needs to be mutable
         // Should instead using an atomic mutable seed and the XOR shift algorithm
-        let mut rng = rand::rng(); // TODO: don't init a new rand::rng here everytime
+        let mut rng = rand::rng();
         let r: f64 = rng.random::<f64>();
         let level = (-r.ln() * self.config.m_l).floor() as usize;
-        level.min(self.config.max_level)
+        level
     }
 
     #[inline]
@@ -276,7 +263,7 @@ impl VectorCore {
         level: usize,
     ) -> Result<Vec<HVector>, VectorError> {
         let out_key = Self::out_edges_key(id, "", level);
-        let mut neighbors = Vec::with_capacity(self.config.m_max.min(512));
+        let mut neighbors = Vec::with_capacity(self.config.m_max_0.min(512)); // TODO: why 512?
 
         let iter = self
             .out_edges_db
@@ -354,7 +341,7 @@ impl VectorCore {
         let m: usize = if level == 0 {
             self.config.m
         } else {
-            self.config.m_max
+            self.config.m_max_0
         };
         let mut visited: HashSet<String> = HashSet::new();
         if should_extend {
@@ -499,7 +486,7 @@ impl HNSW for VectorCore {
                     > if level == 0 {
                         self.config.m_max_0
                     } else {
-                        self.config.m_max
+                        self.config.m_max_0
                     }
                 {
                     let e_conns = BinaryHeap::from(e_conns);

@@ -9,7 +9,6 @@ fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
     let path = temp_dir.path().to_str().unwrap();
 
-    // // home dir
     // let home_dir = dirs::home_dir().unwrap();
     // let path = format!("{}/dev/helix-db/helixdb_test", home_dir.to_str().unwrap());
 
@@ -173,7 +172,7 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(n_base, 20, 256, 768),
+        HNSWConfig::new_with_params(20, 256, 768),
     ).unwrap();
 
     let mut all_vectors: Vec<HVector> = Vec::new();
@@ -240,33 +239,4 @@ fn test_recall_precision_real_data() {
     total_precision = total_precision / n_query as f64;
     println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
     assert!(total_recall >= 0.8, "recall not high enough!");
-}
-
-#[test]
-fn test_insert_speed() {
-    let n_base = 10000;
-    let dims = 1536;
-    let vectors = load_dbpedia_vectors(n_base).unwrap();
-    println!("loaded {} vectors", vectors.len());
-
-    let env = setup_temp_env();
-    let mut txn = env.write_txn().unwrap();
-
-    let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(&env, &mut txn, HNSWConfig::new(n_base)).unwrap();
-    for (i, (id, data)) in vectors.iter().enumerate() {
-        let start_time = Instant::now();
-        index.insert(&mut txn, data, Some(id.clone())).unwrap();
-        let time = start_time.elapsed();
-        println!("{} => loading in {} ms, vector: {}", i, time.as_millis(), id);
-        total_insertion_time += time;
-    }
-    txn.commit().unwrap();
-
-    println!("total insertion time: {:.2?} seconds", total_insertion_time.as_secs_f64());
-    println!(
-        "average insertion time per vec: {:.2?} milliseconds",
-        total_insertion_time.as_millis() as f64 / n_base as f64
-    );
-    assert!(false);
 }

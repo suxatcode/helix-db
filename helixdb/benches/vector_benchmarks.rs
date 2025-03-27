@@ -76,7 +76,7 @@ fn bench_vector_insertion(c: &mut Criterion) {
                 |(env, hnsw, vectors)| {
                     let mut txn = env.write_txn().unwrap();
                     for (_id, data) in vectors.iter().take(vectors_per_iter) {
-                        let _ = hnsw.insert(&mut txn, data).unwrap();
+                        hnsw.insert(&mut txn, data, None).unwrap();
                     }
                     txn.commit().unwrap();
                 },
