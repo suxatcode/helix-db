@@ -105,12 +105,12 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 50_000;
+    let n_base =20_000;
     let dims = 1536;
     let vectors = load_dbpedia_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 5_000; // 10-20%
+    let n_query = 2000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);

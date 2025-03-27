@@ -8,7 +8,7 @@ pub struct HVector {
     id: String,
     pub is_deleted: bool,
     pub level: usize,
-    pub distance: f64,
+    pub distance: Option<f64>,
     data: Vec<f64>,
 }
 
@@ -51,7 +51,7 @@ impl HVector {
             is_deleted: false,
             level: 0,
             data,
-            distance: 0.0,
+            distance: None,
         }
     }
 
@@ -62,7 +62,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0.0,
+            distance: None,
         }
     }
 
@@ -108,7 +108,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0.0,
+            distance: None,
         })
     }
 
@@ -125,6 +125,19 @@ impl HVector {
     #[inline(always)]
     pub fn distance_to(&self, other: &HVector) -> f64 {
         HVector::distance(self, other)
+    }
+
+    #[inline(always)]
+    pub fn set_distance(&mut self, distance: f64) {
+        self.distance = Some(distance);
+    }
+
+    #[inline(always)]
+    pub fn get_distance(&self) -> f64 {
+        match self.distance {
+            Some(distance) => distance,
+            None => panic!("Distance is not set for vector: {}", self.get_id()),
+        }
     }
 
     #[cfg(target_arch = "aarch64")]

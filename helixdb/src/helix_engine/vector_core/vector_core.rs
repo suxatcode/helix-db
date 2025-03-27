@@ -14,7 +14,6 @@ use std::{
 };
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
-const DB_VECTORS_HEADER: &str = "vectors_header"; // for vector header (v:)
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
 const VECTOR_PREFIX: &[u8] = b"v:";
 const ENTRY_POINT_KEY: &str = "entry_point";
@@ -23,7 +22,7 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
     pub m_max: usize,        // max num of links for upper layers
-    pub m_max_0: usize,     // max num of links for lower layers
+    pub m_max_0: usize,      // max num of links for lower layers
     pub ef_construct: usize, // size of the dynamic candidate list for construction
     pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
@@ -106,7 +105,6 @@ pub trait HeapOps<T> {
     fn get_max(&self) -> Option<&T>
     where
         T: Ord;
-
 }
 
 impl<T> HeapOps<T> for BinaryHeap<T> {
@@ -114,7 +112,7 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
     fn extend_inord(&mut self, mut other: BinaryHeap<T>)
     where
         T: Ord,
-    {   
+    {
         self.reserve(other.len());
         for item in other.drain() {
             self.push(item);
@@ -160,12 +158,10 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
     {
         self.iter().max()
     }
-
 }
 
 pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
-    vector_header_db: Database<Bytes, Bytes>, // TODO: needed?
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
 }
@@ -173,11 +169,9 @@ pub struct VectorCore {
 impl VectorCore {
     pub fn new(env: &Env, txn: &mut RwTxn, config: HNSWConfig) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
-        let vector_header_db = env.create_database(txn, Some(DB_VECTORS_HEADER))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
         Ok(Self {
             vectors_db,
-            vector_header_db,
             out_edges_db,
             config,
         })
@@ -185,13 +179,7 @@ impl VectorCore {
 
     #[inline(always)]
     fn vector_key(id: &str, level: usize) -> Vec<u8> {
-        [
-            VECTOR_PREFIX,
-            id.as_bytes(),
-            b":",
-            &level.to_string().into_bytes(),
-        ]
-        .concat()
+        [VECTOR_PREFIX, id.as_bytes(), b":", &level.to_le_bytes()].concat()
     }
 
     #[inline(always)]
@@ -200,7 +188,7 @@ impl VectorCore {
             OUT_EDGES_PREFIX,
             source_id.as_bytes(),
             b":",
-            &level.to_string().into_bytes(),
+            &level.to_le_bytes(),
             b":",
             sink_id.as_bytes(),
         ]
@@ -368,14 +356,15 @@ impl VectorCore {
         } else {
             self.config.m_max
         };
-
+        let mut visited: HashSet<String> = HashSet::new();
         if should_extend {
             let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
-                let neighbors = self.get_neighbors(txn, candidate.get_id(), level)?;
-                for mut neighbor in neighbors {
-                    neighbor.distance = neighbor.distance_to(query);
-                    result.push(neighbor);
+                for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level)? {
+                    if visited.insert(neighbor.get_id().to_string()) {
+                        neighbor.set_distance(neighbor.distance_to(query));
+                        result.push(neighbor);
+                    }
                 }
             }
             result.extend_inord(cands);
@@ -389,17 +378,17 @@ impl VectorCore {
         &'a self,
         txn: &RoTxn,
         query: &'a HVector,
-        entry_point: &'a HVector,
+        entry_point: &'a mut HVector,
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
         let mut visited: HashSet<String> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
-
+        entry_point.set_distance(entry_point.distance_to(query));
         candidates.push(Candidate {
             id: entry_point.get_id().to_string(),
-            distance: entry_point.distance,
+            distance: entry_point.get_distance(),
         });
         results.push(entry_point.clone());
         visited.insert(entry_point.get_id().to_string());
@@ -410,7 +399,7 @@ impl VectorCore {
             if results.len() >= ef
                 && results
                     .get_max()
-                    .map_or(false, |f| curr_cand.distance > f.distance)
+                    .map_or(false, |f| curr_cand.distance > f.get_distance())
             {
                 break;
             }
@@ -420,17 +409,15 @@ impl VectorCore {
                     continue;
                 }
 
-
                 let distance = neighbor.distance_to(query);
 
-                candidates.push(Candidate {
-                    id: neighbor.get_id().to_string(),
-                    distance,
-                });
-
                 let f = results.get_max().unwrap();
-                if results.len() < ef || distance < f.distance {
-                    neighbor.distance = distance;
+                if results.len() < ef || distance < f.get_distance() {
+                    neighbor.set_distance(distance);
+                    candidates.push(Candidate {
+                        id: neighbor.get_id().to_string(),
+                        distance,
+                    });
                     results.push(neighbor);
                     if results.len() > ef {
                         results = results.take_inord(ef);
@@ -483,7 +470,7 @@ impl HNSW for VectorCore {
             Ok(ep) => ep,
             Err(_) => {
                 self.set_entry_point(txn, &query)?;
-                query.distance = 0.0;
+                query.set_distance(0.0);
                 return Ok(query);
             }
         };
@@ -491,13 +478,13 @@ impl HNSW for VectorCore {
         let l = entry_point.get_level();
         let mut curr_ep = entry_point;
         for level in (new_level + 1..=l).rev() {
-            let nearest = self.search_level(txn, &query, &curr_ep, 1, level)?;
+            let nearest = self.search_level(txn, &query, &mut curr_ep, 1, level)?;
             curr_ep = nearest.peek().unwrap().clone();
         }
 
         for level in (0..=l.min(new_level)).rev() {
             let nearest =
-                self.search_level(txn, &query, &curr_ep, self.config.ef_construct, level)?;
+                self.search_level(txn, &query, &mut curr_ep, self.config.ef_construct, level)?;
 
             curr_ep = nearest.peek().unwrap().clone();
 
@@ -508,7 +495,13 @@ impl HNSW for VectorCore {
             for e in neighbors {
                 let id = e.get_id();
                 let e_conns = self.get_neighbors(txn, id, level)?;
-                if e_conns.len() > if level == 0 { self.config.m_max_0 } else { self.config.m_max } {
+                if e_conns.len()
+                    > if level == 0 {
+                        self.config.m_max_0
+                    } else {
+                        self.config.m_max
+                    }
+                {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn = self.select_neighbors(txn, &query, e_conns, level, true)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
