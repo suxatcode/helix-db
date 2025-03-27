@@ -1,11 +1,9 @@
-use heed3::{Env, EnvOpenOptions};
 use rand::prelude::SliceRandom;
-use crate::helix_engine::vector_core::{vector::HVector, hnsw::HNSW, vector_core::{HNSWConfig, VectorCore}};
 use polars::prelude::*;
-use std::collections::HashSet;
-use std::fs::{self, File};
-use std::time::Instant;
 use rayon::prelude::*;
+use heed3::{Env, EnvOpenOptions};
+use crate::helix_engine::vector_core::{vector::HVector, hnsw::HNSW, vector_core::{HNSWConfig, VectorCore}};
+use std::{env, io::{Read, BufReader, Error as IoError}, collections::HashSet, time::Instant, fs::{self, File}};
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -49,14 +47,14 @@ fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64
 }
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
-    // from data/ dir (https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)
+    // https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M
     if limit > 1_000_000 {
         return Err(PolarsError::OutOfBounds(
             "can't load more than 1,000,000 vecs from this dataset".into(),
         ));
     }
 
-    let data_dir = "../data/";
+    let data_dir = "../data/dpedia-openai-1m/";
     let mut all_vectors = Vec::new();
     let mut total_loaded = 0;
 
@@ -101,16 +99,62 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
     Ok(all_vectors)
 }
 
+fn load_ann_gist1m_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, IoError> {
+    // http://corpus-texmex.irisa.fr/
+    let path = env::current_dir()?.join("../data/ann-gist1m/gist_base.fvecs");
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    let mut vectors = Vec::new();
+    let mut buffer = Vec::new();
+
+    while vectors.len() < limit {
+        let mut dim_bytes = [0u8; 4];
+        match reader.read_exact(&mut dim_bytes) {
+            Ok(_) => {
+                let dim = u32::from_le_bytes(dim_bytes) as usize;
+
+                buffer.resize(dim * 4, 0);
+                reader.read_exact(&mut buffer)?;
+
+                let vec_f32: Vec<f32> = buffer[..dim * 4]
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect();
+
+                let vec_f64: Vec<f64> = vec_f32.iter().map(|&x| x as f64).collect();
+
+                let vector_id = format!("vector_{}", vectors.len());
+
+                vectors.push((vector_id, vec_f64));
+            }
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                    return Err(e);
+                }
+                break;
+            }
+        }
+
+        if vectors.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(vectors)
+}
+
 // cargo --release test test_name -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base =20_000;
-    let dims = 1536;
-    let vectors = load_dbpedia_vectors(n_base).unwrap();
+    let n_base = 20_000;
+    //let dims = 1536;
+    //let vectors = load_dbpedia_vectors(n_base).unwrap();
+    let vectors = load_ann_gist1m_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 2000; // 10-20%
+    let n_query = 2_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);

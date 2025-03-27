@@ -26,7 +26,7 @@ impl Ord for HVector {
     }
 }
 
-pub trait EuclidianDistance {
+pub trait EuclidianDistance { // TODO: make this cosine similarity
     fn distance(from: &HVector, to: &HVector) -> f64;
 }
 
