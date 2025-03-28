@@ -1087,6 +1087,7 @@ dependencies = [
  "pest_derive",
  "polars",
  "rand 0.9.0",
+ "rayon",
  "serde",
  "socket2",
  "sonic-rs",

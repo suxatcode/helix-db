@@ -26,8 +26,21 @@ pub trait HNSW {
     ///
     /// # Returns
     ///
-    /// An empty tuple
+    /// An HVector of the data inserted
     fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<String>) -> Result<HVector, VectorError>;
+
+    /// Load a full hnsw index with all vectors at once
+    ///
+    /// # Arguments
+    ///
+    /// * `txn` - The transaction to use
+    /// * `id` - The id of the vector
+    /// * `data` - A Vec of all the vectors to insert
+    ///
+    /// # Returns
+    ///
+    /// An emtpy tuple
+    fn load(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>;
 
     /// Get all vectors from the index
     ///
