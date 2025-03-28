@@ -348,7 +348,7 @@ impl HelixParser {
             }
         }
         for pair in remaining {
-            println!("{:?}", parser.source);
+            // println!("{:?}", parser.source);
             parser.source.queries.push(parser.parse_query_def(pair)?);
         }
 
@@ -412,7 +412,7 @@ impl HelixParser {
                 },
             ) =>
             {
-                println!("{:?}", self.source);
+                // println!("{:?}", self.source);
                 if self.source.edge_schemas.iter().any(|e| {
                     if e.name == type_str {
                         true
@@ -748,7 +748,7 @@ impl HelixParser {
         let mut pairs = pair.into_inner();
         let mut from_id = None;
         let mut to_id = None;
-        println!("pairs: {:?}", pairs);
+        // println!("pairs: {:?}", pairs);
         for p in pairs {
             match p.as_rule() {
                 Rule::from => {
@@ -775,7 +775,7 @@ impl HelixParser {
     }
 
     fn parse_return_statement(&self, pair: Pair<Rule>) -> Result<Vec<Expression>, ParserError> {
-        println!("pair: {:?}", pair.clone().into_inner());
+        // println!("pair: {:?}", pair.clone().into_inner());
         pair.into_inner()
             .map(|p| self.parse_expression(p))
             .collect()
@@ -985,7 +985,7 @@ impl HelixParser {
 
     fn parse_range(&self, pair: Pair<Rule>) -> Result<(Expression, Expression), ParserError> {
         let mut inner = pair.into_inner().next().unwrap().into_inner();
-        println!("inner: {:?}", inner);
+        // println!("inner: {:?}", inner);
         let start = match self.parse_expression(inner.next().unwrap()) {
             Ok(val) => val,
             Err(e) => return Err(e),
@@ -1498,7 +1498,7 @@ mod tests {
             }
         };
         let query = &result.queries[0];
-        println!("{:?}", query);
+        // println!("{:?}", query);
         assert_eq!(query.statements.len(), 1);
     }
 
@@ -1519,7 +1519,7 @@ mod tests {
             }
         };
         let query = &result.queries[0];
-        println!("{:?}", query);
+        // println!("{:?}", query);
         assert_eq!(query.statements.len(), 2);
     }
 
@@ -1540,9 +1540,9 @@ mod tests {
                 panic!();
             }
         };
-        println!("{:?}", result);
+        // println!("{:?}", result);
         let query = &result.queries[0];
-        println!("{:?}", query);
+        // println!("{:?}", query);
         assert_eq!(query.statements.len(), 3);
     }
 
@@ -1931,7 +1931,7 @@ mod tests {
             RETURN result
         "#;
         let result = HelixParser::parse_source(input).unwrap();
-        println!("\n\nresult: {:?}\n\n", result);
+        // println!("\n\nresult: {:?}\n\n", result);
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 1);
         assert_eq!(query.return_values.len(), 1);
@@ -2010,7 +2010,7 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
 
-        println!("{:?}", query.parameters);
+        // println!("{:?}", query.parameters);
         let mut param_type = "";
         assert!(
             query.parameters.iter().any(|param| match param.param_type {
@@ -2035,6 +2035,18 @@ mod tests {
 
         QUERY addVector(vector: [Float]) =>
             RETURN AddV<User>(vector)
+        "#;
+        let result = HelixParser::parse_source(input).unwrap();
+        let query = &result.queries[0];
+        assert_eq!(query.return_values.len(), 1);
+    }
+
+    #[test]
+    fn test_bulk_insert() {
+        let input = r#"
+        QUERY bulkInsert(vectors: [[Float]]) =>
+            vectors::AddV<User>
+            RETURN "SUCCESS"
         "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];

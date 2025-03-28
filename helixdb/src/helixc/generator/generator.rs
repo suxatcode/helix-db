@@ -1316,10 +1316,11 @@ impl CodeGenerator {
 
     fn generate_return_values(&mut self, return_values: &[Expression], query: &Query) -> String {
         let mut output = String::new();
-        println!("return_values: {:?}", return_values);
+        // println!("return_values: {:?}", return_values);
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&mut self.indent());
             // output.push_str(&self.expression_to_return_value(expr));
+            // println!("expr: {:?}", expr);
             match expr {
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
@@ -1343,9 +1344,15 @@ impl CodeGenerator {
                     output.push_str(&mut self.indent());
                     output.push_str("let return_val = tr.finish()?;\n");
                     output.push_str(&mut self.indent());
-                    output.push_str(&format!(
-                        "return_vals.insert(\"\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
-                    ));
+                    if let Variable(var_name) = &traversal.start {
+                        output.push_str(&format!(
+                            "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
+                            var_name,
+                        ));
+                    } else {
+                        println!("Unhandled return value: {:?}", expr);
+                        unreachable!()
+                    }
                 }
 
                 _ => {
@@ -1624,7 +1631,7 @@ impl CodeGenerator {
             "" => "None".to_string(),
             _ => format!("Some(\"{}\".to_string())\n", key),
         };
-        println!("field: {:?}", field);
+
         match field {
             FieldValue::Traversal(_) | FieldValue::Expression(_) => {
                 output.push_str(&format!(
@@ -1747,7 +1754,6 @@ impl CodeGenerator {
                     ));
                 }
                 _ => {
-                    println!("key: {:?}, field: {:?}", key, field);
                     output.push_str(&format!(
                         "ReturnValue::from(item.check_property(\"{}\"))\n",
                         key
@@ -1763,7 +1769,7 @@ impl CodeGenerator {
                 panic!("unhandled field type");
             }
         }
-        println!("output: {:?}, field: {:?}", output, field);
+
         output
     }
 }
@@ -1801,6 +1807,13 @@ fn to_snake_case(s: &str) -> String {
     }
 
     result
+}
+
+fn tr_is_object_remapping(tr: &Traversal) -> bool {
+    match tr.steps.last() {
+        Some(Step::Object(_)) => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
