@@ -444,7 +444,6 @@ impl HNSW for VectorCore {
         data: &[f64],
         nid: Option<String>,
     ) -> Result<HVector, VectorError> {
-    ) -> Result<HVector, VectorError> {
         let id = nid.unwrap_or(uuid::Uuid::new_v4().as_simple().to_string());
         let new_level = self.get_new_level();
 
