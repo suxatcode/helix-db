@@ -483,18 +483,18 @@ fn main() {
             }
         }
         args::CommandType::Compile(command) => {
-            let path = match command.path {
+            let path = match &command.path {
                 Some(path) => {
                     // call parser
                     path
                 }
                 None => {
                     // current directory
-                    ".".to_string()
+                    "."
                 }
             };
-            let output = match command.output {
-                Some(output) => output,
+            let output = match &command.output {
+                Some(output) => output.to_owned(),
                 None => dirs::home_dir()
                     .map(|path| {
                         path.join(".helix/cache/generated/")
@@ -516,131 +516,58 @@ fn main() {
                 return;
             }
 
-            let numb_of_files = files.len();
-            let mut code = String::new();
-            let mut generator = CodeGenerator::new();
-            code.push_str(&generator.generate_headers());
-
-            let mut contents: String = files
-                .iter()
-                .map(|file| -> String {
-                    match fs::read_to_string(file.path()) {
-                        Ok(contents) => contents,
-                        Err(e) => {
-                            panic!("{}", e);
-                        }
-                    }
-                })
-                .fold(String::new(), |acc, contents| acc + &contents);
-
-            match HelixParser::parse_source(&contents) {
-                Ok(source) => {
-                    // println!("{:?}", parser);
-                    code.push_str(&generator.generate_source(&source));
+            let source = match compile_hql_to_source(&files) {
+                Ok(source) => source,
+                Err(e) => {
+                    println!("\n❌ Failed to parse source");
+                    println!("|");
+                    println!("└─ {}", e);
+                    return;
                 }
+            };
+
+            generate_rust_from_source(&source, &output, files.len());
+            if command.gen_py {
+                generate_python_bindings(&source, &output);
+            }
+        }
+
+        args::CommandType::Check(command) => {
+            let path = match &command.path {
+                Some(path) => {
+                    // call parser
+                    path
+                }
+                None => {
+                    // current directory
+                    "."
+                }
+            };
+
+            let files = match check_and_read_files(&path) {
+                Ok(files) => files,
                 Err(e) => {
                     println!("{}", e);
                     return;
                 }
+            };
+
+            if files.is_empty() {
+                println!("No queries found, nothing to compile");
+                return;
             }
 
-            let cache_dir = PathBuf::from(&output);
-            fs::create_dir_all(&cache_dir).unwrap();
-
-            let file_path = cache_dir.join(format!("queries.rs",));
-            fs::write(&file_path, code).unwrap();
-            match format_rust_file(&file_path) {
-                Ok(_) => println!("\nCompiled and formatted {} files!\n", numb_of_files),
-                Err(e) => println!(
-                    "\nCompiled {} files! (formatting failed: {})\n",
-                    numb_of_files, e
-                ),
-            };
-
-            println!();
-        }
-
-        args::CommandType::Check(command) => {
-            match command.path {
-                Some(path) => {
-                    // call parser
-                    let files = match check_and_read_files(&path) {
-                        Ok(files) => files,
-                        Err(e) => {
-                            println!("{}", e);
-                            return;
-                        }
-                    };
-
-                    if files.is_empty() {
-                        println!("No queries found, nothing to compile");
-                        return;
-                    }
-
-                    let contents: String = files
-                        .iter()
-                        .map(|file| -> String {
-                            match fs::read_to_string(file.path()) {
-                                Ok(contents) => contents,
-                                Err(e) => {
-                                    panic!("{}", e);
-                                }
-                            }
-                        })
-                        .fold(String::new(), |acc, contents| acc + &contents);
-
-                    match HelixParser::parse_source(&contents) {
-                        Ok(_) => {
-                            println!("\t✅ Successfully parsed source");
-                        }
-                        Err(e) => {
-                            println!("\t❌ Failed to parse source");
-                            println!("\t└── {}", e);
-                            return;
-                        }
-                    }
-                    println!();
+            match compile_hql_to_source(&files) {
+                Ok(_) => {
+                    println!("✅ Successfully parsed source");
                 }
-                None => {
-                    // current directory
-                    let files = match check_and_read_files(".") {
-                        Ok(files) => files,
-                        Err(e) => {
-                            println!("{}", e);
-                            return;
-                        }
-                    };
-
-                    if files.is_empty() {
-                        println!("No queries found, nothing to compile");
-                        return;
-                    }
-
-                    let contents: String = files
-                        .iter()
-                        .map(|file| -> String {
-                            match fs::read_to_string(file.path()) {
-                                Ok(contents) => contents,
-                                Err(e) => {
-                                    panic!("{}", e);
-                                }
-                            }
-                        })
-                        .fold(String::new(), |acc, contents| acc + &contents);
-
-                    match HelixParser::parse_source(&contents) {
-                        Ok(_) => {
-                            println!("\t✅ Successfully parsed source");
-                        }
-                        Err(e) => {
-                            println!("\t❌ Failed to parse source");
-                            println!("\t└── {}", e);
-                            return;
-                        }
-                    }
-                    println!();
+                Err(e) => {
+                    println!("\n❌ Failed to parse source");
+                    println!("|");
+                    println!("└─ {}", e);
+                    return;
                 }
-            };
+            }
         }
         args::CommandType::Install(_command) => {
             // check if cargo is installed
@@ -771,14 +698,16 @@ fn main() {
 
             // create schema.hx
             let schema_path = queries_dir.join("schema.hx");
-            fs::write(&schema_path, r#"// Start building your schema here.
+            fs::write(
+                &schema_path,
+                r#"// Start building your schema here.
 //
 // The schema is used to to ensure a level of type safety in your queries.
 //
-// The schema is made up of Vertex types, denoted by V::, 
+// The schema is made up of Node types, denoted by N::, 
 // and Edge types, denoted by E::
 // 
-// Under the Vertex types you can define fields that 
+// Under the Node types you can define fields that 
 // will be stored in the database.
 //
 // Under the Edge types you can define what type of node 
@@ -787,7 +716,7 @@ fn main() {
 // 
 // Example:
 //
-// V::User {
+// N::User {
 //     Name: String,
 //     Label: String,
 //     Age: Integer,
@@ -806,11 +735,15 @@ fn main() {
 // For more information on how to write queries, 
 // see the documentation at https://docs.helix-db.com 
 // or checkout our GitHub at https://github.com/HelixDB/helix-db
-"#).unwrap();
+"#,
+            )
+            .unwrap();
 
             // create queries/main.hx
             let main_path = queries_dir.join("main.hx");
-            fs::write(main_path, r#"// Start writing your queries here.
+            fs::write(
+                main_path,
+                r#"// Start writing your queries here.
 //
 // You can use the schema to help you write your queries.
 //
@@ -821,14 +754,16 @@ fn main() {
 //
 // Example:
 //     QUERY GetUserFriends(user_id: String) =>
-//         friends <- V<User>(user_id)::Out<Knows>
+//         friends <- N<User>(user_id)::Out<Knows>
 //         RETURN friends
 //
 //
 // For more information on how to write queries, 
 // see the documentation at https://docs.helix-db.com 
 // or checkout our GitHub at https://github.com/HelixDB/helix-db
-"#).unwrap();
+"#,
+            )
+            .unwrap();
 
             println!("Helix project initialised at {}", path.display());
         }
@@ -871,4 +806,100 @@ fn format_rust_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error
     }
 
     Ok(())
+}
+
+fn check_hql_files(files: &Vec<DirEntry>) -> Result<(), CliError> {
+    for file in files {
+        let contents = fs::read_to_string(file.path()).unwrap();
+        match HelixParser::parse_source(&contents) {
+            Ok(_) => (),
+            Err(e) => {
+                return Err(CliError::from(format!("{}\n", e)));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
+    // let numb_of_files = files.len();
+    // let mut code = String::new();
+    // let mut generator = CodeGenerator::new();
+
+    let contents: String = files
+        .iter()
+        .map(|file| -> String {
+            match fs::read_to_string(file.path()) {
+                Ok(contents) => contents,
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
+        })
+        .fold(String::new(), |acc, contents| acc + &contents);
+
+    let source = match HelixParser::parse_source(&contents) {
+        Ok(source) => {
+            // println!("{:?}", parser);
+            source
+        }
+        Err(e) => {
+            return Err(CliError::from(format!("{}\n", e)));
+        }
+    };
+
+    Ok(source)
+}
+
+fn generate_rust_from_source(source: &Source, output_path: &String, numb_of_files: usize) {
+    let mut generator = CodeGenerator::new();
+    let mut code = String::new();
+    code.push_str(&generator.generate_headers());
+    code.push_str(&generator.generate_source(&source));
+
+    let cache_dir = PathBuf::from(&output_path);
+    fs::create_dir_all(&cache_dir).unwrap();
+
+    let file_path = cache_dir.join(format!("queries.rs",));
+    fs::write(&file_path, code).unwrap();
+    match format_rust_file(&file_path) {
+        Ok(_) => println!("\nCompiled and formatted {} files!\n", numb_of_files),
+        Err(e) => println!(
+            "\nCompiled {} files! (formatting failed: {})\n",
+            numb_of_files, e
+        ),
+    };
+}
+
+struct Query {
+    name: String,
+    query: String,
+    inputs: Vec<String>,
+}
+
+fn generate_python_bindings(source: &Source, output_path: &String) {
+    let mut code = String::new();
+
+    for query in &source.queries {
+        code.push_str(&format!(
+            "def {}(helixDB, {}):\n",
+            query.name,
+            query
+                .parameters
+                .iter()
+                .map(|p| p.name.clone())
+                .collect::<Vec<String>>()
+                .join(", ")
+        ));
+        code.push_str("\tdata = {\n");
+        for input in &query.parameters {
+            code.push_str(&format!("\t'{}': {},\n", input.name, input.name));
+        }
+        code.push_str("\t}\n");
+        code.push_str("\tjson_string = json.dumps(data)\n");
+        code.push_str(&format!("\treturn helixDB.query(\"{}\", json_string)\n", query.name));
+    }
+
+    let file_path = PathBuf::from(output_path).join(format!("queries.py",));
+    fs::write(&file_path, code).unwrap();
 }

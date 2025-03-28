@@ -1,12 +1,13 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddVertex, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field,
-    FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, Source,
-    StartNode::{Anonymous, Edge, Variable, Vertex},
-    Statement, Step, Traversal, ValueType,
+    AddEdge, AddNode, AddVector, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression,
+    Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query,
+    SearchVector, Source,
+    StartNode::{Anonymous, Edge, Node, Variable},
+    Statement, Step, Traversal, ValueType, VectorData,
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
 pub struct CodeGenerator {
     indent_level: usize,
@@ -34,7 +35,7 @@ impl CodeGenerator {
         output.push_str("    helix_engine::graph_core::traversal::TraversalBuilder,\n");
         output.push_str("    helix_engine::graph_core::traversal_steps::{\n");
         output.push_str("        SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps, TraversalMethods,\n");
-        output.push_str("        TraversalSearchMethods, \n");
+        output.push_str("        TraversalSearchMethods, VectorTraversalSteps\n");
         output.push_str("    },\n");
         output.push_str("    helix_engine::types::GraphError,\n");
         output.push_str("    helix_gateway::router::router::HandlerInput,\n");
@@ -186,13 +187,15 @@ impl CodeGenerator {
         output.push_str("let db = Arc::clone(&input.graph.storage);\n");
         output.push_str(&mut self.indent());
         if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddVertex(_))
+            matches!(s, Statement::AddNode(_))
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
+                || matches!(s, Statement::AddVector(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddVertex(_))
+                        matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
+                            || matches!(assignment.value, Expression::AddVector(_))
                             || {
                                 let steps = match &assignment.value {
                                     Expression::Traversal(traversal) => &traversal.steps,
@@ -227,12 +230,12 @@ impl CodeGenerator {
         }
 
         if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddVertex(_))
+            matches!(s, Statement::AddNode(_))
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddVertex(_))
+                        matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
                     } else {
                         false
@@ -255,10 +258,49 @@ impl CodeGenerator {
     fn generate_statement(&mut self, statement: &Statement, query: &Query) -> String {
         match statement {
             Statement::Assignment(assignment) => self.generate_assignment(assignment, query),
-            Statement::AddVertex(add_vertex) => self.generate_add_vertex(add_vertex, None),
+            Statement::AddNode(add_vertex) => self.generate_add_vertex(add_vertex, None),
             Statement::AddEdge(add_edge) => self.generate_add_edge(add_edge),
             Statement::Drop(expr) => self.generate_drop(expr, query),
+            Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
+            Statement::SearchVector(search_vector) => self.generate_search_vector(search_vector),
         }
+    }
+
+    fn generate_add_vector(&mut self, add_vector: &AddVector) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str(
+            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
+        );
+        match &add_vector.data {
+            Some(VectorData::Vector(vec)) => {
+                output.push_str(&format!("tr.insert_vector(&mut txn, &{:?});\n", vec));
+            }
+            Some(VectorData::Identifier(id)) => {
+                output.push_str(&format!("tr.insert_vector(&mut txn, &data.{});\n", id));
+            }
+            None => (),
+        };
+
+        output
+    }
+
+    fn generate_search_vector(&mut self, vec: &SearchVector) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str(
+            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
+        );
+        match &vec.data {
+            Some(VectorData::Vector(vec)) => {
+                output.push_str(&format!("tr.vector_search(&txn, &{:?});\n", vec));
+            }
+            Some(VectorData::Identifier(id)) => {
+                output.push_str(&format!("tr.vector_search(&txn, &data.{});\n", id));
+            }
+            None => (),
+        };
+        output
     }
 
     fn generate_assignment(&mut self, assignment: &Assignment, query: &Query) -> String {
@@ -320,7 +362,7 @@ impl CodeGenerator {
                 output.push_str(&mut self.indent());
                 output.push_str(&b.to_string());
             }
-            Expression::AddVertex(add_vertex) => {
+            Expression::AddNode(add_vertex) => {
                 output.push_str(&mut self.generate_add_vertex(add_vertex, None));
             }
             Expression::AddEdge(add_edge) => {
@@ -340,7 +382,7 @@ impl CodeGenerator {
 
         // Generate start node
         match &traversal.start {
-            Vertex { types, ids } => {
+            Node { types, ids } => {
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
@@ -426,7 +468,7 @@ impl CodeGenerator {
                     }
                     output.push_str(&mut self.generate_step(step, query));
                 }
-                Step::Vertex(graph_step) => match graph_step {
+                Step::Node(graph_step) => match graph_step {
                     GraphStep::Out(types) => {
                         if let Some(types) = types {
                             output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
@@ -472,9 +514,9 @@ impl CodeGenerator {
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InV => output.push_str("tr.in_v(&txn);\n"),
-                    GraphStep::OutV => output.push_str("tr.out_v(&txn);\n"),
-                    GraphStep::BothV => output.push_str("tr.both_v(&txn);\n"),
+                    GraphStep::InN => output.push_str("tr.in_v(&txn);\n"),
+                    GraphStep::OutN => output.push_str("tr.out_v(&txn);\n"),
+                    GraphStep::BothN => output.push_str("tr.both_v(&txn);\n"),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 _ => output.push_str(&mut self.generate_step(step, query)),
@@ -607,7 +649,7 @@ impl CodeGenerator {
             Step::BooleanOperation(bool_op) => {
                 output.push_str(&mut self.generate_boolean_operation(bool_op));
             }
-            Step::Vertex(graph_step) => match graph_step {
+            Step::Node(graph_step) => match graph_step {
                 GraphStep::Out(types) => {
                     if let Some(types) = types {
                         output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
@@ -636,9 +678,9 @@ impl CodeGenerator {
                         output.push_str("tr.in_e(&txn, \"\");\n");
                     }
                 }
-                GraphStep::OutV => output.push_str("tr.out_v(&txn);\n"),
-                GraphStep::InV => output.push_str("tr.in_v(&txn);\n"),
-                GraphStep::BothV => output.push_str("tr.both_v(&txn);\n"),
+                GraphStep::OutN => output.push_str("tr.out_v(&txn);\n"),
+                GraphStep::InN => output.push_str("tr.in_v(&txn);\n"),
+                GraphStep::BothN => output.push_str("tr.both_v(&txn);\n"),
                 GraphStep::BothE(types) => {
                     if let Some(types) = types {
                         output.push_str(&format!("tr.both_e(&txn, \"{}\");\n", types[0]));
@@ -1150,7 +1192,7 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_add_vertex(&mut self, add_vertex: &AddVertex, var_name: Option<&str>) -> String {
+    fn generate_add_vertex(&mut self, add_vertex: &AddNode, var_name: Option<&str>) -> String {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
@@ -1274,10 +1316,11 @@ impl CodeGenerator {
 
     fn generate_return_values(&mut self, return_values: &[Expression], query: &Query) -> String {
         let mut output = String::new();
-        println!("return_values: {:?}", return_values);
+        // println!("return_values: {:?}", return_values);
         for (i, expr) in return_values.iter().enumerate() {
             output.push_str(&mut self.indent());
             // output.push_str(&self.expression_to_return_value(expr));
+            // println!("expr: {:?}", expr);
             match expr {
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
@@ -1301,9 +1344,15 @@ impl CodeGenerator {
                     output.push_str(&mut self.indent());
                     output.push_str("let return_val = tr.finish()?;\n");
                     output.push_str(&mut self.indent());
-                    output.push_str(&format!(
-                        "return_vals.insert(\"\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
-                    ));
+                    if let Variable(var_name) = &traversal.start {
+                        output.push_str(&format!(
+                            "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
+                            var_name,
+                        ));
+                    } else {
+                        println!("Unhandled return value: {:?}", expr);
+                        unreachable!()
+                    }
                 }
 
                 _ => {
@@ -1582,7 +1631,7 @@ impl CodeGenerator {
             "" => "None".to_string(),
             _ => format!("Some(\"{}\".to_string())\n", key),
         };
-        println!("field: {:?}", field);
+
         match field {
             FieldValue::Traversal(_) | FieldValue::Expression(_) => {
                 output.push_str(&format!(
@@ -1705,7 +1754,6 @@ impl CodeGenerator {
                     ));
                 }
                 _ => {
-                    println!("key: {:?}, field: {:?}", key, field);
                     output.push_str(&format!(
                         "ReturnValue::from(item.check_property(\"{}\"))\n",
                         key
@@ -1721,7 +1769,7 @@ impl CodeGenerator {
                 panic!("unhandled field type");
             }
         }
-        println!("output: {:?}, field: {:?}", output, field);
+
         output
     }
 }
@@ -1759,6 +1807,13 @@ fn to_snake_case(s: &str) -> String {
     }
 
     result
+}
+
+fn tr_is_object_remapping(tr: &Traversal) -> bool {
+    match tr.steps.last() {
+        Some(Step::Object(_)) => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

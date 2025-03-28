@@ -571,7 +571,6 @@ fn test_count_mixed_steps() {
         TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
     traversal.out(&txn, "knows"); // Should have 2 nodes (person2 and person3)
 
-    println!("Traversal: {:?}", traversal.current_step);
 
     if let TraversalValue::Count(count) = &traversal.count().current_step {
         assert_eq!(count.value(), 2);

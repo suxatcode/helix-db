@@ -14,7 +14,7 @@ pub enum TraversalValue {
     EdgeArray(Vec<Edge>),
     ValueArray(Vec<(String, Value)>),
     Paths(Vec<(Vec<Node>, Vec<Edge>)>),
-    VectorArray(Vec<(String, f64)>),
+    VectorArray(Vec<HVector>),
 }
 
 impl FromIterator<TraversalValue> for TraversalValue {
