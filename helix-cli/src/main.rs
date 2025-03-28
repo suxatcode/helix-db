@@ -56,11 +56,16 @@ fn find_available_port(start_port: u16) -> Option<u16> {
     while port < 65535 {
         let addr = format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap();
         match TcpListener::bind(addr) {
-            Ok(_) => {
+            Ok(listener) => {
+                drop(listener);
                 let localhost = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
                 match TcpListener::bind(localhost) {
-                    Ok(_) => return Some(port),
+                    Ok(local_listener) => {
+                        drop(local_listener);
+                        return Some(port);
+                    },
                     Err(e) => {
+                        //println!("Error binding to {}: {:?}", addr, e);
                         if e.kind() != ErrorKind::AddrInUse {
                             return None;
                         }
@@ -704,16 +709,16 @@ fn main() {
 //
 // The schema is used to to ensure a level of type safety in your queries.
 //
-// The schema is made up of Node types, denoted by N::, 
+// The schema is made up of Node types, denoted by N::,
 // and Edge types, denoted by E::
-// 
-// Under the Node types you can define fields that 
+//
+// Under the Node types you can define fields that
 // will be stored in the database.
 //
-// Under the Edge types you can define what type of node 
-// the edge will connect to and from, and also the 
+// Under the Edge types you can define what type of node
+// the edge will connect to and from, and also the
 // properties that you want to store on the edge.
-// 
+//
 // Example:
 //
 // N::User {
@@ -722,7 +727,7 @@ fn main() {
 //     Age: Integer,
 //     IsAdmin: Boolean,
 // }
-// 
+//
 // E::Knows {
 //     From: User,
 //     To: User,
@@ -732,8 +737,8 @@ fn main() {
 // }
 //
 //
-// For more information on how to write queries, 
-// see the documentation at https://docs.helix-db.com 
+// For more information on how to write queries,
+// see the documentation at https://docs.helix-db.com
 // or checkout our GitHub at https://github.com/HelixDB/helix-db
 "#,
             )
@@ -748,7 +753,7 @@ fn main() {
 // You can use the schema to help you write your queries.
 //
 // Queries take the form:
-//     QUERY {query name}({input name}: {input type}) => 
+//     QUERY {query name}({input name}: {input type}) =>
 //         {variable} <- {traversal}
 //         RETURN {variable}
 //
@@ -758,8 +763,8 @@ fn main() {
 //         RETURN friends
 //
 //
-// For more information on how to write queries, 
-// see the documentation at https://docs.helix-db.com 
+// For more information on how to write queries,
+// see the documentation at https://docs.helix-db.com
 // or checkout our GitHub at https://github.com/HelixDB/helix-db
 "#,
             )
