@@ -23,7 +23,8 @@ chrono = "0.4.39"
 clap = { version = "4.5.29", features = ["derive"] }
 socket2 = "0.5"
 flume = "0.11.1"
-rayon = "1.8.0"polars = { version = "0.36", optional = true, features = ["parquet", "lazy"] }
+rayon = "1.8.0"
+polars = { version = "0.36", optional = true, features = ["parquet", "lazy"] }
 
 
 [dev-dependencies]
