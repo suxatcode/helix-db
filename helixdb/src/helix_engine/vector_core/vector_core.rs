@@ -1,6 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
-use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
 use crate::helix_engine::vector_core::hnsw::HNSW;
+use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
 use bincode::deserialize;
 use heed3::{
     types::{Bytes, Unit},
@@ -14,7 +14,6 @@ use std::{
 };
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
-const DB_VECTORS_HEADER: &str = "vectors_header"; // for vector header (v:)
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
 const VECTOR_PREFIX: &[u8] = b"v:";
 const ENTRY_POINT_KEY: &str = "entry_point";
@@ -22,11 +21,9 @@ const ENTRY_POINT_KEY: &str = "entry_point";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
-    pub m_max: usize,        // max num of links for upper layers
+    pub m_max_0: usize,      // max num of links for lower layers
     pub ef_construct: usize, // size of the dynamic candidate list for construction
-    pub max_elements: usize, // maximum number of elements in the index
     pub m_l: f64,            // level generation factor
-    pub max_level: usize,    // max number of levels in index
     pub ef: usize,           // search param, num of cands to search
 }
 
@@ -35,23 +32,19 @@ impl HNSWConfig {
         let m = (2.0 * (n as f64).ln().ceil()) as usize;
         Self {
             m,
-            m_max: 2 * m,
+            m_max_0: 2 * m,
             ef_construct: 386,
-            max_elements: n,
-            m_l: 1.0 / (m as f64).log10(),
-            max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
+            m_l: 1.0 / (m as f64).ln(),
             ef: 800,
         }
     }
 
-    pub fn new_with_params(n: usize, m: usize, ef_construct: usize, ef: usize) -> Self {
+    pub fn new_with_params(m: usize, ef_construct: usize, ef: usize) -> Self {
         Self {
             m,
-            m_max: 2 * m,
+            m_max_0: 2 * m,
             ef_construct,
-            max_elements: n,
-            m_l: 1.0 / (m as f64).log10(),
-            max_level: ((n as f64).log10() / (m as f64).log10()).floor() as usize,
+            m_l: 1.0 / (m as f64).ln(),
             ef,
         }
     }
@@ -77,9 +70,85 @@ impl Ord for Candidate {
     }
 }
 
+pub trait HeapOps<T> {
+    /// Extend the heap with another heap
+    /// Used because using `.extend()` does not keep the order
+    fn extend_inord(&mut self, other: BinaryHeap<T>)
+    where
+        T: Ord;
+
+    /// Take the top k elements from the heap
+    /// Used because using `.iter()` does not keep the order
+    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
+    where
+        T: Ord;
+
+    /// Take the top k elements from the heap and return a vector
+    fn to_vec(&mut self, k: usize) -> Vec<T>
+    where
+        T: Ord;
+
+    /// Get the maximum element from the heap
+    fn get_max(&self) -> Option<&T>
+    where
+        T: Ord;
+}
+
+impl<T> HeapOps<T> for BinaryHeap<T> {
+    #[inline(always)]
+    fn extend_inord(&mut self, mut other: BinaryHeap<T>)
+    where
+        T: Ord,
+    {
+        self.reserve(other.len());
+        for item in other.drain() {
+            self.push(item);
+        }
+    }
+
+    #[inline(always)]
+    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
+    where
+        T: Ord,
+    {
+        let mut result = BinaryHeap::with_capacity(k);
+        for _ in 0..k {
+            if let Some(item) = self.pop() {
+                result.push(item);
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
+    #[inline(always)]
+    fn to_vec(&mut self, k: usize) -> Vec<T>
+    where
+        T: Ord,
+    {
+        let mut result = Vec::with_capacity(k);
+        for _ in 0..k {
+            if let Some(item) = self.pop() {
+                result.push(item);
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
+    #[inline(always)]
+    fn get_max(&self) -> Option<&T>
+    where
+        T: Ord,
+    {
+        self.iter().max()
+    }
+}
+
 pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
-    vector_header_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
 }
@@ -87,11 +156,9 @@ pub struct VectorCore {
 impl VectorCore {
     pub fn new(env: &Env, txn: &mut RwTxn, config: HNSWConfig) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
-        let vector_header_db = env.create_database(txn, Some(DB_VECTORS_HEADER))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
         Ok(Self {
             vectors_db,
-            vector_header_db,
             out_edges_db,
             config,
         })
@@ -99,13 +166,7 @@ impl VectorCore {
 
     #[inline(always)]
     fn vector_key(id: &str, level: usize) -> Vec<u8> {
-        [
-            VECTOR_PREFIX,
-            id.as_bytes(),
-            b":",
-            &level.to_string().into_bytes(),
-        ]
-        .concat()
+        [VECTOR_PREFIX, id.as_bytes(), b":", &level.to_le_bytes()].concat()
     }
 
     #[inline(always)]
@@ -114,7 +175,7 @@ impl VectorCore {
             OUT_EDGES_PREFIX,
             source_id.as_bytes(),
             b":",
-            &level.to_string().into_bytes(),
+            &level.to_le_bytes(),
             b":",
             sink_id.as_bytes(),
         ]
@@ -123,10 +184,13 @@ impl VectorCore {
 
     #[inline]
     fn get_new_level(&self) -> usize {
-        let mut rng = rand::rng(); // TODO: don't init a new rand::rng here everytime
+        // TODO: look at using the XOR shift algorithm for random number generation
+        // Storing global rng will not be threadsafe or possible as thread rng needs to be mutable
+        // Should instead using an atomic mutable seed and the XOR shift algorithm
+        let mut rng = rand::rng();
         let r: f64 = rng.random::<f64>();
         let level = (-r.ln() * self.config.m_l).floor() as usize;
-        level.min(self.config.max_level)
+        level
     }
 
     #[inline]
@@ -199,7 +263,7 @@ impl VectorCore {
         level: usize,
     ) -> Result<Vec<HVector>, VectorError> {
         let out_key = Self::out_edges_key(id, "", level);
-        let mut neighbors = Vec::with_capacity(self.config.m_max.min(512));
+        let mut neighbors = Vec::with_capacity(self.config.m_max_0.min(512)); // TODO: why 512?
 
         let iter = self
             .out_edges_db
@@ -220,7 +284,7 @@ impl VectorCore {
                 }
             }
         }
-        neighbors.shrink_to_fit();
+        // neighbors.shrink_to_fit();
 
         Ok(neighbors)
     }
@@ -277,16 +341,17 @@ impl VectorCore {
         let m: usize = if level == 0 {
             self.config.m
         } else {
-            self.config.m_max
+            self.config.m_max_0
         };
-
+        let mut visited: HashSet<String> = HashSet::new();
         if should_extend {
-            let mut result = BinaryHeap::with_capacity(m + cands.len());
+            let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
-                let neighbors = self.get_neighbors(txn, candidate.get_id(), level)?;
-                for mut neighbor in neighbors {
-                    neighbor.distance = neighbor.distance_to(query);
-                    result.push(neighbor);
+                for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level)? {
+                    if visited.insert(neighbor.get_id().to_string()) {
+                        neighbor.set_distance(neighbor.distance_to(query));
+                        result.push(neighbor);
+                    }
                 }
             }
             result.extend_inord(cands);
@@ -300,17 +365,17 @@ impl VectorCore {
         &'a self,
         txn: &RoTxn,
         query: &'a HVector,
-        entry_point: &'a HVector,
+        entry_point: &'a mut HVector,
         ef: usize,
         level: usize,
     ) -> Result<BinaryHeap<HVector>, VectorError> {
         let mut visited: HashSet<String> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
-
+        entry_point.set_distance(entry_point.distance_to(query));
         candidates.push(Candidate {
             id: entry_point.get_id().to_string(),
-            distance: entry_point.distance,
+            distance: entry_point.get_distance(),
         });
         results.push(entry_point.clone());
         visited.insert(entry_point.get_id().to_string());
@@ -320,31 +385,30 @@ impl VectorCore {
 
             if results.len() >= ef
                 && results
-                    .peek()
-                    .map_or(false, |f| curr_cand.distance > f.distance)
+                    .get_max()
+                    .map_or(false, |f| curr_cand.distance > f.get_distance())
             {
                 break;
             }
 
             for mut neighbor in self.get_neighbors(txn, &curr_cand.id, level)? {
-                if visited.contains(neighbor.get_id()) {
+                if !visited.insert(neighbor.get_id().to_string()) {
                     continue;
                 }
 
-                visited.insert(neighbor.get_id().to_string());
                 let distance = neighbor.distance_to(query);
 
-                candidates.push(Candidate {
-                    id: neighbor.get_id().to_string(),
-                    distance,
-                });
-
-                if results.len() < ef || distance < results.peek().unwrap().distance {
-                    if results.len() > ef {
-                        continue;
-                    }
-                    neighbor.distance = distance;
+                let f = results.get_max().unwrap();
+                if results.len() < ef || distance < f.get_distance() {
+                    neighbor.set_distance(distance);
+                    candidates.push(Candidate {
+                        id: neighbor.get_id().to_string(),
+                        distance,
+                    });
                     results.push(neighbor);
+                    if results.len() > ef {
+                        results = results.take_inord(ef);
+                    }
                 }
             }
         }
@@ -354,21 +418,16 @@ impl VectorCore {
 }
 
 impl HNSW for VectorCore {
-    fn search(
-        &self,
-        txn: &RoTxn,
-        query: &[f64],
-        k: usize,
-    ) -> Result<Vec<HVector>, VectorError> {
+    fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
         let query = HVector::from_slice("".to_string(), 0, query.to_vec());
 
         let mut entry_point = self.get_entry_point(txn)?;
 
-        let ef = (k * 10).max(self.config.ef);
+        let ef = self.config.ef;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let mut nearest = self.search_level(txn, &query, &mut entry_point, ef, level)?;
+            let mut nearest = self.search_level(txn, &query, &mut entry_point, 1, level)?;
             if let Some(closest) = nearest.pop() {
                 entry_point = closest;
             }
@@ -376,24 +435,15 @@ impl HNSW for VectorCore {
 
         let mut candidates = self.search_level(txn, &query, &mut entry_point, ef, 0)?;
 
-        let mut results = Vec::with_capacity(k);
-        for _ in 0..k {
-            if let Some(candidate) = candidates.pop() {
-                results.push(candidate);
-            } else {
-                break;
-            }
-        }
-
-        Ok(results)
+        Ok(candidates.to_vec(k))
     }
 
-    // paper: https://arxiv.org/pdf/1603.09320
     fn insert(
         &self,
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<String>,
+    ) -> Result<HVector, VectorError> {
     ) -> Result<HVector, VectorError> {
         let id = nid.unwrap_or(uuid::Uuid::new_v4().as_simple().to_string());
         let new_level = self.get_new_level();
@@ -408,7 +458,7 @@ impl HNSW for VectorCore {
             Ok(ep) => ep,
             Err(_) => {
                 self.set_entry_point(txn, &query)?;
-                query.distance = 0.0;
+                query.set_distance(0.0);
                 return Ok(query);
             }
         };
@@ -416,24 +466,30 @@ impl HNSW for VectorCore {
         let l = entry_point.get_level();
         let mut curr_ep = entry_point;
         for level in (new_level + 1..=l).rev() {
-            let nearest = self.search_level(txn, &query, &curr_ep, 1, level)?;
+            let nearest = self.search_level(txn, &query, &mut curr_ep, 1, level)?;
             curr_ep = nearest.peek().unwrap().clone();
         }
 
         for level in (0..=l.min(new_level)).rev() {
             let nearest =
-                self.search_level(txn, &query, &curr_ep, self.config.ef_construct, level)?;
+                self.search_level(txn, &query, &mut curr_ep, self.config.ef_construct, level)?;
 
             curr_ep = nearest.peek().unwrap().clone();
 
-            let neighbors = self.select_neighbors(txn, &query, nearest, level, false)?;
+            let neighbors = self.select_neighbors(txn, &query, nearest, level, true)?;
 
             self.set_neighbours(txn, &query.get_id(), &neighbors, level)?;
 
             for e in neighbors {
                 let id = e.get_id();
                 let e_conns = self.get_neighbors(txn, id, level)?;
-                if e_conns.len() > self.config.m_max {
+                if e_conns.len()
+                    > if level == 0 {
+                        self.config.m_max_0
+                    } else {
+                        self.config.m_max_0
+                    }
+                {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn = self.select_neighbors(txn, &query, e_conns, level, true)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
@@ -455,12 +511,16 @@ impl HNSW for VectorCore {
         for result in prefix_iter {
             let (_, value) = result?;
             let vector: HVector = deserialize(&value)?;
-            vectors.push(vector);   
+            vectors.push(vector);
         }
         Ok(vectors)
     }
 
-    fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError> {
+    fn get_all_vectors_at_level(
+        &self,
+        txn: &RoTxn,
+        level: usize,
+    ) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
@@ -474,52 +534,15 @@ impl HNSW for VectorCore {
         Ok(vectors)
     }
 
-    // TODO: load lmdb data index from data and config.json
-    // TODO: save lmdb data index and params to config.josn
-    // TODO: load index (load all vecs already available at once)
+    fn load(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError> {
+        for v in data.iter() {
+            let _ = self.insert(txn, v, None);
+        }
+
+        // NOTE: need to txn.commit() outside of call
+
+        Ok(())
+    }
+
     // TODO: delete a node from the index
-    // TODO: create a new "HNSW::Index"
-}
-
-pub trait Extend<T> {
-    /// Extend the heap with another heap
-    /// Used because using `.extend()` does not keep the order
-    fn extend_inord(&mut self, other: BinaryHeap<T>)
-    where
-        T: Ord;
-
-    /// Take the top k elements from the heap
-    /// Used because using `.iter()` does not keep the order
-    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
-    where
-        T: Ord;
-}
-
-impl<T> Extend<T> for BinaryHeap<T> {
-    #[inline(always)]
-    fn extend_inord(&mut self, mut other: BinaryHeap<T>)
-    where
-        T: Ord,
-    {
-        self.reserve(other.len());
-        for candidate in other.drain() {
-            self.push(candidate);
-        }
-    }
-
-    #[inline(always)]
-    fn take_inord(&mut self, k: usize) -> BinaryHeap<T>
-    where
-        T: Ord,
-    {
-        let mut result = BinaryHeap::with_capacity(k);
-        for _ in 0..k {
-            if let Some(candidate) = self.pop() {
-                result.push(candidate);
-            } else {
-                break;
-            }
-        }
-        result
-    }
 }

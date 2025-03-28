@@ -8,7 +8,7 @@ pub struct HVector {
     id: String,
     pub is_deleted: bool,
     pub level: usize,
-    pub distance: f64,
+    pub distance: Option<f64>,
     data: Vec<f64>,
 }
 
@@ -26,7 +26,7 @@ impl Ord for HVector {
     }
 }
 
-pub trait EuclidianDistance {
+pub trait EuclidianDistance { // TODO: make this cosine similarity
     fn distance(from: &HVector, to: &HVector) -> f64;
 }
 
@@ -51,7 +51,7 @@ impl HVector {
             is_deleted: false,
             level: 0,
             data,
-            distance: 0.0,
+            distance: None,
         }
     }
 
@@ -62,7 +62,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0.0,
+            distance: None,
         }
     }
 
@@ -108,7 +108,7 @@ impl HVector {
             is_deleted: false,
             level,
             data,
-            distance: 0.0,
+            distance: None,
         })
     }
 
@@ -125,6 +125,19 @@ impl HVector {
     #[inline(always)]
     pub fn distance_to(&self, other: &HVector) -> f64 {
         HVector::distance(self, other)
+    }
+
+    #[inline(always)]
+    pub fn set_distance(&mut self, distance: f64) {
+        self.distance = Some(distance);
+    }
+
+    #[inline(always)]
+    pub fn get_distance(&self) -> f64 {
+        match self.distance {
+            Some(distance) => distance,
+            None => panic!("Distance is not set for vector: {}", self.get_id()),
+        }
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -163,29 +176,6 @@ impl HVector {
             .sum::<f64>()
             .sqrt()
     }
-
-    /// (pooling operation reduce)
-    #[inline(always)]
-    pub fn reduce_dims(&mut self, target_dim: usize) {
-        let chunk_size = (self.data.len() as f64 / target_dim as f64).ceil() as usize;
-        let mut reduced = Vec::with_capacity(target_dim);
-
-        for chunk_idx in 0..target_dim {
-            let start = chunk_idx * chunk_size;
-            let end = (start + chunk_size).min(self.data.len());
-
-            if start >= self.data.len() {
-                break;
-            }
-
-            let avg = self.data[start..end].iter().sum::<f64>() / (end - start) as f64;
-            reduced.push(avg);
-        }
-
-        self.data = reduced;
-    }
-
-    // TODO: scale up again
 }
 
 #[cfg(test)]
