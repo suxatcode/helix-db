@@ -533,7 +533,15 @@ impl HNSW for VectorCore {
         Ok(vectors)
     }
 
-    // TODO: load index (load all vecs already available at once)
+    fn load(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError> {
+        for v in data.iter() {
+            let _ = self.insert(txn, v, None);
+        }
+
+        // NOTE: need to txn.commit() outside of call
+
+        Ok(())
+    }
+
     // TODO: delete a node from the index
-    // TODO: create a new "HNSW::Index"
 }
