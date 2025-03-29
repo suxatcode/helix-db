@@ -1,6 +1,6 @@
-use std::cmp::Ordering;
-use serde::{Deserialize, Serialize}; // vector struct to store raw data, dimension and de
 use crate::helix_engine::types::VectorError;
+use serde::{Deserialize, Serialize}; // vector struct to store raw data, dimension and de
+use std::cmp::Ordering;
 
 #[repr(C, align(16))]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -26,20 +26,30 @@ impl Ord for HVector {
     }
 }
 
-pub trait EuclidianDistance { // TODO: make this cosine similarity
+pub trait DistanceCalc {
+    // TODO: make this cosine similarity
     fn distance(from: &HVector, to: &HVector) -> f64;
 }
 
-impl EuclidianDistance for HVector {
+impl DistanceCalc for HVector {
     #[inline(always)]
+    #[cfg(feature = "euclidean")]
     fn distance(from: &HVector, to: &HVector) -> f64 {
         if from.len() == to.len() {
             #[cfg(target_arch = "aarch64")]
-            unsafe { return from.simd_distance_unchecked(to); }
+            unsafe {
+                return from.simd_distance_unchecked(to);
+            }
             #[cfg(not(target_arch = "aarch64"))]
             return from.scalar_distance(to);
         }
         from.scalar_distance(to)
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "cosine")]
+    fn distance(from: &HVector, to: &HVector) -> f64 {
+        from.cosine_similarity(to)
     }
 }
 
@@ -168,6 +178,7 @@ impl HVector {
     }
 
     #[inline(always)]
+    #[cfg(feature = "euclidean")]
     fn scalar_distance(&self, other: &HVector) -> f64 {
         self.data
             .iter()
@@ -175,6 +186,130 @@ impl HVector {
             .map(|(&a, &b)| (a - b).powi(2))
             .sum::<f64>()
             .sqrt()
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "cosine")]
+    fn cosine_similarity(&self, other: &HVector) -> f64 {
+        let len = self.data.len();
+        debug_assert_eq!(len, other.data.len(), "Vectors must have the same length");
+
+        #[cfg(target_feature = "avx2")]
+        {
+            return self.cosine_similarity_avx2(other);
+        }
+
+        let mut dot_product = 0.0;
+        let mut magnitude_a = 0.0;
+        let mut magnitude_b = 0.0;
+
+        const CHUNK_SIZE: usize = 8;
+        let chunks = len / CHUNK_SIZE;
+        let remainder = len % CHUNK_SIZE;
+
+        for i in 0..chunks {
+            let offset = i * CHUNK_SIZE;
+            let a_chunk = &self.data[offset..offset + CHUNK_SIZE];
+            let b_chunk = &other.data[offset..offset + CHUNK_SIZE];
+
+            let mut local_dot = 0.0;
+            let mut local_mag_a = 0.0;
+            let mut local_mag_b = 0.0;
+
+            for j in 0..CHUNK_SIZE {
+                let a_val = a_chunk[j];
+                let b_val = b_chunk[j];
+                local_dot += a_val * b_val;
+                local_mag_a += a_val * a_val;
+                local_mag_b += b_val * b_val;
+            }
+
+            dot_product += local_dot;
+            magnitude_a += local_mag_a;
+            magnitude_b += local_mag_b;
+        }
+
+        let remainder_offset = chunks * CHUNK_SIZE;
+        for i in 0..remainder {
+            let a_val = self.data[remainder_offset + i];
+            let b_val = other.data[remainder_offset + i];
+            dot_product += a_val * b_val;
+            magnitude_a += a_val * a_val;
+            magnitude_b += b_val * b_val;
+        }
+
+        dot_product / (magnitude_a.sqrt() * magnitude_b.sqrt())
+    }
+
+    // SIMD implementation using AVX2 (256-bit vectors)
+    #[cfg(target_feature = "avx2")]
+    #[inline(always)]
+    fn cosine_similarity_avx2(a: &[f64], b: &[f64]) -> f64 {
+        use std::arch::x86_64::*;
+
+        let len = a.len();
+        let chunks = len / 4; // AVX2 processes 4 f64 values at once
+
+        unsafe {
+            let mut dot_product = _mm256_setzero_pd();
+            let mut magnitude_a = _mm256_setzero_pd();
+            let mut magnitude_b = _mm256_setzero_pd();
+
+            for i in 0..chunks {
+                let offset = i * 4;
+
+                // Load data - handle unaligned data
+                let a_chunk = _mm256_loadu_pd(&a[offset]);
+                let b_chunk = _mm256_loadu_pd(&b[offset]);
+
+                // Calculate dot product and magnitudes in parallel
+                dot_product = _mm256_add_pd(dot_product, _mm256_mul_pd(a_chunk, b_chunk));
+                magnitude_a = _mm256_add_pd(magnitude_a, _mm256_mul_pd(a_chunk, a_chunk));
+                magnitude_b = _mm256_add_pd(magnitude_b, _mm256_mul_pd(b_chunk, b_chunk));
+            }
+
+            // Horizontal sum of 4 doubles in each vector
+            let dot_sum = horizontal_sum_pd(dot_product);
+            let mag_a_sum = horizontal_sum_pd(magnitude_a);
+            let mag_b_sum = horizontal_sum_pd(magnitude_b);
+
+            // Handle remainder elements
+            let mut dot_remainder = 0.0;
+            let mut mag_a_remainder = 0.0;
+            let mut mag_b_remainder = 0.0;
+
+            let remainder_offset = chunks * 4;
+            for i in remainder_offset..len {
+                let a_val = a[i];
+                let b_val = b[i];
+                dot_remainder += a_val * b_val;
+                mag_a_remainder += a_val * a_val;
+                mag_b_remainder += b_val * b_val;
+            }
+
+            // Combine SIMD and scalar results
+            let dot_product_total = dot_sum + dot_remainder;
+            let magnitude_a_total = (mag_a_sum + mag_a_remainder).sqrt();
+            let magnitude_b_total = (mag_b_sum + mag_b_remainder).sqrt();
+
+            dot_product_total / (magnitude_a_total * magnitude_b_total)
+        }
+    }
+
+    // Helper function to sum the 4 doubles in an AVX2 vector
+    #[cfg(target_feature = "avx2")]
+    #[inline(always)]
+    unsafe fn horizontal_sum_pd(__v: __m256d) -> f64 {
+        use std::arch::x86_64::*;
+
+        // Extract the high 128 bits and add to the low 128 bits
+        let sum_hi_lo = _mm_add_pd(_mm256_castpd256_pd128(__v), _mm256_extractf128_pd(__v, 1));
+
+        // Add the high 64 bits to the low 64 bits
+        let sum = _mm_add_sd(sum_hi_lo, _mm_unpackhi_pd(sum_hi_lo, sum_hi_lo));
+
+        // Extract the low 64 bits as a scalar
+        _mm_cvtsd_f64(sum)
     }
 }
 
@@ -267,6 +402,12 @@ mod vector_tests {
         let distance = HVector::distance(&v1, &v2);
         assert!((distance - (20.0_f64).sqrt()).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_hvector_cosine_similarity() {
+        let v1 = HVector::new("test".to_string(), vec![1.0, 2.0, 3.0]);
+        let v2 = HVector::new("test".to_string(), vec![4.0, 5.0, 6.0]);
+        let similarity = v1.cosine_similarity(&v2);
+        assert!((similarity - 0.9746318461970762).abs() < 1e-10);
+    }
 }
-
-

@@ -36,12 +36,14 @@ polars = { version = "0.36", features = ["parquet", "lazy"] }
 
 [features]
 testing = ["polars"]
+euclidean = []
+cosine = []
 engine=[]
 compiler=[]
 protocol=[]
 build=["protocol", "compiler"]
 full = ["build", "engine", "compiler", "protocol"]
-default = ["engine", "compiler", "protocol"]
+default = ["engine", "compiler", "protocol", "cosine"]
 
 [[bench]]
 name = "graph_benchmarks"

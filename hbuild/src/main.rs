@@ -84,41 +84,71 @@ async fn main() -> Result<(), AdminError> {
             let request = Request::from_stream(&conn).unwrap();
             let mut response = Response::new();
 
-            if request.path == "/build" {
-                // pull latest query files from s3
-                let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
-                let prefix = std::env::var("S3_PREFIX")
-                    .map_err(|e| AdminError::S3Error("Failed to get S3 prefix".to_string(), e))?;
-                let local_path =
-                    std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
+            // pull latest query files from s3
+            let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
+            let prefix = std::env::var("S3_PREFIX")
+                .map_err(|e| AdminError::S3Error("Failed to get S3 prefix".to_string(), e))?;
+            let local_path = std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
 
-                // Create local directory if it doesn't exist
-                std::fs::create_dir_all(&local_path).unwrap();
+            // Create local directory if it doesn't exist
+            std::fs::create_dir_all(&local_path).unwrap();
 
-                // Download files from S3
-                if let Err(e) =
-                    download_s3_folder(&s3_client_clone, &bucket, &prefix, &local_path).await
-                {
-                    eprintln!("Failed to download files from S3: {:?}", e);
-                    response.status = 500;
-                    response.body =
-                        format!("Failed to download files from S3: {:?}", e).into_bytes();
-                } else {
-                    response.status = 200;
-                    response.body = "Successfully downloaded query files".as_bytes().to_vec();
+            // Download files from S3
+            if let Err(e) = download_s3_folder(&s3_client_clone, &bucket, &prefix, &local_path).await {
+                eprintln!("Failed to download files from S3: {:?}", e);
+                response.status = 500;
+                response.body = format!("Failed to download files from S3: {:?}", e).into_bytes();
+            } else {
+                // Run helix compile command
+                let compile_result = Command::new("helix")
+                    .arg("compile")
+                    .arg("--output")
+                    .arg("~/.helix/repo/helix-container/src")
+                    .output();
+
+                // build db
+                let build_result = Command::new("cargo")
+                    .arg("build")
+                    .arg("--release")
+                    .arg("--target-dir")
+                    .arg("~/.helix/bin")
+                    .arg("--bin")
+                    .arg("helix-server")
+                    .output();
+
+                match compile_result {
+                    Ok(output) if output.status.success() => {
+                        // Restart the helix service
+                        let restart_result = Command::new("sudo")
+                            .arg("systemctl")
+                            .arg("restart")
+                            .arg("helix")
+                            .output();
+
+                        match restart_result {
+                            Ok(output) if output.status.success() => {
+                                response.status = 200;
+                                response.body = "Successfully compiled queries and restarted helix service".as_bytes().to_vec();
+                            }
+                            Ok(output) => {
+                                response.status = 500;
+                                response.body = format!("Failed to restart helix service: {}", String::from_utf8_lossy(&output.stderr)).into_bytes();
+                            }
+                            Err(e) => {
+                                response.status = 500;
+                                response.body = format!("Failed to execute systemctl command: {:?}", e).into_bytes();
+                            }
+                        }
+                    }
+                    Ok(output) => {
+                        response.status = 500;
+                        response.body = format!("Failed to compile queries: {}", String::from_utf8_lossy(&output.stderr)).into_bytes();
+                    }
+                    Err(e) => {
+                        response.status = 500;
+                        response.body = format!("Failed to execute helix compile command: {:?}", e).into_bytes();
+                    }
                 }
-
-                // run lint and compile queries
-                
-
-                // start systemctl service
-                Command::new("sudo").arg("systemctl").arg("start").arg("helix").spawn().unwrap();
-            } else if request.path == "/stop" {
-                // stop systemctl service
-                Command::new("sudo").arg("systemctl").arg("stop").arg("helix").spawn().unwrap();
-            } else if request.path == "/start" {
-                // start systemctl service
-                Command::new("sudo").arg("systemctl").arg("start").arg("helix").spawn().unwrap();
             }
 
             // Send response back to client
@@ -140,3 +170,8 @@ pub enum AdminError {
     AdminConnectionError(String, std::io::Error),
     S3Error(String, std::env::VarError),
 }
+
+
+
+// replace binary 
+// run
