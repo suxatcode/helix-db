@@ -28,24 +28,14 @@ pub struct HNSWConfig {
 }
 
 impl HNSWConfig {
-    pub fn new(n: usize) -> Self {
-        let m = (2.0 * (n as f64).ln().ceil()) as usize;
+    pub fn new(m: Option<usize>, ef_construct: Option<usize>, ef: Option<usize>) -> Self {
+        let m = m.unwrap_or(16);
         Self {
             m,
             m_max_0: 2 * m,
-            ef_construct: 386,
+            ef_construct: ef_construct.unwrap_or(128),
             m_l: 1.0 / (m as f64).ln(),
-            ef: 800,
-        }
-    }
-
-    pub fn new_with_params(m: usize, ef_construct: usize, ef: usize) -> Self {
-        Self {
-            m,
-            m_max_0: 2 * m,
-            ef_construct,
-            m_l: 1.0 / (m as f64).ln(),
-            ef,
+            ef: ef.unwrap_or(768),
         }
     }
 }
