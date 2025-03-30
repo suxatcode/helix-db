@@ -1050,7 +1050,7 @@ dependencies = [
  "indicatif",
  "libc",
  "serde",
- "serde_json",
+ "sonic-rs",
  "tempfile",
  "uuid",
  "windows 0.60.0",

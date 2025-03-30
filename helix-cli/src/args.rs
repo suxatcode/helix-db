@@ -146,6 +146,7 @@ pub struct UpdateCommand {}
 pub enum CliError {
     Io(std::io::Error),
     New(String),
+    ConfigFileNotFound,
 }
 
 impl std::fmt::Display for CliError {
@@ -153,6 +154,7 @@ impl std::fmt::Display for CliError {
         match self {
             CliError::Io(e) => write!(f, "IO error: {}", e),
             CliError::New(msg) => write!(f, "{}", msg),
+            CliError::ConfigFileNotFound => write!(f, "Config file not found"),
         }
     }
 }
@@ -172,5 +174,11 @@ impl From<&'static str> for CliError {
 impl From<String> for CliError {
     fn from(e: String) -> Self {
         CliError::New(e)
+    }
+}
+
+impl From<sonic_rs::Error> for CliError {
+    fn from(e: sonic_rs::Error) -> Self {
+        CliError::New(e.to_string())
     }
 }

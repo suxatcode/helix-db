@@ -1,3 +1,4 @@
+use helixdb::helix_engine::graph_core::config::Config;
 use helixdb::helix_engine::graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts};
 use helixdb::helix_gateway::{
     gateway::{GatewayOpts, HelixGateway},
@@ -9,6 +10,17 @@ use std::{collections::HashMap, sync::Arc};
 mod queries;
 
 fn main() {
+    // read from config.hx.json
+    let home = dirs::home_dir().expect("Could not retrieve home directory");
+    let config_path = home.join(".helix/repo/helix-db/helix-container/src/config.hx.json");
+    let config = match Config::from_config_file(config_path) {
+        Ok(config) => config,
+        Err(e) => {
+            println!("Error loading config: {}", e);
+            Config::default()
+        }
+    };
+
     let path = match std::env::var("HELIX_DATA_DIR") {
         Ok(val) => std::path::PathBuf::from(val).join("user"),
         Err(_) => {
@@ -17,16 +29,18 @@ fn main() {
             home.join(".helix/user")
         }
     };
-    println!("Path: {}", path.display());
     let port = match std::env::var("HELIX_PORT") {
         Ok(val) => val.parse::<u16>().unwrap(),
         Err(_) => 6969,
     };
-    println!("Port: {}", port);
+    println!("Running with the following setup:");
+    println!("\tconfig: {:?}", config);
+    println!("\tpath: {}", path.display());
+    println!("\tport: {}", port);
     let path_str = path.to_str().expect("Could not convert path to string");
     let opts = HelixGraphEngineOpts {
         path: path_str.to_string(),
-        secondary_indices: Some(vec!["username".to_string(), "x_id".to_string()]),
+        config,
     };
     let graph = Arc::new(HelixGraphEngine::new(opts).unwrap());
 

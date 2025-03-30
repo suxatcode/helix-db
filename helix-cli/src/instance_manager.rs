@@ -162,7 +162,7 @@ impl InstanceManager {
             return Ok(Vec::new());
         }
 
-        let instances: Vec<InstanceInfo> = serde_json::from_str(&contents)?;
+        let instances: Vec<InstanceInfo> = sonic_rs::from_str(&contents)?;
         Ok(instances)
     }
 
@@ -218,7 +218,7 @@ impl InstanceManager {
     }
 
     fn save_instances(&self, instances: &[InstanceInfo]) -> io::Result<()> {
-        let contents = serde_json::to_string_pretty(instances)?;
+        let contents = sonic_rs::to_string(instances)?;
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)

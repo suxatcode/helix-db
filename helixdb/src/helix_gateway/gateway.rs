@@ -29,6 +29,7 @@ impl HelixGateway {
 
 #[cfg(test)]
 mod tests {
+    use crate::helix_engine::graph_core::config::Config;
     use crate::helix_gateway::connection::connection::ConnectionHandler;
     use crate::helix_engine::{types::GraphError, graph_core::graph_core::HelixGraphEngineOpts};
     use crate::protocol::{request::Request, response::Response};
@@ -49,7 +50,7 @@ mod tests {
         let db_path = temp_dir.path().to_str().unwrap();
         let opts = HelixGraphEngineOpts{
            path: db_path.to_string(),
-           secondary_indices: None,
+           config: Config::default(),
         };
         let storage = HelixGraphEngine::new(opts).unwrap();
         (storage, temp_dir)
