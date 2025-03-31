@@ -1,3 +1,4 @@
+use crate::helix_engine::graph_core::config::{Config, VectorConfig};
 use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
 use bincode::{deserialize, serialize};
@@ -47,17 +48,14 @@ pub struct HelixGraphStorage {
 }
 
 impl HelixGraphStorage {
-    pub fn new(
-        path: &str,
-        secondary_indexes: Option<Vec<String>>,
-    ) -> Result<HelixGraphStorage, GraphError> {
+    pub fn new(path: &str, config: Config) -> Result<HelixGraphStorage, GraphError> {
         fs::create_dir_all(path)?;
 
         // Configure and open LMDB environment
         let graph_env = unsafe {
             EnvOpenOptions::new()
-                .map_size(20 * 1024 * 1024 * 1024) // 10GB max
-                .max_dbs(12)
+                .map_size(config.vector_config.db_max_size.unwrap_or(30) * 1024 * 1024 * 1024) // 10GB max
+                .max_dbs(20)
                 .max_readers(200)
                 .open(Path::new(path))?
         };
@@ -73,7 +71,7 @@ impl HelixGraphStorage {
         let in_edges_db = graph_env.create_database(&mut wtxn, Some(DB_IN_EDGES))?;
         // Create secondary indices
         let mut secondary_indices = HashMap::new();
-        if let Some(indexes) = secondary_indexes {
+        if let Some(indexes) = config.graph_config.secondary_indices {
             for index in indexes {
                 secondary_indices.insert(
                     index.clone(),
@@ -83,7 +81,15 @@ impl HelixGraphStorage {
         }
         println!("Secondary Indices: {:?}", secondary_indices);
 
-        let vectors = VectorCore::new(&graph_env, &mut wtxn, HNSWConfig::new(0))?;
+        let vectors = VectorCore::new(
+            &graph_env,
+            &mut wtxn,
+            HNSWConfig::new(
+                config.vector_config.m,
+                config.vector_config.ef_construction,
+                config.vector_config.ef_search,
+            ),
+        )?;
 
         wtxn.commit()?;
         Ok(Self {
@@ -857,7 +863,7 @@ mod tests {
     fn setup_temp_db() -> HelixGraphStorage {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().to_str().unwrap();
-        let storage = HelixGraphStorage::new(db_path, None).unwrap();
+        let storage = HelixGraphStorage::new(db_path, Config::default()).unwrap();
 
         storage
     }

@@ -1,10 +1,10 @@
 use args::{CliError, HelixCLI};
 use clap::Parser;
-use helixdb::helixc::{
+use helixdb::{helix_engine::graph_core::config::Config, helixc::{
     // generator,
     generator::generator::CodeGenerator,
     parser::helix_parser::{HelixParser, Source},
-};
+}};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::HashMap,
@@ -20,6 +20,7 @@ use tempfile::{NamedTempFile, TempDir};
 
 use std::path::PathBuf;
 pub mod args;
+
 mod instance_manager;
 
 use instance_manager::InstanceManager;
@@ -63,7 +64,7 @@ fn find_available_port(start_port: u16) -> Option<u16> {
                     Ok(local_listener) => {
                         drop(local_listener);
                         return Some(port);
-                    },
+                    }
                     Err(e) => {
                         //println!("Error binding to {}: {:?}", addr, e);
                         if e.kind() != ErrorKind::AddrInUse {
@@ -331,6 +332,14 @@ fn main() {
                         return;
                     }
                 }
+
+                // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
+                let config_path = PathBuf::from(&output).join("src/config.hx.json");
+                fs::copy(
+                    PathBuf::from("config.hx.json"),
+                    config_path,
+                )
+                .unwrap();
 
                 // check rust code
                 let mut runner = Command::new("cargo");
@@ -770,6 +779,13 @@ fn main() {
             )
             .unwrap();
 
+            let config_path = path.join("config.hx.json");
+            fs::write(
+                config_path,
+                Config::init_config(),
+            )
+            .unwrap();
+
             println!("Helix project initialised at {}", path.display());
         }
     }
@@ -902,7 +918,10 @@ fn generate_python_bindings(source: &Source, output_path: &String) {
         }
         code.push_str("\t}\n");
         code.push_str("\tjson_string = json.dumps(data)\n");
-        code.push_str(&format!("\treturn helixDB.query(\"{}\", json_string)\n", query.name));
+        code.push_str(&format!(
+            "\treturn helixDB.query(\"{}\", json_string)\n",
+            query.name
+        ));
     }
 
     let file_path = PathBuf::from(output_path).join(format!("queries.py",));

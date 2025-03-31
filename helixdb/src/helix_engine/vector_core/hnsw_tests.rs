@@ -24,7 +24,7 @@ fn setup_temp_env() -> Env {
 fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
     query_vectors
     .par_iter()
-    .map(|(id, query)| {
+    .map(|(_, query)| {
         let hquery = HVector::from_slice("".to_string(), 0, query.clone());
 
         let mut distances: Vec<(String, f64)> = vectors
@@ -53,7 +53,7 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
         ));
     }
 
-    let data_dir = "../data/dpedia-openai-1m/";
+    let data_dir = "../data/dbpedia-openai-1m/";
     let mut all_vectors = Vec::new();
     let mut total_loaded = 0;
 
@@ -143,17 +143,17 @@ fn load_ann_gist1m_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, IoEr
     Ok(vectors)
 }
 
-// cargo --release test test_name -- --nocapture
+// cargo test --release test_recall_precision_real_data -- --nocapture
 
 #[test]
 fn test_recall_precision_real_data() {
-    let n_base = 20_000;
+    let n_base = 50_000;
     //let dims = 1536;
-    //let vectors = load_dbpedia_vectors(n_base).unwrap();
-    let vectors = load_ann_gist1m_vectors(n_base).unwrap();
+    let vectors = load_dbpedia_vectors(n_base).unwrap();
+    // let vectors = load_ann_gist1m_vectors(n_base).unwrap();
     println!("loaded {} vectors", vectors.len());
 
-    let n_query = 2_000; // 10-20%
+    let n_query = 5_000; // 10-20%
     let mut rng = rand::rng();
     let mut shuffled_vectors = vectors.clone();
     shuffled_vectors.shuffle(&mut rng);
@@ -172,7 +172,7 @@ fn test_recall_precision_real_data() {
     let index = VectorCore::new(
         &env,
         &mut txn,
-        HNSWConfig::new_with_params(20, 256, 768),
+        HNSWConfig::new(None, None, None),
     ).unwrap();
 
     let mut all_vectors: Vec<HVector> = Vec::new();

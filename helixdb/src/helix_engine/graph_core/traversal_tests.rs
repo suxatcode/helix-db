@@ -21,7 +21,7 @@ use super::{traversal::TraversalBuilder, traversal_steps::{TraversalMethods, Tra
 fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().to_str().unwrap();
-    let storage = HelixGraphStorage::new(db_path, None).unwrap();
+    let storage = HelixGraphStorage::new(db_path, super::config::Config::default()).unwrap();
     (Arc::new(storage), temp_dir)
 }
 

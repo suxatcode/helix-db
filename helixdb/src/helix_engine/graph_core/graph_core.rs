@@ -9,6 +9,7 @@ use std::ops::Deref;
 use std::str;
 use std::sync::{Arc, RwLock};
 
+use super::config::VectorConfig;
 use super::traversal::TraversalBuilder;
 use super::traversal_steps::{TraversalBuilderMethods, TraversalMethods, TraversalSteps};
 use crate::helixc::parser::helix_parser::{
@@ -21,6 +22,8 @@ use crate::protocol::{
     return_values::ReturnValue,
     value::Value,
 };
+
+use crate::helix_engine::graph_core::config::Config;
 
 #[derive(Debug)]
 pub enum QueryInput {
@@ -36,27 +39,30 @@ pub struct HelixGraphEngine {
 
 pub struct HelixGraphEngineOpts {
     pub path: String,
-    pub secondary_indices: Option<Vec<String>>,
+    pub config: Config,
 }
 
 impl HelixGraphEngineOpts {
     pub fn default() -> Self {
         Self {
             path: String::new(),
-            secondary_indices: None,
+            config: Config::default(),
         }
     }
     pub fn with_path(path: String) -> Self {
         Self {
             path,
-            secondary_indices: None,
+            config: Config::default(),
         }
     }
 }
 
 impl HelixGraphEngine {
     pub fn new(opts: HelixGraphEngineOpts) -> Result<HelixGraphEngine, GraphError> {
-        let storage = match HelixGraphStorage::new(opts.path.as_str(), opts.secondary_indices) {
+        let storage = match HelixGraphStorage::new(
+            opts.path.as_str(),
+            opts.config,
+        ) {
             Ok(db) => Arc::new(db),
             Err(err) => return Err(err),
         };
@@ -702,6 +708,4 @@ impl HelixGraphEngine {
     //         }
     //     }
     // }
-
-   
 }

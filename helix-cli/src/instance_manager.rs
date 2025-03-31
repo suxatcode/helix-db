@@ -1,10 +1,10 @@
+use dirs;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use dirs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstanceInfo {
@@ -19,6 +19,7 @@ pub struct InstanceInfo {
 pub struct InstanceManager {
     instances_file: PathBuf,
     cache_dir: PathBuf,
+    logs_dir: PathBuf,
 }
 
 impl InstanceManager {
@@ -26,34 +27,60 @@ impl InstanceManager {
         let home_dir = dirs::home_dir().expect("Could not find home directory");
         let helix_dir = home_dir.join(".helix");
         let cache_dir = helix_dir.join("cached_builds");
+        let logs_dir = helix_dir.join("logs");
         fs::create_dir_all(&helix_dir)?;
         fs::create_dir_all(&cache_dir)?;
-        
+        fs::create_dir_all(&logs_dir)?;
+
         Ok(Self {
             instances_file: helix_dir.join("instances.json"),
             cache_dir,
+            logs_dir,
         })
     }
 
-    pub fn start_instance(&self, source_binary: &Path, port: u16, endpoints: Vec<String>) -> io::Result<InstanceInfo> {
+    pub fn start_instance(
+        &self,
+        source_binary: &Path,
+        port: u16,
+        endpoints: Vec<String>,
+    ) -> io::Result<InstanceInfo> {
         let instance_id = Uuid::new_v4().to_string();
         let cached_binary = self.cache_dir.join(&instance_id);
         fs::copy(source_binary, &cached_binary)?;
-        
+
         // make sure data dir exists
         // make it .cached_builds/data/instance_id/
         let data_dir = self.cache_dir.join("data").join(&instance_id);
         fs::create_dir_all(&data_dir)?;
 
+        // Create log file for this instance
+        let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
+        let log_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(log_file)?;
+        let error_log_file = self
+            .logs_dir
+            .join(format!("instance_{}_error.log", instance_id));
+        let error_log_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(error_log_file)?;
+
         let mut command = Command::new(&cached_binary);
         command.env("PORT", port.to_string());
-        command.env("HELIX_DAEMON", "1")
+        command
+            .env("HELIX_DAEMON", "1")
             .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
             .env("HELIX_PORT", port.to_string())
-            .stdout(Stdio::null());
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(error_log_file));
 
         let child = command.spawn()?;
-        
+
         let instance = InstanceInfo {
             id: instance_id,
             pid: child.id(),
@@ -80,15 +107,25 @@ impl InstanceManager {
             let data_dir = self.cache_dir.join("data").join(&instance_id);
             fs::create_dir_all(&data_dir)?;
 
+            // Create log file for this instance
+            let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
+            let log_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .open(log_file)?;
+
             let mut command = Command::new(&instance.binary_path);
             command.env("PORT", instance.port.to_string());
-            command.env("HELIX_DAEMON", "1")
+            command
+                .env("HELIX_DAEMON", "1")
                 .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
                 .env("HELIX_PORT", instance.port.to_string())
-                .stdout(Stdio::null());
+                .stdout(Stdio::from(log_file.try_clone()?))
+                .stderr(Stdio::from(log_file));
 
             let child = command.spawn()?;
-            
+
             let new_instance = InstanceInfo {
                 id: instance.id,
                 pid: child.id(),
@@ -125,7 +162,7 @@ impl InstanceManager {
             return Ok(Vec::new());
         }
 
-        let instances: Vec<InstanceInfo> = serde_json::from_str(&contents)?;
+        let instances: Vec<InstanceInfo> = sonic_rs::from_str(&contents)?;
         Ok(instances)
     }
 
@@ -139,12 +176,10 @@ impl InstanceManager {
             }
             #[cfg(windows)]
             {
-                use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
-                let handle = unsafe { OpenProcess(
-                    PROCESS_TERMINATE,
-                    false.into(),
-                    instance.pid
-                )};
+                use windows::Win32::System::Threading::{
+                    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+                };
+                let handle = unsafe { OpenProcess(PROCESS_TERMINATE, false.into(), instance.pid) };
                 if let Ok(handle) = handle {
                     unsafe { TerminateProcess(handle, 0) };
                 }
@@ -163,12 +198,10 @@ impl InstanceManager {
             }
             #[cfg(windows)]
             {
-                use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
-                let handle = unsafe { OpenProcess(
-                    PROCESS_TERMINATE,
-                    false.into(),
-                    instance.pid
-                )};
+                use windows::Win32::System::Threading::{
+                    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+                };
+                let handle = unsafe { OpenProcess(PROCESS_TERMINATE, false.into(), instance.pid) };
                 if let Ok(handle) = handle {
                     unsafe { TerminateProcess(handle, 0) };
                 }
@@ -185,7 +218,7 @@ impl InstanceManager {
     }
 
     fn save_instances(&self, instances: &[InstanceInfo]) -> io::Result<()> {
-        let contents = serde_json::to_string_pretty(instances)?;
+        let contents = sonic_rs::to_string(instances)?;
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
@@ -194,4 +227,4 @@ impl InstanceManager {
         file.write_all(contents.as_bytes())?;
         Ok(())
     }
-} 
+}

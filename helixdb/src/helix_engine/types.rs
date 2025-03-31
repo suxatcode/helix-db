@@ -22,6 +22,7 @@ pub enum GraphError {
     MultipleNodesWithSameId,
     MultipleEdgesWithSameId,
     InvalidNode,
+    ConfigFileNotFound,
 }
 
 impl fmt::Display for GraphError {
@@ -45,6 +46,7 @@ impl fmt::Display for GraphError {
             GraphError::MultipleNodesWithSameId => write!(f, "Multiple nodes with same id"),
             GraphError::MultipleEdgesWithSameId => write!(f, "Multiple edges with same id"),
             GraphError::InvalidNode => write!(f, "Invalid node"),
+            GraphError::ConfigFileNotFound => write!(f, "Config file not found"),
             GraphError::VectorError(msg) => write!(f, "Vector error: {}", msg),
         }
     }
