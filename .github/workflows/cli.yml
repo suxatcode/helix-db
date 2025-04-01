@@ -38,15 +38,15 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest, windows-latest] # Using ubuntu-20.04 for better GLIBC compatibility
+        os: [ubuntu-20.04, ubuntu-20.04-arm, macos-13, macos-latest, windows-latest]
         include:
           - os: ubuntu-20.04
             target: x86_64-unknown-linux-gnu
             binary_name: helix-cli-linux-amd64
-          - os: ubuntu-20.04
+          - os: ubuntu-20.04-arm
             target: aarch64-unknown-linux-gnu
             binary_name: helix-cli-linux-arm64
-          - os: macos-latest
+          - os: macos-13
             target: x86_64-apple-darwin
             binary_name: helix-cli-macos-amd64
           - os: macos-latest
@@ -63,7 +63,7 @@ jobs:
         if: matrix.os == 'ubuntu-20.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config gcc gcc-aarch64-linux-gnu
+          sudo apt-get install -y libssl-dev pkg-config gcc
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
