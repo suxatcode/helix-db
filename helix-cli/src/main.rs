@@ -775,8 +775,12 @@ fn main() {
 // For more information on how to write queries,
 // see the documentation at https://docs.helix-db.com
 // or checkout our GitHub at https://github.com/HelixDB/helix-db
+
+QUERY hnswinsert(vector: [Float]) =>
+    AddV<Vector>(vector)
+    RETURN "SUCCESS"
 "#,
-            )
+            ) // TODO: add hnswload, hnswsearch, and delete as defaults as well delete
             .unwrap();
 
             let config_path = path.join("config.hx.json");
