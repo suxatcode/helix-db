@@ -1,10 +1,13 @@
 use args::{CliError, HelixCLI};
 use clap::Parser;
-use helixdb::{helix_engine::graph_core::config::Config, helixc::{
-    // generator,
-    generator::generator::CodeGenerator,
-    parser::helix_parser::{HelixParser, Source},
-}};
+use helixdb::{
+    helix_engine::graph_core::config::Config,
+    helixc::{
+        // generator,
+        generator::generator::CodeGenerator,
+        parser::helix_parser::{HelixParser, Source},
+    },
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     collections::HashMap,
@@ -335,11 +338,7 @@ fn main() {
 
                 // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
                 let config_path = PathBuf::from(&output).join("src/config.hx.json");
-                fs::copy(
-                    PathBuf::from("config.hx.json"),
-                    config_path,
-                )
-                .unwrap();
+                fs::copy(PathBuf::from("config.hx.json"), config_path).unwrap();
 
                 // check rust code
                 let mut runner = Command::new("cargo");
@@ -610,27 +609,40 @@ fn main() {
                 }
             }
 
-            // check if helix repo exists
-            let home_dir = match dirs::home_dir() {
-                Some(dir) => dir,
+            let repo_path = match _command.path {
+                Some(path) => {
+                    let path = PathBuf::from(path);
+                    if !path.is_dir() {
+                        println!("\t❌ Path is not a directory");
+                        return;
+                    }
+                    if !path.exists() {
+                        println!("\t❌ Path does not exist");
+                        return;
+                    }
+                    path
+                }
                 None => {
-                    println!("\t❌ Could not determine home directory");
-                    return;
+                    // check if helix repo exists
+                    let home_dir = match dirs::home_dir() {
+                        Some(dir) => dir,
+                        None => {
+                            println!("\t❌ Could not determine home directory");
+                            return;
+                        }
+                    };
+                    home_dir.join(".helix/repo")
                 }
             };
-            let repo_path = home_dir.join(".helix/repo/helix-db");
 
-            if repo_path.exists() && repo_path.is_dir() {
-                println!("\t✅ Helix repo already exists at {}", repo_path.display());
+            if repo_path.clone().join("helix-db").exists() && repo_path.clone().join("helix-db").is_dir() {
+                println!("\t✅ Helix repo already exists at {}", repo_path.join("helix-db").display());
                 return;
             }
 
-            println!("Installing Helix repo...");
-            let repo_dir = home_dir.join(".helix/repo");
-
             // Create the directory structure if it doesn't exist
-            match fs::create_dir_all(&repo_dir) {
-                Ok(_) => println!("\t✅ Created directory structure at {}", repo_dir.display()),
+            match fs::create_dir_all(&repo_path) {
+                Ok(_) => println!("\t✅ Created directory structure at {}", repo_path.display()),
                 Err(e) => {
                     println!("\t❌ Failed to create directory structure");
                     println!("\t|");
@@ -642,7 +654,7 @@ fn main() {
             let mut runner = Command::new("git");
             runner.arg("clone");
             runner.arg("https://github.com/HelixDB/helix-db.git");
-            runner.current_dir(&repo_dir);
+            runner.current_dir(&repo_path);
 
             match runner.output() {
                 Ok(_) => {
@@ -784,11 +796,7 @@ QUERY hnswinsert(vector: [Float]) =>
             .unwrap();
 
             let config_path = path.join("config.hx.json");
-            fs::write(
-                config_path,
-                Config::init_config(),
-            )
-            .unwrap();
+            fs::write(config_path, Config::init_config()).unwrap();
 
             println!("Helix project initialised at {}", path.display());
         }
