@@ -173,9 +173,15 @@ impl CodeGenerator {
             // Deserialize input data
             output.push_str(&mut self.indent());
             output.push_str(&format!(
-                "let data: {}Data = sonic_rs::from_slice(&input.request.body).unwrap();\n\n",
+                "let data: {}Data = match sonic_rs::from_slice(&input.request.body) {{\n",
                 query.name
             ));
+            output.push_str(&mut self.indent());
+            output.push_str("    Ok(data) => data,\n");
+            output.push_str(&mut self.indent());
+            output.push_str("    Err(err) => return Err(GraphError::from(err)),\n");
+            output.push_str(&mut self.indent());
+            output.push_str("}\n\n");
         }
 
         //
