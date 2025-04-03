@@ -1,38 +1,52 @@
-use std::{net::{SocketAddr, TcpListener}, process::Command};
-
 use anyhow::Result;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
 use helixdb::protocol::{request::Request, response::Response};
 use socket2::{Domain, Socket, Type};
+use sonic_rs::{from_str, to_string};
+use sonic_rs::{Deserialize, JsonValueTrait, Serialize, Value};
+use std::io::Write;
+use std::{
+    net::{SocketAddr, TcpListener},
+    process::Command,
+};
 
-async fn download_s3_folder(
+async fn process_query_files(
     client: &Client,
     bucket: &str,
-    prefix: &str,
+    user_id: &str,
+    instance_id: &str,
     local_path: &str,
 ) -> Result<()> {
+    let prefix = format!("{}/{}/", user_id, instance_id);
+
     // List objects in the bucket with the given prefix
     let objects = client
         .list_objects_v2()
         .bucket(bucket)
-        .prefix(prefix)
+        .prefix(&prefix)
         .send()
         .await?;
+
+    // Create the output file
+    let output_path = format!("{}/queries.hx", local_path);
+    let mut output_file = std::fs::File::create(&output_path)?;
 
     if let Some(contents) = objects.contents {
         for object in contents {
             if let Some(key) = &object.key {
-                // Create the local file path
-                let file_name = key.split('/').last().unwrap_or(key);
-                let local_file_path = format!("{}/{}", local_path, file_name);
-
                 // Get the object
                 let get_obj = client.get_object().bucket(bucket).key(key).send().await?;
-
-                // Create the local file and write the contents
                 let data = get_obj.body.collect().await?;
-                std::fs::write(&local_file_path, data.into_bytes())?;
+                let json_str = String::from_utf8(data.to_vec())?;
+
+                // Parse JSON
+                let json: Value = sonic_rs::from_str(&json_str)?;
+
+                // Extract content field and write to output file
+                if let Some(content) = json["content"].as_str() {
+                    writeln!(output_file, "{}", content)?;
+                }
             }
         }
     }
@@ -41,6 +55,14 @@ async fn download_s3_folder(
 }
 
 // make sure build is run in sudo mode
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct HBuildDeployRequest {
+    user_id: String,
+    instance_id: String,
+    version: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), AdminError> {
     // Initialize AWS SDK
@@ -48,7 +70,7 @@ async fn main() -> Result<(), AdminError> {
     let s3_client = Client::new(&config);
 
     // run server on specified port
-    let port = std::env::var("PORT").unwrap_or("443".to_string());
+    let port = std::env::var("PORT").unwrap_or("8080".to_string());
 
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
@@ -84,71 +106,98 @@ async fn main() -> Result<(), AdminError> {
             let request = Request::from_stream(&conn).unwrap();
             let mut response = Response::new();
 
-            // pull latest query files from s3
-            let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
-            let prefix = std::env::var("S3_PREFIX")
-                .map_err(|e| AdminError::S3Error("Failed to get S3 prefix".to_string(), e))?;
-            let local_path = std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
+            // Check if this is a deploy_queries request
+            if request.path == "/deploy_queries" {
+                let json_body: HBuildDeployRequest = match sonic_rs::from_slice(&request.body) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        response.status = 400;
+                        response.body = format!("Failed to parse JSON: {}", e).into_bytes();
+                        return Ok(());
+                    }
+                };
+                let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
+                let local_path =
+                    std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
 
-            // Create local directory if it doesn't exist
-            std::fs::create_dir_all(&local_path).unwrap();
+                // Create local directory if it doesn't exist
+                std::fs::create_dir_all(&local_path).unwrap();
 
-            // Download files from S3
-            if let Err(e) = download_s3_folder(&s3_client_clone, &bucket, &prefix, &local_path).await {
-                eprintln!("Failed to download files from S3: {:?}", e);
-                response.status = 500;
-                response.body = format!("Failed to download files from S3: {:?}", e).into_bytes();
-            } else {
-                // Run helix compile command
-                let compile_result = Command::new("helix")
-                    .arg("compile")
-                    .arg("--output")
-                    .arg("~/.helix/repo/helix-container/src")
-                    .output();
+                // Process query files and create query.hx
+                if let Err(e) = process_query_files(
+                    &s3_client_clone,
+                    &bucket,
+                    &json_body.user_id,
+                    &json_body.instance_id,
+                    &local_path,
+                )
+                .await
+                {
+                    eprintln!("Failed to process query files: {:?}", e);
+                    response.status = 500;
+                    response.body = format!("Failed to process query files: {:?}", e).into_bytes();
+                } else {
+                    // Run helix compile command
+                    let compile_result = Command::new("helix")
+                        .arg("compile")
+                        .arg("--path")
+                        .arg(local_path)
+                        .arg("--output")
+                        .arg("/home/ec2-user/.helix/repo/helix-container/src")
+                        .output();
 
-                // build db
-                let build_result = Command::new("cargo")
-                    .arg("build")
-                    .arg("--release")
-                    .arg("--target-dir")
-                    .arg("~/.helix/bin")
-                    .arg("--bin")
-                    .arg("helix-server")
-                    .output();
+                    match compile_result {
+                        Ok(output) if output.status.success() => {
+                            // Restart the helix service
+                            let restart_result = Command::new("sudo")
+                                .arg("systemctl")
+                                .arg("restart")
+                                .arg("helix")
+                                .output();
 
-                match compile_result {
-                    Ok(output) if output.status.success() => {
-                        // Restart the helix service
-                        let restart_result = Command::new("sudo")
-                            .arg("systemctl")
-                            .arg("restart")
-                            .arg("helix")
-                            .output();
-
-                        match restart_result {
-                            Ok(output) if output.status.success() => {
-                                response.status = 200;
-                                response.body = "Successfully compiled queries and restarted helix service".as_bytes().to_vec();
-                            }
-                            Ok(output) => {
-                                response.status = 500;
-                                response.body = format!("Failed to restart helix service: {}", String::from_utf8_lossy(&output.stderr)).into_bytes();
-                            }
-                            Err(e) => {
-                                response.status = 500;
-                                response.body = format!("Failed to execute systemctl command: {:?}", e).into_bytes();
+                            match restart_result {
+                                Ok(output) if output.status.success() => {
+                                    response.status = 200;
+                                    response.body =
+                                        "Successfully deployed queries and restarted helix service"
+                                            .as_bytes()
+                                            .to_vec();
+                                }
+                                Ok(output) => {
+                                    response.status = 500;
+                                    response.body = format!(
+                                        "Failed to restart helix service: {}",
+                                        String::from_utf8_lossy(&output.stderr)
+                                    )
+                                    .into_bytes();
+                                }
+                                Err(e) => {
+                                    response.status = 500;
+                                    response.body =
+                                        format!("Failed to execute systemctl command: {:?}", e)
+                                            .into_bytes();
+                                }
                             }
                         }
-                    }
-                    Ok(output) => {
-                        response.status = 500;
-                        response.body = format!("Failed to compile queries: {}", String::from_utf8_lossy(&output.stderr)).into_bytes();
-                    }
-                    Err(e) => {
-                        response.status = 500;
-                        response.body = format!("Failed to execute helix compile command: {:?}", e).into_bytes();
+                        Ok(output) => {
+                            response.status = 500;
+                            response.body = format!(
+                                "Failed to compile queries: {}",
+                                String::from_utf8_lossy(&output.stderr)
+                            )
+                            .into_bytes();
+                        }
+                        Err(e) => {
+                            response.status = 500;
+                            response.body =
+                                format!("Failed to execute helix compile command: {:?}", e)
+                                    .into_bytes();
+                        }
                     }
                 }
+            } else {
+                response.status = 404;
+                response.body = "Endpoint not found".as_bytes().to_vec();
             }
 
             // Send response back to client
@@ -169,9 +218,8 @@ async fn main() -> Result<(), AdminError> {
 pub enum AdminError {
     AdminConnectionError(String, std::io::Error),
     S3Error(String, std::env::VarError),
+    InvalidParameter(String),
 }
 
-
-
-// replace binary 
+// replace binary
 // run
