@@ -64,4 +64,11 @@ pub trait HNSW {
     ///
     /// A `Result` containing a `Vec` of `HVector` if successful
     fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError>;
+
+    // Get the number of vectors in the hnsw index
+    //
+    // # Returns
+    //
+    // A `usize` of the number of vecs
+    //fn get_num_of_vecs(&self) -> usize;
 }
