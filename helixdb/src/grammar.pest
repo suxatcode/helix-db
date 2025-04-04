@@ -5,7 +5,7 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ type_name }
-query_body   = { (get_stmt | AddN | AddV | AddE | drop | search_vector)* }
+query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop | search_vector)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
@@ -19,6 +19,7 @@ last_step           = { "::" ~ (bool_operations | update) }
 evaluates_to_anything = {
     AddN
   | AddV
+  | BatchAddV
   | AddE
   | exists
   | none
@@ -79,7 +80,8 @@ where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal | anonymous_traversal) ~ ")" }
 
 // Search
-search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ ("," ~ vector_data)? ~ ")" }
+search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ integer ~ ")" }
+BatchAddV = { "BatchAddV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ identifier ~ ")" }
 
 // Arguments for various steps
 type_args = { identifier_upper ~ ("," ~ identifier_upper)* }

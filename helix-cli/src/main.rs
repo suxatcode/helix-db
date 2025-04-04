@@ -795,7 +795,7 @@ QUERY hnswinsert(vector: [Float]) =>
             ) // TODO: add hnswload, hnswsearch, and delete as defaults as well delete
             .unwrap();
 
-            let config_path = path.join("config.hx.json");
+            let config_path = queries_dir.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
 
             println!("Helix project initialised at {}", path.display());

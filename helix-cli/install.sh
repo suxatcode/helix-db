@@ -11,39 +11,32 @@ if [[ -z "$VERSION" ]]; then
     exit 1
 fi
 
-echo "Latest version is $VERSION"
-if [ -n "$SUDO_USER" ]; then
-    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-else
-    USER_HOME=$HOME
-fi
-
-echo "User home directory: $USER_HOME"
+echo "User home directory: $HOME"
 # Detect the operating system
 OS=$(uname -s)
 ARCH=$(uname -m)
 
-INSTALL_DIR="$USER_HOME/.local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
 # Add the installation directory to PATH immediately for this session
 export PATH="$INSTALL_DIR:$PATH"
 
 # Ensure that $HOME/.local/bin is in the PATH permanently
-if [[ ":$PATH:" != *":$USER_HOME/.local/bin:"* ]]; then
-    echo "Adding $USER_HOME/.local/bin to PATH permanently"
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo "Adding $HOME/.local/bin to PATH permanently"
     
     # Determine shell config file
     if [[ "$SHELL" == *"bash"* ]]; then
-        SHELL_CONFIG="$USER_HOME/.bashrc"
+        SHELL_CONFIG="$HOME/.bashrc"
     elif [[ "$SHELL" == *"zsh"* ]]; then
-        SHELL_CONFIG="$USER_HOME/.zshrc"
+        SHELL_CONFIG="$HOME/.zshrc"
     fi
     
     # Add to shell config if not already present
     if [[ -f "$SHELL_CONFIG" ]]; then
-        if ! grep -q 'export PATH="$USER_HOME/.local/bin:$PATH"' "$SHELL_CONFIG"; then
-            echo 'export PATH="$USER_HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
+        if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_CONFIG"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
         fi
     fi
 fi
@@ -82,7 +75,7 @@ if ! "$INSTALL_DIR/helix" --version &> /dev/null; then
     if ! command -v cargo &> /dev/null; then
         echo "Installing Rust first..."
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source "$USER_HOME/.cargo/env"
+        source "$HOME/.cargo/env"
     fi
 
     # Clone and build from source
@@ -116,7 +109,7 @@ then
     if [[ "$OS" == "Linux" ]] || [[ "$OS" == "Darwin" ]]
     then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source "$USER_HOME/.cargo/env"
+        source "$HOME/.cargo/env"
     elif [[ "$OS" == "Windows_NT" ]]
     then
         curl --proto '=https' --tlsv1.2 -sSf https://win.rustup.rs -o rustup-init.exe

@@ -290,7 +290,7 @@ pub trait TraversalSearchMethods {
 }
 
 pub trait VectorTraversalSteps {
-    fn vector_search(&mut self, txn: &RoTxn, query: &[f64]) -> &mut Self;
+    fn vector_search(&mut self, txn: &RoTxn, query: &[f64], k: usize) -> &mut Self;
 
     fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self;
 

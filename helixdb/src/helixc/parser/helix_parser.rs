@@ -94,6 +94,7 @@ pub enum Statement {
     AddEdge(AddEdge),
     Drop(Expression),
     SearchVector(SearchVector),
+    BatchAddVector(BatchAddVector),
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +112,7 @@ pub enum Expression {
     FloatLiteral(f64),
     BooleanLiteral(bool),
     Exists(Box<Traversal>),
+    BatchAddVector(BatchAddVector),
     AddVector(AddVector),
     AddNode(AddNode),
     AddEdge(AddEdge),
@@ -123,6 +125,12 @@ pub enum Expression {
 pub struct Traversal {
     pub start: StartNode,
     pub steps: Vec<Step>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BatchAddVector {
+    pub vector_type: Option<String>,
+    pub vec_identifier: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -211,6 +219,7 @@ pub enum VectorData {
 pub struct SearchVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
+    pub k: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -527,6 +536,7 @@ impl HelixParser {
                 Rule::AddV => Ok(Statement::AddVector(self.parse_add_vector(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
+                Rule::BatchAddV => Ok(Statement::BatchAddVector(self.parse_batch_add_vector(p)?)),
                 Rule::search_vector => Ok(Statement::SearchVector(self.parse_search_vector(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
@@ -534,6 +544,31 @@ impl HelixParser {
                 ))),
             })
             .collect()
+    }
+
+    fn parse_batch_add_vector(&self, pair: Pair<Rule>) -> Result<BatchAddVector, ParserError> {
+        let mut vector_type = None;
+        let mut vec_identifier = None;
+        
+        for p in pair.into_inner() {
+            match p.as_rule() {
+                Rule::identifier_upper => {
+                    vector_type = Some(p.as_str().to_string());
+                }
+                Rule::identifier => {
+                    vec_identifier = Some(p.as_str().to_string());
+                }
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in AddV: {:?} => {:?}",
+                        p.as_rule(),
+                        p,
+                    )))
+                }
+            }
+        }
+
+        Ok(BatchAddVector { vector_type, vec_identifier })
     }
 
     fn parse_add_vector(&self, pair: Pair<Rule>) -> Result<AddVector, ParserError> {
@@ -570,7 +605,7 @@ impl HelixParser {
     fn parse_search_vector(&self, pair: Pair<Rule>) -> Result<SearchVector, ParserError> {
         let mut vector_type = None;
         let mut data = None;
-
+        let mut k = None;
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -585,6 +620,9 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
+                Rule::integer => {
+                    k = Some(p.as_str().to_string().parse::<usize>().map_err(|_| ParserError::from("Invalid integer value"))?);
+                }
                 _ => {
                     return Err(ParserError::from(format!(
                         "Unexpected rule in AddV: {:?} => {:?}",
@@ -595,7 +633,7 @@ impl HelixParser {
             }
         }
 
-        Ok(SearchVector { vector_type, data })
+        Ok(SearchVector { vector_type, data, k})
     }
 
     fn parse_vec_literal(&self, pair: Pair<Rule>) -> Result<Vec<f64>, ParserError> {
@@ -861,6 +899,7 @@ impl HelixParser {
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
             Rule::AddN => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
             Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
+            Rule::BatchAddV => Ok(Expression::BatchAddVector(self.parse_batch_add_vector(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
