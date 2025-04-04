@@ -219,7 +219,14 @@ pub enum VectorData {
 pub struct SearchVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
-    pub k: Option<usize>,
+    pub k: Option<EvaluatesToNumber>,
+}
+
+#[derive(Debug, Clone)]
+pub enum EvaluatesToNumber {
+    Integer(usize),
+    Float(f64),
+    Identifier(String),
 }
 
 #[derive(Debug, Clone)]
@@ -620,9 +627,18 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
-                Rule::integer => {
-                    k = Some(p.as_str().to_string().parse::<usize>().map_err(|_| ParserError::from("Invalid integer value"))?);
-                }
+                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule() {
+                    Rule::integer => {
+                        k = Some(EvaluatesToNumber::Integer(p.as_str().to_string().parse::<usize>().map_err(|_| ParserError::from("Invalid integer value"))?));
+                    }
+                    Rule::float => {
+                        k = Some(EvaluatesToNumber::Float(p.as_str().to_string().parse::<f64>().map_err(|_| ParserError::from("Invalid float value"))?));
+                    }
+                    Rule::identifier => {
+                        k = Some(EvaluatesToNumber::Identifier(p.as_str().to_string()));
+                    }
+                    _ => unreachable!(),
+                },
                 _ => {
                     return Err(ParserError::from(format!(
                         "Unexpected rule in AddV: {:?} => {:?}",

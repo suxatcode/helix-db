@@ -80,7 +80,7 @@ where_step = { "WHERE" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 exists     = { "EXISTS" ~ "(" ~ (traversal | id_traversal | anonymous_traversal) ~ ")" }
 
 // Search
-search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ integer ~ ")" }
+search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ evaluates_to_number ~ ")" }
 BatchAddV = { "BatchAddV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ identifier ~ ")" }
 
 // Arguments for various steps

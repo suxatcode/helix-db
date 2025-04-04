@@ -1,5 +1,5 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, Step, Traversal, ValueType, VectorData
+    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema, EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, Step, Traversal, ValueType, VectorData
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
@@ -316,7 +316,12 @@ impl CodeGenerator {
         output.push_str(
             "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
         );
-        let k = vec.k.unwrap_or(10);
+        let k = match &vec.k {
+            Some(EvaluatesToNumber::Integer(k)) => k.to_string(),
+            Some(EvaluatesToNumber::Float(k)) => k.to_string(),
+            Some(EvaluatesToNumber::Identifier(id)) => format!("data.{} as usize", id),
+            None => "10".to_string(),
+        };
         match &vec.data {
             Some(VectorData::Vector(v)) => {
                 output.push_str(&format!("tr.vector_search(&txn, &{:?}, {});\n", v, k));
