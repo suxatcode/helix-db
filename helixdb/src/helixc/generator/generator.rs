@@ -177,7 +177,7 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
             output.push_str("    Err(err) => return Err(GraphError::from(err)),\n");
             output.push_str(&mut self.indent());
-            output.push_str("}\n\n");
+            output.push_str("};\n\n");
         }
 
         //
@@ -393,6 +393,12 @@ impl CodeGenerator {
             }
             Expression::AddEdge(add_edge) => {
                 output.push_str(&mut self.generate_add_edge(add_edge));
+            }
+            Expression::BatchAddVector(batch_add_vector) => {
+                output.push_str(&mut self.generate_batch_add_vector(batch_add_vector));
+            }
+            Expression::AddVector(add_vector) => {
+                output.push_str(&mut self.generate_add_vector(add_vector));
             }
             Expression::Exists(traversal) => {
                 output.push_str(&mut self.generate_exists_check(traversal, query));

@@ -5,7 +5,7 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ type_name }
-query_body   = { (get_stmt | AddN | AddV | AddE | drop | search_vector)* }
+query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop | search_vector)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
@@ -19,6 +19,7 @@ last_step           = { "::" ~ (bool_operations | update) }
 evaluates_to_anything = {
     AddN
   | AddV
+  | BatchAddV
   | AddE
   | exists
   | none
