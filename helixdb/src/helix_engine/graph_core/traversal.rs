@@ -1026,8 +1026,8 @@ impl TraversalBuilderMethods for TraversalBuilder {
 }
 
 impl VectorTraversalSteps for TraversalBuilder {
-    fn vector_search(&mut self, txn: &RoTxn, query_vector: &[f64]) -> &mut Self {
-        let result = match self.storage.vectors.search(txn, query_vector, 10) {
+    fn vector_search(&mut self, txn: &RoTxn, query_vector: &[f64], k: usize) -> &mut Self {
+        let result = match self.storage.vectors.search(txn, query_vector, k) {
             Ok(result) => result,
             Err(err) => {
                 self.store_error(GraphError::from(err));

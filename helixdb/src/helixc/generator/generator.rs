@@ -1,9 +1,5 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddNode, AddVector, Assignment, BooleanOp, EdgeConnection, EdgeSchema, Expression,
-    Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query,
-    SearchVector, Source,
-    StartNode::{Anonymous, Edge, Node, Variable},
-    Statement, Step, Traversal, ValueType, VectorData,
+    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, Step, Traversal, ValueType, VectorData
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
@@ -197,11 +193,13 @@ impl CodeGenerator {
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
                 || matches!(s, Statement::AddVector(_))
+                || matches!(s, Statement::BatchAddVector(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
                         matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
                             || matches!(assignment.value, Expression::AddVector(_))
+                            || matches!(assignment.value, Expression::BatchAddVector(_))
                             || {
                                 let steps = match &assignment.value {
                                     Expression::Traversal(traversal) => &traversal.steps,
@@ -269,6 +267,7 @@ impl CodeGenerator {
             Statement::Drop(expr) => self.generate_drop(expr, query),
             Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
             Statement::SearchVector(search_vector) => self.generate_search_vector(search_vector),
+            Statement::BatchAddVector(batch_add_vector) => self.generate_batch_add_vector(batch_add_vector),
         }
     }
 
@@ -291,18 +290,39 @@ impl CodeGenerator {
         output
     }
 
+    fn generate_batch_add_vector(&mut self, batch_add_vector: &BatchAddVector) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str(
+            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
+        );
+        //iterate over the vectors and insert them
+        output.push_str(&mut self.indent());
+        match &batch_add_vector.vec_identifier {
+            Some(id) => output.push_str(&format!("for vec in data.{} {{\n", id)),
+            None => (),
+        };
+
+        output.push_str(&mut self.indent());
+        output.push_str("    tr.insert_vector(&mut txn, &vec);\n");
+        output.push_str(&mut self.indent());
+        output.push_str("}\n");
+        output
+    }
+
     fn generate_search_vector(&mut self, vec: &SearchVector) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
         output.push_str(
             "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
         );
+        let k = vec.k.unwrap_or(10);
         match &vec.data {
-            Some(VectorData::Vector(vec)) => {
-                output.push_str(&format!("tr.vector_search(&txn, &{:?});\n", vec));
+            Some(VectorData::Vector(v)) => {
+                output.push_str(&format!("tr.vector_search(&txn, &{:?}, {});\n", v, k));
             }
             Some(VectorData::Identifier(id)) => {
-                output.push_str(&format!("tr.vector_search(&txn, &data.{});\n", id));
+                output.push_str(&format!("tr.vector_search(&txn, &data.{}, {});\n", id, k));
             }
             None => (),
         };
