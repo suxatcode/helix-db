@@ -118,6 +118,7 @@ pub enum Expression {
     AddEdge(AddEdge),
     And(Vec<Expression>),
     Or(Vec<Expression>),
+    SearchVector(SearchVector),
     None,
 }
 
@@ -917,6 +918,7 @@ impl HelixParser {
             Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
             Rule::BatchAddV => Ok(Expression::BatchAddVector(self.parse_batch_add_vector(pair)?)),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
+            Rule::search_vector => Ok(Expression::SearchVector(self.parse_search_vector(pair)?)),
             Rule::none => Ok(Expression::None),
             _ => Err(ParserError::from(format!(
                 "Unexpected expression type: {:?}",
