@@ -237,10 +237,14 @@ impl CodeGenerator {
             matches!(s, Statement::AddNode(_))
                 || matches!(s, Statement::AddEdge(_))
                 || matches!(s, Statement::Drop(_))
+                || matches!(s, Statement::AddVector(_))
+                || matches!(s, Statement::BatchAddVector(_))
                 || {
                     if let Statement::Assignment(assignment) = s {
                         matches!(assignment.value, Expression::AddNode(_))
                             || matches!(assignment.value, Expression::AddEdge(_))
+                            || matches!(assignment.value, Expression::AddVector(_))
+                            || matches!(assignment.value, Expression::BatchAddVector(_))
                     } else {
                         false
                     }
