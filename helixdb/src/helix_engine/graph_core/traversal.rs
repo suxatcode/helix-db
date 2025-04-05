@@ -1012,7 +1012,6 @@ impl TraversalBuilderMethods for TraversalBuilder {
         if let Some(err) = self.error {
             return Err(err);
         }
-        println!("current step: {:?}", self.current_step);
         Ok(self.current_step)
     }
 
@@ -1034,7 +1033,6 @@ impl VectorTraversalSteps for TraversalBuilder {
                 return self;
             }
         };
-        println!("result: {:?}", result);
         self.current_step = TraversalValue::VectorArray(result);
         self
     }
