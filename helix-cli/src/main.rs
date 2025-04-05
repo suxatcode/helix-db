@@ -592,7 +592,6 @@ fn main() {
                     println!("\t❌ Cargo is not installed");
                     println!("\t|");
                     println!("\t└── {}", e);
-                    return;
                 }
             }
 
@@ -605,7 +604,6 @@ fn main() {
                     println!("\t❌ Git is not installed");
                     println!("\t|");
                     println!("\t└── {}", e);
-                    return;
                 }
             }
 
@@ -618,7 +616,7 @@ fn main() {
                     }
                     if !path.exists() {
                         println!("\t❌ Path does not exist");
-                        return;
+                        return
                     }
                     path
                 }
