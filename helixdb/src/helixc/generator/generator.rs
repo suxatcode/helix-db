@@ -412,6 +412,9 @@ impl CodeGenerator {
             Expression::Exists(traversal) => {
                 output.push_str(&mut self.generate_exists_check(traversal, query));
             }
+            Expression::SearchVector(search_vector) => {
+                output.push_str(&mut self.generate_search_vector(search_vector));
+            }
             _ => {}
         }
 
