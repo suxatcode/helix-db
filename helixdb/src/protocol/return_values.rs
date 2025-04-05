@@ -86,7 +86,7 @@ impl From<f64> for ReturnValue {
 
 impl<I> From<I> for ReturnValue
 where
-    for<'a> I: Filterable<'a>,
+    for<'a> I: Filterable<'a> + Clone,
 {
     #[inline]
     fn from(item: I) -> Self {
@@ -100,6 +100,16 @@ where
                 properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
                 properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
                 properties
+            }
+            FilterableType::Vector => {
+                let mut properties = item.clone().properties();
+                let mut return_value = HashMap::new();
+                println!("constructing vector return value");
+                return_value.insert(
+                    "data".to_string(),
+                    ReturnValue::from(properties.remove("data").unwrap()),
+                );
+                return_value
             }
         };
         properties.insert("id".to_string(), ReturnValue::from(item.id().to_string()));
@@ -141,8 +151,9 @@ impl ReturnValue {
         mixin: RefMut<HashMap<String, ResponseRemapping>>,
     ) -> ReturnValue
     where
-        for<'a> T: Filterable<'a>,
+        for<'a> T: Filterable<'a> + Clone,
     {
+        println!("processing items with mixin");
         ReturnValue::Array(
             items
                 .into_iter()
@@ -150,11 +161,14 @@ impl ReturnValue {
                     let id = item.id().to_string();
                     if let Some(m) = mixin.get(&id) {
                         if m.should_spread {
+                            println!("spreading");
                             ReturnValue::from(item).mixin_remapping(m.remappings.clone())
                         } else {
+                            println!("not spreading");
                             ReturnValue::default().mixin_remapping(m.remappings.clone())
                         }
                     } else {
+                        println!("no mixin");
                         ReturnValue::from(item)
                     }
                 })
@@ -167,17 +181,27 @@ impl ReturnValue {
         traversal_value: TraversalValue,
         mixin: RefMut<HashMap<String, ResponseRemapping>>,
     ) -> Self {
+        println!("traversal value: {:?}", traversal_value);
         match traversal_value {
+            TraversalValue::VectorArray(vectors) => {
+                println!("processing vector array");
+                ReturnValue::process_items_with_mixin(vectors, mixin)
+            }
             TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
             TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
             TraversalValue::ValueArray(values) => {
                 println!("values: {:?}", values);
-                unreachable!()
+                println!("not working");
+                ReturnValue::Empty
             }
             TraversalValue::Empty => ReturnValue::Value(Value::Empty),
             _ => {
+                // print the type of the traversal value
                 println!("traversal_value: {:?}", traversal_value);
-                unreachable!()
+                println!("traversal value type: {:?}", std::any::type_name::<TraversalValue>());
+
+                println!("not working");
+                ReturnValue::Empty
             }
         }
     }
@@ -254,7 +278,7 @@ impl ReturnValue {
     #[ignore = "No use for this function yet, however, I believe it may be useful in the future so I'm keeping it here"]
     pub fn mixin_other<I>(&self, item: I, secondary_properties: ResponseRemapping) -> Self
     where
-        for<'a> I: Filterable<'a>,
+        for<'a> I: Filterable<'a> + Clone,
     {
         let mut return_val = ReturnValue::default();
         if !secondary_properties.should_spread {
@@ -263,6 +287,9 @@ impl ReturnValue {
                     return_val = ReturnValue::from(item);
                 }
                 FilterableType::Edge => {
+                    return_val = ReturnValue::from(item);
+                }
+                FilterableType::Vector => {
                     return_val = ReturnValue::from(item);
                 }
             }

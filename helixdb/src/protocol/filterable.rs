@@ -9,6 +9,7 @@ use crate::protocol::{
 pub enum FilterableType {
     Node,
     Edge,
+    Vector,
 }
 
 use super::return_values::ReturnValue;
