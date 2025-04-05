@@ -1012,7 +1012,7 @@ impl TraversalBuilderMethods for TraversalBuilder {
         if let Some(err) = self.error {
             return Err(err);
         }
-
+        println!("current step: {:?}", self.current_step);
         Ok(self.current_step)
     }
 

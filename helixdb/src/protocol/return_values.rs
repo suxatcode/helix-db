@@ -181,6 +181,7 @@ impl ReturnValue {
         traversal_value: TraversalValue,
         mixin: RefMut<HashMap<String, ResponseRemapping>>,
     ) -> Self {
+        println!("traversal value: {:?}", traversal_value);
         match traversal_value {
             TraversalValue::VectorArray(vectors) => {
                 println!("processing vector array");
@@ -190,12 +191,14 @@ impl ReturnValue {
             TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
             TraversalValue::ValueArray(values) => {
                 println!("values: {:?}", values);
-                unreachable!()
+                println!("not working");
+                ReturnValue::Empty
             }
             TraversalValue::Empty => ReturnValue::Value(Value::Empty),
             _ => {
                 println!("traversal_value: {:?}", traversal_value);
-                unreachable!()
+                println!("not working");
+                ReturnValue::Empty
             }
         }
     }
