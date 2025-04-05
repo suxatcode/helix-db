@@ -795,12 +795,16 @@ QUERY hnswinsert(vector: [Float]) =>
     RETURN "Success"
 
 QUERY hnswload(vectors: [[Float]]) =>
-    BatchAddV<Type>(vectors)
-    RETURN "Success"
+    res <- BatchAddV<Type>(vectors)
+    RETURN res::{ID}
 
 QUERY hnswsearch(query: [Float], k: Integer) =>
     res <- SearchV<Type>(query, k)
     RETURN res
+
+QUERY size() =>
+	size <- V::COUNT
+	RETURN size
 "#,
             ) // TODO: add hnswload, hnswsearch, and delete as defaults as well delete
             .unwrap();
