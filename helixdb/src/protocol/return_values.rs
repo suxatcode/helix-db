@@ -104,6 +104,7 @@ where
             FilterableType::Vector => {
                 let mut properties = item.clone().properties();
                 let mut return_value = HashMap::new();
+                println!("constructing vector return value");
                 return_value.insert(
                     "data".to_string(),
                     ReturnValue::from(properties.remove("data").unwrap()),
@@ -152,6 +153,7 @@ impl ReturnValue {
     where
         for<'a> T: Filterable<'a> + Clone,
     {
+        println!("processing items with mixin");
         ReturnValue::Array(
             items
                 .into_iter()
@@ -159,11 +161,14 @@ impl ReturnValue {
                     let id = item.id().to_string();
                     if let Some(m) = mixin.get(&id) {
                         if m.should_spread {
+                            println!("spreading");
                             ReturnValue::from(item).mixin_remapping(m.remappings.clone())
                         } else {
+                            println!("not spreading");
                             ReturnValue::default().mixin_remapping(m.remappings.clone())
                         }
                     } else {
+                        println!("no mixin");
                         ReturnValue::from(item)
                     }
                 })
@@ -178,6 +183,7 @@ impl ReturnValue {
     ) -> Self {
         match traversal_value {
             TraversalValue::VectorArray(vectors) => {
+                println!("processing vector array");
                 ReturnValue::process_items_with_mixin(vectors, mixin)
             }
             TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),

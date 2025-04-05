@@ -1034,6 +1034,7 @@ impl VectorTraversalSteps for TraversalBuilder {
                 return self;
             }
         };
+        println!("result: {:?}", result);
         self.current_step = TraversalValue::VectorArray(result);
         self
     }

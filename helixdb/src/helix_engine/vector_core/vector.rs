@@ -436,6 +436,7 @@ impl<'a> Filterable<'a> for HVector {
 
     fn properties(self) -> HashMap<String, Value> {
         let mut properties = HashMap::new();
+        println!("inserting data");
         properties.insert("data".to_string(), Value::Array(self.data.iter().map(|f| Value::Float(*f)).collect()));
         properties
     }
