@@ -1,6 +1,6 @@
-use crate::helix_engine::types::VectorError;
-use serde::{Deserialize, Serialize}; // vector struct to store raw data, dimension and de
-use std::cmp::Ordering;
+use crate::{helix_engine::types::VectorError, protocol::{filterable::{Filterable, FilterableType}, return_values::ReturnValue, value::Value}};
+use serde::{Deserialize, Serialize};
+use std::{cmp::Ordering, collections::HashMap};
 
 #[repr(C, align(16))]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -410,4 +410,49 @@ mod vector_tests {
         let similarity = v1.cosine_similarity(&v2);
         assert!((similarity - 0.9746318461970762).abs() < 1e-10);
     }
+}
+
+
+impl<'a> Filterable<'a> for HVector {
+    fn type_name(&'a self) -> FilterableType {
+        FilterableType::Vector
+    }
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn label(&self) -> &str {
+        "vector"
+    }
+
+    fn from_node(&self) -> String {
+        "vector".to_string()
+    }
+
+    fn to_node(&self) -> String {
+        "vector".to_string()
+    }
+
+    fn properties(self) -> HashMap<String, Value> {
+        let mut properties = HashMap::new();
+        properties.insert("data".to_string(), Value::Array(self.data.iter().map(|f| Value::Float(*f)).collect()));
+        properties
+    }
+
+    fn properties_mut(&mut self) -> &mut HashMap<String, Value> {
+        unreachable!()
+    }
+
+    fn properties_ref(&self) -> &HashMap<String, Value> {
+        unreachable!()
+    }
+
+    fn check_property(&self, _key: &str) -> Option<&Value> {
+        unreachable!()
+    }
+
+    fn find_property(&self, _key: &str, _secondary_properties: &HashMap<String, ReturnValue>, _property: &mut ReturnValue) -> Option<&ReturnValue> {
+        unreachable!()
+    }   
 }
