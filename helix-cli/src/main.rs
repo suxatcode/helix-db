@@ -28,6 +28,8 @@ mod instance_manager;
 
 use instance_manager::InstanceManager;
 
+const QUERIES_DIR: &str = "helixdb-queries/";
+
 fn check_helix_installation() -> Result<PathBuf, String> {
     let home_dir = dirs::home_dir().ok_or("Could not determine home directory")?;
     let repo_path = home_dir.join(".helix/repo/helix-db");
@@ -194,7 +196,7 @@ fn main() {
             // path to project
             let path = match command.path {
                 Some(path) => path,
-                None => ".".to_string(),
+                None => QUERIES_DIR.to_string(),
             };
 
             // output path
@@ -338,7 +340,7 @@ fn main() {
 
                 // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
                 let config_path = PathBuf::from(&output).join("src/config.hx.json");
-                fs::copy(PathBuf::from("config.hx.json"), config_path).unwrap();
+                fs::copy(PathBuf::from(path + "config.hx.json"), config_path).unwrap();
 
                 // check rust code
                 let mut runner = Command::new("cargo");
@@ -503,7 +505,7 @@ fn main() {
                 }
                 None => {
                     // current directory
-                    "."
+                    QUERIES_DIR
                 }
             };
             let output = match &command.output {
@@ -553,7 +555,7 @@ fn main() {
                 }
                 None => {
                     // current directory
-                    "."
+                    QUERIES_DIR
                 }
             };
 
@@ -719,7 +721,7 @@ fn main() {
             fs::create_dir_all(&path).unwrap();
 
             // create queries directory
-            let queries_dir = path.join("queries");
+            let queries_dir = path.join(QUERIES_DIR);
             fs::create_dir_all(&queries_dir).unwrap();
 
             // create schema.hx
@@ -797,7 +799,7 @@ QUERY hnswload(vectors: [[Float]]) =>
     RETURN "Success"
 
 QUERY hnswsearch(query: [Float], k: Integer) =>
-    res <- SearchV<Type>(vec, k)
+    res <- SearchV<Type>(query, k)
     RETURN res
 "#,
             ) // TODO: add hnswload, hnswsearch, and delete as defaults as well delete
