@@ -196,7 +196,10 @@ impl ReturnValue {
             }
             TraversalValue::Empty => ReturnValue::Value(Value::Empty),
             _ => {
+                // print the type of the traversal value
                 println!("traversal_value: {:?}", traversal_value);
+                println!("traversal value type: {:?}", std::any::type_name::<TraversalValue>());
+
                 println!("not working");
                 ReturnValue::Empty
             }
