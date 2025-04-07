@@ -141,6 +141,7 @@ pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
+    num_of_vecs: usize,
 }
 
 impl VectorCore {
@@ -151,6 +152,7 @@ impl VectorCore {
             vectors_db,
             out_edges_db,
             config,
+            num_of_vecs: 0,
         })
     }
 
@@ -438,6 +440,7 @@ impl HNSW for VectorCore {
         let new_level = self.get_new_level();
 
         let mut query = HVector::from_slice(id.clone(), 0, data.to_vec());
+        //self.num_of_vecs += 1;
 
         self.put_vector(txn, &query)?;
         query.level = new_level;
@@ -524,6 +527,7 @@ impl HNSW for VectorCore {
     }
 
     fn load(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError> {
+        //self.num_of_vecs += data.len();
         for v in data.iter() {
             let _ = self.insert(txn, v, None);
         }
@@ -532,6 +536,12 @@ impl HNSW for VectorCore {
 
         Ok(())
     }
+
+    /*
+    fn get_num_of_vecs(&self) -> usize {
+        self.num_of_vecs
+    }
+    */
 
     // TODO: delete a node from the index
 }

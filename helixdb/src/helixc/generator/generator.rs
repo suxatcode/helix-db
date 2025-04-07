@@ -333,7 +333,7 @@ impl CodeGenerator {
             Some(VectorData::Identifier(id)) => {
                 output.push_str(&format!("tr.vector_search(&txn, &data.{}, {});\n", id, k));
             }
-            None => (),
+            None => panic!("No vector data provided for search vector, {:?}", vec),
         };
         output
     }
@@ -408,6 +408,9 @@ impl CodeGenerator {
             }
             Expression::AddVector(add_vector) => {
                 output.push_str(&mut self.generate_add_vector(add_vector));
+            }
+            Expression::SearchVector(search_vector) => {
+                output.push_str(&mut self.generate_search_vector(search_vector));
             }
             Expression::Exists(traversal) => {
                 output.push_str(&mut self.generate_exists_check(traversal, query));
