@@ -1,5 +1,6 @@
-use std::{collections::HashMap, io::Write};
-
+use std::collections::HashMap;
+use std::io::Write;
+use tokio::io::{AsyncWrite, AsyncWriteExt, Result};
 #[derive(Debug)]
 pub struct Response {
     pub status: u16,
@@ -22,29 +23,31 @@ impl Response {
     }
 
     /// Send response back via stream
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use std::io::Cursor;
     /// use helixdb::protocol::response::Response;
-    /// 
+    ///
     /// let mut response = Response::new();
-    /// 
+    ///
     /// response.status = 200;
     /// response.body = b"Hello World".to_vec();
-    /// 
+    ///
     /// let mut stream = Cursor::new(Vec::new());
     /// response.send(&mut stream).unwrap();
-    /// 
+    ///
     /// let data = stream.into_inner();
     /// let data = String::from_utf8(data).unwrap();
-    /// 
+    ///
     /// assert!(data.contains("HTTP/1.1 200 OK"));
     /// assert!(data.contains("Content-Length: 11"));
     /// assert!(data.contains("Hello World"));
-    pub fn send<W: Write>(&mut self, stream: &mut W) -> std::io::Result<()> {
-        let status_message = match self.status { 
+
+    pub async fn send<W: AsyncWrite + Unpin>(&mut self, stream: &mut W) -> Result<()> {
+        println!("Sending response");
+        let status_message = match self.status {
             200 => "OK",
             404 => {
                 self.body = b"404 - Route Not Found\n".to_vec();
@@ -54,28 +57,30 @@ impl Response {
                 // self.body = b"500 - Internal Server Error\n".to_vec();
                 "Internal Server Error"
             }
-            _ => "Unknown"
+            _ => "Unknown",
         };
+        let mut writer = tokio::io::BufWriter::new(stream);
 
+        // Write status line
+        writer
+            .write_all(format!("HTTP/1.1 {} {}\r\n", self.status, status_message).as_bytes())
+            .await?;
 
-        let mut data_to_write = Vec::with_capacity(100);
+        // Write headers
+        for (header, value) in &self.headers {
+            writer
+                .write_all(format!("{}: {}\r\n", header, value).as_bytes())
+                .await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Error writing header: {}", e)))?;
+        }
 
-        // write status 
-        write!(data_to_write, "HTTP/1.1 {} {}\r\n", self.status, status_message)?;
+        writer
+            .write_all(format!("Content-Length: {}\r\n\r\n", self.body.len()).as_bytes())
+            .await?;
 
-        // write headers 
-        self.headers.iter().for_each(|(header, value)| {
-            write!(data_to_write, "{}: {}\r\n", header, value).unwrap();
-        });
-
-        write!(data_to_write, "Content-Length: {}\r\n", self.body.len())?;
-        write!(data_to_write, "\r\n")?;
-
-        // write body
-        stream.write_all(&data_to_write)?;
-        stream.write_all(&self.body)?;
-        stream.flush()?;
-
+        // Write body
+        writer.write_all(&self.body).await?;
+        writer.flush().await?;
+        println!("Response sent {:?}", String::from_utf8_lossy(&self.body));
         Ok(())
     }
 }

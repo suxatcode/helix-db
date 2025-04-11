@@ -104,10 +104,14 @@ where
             FilterableType::Vector => {
                 let mut properties = item.clone().properties();
                 let mut return_value = HashMap::new();
-                return_value.insert(
-                    "data".to_string(),
-                    ReturnValue::from(properties.remove("data").unwrap()),
-                );
+                let data = match properties.remove("data") {
+                    Some(value) => value,
+                    None => {
+                        eprintln!("No data found in vector");
+                        return ReturnValue::Empty;
+                    }
+                };
+                return_value.insert("data".to_string(), ReturnValue::from(data));
                 return_value
             }
         };
@@ -147,22 +151,21 @@ impl ReturnValue {
     #[inline(always)]
     fn process_items_with_mixin<T>(
         items: Vec<T>,
-        mixin: RefMut<HashMap<String, ResponseRemapping>>,
+        mut mixin: RefMut<HashMap<String, ResponseRemapping>>,
     ) -> ReturnValue
     where
         for<'a> T: Filterable<'a> + Clone,
     {
-        println!("processing items with mixin");
         ReturnValue::Array(
             items
                 .into_iter()
                 .map(|item| {
                     let id = item.id().to_string();
-                    if let Some(m) = mixin.get(&id) {
+                    if let Some(m) = mixin.get_mut(&id) {
                         if m.should_spread {
-                            ReturnValue::from(item).mixin_remapping(m.remappings.clone())
+                            ReturnValue::from(item).mixin_remapping(&mut m.remappings)
                         } else {
-                            ReturnValue::default().mixin_remapping(m.remappings.clone())
+                            ReturnValue::default().mixin_remapping(&mut m.remappings)
                         }
                     } else {
                         ReturnValue::from(item)
@@ -183,9 +186,7 @@ impl ReturnValue {
             }
             TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
             TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
-            TraversalValue::ValueArray(values) => {
-                ReturnValue::Empty
-            }
+            TraversalValue::ValueArray(values) => ReturnValue::Empty,
             TraversalValue::Empty => ReturnValue::Value(Value::Empty),
             _ => {
                 println!("not working");
@@ -242,17 +243,18 @@ impl ReturnValue {
     /// );
     /// ```
     #[inline(always)]
-    pub fn mixin_remapping(self, remappings: HashMap<String, Remapping>) -> Self {
+    pub fn mixin_remapping(self, remappings: &mut HashMap<String, Remapping>) -> Self {
         match self {
             ReturnValue::Object(mut a) => {
                 remappings.into_iter().for_each(|(k, v)| {
                     if v.exclude {
-                        let _ = a.remove(&k);
-                    } else if let Some(new_name) = v.new_name {
-                        let _ = a.remove(&k);
-                        a.insert(new_name, v.return_value);
+                        let _ = a.remove(k);
+                    } else if let Some(new_name) = &v.new_name {
+                        if let Some(value) = a.remove(k) { 
+                            a.insert(new_name.clone(), value);
+                        }
                     } else {
-                        a.insert(k, v.return_value);
+                        a.insert(k.clone(), v.return_value.clone());
                     }
                 });
                 ReturnValue::Object(a)
@@ -264,7 +266,7 @@ impl ReturnValue {
     #[inline(always)]
     #[allow(unused_attributes)]
     #[ignore = "No use for this function yet, however, I believe it may be useful in the future so I'm keeping it here"]
-    pub fn mixin_other<I>(&self, item: I, secondary_properties: ResponseRemapping) -> Self
+    pub fn mixin_other<I>(&self, item: I, mut secondary_properties: ResponseRemapping) -> Self
     where
         for<'a> I: Filterable<'a> + Clone,
     {
@@ -282,7 +284,7 @@ impl ReturnValue {
                 }
             }
         }
-        return_val = return_val.mixin_remapping(secondary_properties.remappings);
+        return_val = return_val.mixin_remapping(&mut secondary_properties.remappings);
         return_val
     }
 }
