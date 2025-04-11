@@ -22,6 +22,7 @@ use helixdb::{
     },
 };
 use sonic_rs::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 // Node Schema: Record
 #[derive(Serialize, Deserialize)]
@@ -155,7 +156,7 @@ pub fn create_record(input: &HandlerInput, response: &mut Response) -> Result<()
     #[derive(Serialize, Deserialize)]
     struct create_recordData {
         id: String,
-        data: String,
+        data: JsonValue,
     }
 
     let data: create_recordData = match sonic_rs::from_slice(&input.request.body) {
@@ -175,7 +176,7 @@ pub fn create_record(input: &HandlerInput, response: &mut Response) -> Result<()
     tr.add_v(
         &mut txn,
         "Record",
-        props! { "id".to_string() => "id", "data".to_string() => "data" },
+        props! { "id".to_string() => data.id, "data".to_string() => data.data },
         None,
     );
     let record = tr.finish()?;

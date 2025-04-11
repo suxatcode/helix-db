@@ -3,6 +3,7 @@ use serde::{
     Deserializer, Serializer,
 };
 use sonic_rs::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::{collections::HashMap, fmt};
 
 /// A flexible value type that can represent various property values in nodes and edges.
@@ -14,6 +15,7 @@ pub enum Value {
     Integer(i32),
     Boolean(bool),
     Array(Vec<Value>),
+    Object(HashMap<String, Value>),
     Empty,
 }
 
@@ -38,6 +40,14 @@ impl Serialize for Value {
                     }
                     seq.end()
                 }
+                Value::Object(obj) => {
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(obj.len()))?;
+                    for (k, v) in obj {
+                        map.serialize_entry(k, v)?;
+                    }
+                    map.end()
+                }
                 Value::Empty => serializer.serialize_none(),
             }
         } else {
@@ -47,7 +57,8 @@ impl Serialize for Value {
                 Value::Integer(i) => serializer.serialize_newtype_variant("Value", 2, "Integer", i),
                 Value::Boolean(b) => serializer.serialize_newtype_variant("Value", 3, "Boolean", b),
                 Value::Array(a) => serializer.serialize_newtype_variant("Value", 4, "Array", a),
-                Value::Empty => serializer.serialize_unit_variant("Value", 5, "Empty"),
+                Value::Object(obj) => serializer.serialize_newtype_variant("Value", 5, "Object", obj),
+                Value::Empty => serializer.serialize_unit_variant("Value", 6, "Empty"),
             }
         }
     }
@@ -281,6 +292,27 @@ impl From<Value> for String {
         match v {
             Value::String(s) => s,
             _ => panic!("Value is not a string"),
+        }
+    }
+}
+impl From<JsonValue> for Value {
+    #[inline]
+    fn from(v: JsonValue) -> Self {
+        match v {
+            JsonValue::String(s) => Value::String(s),
+            JsonValue::Number(n) =>{
+                if n.is_u64() {
+                    Value::Integer(n.as_u64().unwrap() as i32)
+                } else if n.is_i64() {
+                    Value::Integer(n.as_i64().unwrap() as i32)
+                } else {
+                    Value::Float(n.as_f64().unwrap())
+                }
+            },
+            JsonValue::Bool(b) => Value::Boolean(b),
+            JsonValue::Array(a) => Value::Array(a.into_iter().map(|v| v.into()).collect()),
+            JsonValue::Object(o) => Value::Object(o.into_iter().map(|(k, v)| (k, v.into())).collect()),
+            JsonValue::Null => Value::Empty,
         }
     }
 }
