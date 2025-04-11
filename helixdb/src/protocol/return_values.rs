@@ -187,7 +187,8 @@ impl ReturnValue {
             TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
             TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
             TraversalValue::ValueArray(values) => ReturnValue::Empty,
-            TraversalValue::Empty => ReturnValue::Value(Value::Empty),
+            TraversalValue::Count(count) => ReturnValue::from(count),
+            TraversalValue::Empty => ReturnValue::Empty,
             _ => {
                 println!("not working");
                 unreachable!()
