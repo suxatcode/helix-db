@@ -24,6 +24,8 @@ clap = { version = "4.5.29", features = ["derive"] }
 socket2 = "0.5"
 flume = "0.11.1"
 rayon = "1.8.0"
+tokio-threadpool = "0.1.18"
+futures = "0.3.31"
 polars = { version = "0.36", optional = true, features = ["parquet", "lazy"] }
 
 
@@ -38,10 +40,10 @@ polars = { version = "0.36", features = ["parquet", "lazy"] }
 testing = ["polars"]
 euclidean = []
 cosine = []
-engine=[]
-compiler=[]
-protocol=[]
-build=["protocol", "compiler"]
+engine = []
+compiler = []
+protocol = []
+build = ["protocol", "compiler"]
 full = ["build", "engine", "compiler", "protocol"]
 default = ["engine", "compiler", "protocol", "cosine"]
 

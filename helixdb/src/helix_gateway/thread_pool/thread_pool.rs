@@ -10,6 +10,12 @@ use crate::helix_gateway::gateway::GatewayOpts;
 use crate::protocol::request::Request;
 use crate::protocol::response::Response;
 
+extern crate tokio_threadpool;
+extern crate futures;
+
+use futures::{Future};
+use tokio_threadpool::ThreadPool as TokioThreadPool;
+
 pub struct Worker {
     pub id: usize,
     pub thread: thread::JoinHandle<Result<(), RouterError>>, // pub reciever: Arc<Mutex<Receiver<TcpStream>>>,
@@ -20,13 +26,19 @@ impl Worker {
         id: usize,
         graph_access: Arc<HelixGraphEngine>,
         router: Arc<HelixRouter>,
-        rx: Arc<Mutex<Receiver<TcpStream>>>,
+        rx: Receiver<TcpStream>,
     ) -> Result<Arc<Worker>, RouterError> {
         let thread: thread::JoinHandle<Result<(), RouterError>> =
             thread::spawn(move || -> Result<(), RouterError> {
                 loop {
-                    let mut conn = rx.lock().unwrap().recv().unwrap(); // TODO: Handle error
-                    let request = Request::from_stream(&mut conn)?; // TODO: Handle Error
+                    let mut conn = match rx.recv() {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            eprintln!("Error receiving connection: {:?}", e);
+                            continue;
+                        }
+                    };
+                    let request = Request::from_stream(&mut conn)?;
                     let mut response = Response::new();
 
                     if let Err(e) = router.handle(Arc::clone(&graph_access), request, &mut response)
@@ -77,13 +89,12 @@ impl ThreadPool {
         let mut workers = Vec::with_capacity(size);
         let (tx, rx) = flume::bounded::<TcpStream>(GatewayOpts::DEFAULT_POOL_SIZE);
 
-        let reciever = Arc::new(Mutex::new(rx));
         for id in 0..size {
             workers.push(Worker::new(
                 id,
                 Arc::clone(&graph),
                 Arc::clone(&router),
-                Arc::clone(&reciever),
+                rx.clone(),
             )?);
         }
         Ok(ThreadPool {
