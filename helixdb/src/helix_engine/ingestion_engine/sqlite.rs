@@ -1,4 +1,4 @@
-use rusqlite::{Connection as SqliteConn, Result as SqliteResult, params};
+use rusqlite::{Connection as SqliteConn, Result as SqliteResult, params, types::Value as RusqliteValue};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
@@ -32,28 +32,6 @@ impl From<rusqlite::Error> for IngestionError {
 // place holder for types in graph
 type NodeId = u64;
 type EdgeId = u64;
-
-#[derive(Debug, Clone)]
-enum Value {
-    Null,
-    Integer(i64),
-    Real(f64),
-    Text(String),
-    Blob(Vec<u8>),
-    Boolean(bool),
-}
-
-impl From<rusqlite::types::Value> for Value {
-    fn from(value: rusqlite::types::Value) -> Self {
-        match value {
-            rusqlite::types::Value::Null => Value::Null,
-            rusqlite::types::Value::Integer(i) => Value::Integer(i),
-            rusqlite::types::Value::Real(f) => Value::Real(f),
-            rusqlite::types::Value::Text(s) => Value::Text(s),
-            rusqlite::types::Value::Blob(b) => Value::Blob(b),
-        }
-    }
-}
 
 // this is all stuff already there
 // place holder for graphdb
@@ -96,7 +74,6 @@ impl fmt::Display for ForeignKey {
     }
 }
 
-// Implement Display for ColumnInfo
 impl fmt::Display for ColumnInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let pk_indicator = if self.is_primary_key { " (Primary Key)" } else { "" };
@@ -104,14 +81,13 @@ impl fmt::Display for ColumnInfo {
     }
 }
 
-// Implement Display for TableSchema
 impl fmt::Display for TableSchema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Table header
+        // table header
         writeln!(f, "Table: {}", self.name)?;
         writeln!(f, "{}", "-".repeat(40))?;
 
-        // Columns section
+        // columns section
         writeln!(f, "Columns:")?;
         if self.columns.is_empty() {
             writeln!(f, "  None")?;
@@ -122,7 +98,7 @@ impl fmt::Display for TableSchema {
         }
         writeln!(f)?;
 
-        // Primary Keys section
+        // primary keys section
         writeln!(f, "Primary Keys:")?;
         if self.primary_keys.is_empty() {
             writeln!(f, "  None")?;
@@ -135,7 +111,7 @@ impl fmt::Display for TableSchema {
         }
         writeln!(f)?;
 
-        // Foreign Keys section
+        // foreign keys section
         writeln!(f, "Foreign Keys:")?;
         if self.foreign_keys.is_empty() {
             writeln!(f, "  None")?;
@@ -172,6 +148,7 @@ impl SqliteIngestor {
     pub fn extract_schema(&mut self) -> Result<Vec<TableSchema>, IngestionError> {
         let mut schemas = Vec::new();
 
+        // statement
         let mut stmt = self.sqlite_conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")?;
         let table_names: Vec<String> = stmt.query_map(params![], |row| row.get(0))?
             .collect::<SqliteResult<Vec<String>>>()?;
@@ -197,9 +174,7 @@ impl SqliteIngestor {
                 })
             })?;
 
-            //println!("-- {:?} --", table_name);
             for col_res in col_rows {
-                //println!("{:?}", col_res?.name);
                 columns.push(col_res?);
             }
 
@@ -217,7 +192,7 @@ impl SqliteIngestor {
                 })
             })?;
 
-            let mut foreign_keys = Vec::new();
+            let mut foreign_keys: Vec<ForeignKey> = Vec::new();
             for fk_result in fk_rows {
                 foreign_keys.push(fk_result?);
             }
@@ -233,7 +208,81 @@ impl SqliteIngestor {
         Ok(schemas)
     }
 
-    // fn migrate_table
+    pub fn ingest_table(&mut self, table_schema: &TableSchema) -> Result<(), IngestionError> {
+        let count_query = format!("SELECT COUNT(*) FROM {}", table_schema.name);
+        let max_rows: usize = self
+            .sqlite_conn
+            .query_row(&count_query, params![], |row| row.get(0))
+            .map_err(|e| IngestionError::SqliteError(e))?;
+
+        let query = format!("SELECT * FROM {}", table_schema.name);
+        let mut stmt = self.sqlite_conn.prepare(&query)?;
+
+        let column_names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
+
+        let mut table_id_mapping = HashMap::new();
+
+        let mut row_count = 0;
+        let mut rows = stmt.query(params![])?;
+
+        // TODO: this the part that needs to be batched, idealy async as well
+        while let Some(row) = rows.next()? {
+            let mut properties = HashMap::new();
+            let mut primary_key_value = String::new();
+
+            for (i, col_name) in column_names.iter().enumerate() {
+                let value: RusqliteValue = row.get(i).map_err(|e| {
+                    IngestionError::MappingError(format!("Failed to get value for column {}: {}", col_name, e))
+                })?;
+                properties.insert(col_name.clone(), value.clone());
+
+                // track primary key for creating edges
+                if table_schema.primary_keys.contains(col_name) {
+                    match value {
+                        RusqliteValue::Text(s) => {
+                            primary_key_value = s;
+                        }
+                        RusqliteValue::Integer(i) => {
+                            primary_key_value = i.to_string();
+                        }
+                        _ => {
+                            return Err(IngestionError::MappingError(format!(
+                                        "Unsupported primary key type for column {}",
+                                        col_name
+                            )));
+                        }
+                    }
+                }
+            }
+
+            row_count += 1;
+
+            if row_count % self.batch_size == 0 || row_count == max_rows {
+                // batch send data to helixdb server
+                println!("TMP: SEND BATCH!");
+            }
+        }
+
+        self.id_mappings.insert(table_schema.name.clone(), table_id_mapping);
+        println!("Completed migrating {} rows from table {}", row_count, table_schema.name);
+
+        Ok(())
+    }
+
+    // fn create_edges()
+    // fn verify_ingestion
     // ...
-    // fn ingest
+
+    pub fn ingest(&mut self) -> Result<(), IngestionError> {
+        let schemas = self.extract_schema()?;
+
+        for schema in &schemas {
+            self.ingest_table(schema)?;
+        }
+
+        // create edges
+        // create indexes
+
+        Ok(())
+    }
 }
