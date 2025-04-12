@@ -1,4 +1,4 @@
-use crate::helix_engine::ingestion_core::sqlite::{SqliteIngestor, ColumnInfo};
+use crate::ingestion_engine::sqlite::{SqliteIngestor, ColumnInfo};
 use rusqlite::{Connection, Result as SqliteResult, params};
 use std::collections::HashMap;
 

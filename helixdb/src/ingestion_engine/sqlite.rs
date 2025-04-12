@@ -502,9 +502,8 @@ impl SqliteIngestor {
         Ok(())
     }
 
-    // fn create_edges()
     // fn verify_ingestion
-    // ...
+    // fn verify
 
     pub fn ingest(&mut self) -> Result<(), IngestionError> {
         let schemas = self.extract_schema()?;

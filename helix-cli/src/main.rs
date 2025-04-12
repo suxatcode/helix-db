@@ -15,10 +15,8 @@ use std::{
     time::Duration,
 };
 use helixdb::{
-    helix_engine::{
-        graph_core::config::Config,
-        ingestion_core::sqlite::SqliteIngestor,
-    },
+    helix_engine::graph_core::config::Config,
+    ingestion_engine::sqlite::SqliteIngestor,
     helixc::{
         generator::generator::CodeGenerator,
         parser::helix_parser::{HelixParser, Source},

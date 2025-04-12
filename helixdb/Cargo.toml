@@ -43,9 +43,11 @@ cosine = []
 engine=[]
 compiler=[]
 protocol=[]
+gateway=[]
+ingestion=[]
 build=["protocol", "compiler"]
-full = ["build", "engine", "compiler", "protocol"]
-default = ["engine", "compiler", "protocol", "cosine"]
+full = ["build", "engine", "compiler","protocol", "gateway", "ingestion"]
+default = ["engine", "compiler", "protocol","gateway", "ingestion", "cosine"]
 
 [[bench]]
 name = "graph_benchmarks"
