@@ -58,15 +58,12 @@ impl ConnectionHandler {
         let address = self.address.clone();
         
         
-        eprintln!("Server successfully bound to {}", self.address);
         let handle = tokio::spawn(async move {
-            eprintln!("Connection acceptor started on {}", address);
 
             loop {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
-                        eprintln!("New connection accepted from {}", addr);
-                        
+                    
                         // Configure TCP stream
                         if let Err(e) = stream.set_nodelay(true) {
                             eprintln!("Failed to set TCP_NODELAY: {}", e);
@@ -88,7 +85,7 @@ impl ConnectionHandler {
                         
                         // Send to thread pool
                         match thread_pool_sender.send_async(stream).await {
-                            Ok(_) => eprintln!("Connection {} sent to thread pool", client_id),
+                            Ok(_) => (),
                             Err(e) => {
                                 eprintln!("Error sending connection {} to thread pool: {}", client_id, e);
                                 active_connections.lock().unwrap().remove(&client_id);
