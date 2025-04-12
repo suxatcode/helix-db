@@ -46,7 +46,6 @@ impl Response {
     /// assert!(data.contains("Hello World"));
 
     pub async fn send<W: AsyncWrite + Unpin>(&mut self, stream: &mut W) -> Result<()> {
-        println!("Sending response");
         let status_message = match self.status {
             200 => "OK",
             404 => {
@@ -80,7 +79,6 @@ impl Response {
         // Write body
         writer.write_all(&self.body).await?;
         writer.flush().await?;
-        println!("Response sent {:?}", String::from_utf8_lossy(&self.body));
         Ok(())
     }
 }

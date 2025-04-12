@@ -49,8 +49,8 @@ protocol=[]
 gateway=[]
 ingestion=[]
 build=["protocol", "compiler"]
-full = ["build", "engine", "compiler", "protocol", "gateway"]
-default = ["engine", "compiler", "protocol", "cosine", "gateway"]
+full = ["build", "engine", "compiler", "protocol", "gateway", "ingestion", "cosine"]
+default = ["full"]
 
 [[bench]]
 name = "graph_benchmarks"

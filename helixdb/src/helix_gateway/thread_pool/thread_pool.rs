@@ -29,10 +29,8 @@ impl Worker {
         router: Arc<HelixRouter>,
         rx: Receiver<TcpStream>,
     ) -> Worker {
-        println!("Worker {} started", id);
         let handle = tokio::spawn(async move {
             loop {
-                println!("Worker {} waiting for connection", id);
                 let mut conn = match rx.recv_async().await {
                     Ok(stream) => stream,
                     Err(e) => {
@@ -40,7 +38,6 @@ impl Worker {
                         continue;
                     }
                 };
-                println!("Worker {} received connection", id);
 
                 let request = match Request::from_stream(&mut conn).await {
                     Ok(request) => request,
