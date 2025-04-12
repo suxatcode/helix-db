@@ -45,6 +45,9 @@ pub enum CommandType {
 
     /// Update Helix CLI to the latest version
     Update(UpdateCommand),
+
+    /// SQLite -> Helix
+    IngestSqlite(IngestSqliteCommand),
 }
 
 #[derive(Debug, Args)]
@@ -143,6 +146,16 @@ pub struct StartCommand {
 #[derive(Debug, Args)]
 #[clap(name = "update", about = "Update Helix CLI to the latest version")]
 pub struct UpdateCommand {}
+
+#[derive(Debug, Args)]
+#[clap(name = "ingest_sqlite", about = "Migrate relationsal data from sqlite to helix")]
+pub struct IngestSqliteCommand {
+    #[clap(short, long, required = true, help = "Path to the sqlite.db file")]
+    pub path: String,
+
+    #[clap(short, long, required = true, help = "Helixdb instance to ingest data into")]
+    pub instance: String,
+}
 
 #[derive(Debug)]
 pub enum CliError {

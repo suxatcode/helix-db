@@ -7,7 +7,7 @@ use crate::helix_engine::types::GraphError;
 #[derive(Debug)]
 enum IngestionError {
     SqliteError(rusqlite::Error),
-    GraphError(GraphError), // TODO: this is already built in?
+    GraphError(GraphError),
     MappingError(String),
 }
 
@@ -59,7 +59,6 @@ impl From<rusqlite::types::Value> for Value {
 // place holder for graphdb
 //struct MyGraphDB {}
 // graphdb implementation (create_node, create_edge, create_index)
-
 
 struct ForeignKey {
     from_table: String,

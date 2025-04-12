@@ -1,14 +1,9 @@
 use args::{CliError, HelixCLI};
 use clap::Parser;
-use helixdb::{
-    helix_engine::graph_core::config::Config,
-    helixc::{
-        // generator,
-        generator::generator::CodeGenerator,
-        parser::helix_parser::{HelixParser, Source},
-    },
-};
 use indicatif::{ProgressBar, ProgressStyle};
+use tempfile::{NamedTempFile, TempDir};
+use std::path::PathBuf;
+use instance_manager::InstanceManager;
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
@@ -19,15 +14,16 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-use tempfile::{NamedTempFile, TempDir};
+use helixdb::{
+    helix_engine::graph_core::config::Config,
+    helixc::{
+        generator::generator::CodeGenerator,
+        parser::helix_parser::{HelixParser, Source},
+    },
+};
 
-use std::path::PathBuf;
 pub mod args;
-
 mod instance_manager;
-
-use instance_manager::InstanceManager;
-
 const QUERIES_DIR: &str = "helixdb-queries/";
 
 fn check_helix_installation() -> Result<PathBuf, String> {
@@ -811,6 +807,59 @@ QUERY size() =>
             fs::write(config_path, Config::init_config()).unwrap();
 
             println!("Helix project initialised at {}", path.display());
+        }
+        args::CommandType::IngestSqlite(command) => {
+            let path = command.path; // already required in clap object
+            let instance = command.instance; // already required in clap object
+
+            if !path.exists() {
+                println!("❌The file '{}' does not exist", path.display());
+                return;
+            }
+
+            let valid_extensions = [".sqlite", ".db", ".sqlite3"];
+            let is_valid_extension = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| valid_extensions.iter().any(|&valid_ext| valid_ext == ext))
+                .unwrap_or(false);
+
+            if !is_valid_extension {
+                println!("❌The file '{}' must have a .sqlite, .db, or .sqlite3 extension.", path.display());
+                return;
+            }
+
+            let instance_manager = InstanceManager::new().unwrap();
+            match instance_manager.list_instances() {
+                Ok(instances) => {
+                    if instances.is_empty() {
+                        println!("There are no running Helix instances!");
+                        return;
+                    }
+                    let mut is_valid_instance = false;
+                    for instance in instances {
+                        if instance.id == instance {
+                            is_valid_instance = true;
+                            break;
+                        }
+                    }
+                    if !is_valid_instance {
+                        println!("No Helix instance found with id: '{}'!", instance);
+                        return;
+                    } else {
+                        println!("Helix instance found with id: '{}'!", instance);
+                    }
+                }
+                Err(e) => {
+                    println!("Error while searching for Helix instances: {}", e);
+                }
+            }
+
+            // TODO: ingestor init
+            // TODO: ingestor verify db file is not corrupted or anything
+            // TODO: ingestor.ingest()?;
+            // TODO: catch errors
+            // TODO: verify ingestion and schema
         }
     }
 }
