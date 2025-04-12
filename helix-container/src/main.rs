@@ -9,7 +9,8 @@ use std::{collections::HashMap, sync::Arc};
 
 mod queries;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // read from config.hx.json
     let home = dirs::home_dir().expect("Could not retrieve home directory");
     let config_path = home.join(".helix/repo/helix-db/helix-container/src/config.hx.json");
@@ -75,8 +76,11 @@ fn main() {
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),
-    );
+    ).await;
 
     // start server
-    let _ = gateway.connection_handler.accept_conns().join().unwrap(); // TODO handle error causes panic
+    println!("Starting server...");
+    let a = gateway.connection_handler.accept_conns().await.unwrap();
+    let b = a.await.unwrap();
+
 }
