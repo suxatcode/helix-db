@@ -141,10 +141,10 @@ impl fmt::Display for TableSchema {
 }
 
 pub struct SqliteIngestor {
-    sqlite_conn: SqliteConn,
-    instance: String,
-    batch_size: usize,
-    id_mappings: HashMap<String, HashMap<String, NodeId>>,
+    pub sqlite_conn: SqliteConn,
+    pub instance: String,
+    pub batch_size: usize,
+    pub id_mappings: HashMap<String, HashMap<String, NodeId>>,
 }
 
 impl SqliteIngestor {
