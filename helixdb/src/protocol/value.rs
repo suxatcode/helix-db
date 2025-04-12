@@ -5,10 +5,10 @@ use serde::{
 use sonic_rs::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{collections::HashMap, fmt};
-
+use bincode::{Encode, Decode};
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Encode, Decode)]
 pub enum Value {
     String(String),
     Float(f64),

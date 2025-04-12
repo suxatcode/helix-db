@@ -2,6 +2,7 @@ use core::fmt;
 use std::{fmt::format, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
 
 use heed3::Error as HeedError;
+use sonic_rs::Error as SonicError;
 use crate::helixc::parser::parser_methods::ParserError;
 use crate::protocol::traversal_value::TraversalValueError;
 
@@ -77,8 +78,8 @@ impl From<AddrParseError> for GraphError {
     }
 }
 
-impl From<sonic_rs::Error> for GraphError {
-    fn from(error: sonic_rs::Error) -> Self {
+impl From<SonicError> for GraphError {
+    fn from(error: SonicError) -> Self {
         GraphError::ConversionError(format!("sonic error: {}" , error.to_string()))
     }
 }
@@ -103,8 +104,14 @@ impl From<String> for GraphError {
 
 
 
-impl From<Box<bincode::ErrorKind>> for GraphError {
-    fn from(error: Box<bincode::ErrorKind>) -> Self {
+impl From<bincode::error::DecodeError> for GraphError {
+    fn from(error: bincode::error::DecodeError) -> Self {
+        GraphError::ConversionError(format!("bincode error: {}", error.to_string()))
+    }
+}
+
+impl From<bincode::error::EncodeError> for GraphError {
+    fn from(error: bincode::error::EncodeError) -> Self {
         GraphError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
@@ -171,12 +178,6 @@ impl fmt::Display for VectorError {
     }
 }
 
-impl From<Box<bincode::ErrorKind>> for VectorError {
-    fn from(error: Box<bincode::ErrorKind>) -> Self {
-        VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
-    }
-}
-
 impl From<HeedError> for VectorError {
     fn from(error: HeedError) -> Self {
         VectorError::VectorCoreError(format!("heed error: {}", error.to_string()))
@@ -194,3 +195,22 @@ impl From<Utf8Error> for VectorError {
         VectorError::ConversionError(format!("Utf8Error: {}", error.to_string()))
     }
 }
+
+impl From<SonicError> for VectorError {
+    fn from(error: SonicError) -> Self {
+        VectorError::ConversionError(format!("SonicError: {}", error.to_string()))
+    }
+}
+
+impl From<bincode::error::DecodeError> for VectorError {
+    fn from(error: bincode::error::DecodeError) -> Self {
+        VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
+    }
+}
+
+impl From<bincode::error::EncodeError> for VectorError {
+    fn from(error: bincode::error::EncodeError) -> Self {
+        VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
+    }
+}
+

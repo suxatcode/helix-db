@@ -7,11 +7,12 @@ use sonic_rs::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, hash::Hash};
 use super::value::{properties_format, Value};
 use super::traversal_value::TraversalValue;
+use bincode::{config, Decode, Encode};
 
 
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Encode, Decode)]
 pub struct Node {
     pub id: String,
     pub label: String,
@@ -50,7 +51,7 @@ impl std::fmt::Debug for Node {
 
 /// An edge in the graph connecting two nodes with an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Encode, Decode)]
 pub struct Edge {
     pub id: String,
     pub label: String,

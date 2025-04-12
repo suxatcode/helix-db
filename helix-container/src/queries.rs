@@ -76,6 +76,7 @@ pub fn update_record(input: &HandlerInput, response: &mut Response) -> Result<()
     let mut remapping_vals: RefCell<HashMap<String, ResponseRemapping>> =
         RefCell::new(HashMap::new());
     let db = Arc::clone(&input.graph.storage);
+
     let mut txn = db.graph_env.write_txn().unwrap();
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
