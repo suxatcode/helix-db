@@ -13,7 +13,6 @@ use crate::protocol::{
     items::{Edge, Node},
     traversal_value::TraversalValue,
     value::Value,
-    serdes::{HelixSerde, HelixSerdeDecode, HelixSerdeEncode},
 };
 use tempfile::TempDir;
 

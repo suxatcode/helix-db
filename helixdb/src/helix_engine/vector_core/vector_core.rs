@@ -1,8 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::vector_core::hnsw::HNSW;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
-use crate::protocol::serdes::{HelixSerdeDecode, HelixSerdeEncode};
-use bincode::{config, Decode, Encode};
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
@@ -19,7 +17,7 @@ const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
 const VECTOR_PREFIX: &[u8] = b"v:";
 const ENTRY_POINT_KEY: &str = "entry_point";
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HNSWConfig {
     pub m: usize,            // max num of bi-directional links per element
     pub m_max_0: usize,      // max num of links for lower layers
@@ -501,12 +499,11 @@ impl HNSW for VectorCore {
 
     fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
-        let config = config::standard();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
         for result in prefix_iter {
             let (_, value) = result?;
-            let vector: HVector = HVector::helix_decode(&value)?;
+            let vector: HVector = bincode::deserialize(&value)?;
             vectors.push(vector);
         }
         Ok(vectors)
@@ -518,12 +515,11 @@ impl HNSW for VectorCore {
         level: usize,
     ) -> Result<Vec<HVector>, VectorError> {
         let mut vectors = Vec::new();
-        let config = config::standard();
 
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
         for result in prefix_iter {
             let (_, value) = result?;
-            let vector: HVector = HVector::helix_decode(&value)?;
+            let vector: HVector = bincode::deserialize(&value)?;
             if vector.level == level {
                 vectors.push(vector);
             }

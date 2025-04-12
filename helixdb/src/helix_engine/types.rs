@@ -104,14 +104,8 @@ impl From<String> for GraphError {
 
 
 
-impl From<bincode::error::DecodeError> for GraphError {
-    fn from(error: bincode::error::DecodeError) -> Self {
-        GraphError::ConversionError(format!("bincode error: {}", error.to_string()))
-    }
-}
-
-impl From<bincode::error::EncodeError> for GraphError {
-    fn from(error: bincode::error::EncodeError) -> Self {
+impl From<bincode::Error> for GraphError {
+    fn from(error: bincode::Error) -> Self {
         GraphError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
@@ -202,15 +196,11 @@ impl From<SonicError> for VectorError {
     }
 }
 
-impl From<bincode::error::DecodeError> for VectorError {
-    fn from(error: bincode::error::DecodeError) -> Self {
+impl From<bincode::Error> for VectorError {
+    fn from(error: bincode::Error) -> Self {
         VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
 
-impl From<bincode::error::EncodeError> for VectorError {
-    fn from(error: bincode::error::EncodeError) -> Self {
-        VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
-    }
-}
+
 

@@ -1,9 +1,9 @@
 use crate::{helix_engine::types::VectorError, protocol::{filterable::{Filterable, FilterableType}, return_values::ReturnValue, value::Value}};
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::HashMap};
-use bincode::{Encode, Decode};
+
 #[repr(C, align(16))]
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
     id: String,
     pub is_deleted: bool,

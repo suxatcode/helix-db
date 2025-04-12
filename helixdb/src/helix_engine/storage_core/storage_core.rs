@@ -2,7 +2,6 @@
 use crate::helix_engine::graph_core::config::Config;
 use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
-use crate::protocol::serdes::{HelixSerdeDecode, HelixSerdeEncode};
 
 use heed3::{types::*, Database, Env, EnvOpenOptions, RoTxn, RwTxn, WithTls};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -134,7 +133,7 @@ impl HelixGraphStorage {
 
     pub fn get_random_node(&self, txn: &RoTxn) -> Result<Node, GraphError> {
         match self.nodes_db.first(&txn)? {
-            Some((_, data)) => Ok(Node::helix_decode(data)?),
+            Some((_, data)) => Ok(bincode::deserialize(data)?),
             None => Err(GraphError::NodeNotFound),
         }
     }
@@ -196,7 +195,7 @@ impl HelixGraphStorage {
 
         // Store node data
         self.nodes_db
-            .put(txn, &Self::node_key(&node.id), &Node::helix_encode(&node)?)?;
+            .put(txn, &Self::node_key(&node.id), &bincode::serialize(&node)?)?;
 
         // Store node label index
         self.node_labels_db
@@ -214,7 +213,7 @@ impl HelixGraphStorage {
                             )))
                         }
                     };
-                    db.put(txn, &Value::helix_encode(key)?, node.id.as_bytes())?;
+                    db.put(txn, &bincode::serialize(&key)?, node.id.as_bytes())?;
                 }
                 None => {
                     return Err(GraphError::New(format!(
@@ -285,13 +284,13 @@ impl StorageMethods for HelixGraphStorage {
     #[inline(always)]
     fn get_node(&self, txn: &RoTxn, id: &str) -> Result<Node, GraphError> {
         let node = self.get_temp_node(txn, id)?;
-        Ok(Node::helix_decode(node)?)
+        Ok(bincode::deserialize(node)?)
     }
 
     #[inline(always)]
     fn get_edge(&self, txn: &RoTxn, id: &str) -> Result<Edge, GraphError> {
         let edge = self.get_temp_edge(txn, id)?;
-        Ok(Edge::helix_decode(edge)?)
+        Ok(bincode::deserialize(edge)?)
     }
 
     fn get_node_by_secondary_index(
@@ -308,7 +307,7 @@ impl StorageMethods for HelixGraphStorage {
                 index
             )))?;
         let node_id = db
-            .get(txn, &Value::helix_encode(key)?)?
+            .get(txn, &bincode::serialize(key)?)?
             .ok_or(GraphError::NodeNotFound)?;
         let node_id = std::str::from_utf8(&node_id)?;
         self.get_node(txn, node_id)
@@ -432,7 +431,7 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter {
             let (_, value) = result?;
             if !value.is_empty() {
-                let node: Node = Node::helix_decode(value)?;
+                let node: Node = bincode::deserialize(value)?;
                 nodes.push(node);
             }
         }
@@ -456,7 +455,7 @@ impl StorageMethods for HelixGraphStorage {
 
                 let n: Result<Node, GraphError> =
                     match self.nodes_db.get(&txn, &Self::node_key(node_id))? {
-                        Some(data) => Ok(Node::helix_decode(data)?),
+                        Some(data) => Ok(bincode::deserialize(data)?),
                         None => Err(GraphError::NodeNotFound),
                     };
                 if let Ok(node) = n {
@@ -476,7 +475,7 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter {
             let (_, value) = result?;
             if !value.is_empty() {
-                let edge: Edge = Edge::helix_decode(value)?;
+                let edge: Edge = bincode::deserialize(value)?;
                 edges.push(edge);
             }
         }
@@ -499,7 +498,7 @@ impl StorageMethods for HelixGraphStorage {
 
         // Store node data
         self.nodes_db
-            .put(txn, &Self::node_key(&node.id), &Node::helix_encode(&node)?)?;
+            .put(txn, &Self::node_key(&node.id), &bincode::serialize(&node)?)?;
 
         // Store node label index
         self.node_labels_db
@@ -517,7 +516,7 @@ impl StorageMethods for HelixGraphStorage {
                             )))
                         }
                     };
-                    db.put(txn, &Value::helix_encode(key)?, node.id.as_bytes())?;
+                    db.put(txn, &bincode::serialize(&key)?, node.id.as_bytes())?;
                 }
                 None => {
                     return Err(GraphError::New(format!(
@@ -568,7 +567,7 @@ impl StorageMethods for HelixGraphStorage {
 
         // Store edge data
         self.edges_db
-            .put(txn, &Self::edge_key(&edge.id), &Edge::helix_encode(&edge)?)?;
+            .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
 
         // Store edge label index
         self.edge_labels_db
@@ -608,7 +607,7 @@ impl StorageMethods for HelixGraphStorage {
                 let edge_id = std::str::from_utf8(&key[out_prefix.len()..])?;
 
                 if let Some(edge_data) = &self.edges_db.get(&txn, &Self::edge_key(edge_id))? {
-                    let edge: Edge = Edge::helix_decode(edge_data)?;
+                    let edge: Edge = bincode::deserialize(edge_data)?;
                     out_edges.push(edge);
                 }
             }
@@ -628,7 +627,7 @@ impl StorageMethods for HelixGraphStorage {
                 let edge_id = std::str::from_utf8(&key[in_prefix.len()..])?;
 
                 if let Some(edge_data) = self.edges_db.get(&txn, &Self::edge_key(edge_id))? {
-                    let edge: Edge = Edge::helix_decode(edge_data)?;
+                    let edge: Edge = bincode::deserialize(edge_data)?;
                     in_edges.push(edge);
                 }
             }
@@ -661,7 +660,7 @@ impl StorageMethods for HelixGraphStorage {
             Some(data) => data,
             None => return Err(GraphError::EdgeNotFound),
         };
-        let edge: Edge = Edge::helix_decode(edge_data)?;
+        let edge: Edge = bincode::deserialize(edge_data)?;
 
         // Delete all edge-related data
         self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
@@ -688,11 +687,11 @@ impl StorageMethods for HelixGraphStorage {
         for (key, v) in node.properties.iter() {
             if let Some(db) = self.secondary_indices.get(key) {
                 // println!("Updating secondary index: {}, {}", key, v);
-                db.put(txn, &Value::helix_encode(v)?, node.id.as_bytes())?;
+                db.put(txn, &bincode::serialize(v)?, node.id.as_bytes())?;
             }
         }
         self.nodes_db
-            .put(txn, &Self::node_key(id), &Node::helix_encode(&node)?)?;
+            .put(txn, &Self::node_key(id), &bincode::serialize(&node)?)?;
 
         Ok(node)
     }
@@ -708,7 +707,7 @@ impl StorageMethods for HelixGraphStorage {
             edge.properties.insert(k, v);
         });
         self.edges_db
-            .put(txn, &Self::edge_key(id), &Edge::helix_encode(&edge)?)?;
+            .put(txn, &Self::edge_key(id), &bincode::serialize(&edge)?)?;
         Ok(edge)
     }
 }
