@@ -9,7 +9,7 @@ query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop )* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
-traversal           = { (start_vertex | start_edge | start_vector) ~ step* ~ last_step? }
+traversal           = { (start_vertex | start_edge | start_vector ) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
 step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step | AddE) }
@@ -92,6 +92,7 @@ id_args   = { (id_arg) ~ ("," ~ id_arg)* }
 // Range step
 range_step = { "RANGE" ~ "(" ~ (evaluates_to_number) ~ "," ~ (evaluates_to_number) ~ ")" }
 
+
 // Boolean operations
 and             = { "AND" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
 or              = { "OR" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ("," ~ (evaluates_to_bool | anonymous_traversal))* ~ ")" }
@@ -148,7 +149,9 @@ new_field     = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anythin
 AddN          = { "AddN" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
 AddE          = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
 AddV          = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ vector_data? ~ ")")? }
+
 vector_data = { identifier | vec_literal }
+doc_data    = { identifier | string_literal }
 vec_literal   = { "[" ~ (float) ~ ("," ~ (float))* ~ "]" }
 to_from       = { to ~ from? | from ~ to? }
 to            = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
