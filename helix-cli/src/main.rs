@@ -9,7 +9,7 @@ use std::{
     fs::{self, DirEntry},
     io::{ErrorKind, Write},
     net::{SocketAddr, TcpListener},
-    path,
+    path::Path,
     process::{Command, Stdio},
     thread::sleep,
     time::Duration,
@@ -800,8 +800,17 @@ QUERY size() =>
 	size <- V::COUNT
 	RETURN size
 "#,
-            ) // TODO: add hnswload, hnswsearch, and delete as defaults as well delete
+            )
             .unwrap();
+/*
+QUERY insertnode() =>
+    AddN<Type>({ field: val })
+    return "Success"
+
+QUERY insertedge() =>
+    AddE<Type>({ field: val })::To(node1)::From(node2)
+    return "Sucess"
+*/
 
             let config_path = queries_dir.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
@@ -809,9 +818,10 @@ QUERY size() =>
             println!("Helix project initialised at {}", path.display());
         }
         args::CommandType::IngestSqlite(command) => {
-            let path = command.path; // already required in clap object
+            let path_str = command.path; // already required in clap object
             let instance = command.instance; // already required in clap object
 
+            let path = Path::new(&path_str);
             if !path.exists() {
                 println!("❌The file '{}' does not exist", path.display());
                 return;
@@ -837,8 +847,8 @@ QUERY size() =>
                         return;
                     }
                     let mut is_valid_instance = false;
-                    for instance in instances {
-                        if instance.id == instance {
+                    for iter_instance in instances {
+                        if iter_instance.id == instance {
                             is_valid_instance = true;
                             break;
                         }
