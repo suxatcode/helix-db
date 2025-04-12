@@ -112,5 +112,7 @@ fn test_ingest_basics() {
     };
 
     let schemas = ingestor.extract_schema().unwrap();
-    println!("{:?}", schemas);
+    for schema in &schemas {
+        println!("{}", schema);
+    }
 }

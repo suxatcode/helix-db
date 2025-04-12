@@ -87,8 +87,11 @@ impl fmt::Display for ForeignKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}.{} -> {}.{}",
-            self.from_table, self.from_column, self.to_table, self.to_column
+            "{}.{} → {}.{}",
+            self.from_table,
+            self.from_column,
+            self.to_table,
+            self.to_column
         )
     }
 }
@@ -96,45 +99,52 @@ impl fmt::Display for ForeignKey {
 // Implement Display for ColumnInfo
 impl fmt::Display for ColumnInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pk_indicator = if self.is_primary_key { " (PK)" } else { "" };
-        write!(f, "{}: {}{}", self.name, self.data_type, pk_indicator)
+        let pk_indicator = if self.is_primary_key { " (Primary Key)" } else { "" };
+        write!(f, "{} ({}{})", self.name, self.data_type, pk_indicator)
     }
 }
 
 // Implement Display for TableSchema
 impl fmt::Display for TableSchema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Table header
         writeln!(f, "Table: {}", self.name)?;
+        writeln!(f, "{}", "-".repeat(40))?;
 
-        // Columns
+        // Columns section
         writeln!(f, "Columns:")?;
         if self.columns.is_empty() {
-            writeln!(f, "  (none)")?;
+            writeln!(f, "  None")?;
         } else {
-            for column in &self.columns {
-                writeln!(f, "  - {}", column)?;
+            for (i, column) in self.columns.iter().enumerate() {
+                writeln!(f, "  {}. {}", i + 1, column)?;
             }
         }
+        writeln!(f)?;
 
-        // Primary Keys
+        // Primary Keys section
         writeln!(f, "Primary Keys:")?;
         if self.primary_keys.is_empty() {
-            writeln!(f, "  (none)")?;
+            writeln!(f, "  None")?;
         } else {
-            for pk in &self.primary_keys {
+            let mut pks: Vec<&String> = self.primary_keys.iter().collect();
+            pks.sort(); // Sort for consistent output
+            for pk in pks {
                 writeln!(f, "  - {}", pk)?;
             }
         }
+        writeln!(f)?;
 
-        // Foreign Keys
+        // Foreign Keys section
         writeln!(f, "Foreign Keys:")?;
         if self.foreign_keys.is_empty() {
-            writeln!(f, "  (none)")?;
+            writeln!(f, "  None")?;
         } else {
-            for fk in &self.foreign_keys {
-                writeln!(f, "  - {}", fk)?;
+            for (i, fk) in self.foreign_keys.iter().enumerate() {
+                writeln!(f, "  {}. {}", i + 1, fk)?;
             }
         }
+        writeln!(f, "{}", "-".repeat(40))?;
 
         Ok(())
     }
