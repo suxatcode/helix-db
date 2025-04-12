@@ -17,7 +17,7 @@ use crate::protocol::{
     value::Value,
 };
 use core::panic;
-use heed3::{Error, RoTxn, RwTxn};
+use heed3::{Error, RoTxn, RwTxn, WithTls};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -978,7 +978,7 @@ pub trait TransactionCommit {
 }
 
 // Implementation for RoTxn - does nothing
-impl<'a> TransactionCommit for RoTxn<'a> {
+impl<'a> TransactionCommit for RoTxn<'a, WithTls> {
     fn maybe_commit(self) -> Result<(), Error> {
         // Read-only transaction, nothing to commit
         Ok(())

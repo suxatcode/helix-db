@@ -7,10 +7,11 @@ use sonic_rs::{from_str, to_string};
 use sonic_rs::{Deserialize, JsonValueTrait, Serialize, Value};
 use std::io::Write;
 use std::{
-    net::{SocketAddr, TcpListener},
+    net::{SocketAddr},
     process::Command,
     time::Duration,
 };
+use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 // Constants for timeouts
@@ -103,41 +104,13 @@ async fn main() -> Result<(), AdminError> {
     let port = std::env::var("PORT").unwrap_or("8080".to_string());
 
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-        .map_err(|e| AdminError::AdminConnectionError("Failed to create socket".to_string(), e))?;
-
-    // Set socket options with timeouts
-    socket.set_read_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| {
-        AdminError::AdminConnectionError("Failed to set read timeout".to_string(), e)
+    let listener = TcpListener::bind(&addr).await.map_err(|e| {
+        eprintln!("Failed to bind to address {}: {}", addr, e);
+        AdminError::AdminConnectionError("Failed to bind to address".to_string(), e)
     })?;
-    socket.set_write_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| {
-        AdminError::AdminConnectionError("Failed to set write timeout".to_string(), e)
-    })?;
-    socket.set_recv_buffer_size(32 * 1024).map_err(|e| {
-        AdminError::AdminConnectionError("Failed to set recv buffer".to_string(), e)
-    })?;
-    socket.set_send_buffer_size(32 * 1024).map_err(|e| {
-        AdminError::AdminConnectionError("Failed to set send buffer".to_string(), e)
-    })?;
-
-    // Enable reuse
-    socket.set_reuse_address(true).map_err(|e| {
-        AdminError::AdminConnectionError("Failed to set reuse address".to_string(), e)
-    })?;
-
-    // Bind and listen
-    socket
-        .bind(&addr.into())
-        .map_err(|e| AdminError::AdminConnectionError("Failed to bind".to_string(), e))?;
-    socket
-        .listen(1024)
-        .map_err(|e| AdminError::AdminConnectionError("Failed to listen".to_string(), e))?;
-
-    let listener: TcpListener = socket.into();
-    println!("Server listening on port {}", port);
 
     loop {
-        match listener.accept() {
+        match listener.accept().await {
             Ok((mut conn, addr)) => {
                 println!("New connection from {}", addr);
                 let s3_client_clone = s3_client.clone();
@@ -145,7 +118,7 @@ async fn main() -> Result<(), AdminError> {
                 tokio::spawn(async move {
                     let result: Result<(), AdminError> = async {
                         let mut response = Response::new();
-                        let request = match Request::from_stream(&conn) {
+                        let request = match Request::from_stream(&mut conn).await {
                             Ok(request) => request,
                             Err(e) => {
                                 response.status = 400;
@@ -274,7 +247,7 @@ async fn main() -> Result<(), AdminError> {
                         }
 
                         // Send response back to client
-                        match response.send(&mut conn) {
+                        match response.send(&mut conn).await {
                             Ok(_) => (),
                             Err(e) => {
                                 eprintln!("Failed to send response: {:?}", e);

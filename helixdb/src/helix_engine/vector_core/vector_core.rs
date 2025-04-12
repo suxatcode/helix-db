@@ -1,7 +1,6 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::vector_core::hnsw::HNSW;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
-use bincode::deserialize;
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
@@ -504,7 +503,7 @@ impl HNSW for VectorCore {
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
         for result in prefix_iter {
             let (_, value) = result?;
-            let vector: HVector = deserialize(&value)?;
+            let vector: HVector = bincode::deserialize(&value)?;
             vectors.push(vector);
         }
         Ok(vectors)
@@ -520,7 +519,7 @@ impl HNSW for VectorCore {
         let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
         for result in prefix_iter {
             let (_, value) = result?;
-            let vector: HVector = deserialize(&value)?;
+            let vector: HVector = bincode::deserialize(&value)?;
             if vector.level == level {
                 vectors.push(vector);
             }

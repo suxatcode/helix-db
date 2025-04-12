@@ -9,6 +9,7 @@ use super::value::{properties_format, Value};
 use super::traversal_value::TraversalValue;
 
 
+
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
