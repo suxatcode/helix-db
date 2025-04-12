@@ -444,7 +444,9 @@ impl HNSW for VectorCore {
 
         self.put_vector(txn, &query)?;
         query.level = new_level;
-        self.put_vector(txn, &query)?;
+        if new_level > 0 {
+            self.put_vector(txn, &query)?;
+        }
 
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
