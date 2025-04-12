@@ -15,7 +15,10 @@ use std::{
     time::Duration,
 };
 use helixdb::{
-    helix_engine::graph_core::config::Config,
+    helix_engine::{
+        graph_core::config::Config,
+        ingestion_core::sqlite::SqliteIngestor,
+    },
     helixc::{
         generator::generator::CodeGenerator,
         parser::helix_parser::{HelixParser, Source},
@@ -803,11 +806,11 @@ QUERY size() =>
             )
             .unwrap();
 /*
-QUERY insertnode() =>
+QUERY ingestnodes() =>
     AddN<Type>({ field: val })
     return "Success"
 
-QUERY insertedge() =>
+QUERY ingestedges() =>
     AddE<Type>({ field: val })::To(node1)::From(node2)
     return "Sucess"
 */
@@ -865,10 +868,13 @@ QUERY insertedge() =>
                 }
             }
 
-            // TODO: ingestor init
+            let mut ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
+            // ingestor.verify_sqlite().unwrap();
+            //ingestor.ingest().unwrap(); // TODO: catch error here if throws
+            // ingestor.verify();
+
             // TODO: ingestor verify db file is not corrupted or anything
             // TODO: ingestor.ingest()?;
-            // TODO: catch errors
             // TODO: verify ingestion and schema
         }
     }
