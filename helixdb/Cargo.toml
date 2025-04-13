@@ -30,6 +30,7 @@ polars = { version = "0.46.0", optional = true, features = ["parquet", "lazy"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde_json = "1.0.110"
+get_routes = { path = "../get_routes" }
 
 
 [dev-dependencies]

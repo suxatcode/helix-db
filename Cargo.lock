@@ -1920,6 +1920,7 @@ dependencies = [
  "dirs 6.0.0",
  "flume",
  "futures",
+ "get_routes",
  "heed3",
  "inventory",
  "pest",

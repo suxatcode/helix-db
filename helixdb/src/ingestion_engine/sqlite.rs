@@ -1,4 +1,6 @@
 use crate::helix_engine::types::GraphError;
+use crate::helix_gateway::router::router::HandlerInput;
+use crate::protocol::response::Response;
 use reqwest::blocking::Client;
 use rusqlite::{
     params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
@@ -10,6 +12,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use get_routes::local_handler;
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -711,18 +714,41 @@ impl SqliteIngestor {
             }
         }
 
-        // write the data to a JSON file
-        let json_data = serde_json::to_string_pretty(&graph_data).map_err(|e| {
-            IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
-        })?;
+        // write the data to a JSONL file as lines of json objects
+        // let json_data = serde_json::to_string_pretty(&graph_data).map_err(|e| {
+        //     IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
+        // })?;
 
-        let mut file = File::create(output_path).map_err(|e| {
+        let nodes_path = Path::new(output_path).join("nodes.jsonl");
+        let edges_path = Path::new(output_path).join("edges.jsonl");
+        let mut nodes_file = File::create(&nodes_path).map_err(|e| {
             IngestionError::MappingError(format!("Failed to create output file: {}", e))
         })?;
-
-        file.write_all(json_data.as_bytes()).map_err(|e| {
-            IngestionError::MappingError(format!("Failed to write to output file: {}", e))
+        println!("Created nodes file at {}", nodes_path.to_str().unwrap());
+        let mut edges_file = File::create(&edges_path).map_err(|e| {
+            IngestionError::MappingError(format!("Failed to create output file: {}", e))
         })?;
+        println!("Created edges file at {}", edges_path.to_str().unwrap());
+        for node in &graph_data.nodes {
+            let mut json_data = serde_json::to_string(node).map_err(|e| {
+                IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
+            })?;
+            //append a newline to the json data
+            json_data.push_str("\n");
+            nodes_file.write_all(json_data.as_bytes()).map_err(|e| {
+                IngestionError::MappingError(format!("Failed to write to output file: {}", e))
+            })?;
+        }
+        for edge in &graph_data.edges {
+            let mut json_data = serde_json::to_string(edge).map_err(|e| {
+                IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
+            })?;
+            //append a newline to the json data
+            json_data.push_str("\n");
+            edges_file.write_all(json_data.as_bytes()).map_err(|e| {
+                IngestionError::MappingError(format!("Failed to write to output file: {}", e))
+            })?;
+        }
 
         println!("Successfully dumped graph data to {}", output_path);
         println!(
@@ -763,6 +789,11 @@ impl SqliteIngestor {
                         col_name, e
                     ))
                 })?;
+
+                // // name contains id in any form, skip it
+                // if col_name.clone().to_lowercase().contains("id") {
+                //     continue;
+                // }
                 properties.insert(col_name.clone(), Value::from(value.clone()));
             }
 
@@ -837,7 +868,7 @@ impl SqliteIngestor {
 
         // if --dump flag is set, dump the ingestion stats to a file
         // path = ./helix_ingestion.json
-        let path = Path::new("./helix_ingestion.json");
+        let path = Path::new("./");
         // create the file if it doesn't exist
         if !path.exists() {
             let mut file = File::create(path).unwrap();
@@ -915,3 +946,41 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
     };
     helix_type.to_string()
 }
+
+/// A handler that will automatically get built into 
+/// the helix container as an endpoint 
+/// 
+/// This handler will ingest a SQL(Lite) database into the helix instance
+/// 
+/// The handler will take in a JSON payload with the following fields:
+/// - db_url: The URL of the SQL(Lite) database
+/// - instance: The instance name of the helix instance
+/// - batch_size: The batch size for the ingestion
+///  
+#[local_handler]
+pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct ingest_sqlData {
+        job_id: String,
+        job_name: String,
+        batch_size: usize,
+    }
+
+    let data: ingest_sqlData = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    // read data from path $DATA_DIR/imports/<job_id>.json
+    // but dont load the json into memory, just read the file
+
+    // let mut ingestor = SqliteIngestor::new(&data.db_url, None, 1000).unwrap();
+    // match ingestor.ingest() {
+    //     Ok(_) => {
+    //         response.body = sonic_rs::to_vec(&"Success").unwrap();
+    //     },
+    //     Err(err) => return Err(GraphError::from(err.to_string())),
+    // }
+    Ok(())
+}
+

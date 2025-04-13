@@ -319,9 +319,9 @@ fn test_ingest_basics() {
 
 #[test]
 fn test_dump_to_json_basic() {
-    // Create a temporary file path for the JSON output
+    // Create a temporary file path for the JSONL output
     let temp_dir = std::env::temp_dir();
-    let output_path = temp_dir.join("test_dump_output.json");
+    let output_path = temp_dir;
     let output_path_str = output_path.to_str().unwrap();
 
     // Create a mock database and ingestor
@@ -334,38 +334,45 @@ fn test_dump_to_json_basic() {
         graph_schema: GraphSchema::new(),
     };
 
-    // Dump the database to JSON
+    // Dump the database to JSONL
     ingestor
         .dump_to_json(output_path_str)
-        .expect("Failed to dump to JSON");
+        .expect("Failed to dump to JSONL");
 
     // Verify the file was created
-    assert!(output_path.exists(), "JSON file was not created");
+    assert!(output_path.exists(), "JSONL file was not created");
 
-    // Read and parse the JSON file
-    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
-    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    // Read the JSONL file
+    let nodes_jsonl_content = fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
+    let edges_jsonl_content = fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
 
-    // Verify the JSON structure
-    assert!(json_data.is_object(), "JSON should be an object");
+    // Verify that the file contains multiple lines (at least one node and one edge)
+    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
+    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
     assert!(
-        json_data.get("nodes").is_some(),
-        "JSON should have a 'nodes' field"
+        nodes_lines.len() >= 1,
+        "JSONL file should contain at least 1 node"
     );
     assert!(
-        json_data.get("edges").is_some(),
-        "JSON should have an 'edges' field"
+        edges_lines.len() >= 1,
+        "JSONL file should contain at least 1 edge"
     );
 
-    // Clean up
-    fs::remove_file(output_path).expect("Failed to remove temporary file");
+    // Verify that each line is valid JSON
+    for line in &nodes_lines {
+        let _: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+    }
+    for line in &edges_lines {
+        let _: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+    }
+
 }
 
 #[test]
 fn test_dump_to_json_content() {
-    // Create a temporary file path for the JSON output
+    // Create a temporary file path for the JSONL output
     let temp_dir = std::env::temp_dir();
-    let output_path = temp_dir.join("test_dump_content.json");
+    let output_path = temp_dir;
     let output_path_str = output_path.to_str().unwrap();
 
     // Create a mock database and ingestor
@@ -378,18 +385,32 @@ fn test_dump_to_json_content() {
         graph_schema: GraphSchema::new(),
     };
 
-    // Dump the database to JSON
+    // Dump the database to JSONL
     ingestor
         .dump_to_json(output_path_str)
-        .expect("Failed to dump to JSON");
+        .expect("Failed to dump to JSONL");
 
-    // Read and parse the JSON file
-    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
-    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    // Read the JSONL file
+    let nodes_jsonl_content =
+        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
+    let edges_jsonl_content =
+        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
+    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
 
-    // Get nodes and edges
-    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
-    let edges = json_data.get("edges").unwrap().as_array().unwrap();
+    // Parse each line as a JSON object
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    for line in nodes_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+
+        nodes.push(json_obj);
+    }
+    for line in edges_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        edges.push(json_obj);
+    }
 
     // Verify the number of nodes (should be 40: 20 parents + 20 users)
     assert_eq!(nodes.len(), 40, "Expected 40 nodes, found {}", nodes.len());
@@ -398,7 +419,7 @@ fn test_dump_to_json_content() {
     let mut parent_count = 0;
     let mut user_count = 0;
 
-    for node in nodes {
+    for node in &nodes {
         let label = node.get("label").unwrap().as_str().unwrap();
         if label == "parents" {
             parent_count += 1;
@@ -422,7 +443,7 @@ fn test_dump_to_json_content() {
     assert_eq!(edges.len(), 20, "Expected 20 edges, found {}", edges.len());
 
     // Verify edge types
-    for edge in edges {
+    for edge in &edges {
         let edge_type = edge.get("edge_type").unwrap().as_str().unwrap();
         assert_eq!(
             edge_type, "USERS_TO_PARENTS",
@@ -430,15 +451,14 @@ fn test_dump_to_json_content() {
             edge_type
         );
     }
-    // Clean up
-    fs::remove_file(output_path).expect("Failed to remove temporary file");
+
 }
 
 #[test]
 fn test_dump_to_json_node_properties() {
-    // Create a temporary file path for the JSON output
+    // Create a temporary file path for the JSONL output
     let temp_dir = std::env::temp_dir();
-    let output_path = temp_dir.join("test_dump_properties.json");
+    let output_path = temp_dir;
     let output_path_str = output_path.to_str().unwrap();
 
     // Create a mock database and ingestor
@@ -451,17 +471,30 @@ fn test_dump_to_json_node_properties() {
         graph_schema: GraphSchema::new(),
     };
 
-    // Dump the database to JSON
+    // Dump the database to JSONL
     ingestor
         .dump_to_json(output_path_str)
-        .expect("Failed to dump to JSON");
+        .expect("Failed to dump to JSONL");
 
-    // Read and parse the JSON file
-    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
-    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    // Read the JSONL file
+    let nodes_jsonl_content =
+        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
+    let edges_jsonl_content =
+        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
+    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
 
-    // Get nodes
-    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
+    // Parse each line as a JSON object
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    for line in nodes_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        nodes.push(json_obj);
+    }
+    for line in edges_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        edges.push(json_obj);
+    }
 
     // Find a parent node and verify its properties
     let parent_node = nodes
@@ -518,19 +551,13 @@ fn test_dump_to_json_node_properties() {
         properties.contains_key("parent_id"),
         "User node should have 'parent_id' property"
     );
-
-    // Clean up
-    fs::remove_file(output_path).expect("Failed to remove temporary file");
 }
 
 #[test]
 fn test_dump_to_json_edge_relationships() {
-    // Create a temporary file path for the JSON output
+    // Create a temporary file path for the JSONL output
     let temp_dir = std::env::temp_dir();
-    // let output_path = temp_dir.join("test_dump_relationships.json");
-    let output_path = Path::new(
-        "/Users/xav/GitHub/helix-db/helixdb/src/ingestion_engine/test_dump_relationships.json",
-    );
+    let output_path = temp_dir;
     let output_path_str = output_path.to_str().unwrap();
 
     // Create a mock database and ingestor
@@ -543,19 +570,32 @@ fn test_dump_to_json_edge_relationships() {
         graph_schema: GraphSchema::new(),
     };
 
-    // Dump the database to JSON
+    // Dump the database to JSONL
     println!("Dumping to {}", output_path_str);
     ingestor
         .dump_to_json(output_path_str)
-        .expect("Failed to dump to JSON");
+        .expect("Failed to dump to JSONL");
 
-    // Read and parse the JSON file
-    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
-    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    // Read the JSONL file
+    let nodes_jsonl_content =
+        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
+    let edges_jsonl_content =
+        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
+    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
 
-    // Get nodes and edges
-    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
-    let edges = json_data.get("edges").unwrap().as_array().unwrap();
+    // Parse each line as a JSON object
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    for line in nodes_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        nodes.push(json_obj);
+    }
+    for line in edges_lines {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        edges.push(json_obj);
+    }
 
     // Create a map of node indices by label and id
     let mut node_indices = HashMap::new();
@@ -569,7 +609,7 @@ fn test_dump_to_json_edge_relationships() {
     }
 
     // Verify that each edge connects a user to a parent
-    for edge in edges {
+    for edge in &edges {
         let from_idx = edge.get("from").unwrap().as_u64().unwrap() as usize;
         let to_idx = edge.get("to").unwrap().as_u64().unwrap() as usize;
 
@@ -597,8 +637,7 @@ fn test_dump_to_json_edge_relationships() {
             user_parent_id, parent_id
         );
     }
-    // Clean up
-    fs::remove_file(output_path).expect("Failed to remove temporary file");
+
 }
 
 #[test]
