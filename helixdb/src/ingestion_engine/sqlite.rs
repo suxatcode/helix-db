@@ -581,7 +581,7 @@ impl SqliteIngestor {
                     if name.clone().to_lowercase().contains("id") {
                         return None;
                     }
-                    Some((name, to_camel_case(&column.data_type)))
+                    Some((name, map_sql_type_to_helix_type(&column.data_type)))
                 })
                 .collect::<Vec<(String, String)>>();
             self.graph_schema.nodes.insert(schema.name.clone(), columns);
@@ -809,8 +809,8 @@ impl SqliteIngestor {
         // edges section
         self.graph_schema.edges.iter().for_each(|(edge_type, edge)| {
             let mut str_to_write = format!("E::{} {{\n", edge_type);
-            str_to_write.push_str(&format!("\tFrom: {}\n", edge.from));
-            str_to_write.push_str(&format!("\tTo: {}\n", edge.to));
+            str_to_write.push_str(&format!("\tFrom: {},\n", edge.from));
+            str_to_write.push_str(&format!("\tTo: {},\n", edge.to));
             str_to_write.push_str("\tProperties: {\n");
             edge.properties.iter().enumerate().for_each(|(i, (property_name, property_type))| {
                 str_to_write.push_str(&format!("\t\t{}: {}", to_camel_case(property_name), property_type));
@@ -892,4 +892,26 @@ pub fn to_camel_case(s: &str) -> String {
         })
         .collect::<Vec<String>>()
         .join("")
+}
+
+pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
+    let helix_type = match sql_type {
+        "INTEGER" => "Integer",
+        "INT" => "Integer",
+        "FLOAT" => "Float",
+        "TEXT" => "String",
+        "BOOLEAN" => "Boolean",
+        "REAL" => "Float",
+        "DATE" => "String", // TODO: Implement date type
+        "TIME" => "String", // TODO: Implement time type
+        "DATETIME" => "String", // TODO: Implement datetime type
+        "BLOB" => "String",
+        "JSON" => "String",
+        "UUID" => "String",
+        "URL" => "String",
+        _ => {
+            panic!("Unsupported type: {}", sql_type);
+        },
+    };
+    helix_type.to_string()
 }

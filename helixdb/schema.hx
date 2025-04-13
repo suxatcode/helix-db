@@ -1,18 +1,18 @@
-N::Users {
-	Name: Text,
+N::Parents {
+	Name: String,
 	Age: Integer,
-	City: Text
+	GrewUpIn: String
 }
 
-N::Parents {
-	Name: Text,
+N::Users {
+	Name: String,
 	Age: Integer,
-	GrewUpIn: Text
+	City: String
 }
 
 E::UsersToParents {
-	From: Users
-	To: Parents
+	From: Users,
+	To: Parents,
 	Properties: {
 	}
 
