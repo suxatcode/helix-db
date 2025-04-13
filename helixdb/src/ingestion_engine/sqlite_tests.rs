@@ -530,7 +530,6 @@ fn test_dump_to_json_edge_relationships() {
         // Verify that the edge connects the correct user to the correct parent
         assert_eq!(user_parent_id, parent_id, "Edge should connect user with parent_id {} to parent with id {}", user_parent_id, parent_id);
     }
-    assert!(false);
     // Clean up
     fs::remove_file(output_path).expect("Failed to remove temporary file");
 }

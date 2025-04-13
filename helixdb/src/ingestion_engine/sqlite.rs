@@ -659,6 +659,8 @@ impl SqliteIngestor {
         Ok(nodes)
     }
 
+    
+
     pub fn ingest(&mut self) -> Result<(), IngestionError> {
         let schemas = self.extract_schema()?;
 
