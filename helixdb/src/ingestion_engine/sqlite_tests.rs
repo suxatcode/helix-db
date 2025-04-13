@@ -1,11 +1,11 @@
-use crate::ingestion_engine::sqlite::{to_camel_case, ColumnInfo, ForeignKey, SqliteIngestor};
+use crate::ingestion_engine::sql_ingestion::{to_camel_case, ColumnInfo, ForeignKey, SqliteIngestor};
 use rusqlite::{params, Connection, Result as SqliteResult};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use super::sqlite::GraphSchema;
+use super::sql_ingestion::GraphSchema;
 
 pub fn create_mock_sqlite_db(file_path: Option<&str>) -> SqliteResult<Connection> {
     let conn = match file_path {

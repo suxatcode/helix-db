@@ -16,7 +16,7 @@ use std::{
 };
 use helixdb::{
     helix_engine::graph_core::config::Config,
-    ingestion_engine::sqlite::SqliteIngestor,
+    ingestion_engine::sql_ingestion::SqliteIngestor,
     helixc::{
         generator::generator::CodeGenerator,
         parser::helix_parser::{HelixParser, Source},
