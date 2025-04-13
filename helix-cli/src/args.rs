@@ -48,6 +48,9 @@ pub enum CommandType {
 
     /// SQLite -> Helix
     IngestSqlite(IngestSqliteCommand),
+
+    /// PostgreSQL -> Helix
+    IngestPostgres(IngestPostgresCommand),
 }
 
 #[derive(Debug, Args)]
@@ -155,6 +158,22 @@ pub struct IngestSqliteCommand {
 
     #[clap(short, long, required = true, help = "Helixdb instance to ingest data into")]
     pub instance: String,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "ingest-postgres", about = "Ingest data from a PostgreSQL database into Helix")]
+pub struct IngestPostgresCommand {
+    #[clap(short, long, required = true, help = "PostgreSQL connection string (e.g., postgres://user:password@localhost:5432/dbname)")]
+    pub db_url: String,
+
+    #[clap(short, long, required = true, help = "Helixdb instance to ingest data into")]
+    pub instance: String,
+    
+    #[clap(short, long, default_value = "1000", help = "Batch size for ingestion")]
+    pub batch_size: usize,
+    
+    #[clap(short, long, help = "Output directory for JSONL files (default: current directory)")]
+    pub output_dir: Option<String>,
 }
 
 #[derive(Debug)]

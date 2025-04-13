@@ -17,6 +17,7 @@ use std::{
 use helixdb::{
     helix_engine::graph_core::config::Config,
     ingestion_engine::sql_ingestion::SqliteIngestor,
+    ingestion_engine::postgres_ingestion::PostgresIngestor,
     helixc::{
         generator::generator::CodeGenerator,
         parser::helix_parser::{HelixParser, Source},
@@ -871,6 +872,52 @@ QUERY ingestedges() =>
             // TODO: ingestor verify db file is not corrupted or anything
             // TODO: ingestor.ingest()?;
             // TODO: verify ingestion and schema
+        }
+        args::CommandType::IngestPostgres(command) => {
+            let spinner = create_spinner("Connecting to PostgreSQL database...");
+            
+            // Create output directory if specified
+            let output_dir = command.output_dir.as_deref().unwrap_or("./");
+            if !Path::new(output_dir).exists() {
+                fs::create_dir_all(output_dir).unwrap_or_else(|e| {
+                    finish_spinner_with_message(&spinner, false, &format!("Failed to create output directory: {}", e));
+                    std::process::exit(1);
+                });
+            }
+            
+            // Run the PostgreSQL ingestion
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = rt.block_on(async {
+                let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size).await;
+                
+                match ingestor {
+                    Ok(mut ingestor) => {
+                        finish_spinner_with_message(&spinner, true, "Connected to PostgreSQL database");
+                        
+                        let dump_spinner = create_spinner("Dumping data to JSONL files...");
+                        match ingestor.dump_to_json(output_dir).await {
+                            Ok(_) => {
+                                finish_spinner_with_message(&dump_spinner, true, "Successfully dumped data to JSONL files");
+                                
+                                // Create schema file
+                                let schema_path = Path::new(output_dir).join("schema.hx");
+                                println!("Schema file created at: {}", schema_path.display());
+                                
+                                println!("PostgreSQL ingestion completed successfully!");
+                                println!("You can now use the JSONL files to import data into your Helix instance.");
+                            },
+                            Err(e) => {
+                                finish_spinner_with_message(&dump_spinner, false, &format!("Failed to dump data: {}", e));
+                                std::process::exit(1);
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        finish_spinner_with_message(&spinner, false, &format!("Failed to connect to PostgreSQL: {}", e));
+                        std::process::exit(1);
+                    }
+                }
+            });
         }
     }
 }
