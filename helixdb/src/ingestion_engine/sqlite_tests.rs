@@ -1,6 +1,9 @@
-use crate::ingestion_engine::sqlite::{SqliteIngestor, ColumnInfo};
+use crate::ingestion_engine::sqlite::{SqliteIngestor, ColumnInfo, ForeignKey};
 use rusqlite::{Connection, Result as SqliteResult, params};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
+use serde_json::{Value as JsonValue, json};
 
 pub fn create_mock_sqlite_db(file_path: Option<&str>) -> SqliteResult<Connection> {
     let conn = match file_path {
@@ -309,4 +312,225 @@ fn test_ingest_basics() {
     for schema in &schemas {
         println!("{}", schema);
     }
+}
+
+#[test]
+fn test_dump_to_json_basic() {
+    // Create a temporary file path for the JSON output
+    let temp_dir = std::env::temp_dir();
+    let output_path = temp_dir.join("test_dump_output.json");
+    let output_path_str = output_path.to_str().unwrap();
+    
+    // Create a mock database and ingestor
+    let conn = create_mock_sqlite_db(None).expect("Failed to create mock database");
+    let mut ingestor = SqliteIngestor {
+        sqlite_conn: conn,
+        instance: "http://localhost:6969".to_string(),
+        batch_size: 10,
+        id_mappings: HashMap::new(),
+    };
+    
+    // Dump the database to JSON
+    ingestor.dump_to_json(output_path_str).expect("Failed to dump to JSON");
+    
+    // Verify the file was created
+    assert!(output_path.exists(), "JSON file was not created");
+    
+    // Read and parse the JSON file
+    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
+    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    
+    // Verify the JSON structure
+    assert!(json_data.is_object(), "JSON should be an object");
+    assert!(json_data.get("nodes").is_some(), "JSON should have a 'nodes' field");
+    assert!(json_data.get("edges").is_some(), "JSON should have an 'edges' field");
+    
+    // Clean up
+    fs::remove_file(output_path).expect("Failed to remove temporary file");
+}
+
+#[test]
+fn test_dump_to_json_content() {
+    // Create a temporary file path for the JSON output
+    let temp_dir = std::env::temp_dir();
+    let output_path = temp_dir.join("test_dump_content.json");
+    let output_path_str = output_path.to_str().unwrap();
+    
+    // Create a mock database and ingestor
+    let conn = create_mock_sqlite_db(None).expect("Failed to create mock database");
+    let mut ingestor = SqliteIngestor {
+        sqlite_conn: conn,
+        instance: "http://localhost:6969".to_string(),
+        batch_size: 10,
+        id_mappings: HashMap::new(),
+    };
+    
+    // Dump the database to JSON
+    ingestor.dump_to_json(output_path_str).expect("Failed to dump to JSON");
+    
+    // Read and parse the JSON file
+    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
+    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    
+    // Get nodes and edges
+    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
+    let edges = json_data.get("edges").unwrap().as_array().unwrap();
+    
+    // Verify the number of nodes (should be 40: 20 parents + 20 users)
+    assert_eq!(nodes.len(), 40, "Expected 40 nodes, found {}", nodes.len());
+    
+    // Count nodes by label
+    let mut parent_count = 0;
+    let mut user_count = 0;
+    
+    for node in nodes {
+        let label = node.get("label").unwrap().as_str().unwrap();
+        if label == "parents" {
+            parent_count += 1;
+        } else if label == "users" {
+            user_count += 1;
+        }
+    }
+    
+    assert_eq!(parent_count, 20, "Expected 20 parent nodes, found {}", parent_count);
+    assert_eq!(user_count, 20, "Expected 20 user nodes, found {}", user_count);
+    
+    // Verify the number of edges (should be 20: one for each user-parent relationship)
+    assert_eq!(edges.len(), 20, "Expected 20 edges, found {}", edges.len());
+    
+    // Verify edge types
+    for edge in edges {
+        let edge_type = edge.get("edge_type").unwrap().as_str().unwrap();
+        assert_eq!(edge_type, "USERS_TO_PARENTS", "Expected edge type 'USERS_TO_PARENTS', found {}", edge_type);
+    }
+    
+    // Clean up
+    fs::remove_file(output_path).expect("Failed to remove temporary file");
+}
+
+#[test]
+fn test_dump_to_json_node_properties() {
+    // Create a temporary file path for the JSON output
+    let temp_dir = std::env::temp_dir();
+    let output_path = temp_dir.join("test_dump_properties.json");
+    let output_path_str = output_path.to_str().unwrap();
+    
+    // Create a mock database and ingestor
+    let conn = create_mock_sqlite_db(None).expect("Failed to create mock database");
+    let mut ingestor = SqliteIngestor {
+        sqlite_conn: conn,
+        instance: "http://localhost:6969".to_string(),
+        batch_size: 10,
+        id_mappings: HashMap::new(),
+    };
+    
+    // Dump the database to JSON
+    ingestor.dump_to_json(output_path_str).expect("Failed to dump to JSON");
+    
+    // Read and parse the JSON file
+    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
+    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    
+    // Get nodes
+    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
+    
+    // Find a parent node and verify its properties
+    let parent_node = nodes.iter().find(|node| {
+        node.get("label").unwrap().as_str().unwrap() == "parents"
+    }).expect("No parent node found");
+    
+    let properties = parent_node.get("properties").unwrap().as_object().unwrap();
+    
+    // Verify parent node properties
+    assert!(properties.contains_key("id"), "Parent node should have 'id' property");
+    assert!(properties.contains_key("name"), "Parent node should have 'name' property");
+    assert!(properties.contains_key("age"), "Parent node should have 'age' property");
+    assert!(properties.contains_key("grew_up_in"), "Parent node should have 'grew_up_in' property");
+    
+    // Find a user node and verify its properties
+    let user_node = nodes.iter().find(|node| {
+        node.get("label").unwrap().as_str().unwrap() == "users"
+    }).expect("No user node found");
+    
+    let properties = user_node.get("properties").unwrap().as_object().unwrap();
+    
+    // Verify user node properties
+    assert!(properties.contains_key("id"), "User node should have 'id' property");
+    assert!(properties.contains_key("name"), "User node should have 'name' property");
+    assert!(properties.contains_key("age"), "User node should have 'age' property");
+    assert!(properties.contains_key("city"), "User node should have 'city' property");
+    assert!(properties.contains_key("parent_id"), "User node should have 'parent_id' property");
+    
+    // Clean up
+    fs::remove_file(output_path).expect("Failed to remove temporary file");
+}
+
+#[test]
+fn test_dump_to_json_edge_relationships() {
+    // Create a temporary file path for the JSON output
+    let temp_dir = std::env::temp_dir();
+    // let output_path = temp_dir.join("test_dump_relationships.json");
+    let output_path = Path::new("/Users/xav/GitHub/helix-db/helixdb/src/ingestion_engine/test_dump_relationships.json");
+    let output_path_str = output_path.to_str().unwrap();
+    
+    // Create a mock database and ingestor
+    let conn = create_mock_sqlite_db(None).expect("Failed to create mock database");
+    let mut ingestor = SqliteIngestor {
+        sqlite_conn: conn,
+        instance: "http://localhost:6969".to_string(),
+        batch_size: 10,
+        id_mappings: HashMap::new(),
+    };
+    
+    // Dump the database to JSON
+    println!("Dumping to {}", output_path_str);
+    ingestor.dump_to_json(output_path_str).expect("Failed to dump to JSON");
+    
+    // Read and parse the JSON file
+    let json_content = fs::read_to_string(output_path_str).expect("Failed to read JSON file");
+    let json_data: JsonValue = serde_json::from_str(&json_content).expect("Failed to parse JSON");
+    
+    // Get nodes and edges
+    let nodes = json_data.get("nodes").unwrap().as_array().unwrap();
+    let edges = json_data.get("edges").unwrap().as_array().unwrap();
+    
+    // Create a map of node indices by label and id
+    let mut node_indices = HashMap::new();
+    
+    for (idx, node) in nodes.iter().enumerate() {
+        let label = node.get("label").unwrap().as_str().unwrap();
+        let properties = node.get("properties").unwrap().as_object().unwrap();
+        let id = properties.get("id").unwrap().as_i64().unwrap();
+        
+        node_indices.insert((label.to_string(), id), idx);
+    }
+    
+    // Verify that each edge connects a user to a parent
+    for edge in edges {
+        let from_idx = edge.get("from").unwrap().as_u64().unwrap() as usize;
+        let to_idx = edge.get("to").unwrap().as_u64().unwrap() as usize;
+        
+        let from_node = &nodes[from_idx];
+        let to_node = &nodes[to_idx];
+        
+        let from_label = from_node.get("label").unwrap().as_str().unwrap();
+        let to_label = to_node.get("label").unwrap().as_str().unwrap();
+        
+        // The edge should go from a user to a parent
+        assert_eq!(from_label, "users", "Edge should start from a user node");
+        assert_eq!(to_label, "parents", "Edge should end at a parent node");
+        
+        // Get the user's parent_id and the parent's id
+        let user_properties = from_node.get("properties").unwrap().as_object().unwrap();
+        let parent_properties = to_node.get("properties").unwrap().as_object().unwrap();
+        
+        let user_parent_id = user_properties.get("parent_id").unwrap().as_i64().unwrap();
+        let parent_id = parent_properties.get("id").unwrap().as_i64().unwrap();
+        
+        // Verify that the edge connects the correct user to the correct parent
+        assert_eq!(user_parent_id, parent_id, "Edge should connect user with parent_id {} to parent with id {}", user_parent_id, parent_id);
+    }
+    assert!(false);
+    // Clean up
+    fs::remove_file(output_path).expect("Failed to remove temporary file");
 }
