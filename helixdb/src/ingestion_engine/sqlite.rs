@@ -988,6 +988,15 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
 /// - instance: The instance name of the helix instance
 /// - batch_size: The batch size for the ingestion
 ///  
+/// NOTE 
+/// - This function is simply meant to read from the jsonl data and upload it to the db
+/// - It does not handle converting the sql data to helix format
+/// - It does not handle uploading or downloading from s3
+/// 
+/// ALSO
+/// - The ingest function above does the conversion to helix format
+/// - The CLI will do the uploading to s3
+/// - The admin server or cli will handle the downloading from s3
 #[local_handler]
 pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     #[derive(Serialize, Deserialize)]
