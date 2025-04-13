@@ -1,10 +1,12 @@
-use rusqlite::{Connection as SqliteConn, Result as SqliteResult, params, types::Value as RusqliteValue};
-use serde::{Serialize, Deserialize};
+use crate::helix_engine::types::GraphError;
+use reqwest::blocking::Client;
+use rusqlite::{
+    params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
-use crate::helix_engine::types::GraphError;
-use reqwest::blocking::Client;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -59,6 +61,28 @@ impl From<RusqliteValue> for Value {
 }
 
 #[derive(Serialize)]
+pub struct GraphSchema {
+    pub nodes: HashMap<String, Vec<(String, String)>>,
+    pub edges: HashMap<String, EdgeSchema>,
+}
+
+impl GraphSchema {
+    pub fn new() -> Self {
+        GraphSchema {
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct EdgeSchema {
+    pub from: String,
+    pub to: String,
+    pub properties: Vec<(String, String)>,
+}
+
+#[derive(Serialize)]
 struct NodePayload {
     label: String,
     properties: HashMap<String, Value>,
@@ -105,17 +129,18 @@ impl fmt::Display for ForeignKey {
         write!(
             f,
             "{}.{} → {}.{}",
-            self.from_table,
-            self.from_column,
-            self.to_table,
-            self.to_column
+            self.from_table, self.from_column, self.to_table, self.to_column
         )
     }
 }
 
 impl fmt::Display for ColumnInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pk_indicator = if self.is_primary_key { " (Primary Key)" } else { "" };
+        let pk_indicator = if self.is_primary_key {
+            " (Primary Key)"
+        } else {
+            ""
+        };
         write!(f, "{} ({}{})", self.name, self.data_type, pk_indicator)
     }
 }
@@ -176,10 +201,15 @@ pub struct SqliteIngestor {
     pub instance: String,
     pub batch_size: usize,
     pub id_mappings: HashMap<String, HashMap<String, u64>>,
+    pub graph_schema: GraphSchema,
 }
 
 impl SqliteIngestor {
-    pub fn new(sqlite_path: &str, instance: Option<String>, batch_size: usize) -> Result<Self, IngestionError> {
+    pub fn new(
+        sqlite_path: &str,
+        instance: Option<String>,
+        batch_size: usize,
+    ) -> Result<Self, IngestionError> {
         let sqlite_conn = SqliteConn::open(sqlite_path)?;
 
         Ok(SqliteIngestor {
@@ -187,6 +217,10 @@ impl SqliteIngestor {
             instance: instance.unwrap_or("http://localhost:6969".to_string()),
             batch_size,
             id_mappings: HashMap::new(),
+            graph_schema: GraphSchema {
+                nodes: HashMap::new(),
+                edges: HashMap::new(),
+            },
         })
     }
 
@@ -194,15 +228,20 @@ impl SqliteIngestor {
         let mut schemas = Vec::new();
 
         // statement
-        let mut stmt = self.sqlite_conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")?;
-        let table_names: Vec<String> = stmt.query_map(params![], |row| row.get(0))?
+        let mut stmt = self.sqlite_conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        )?;
+        let table_names: Vec<String> = stmt
+            .query_map(params![], |row| row.get(0))?
             .collect::<SqliteResult<Vec<String>>>()?;
 
         for table_name in table_names {
             let mut columns: Vec<ColumnInfo> = Vec::new();
             let mut primary_keys = HashSet::new();
 
-            let mut col_stmt = self.sqlite_conn.prepare(&format!("PRAGMA table_info({})", table_name))?;
+            let mut col_stmt = self
+                .sqlite_conn
+                .prepare(&format!("PRAGMA table_info({})", table_name))?;
             let col_rows = col_stmt.query_map(params![], |row| {
                 let name: String = row.get(1)?;
                 let data_type: String = row.get(2)?;
@@ -223,7 +262,9 @@ impl SqliteIngestor {
                 columns.push(col_res?);
             }
 
-            let mut fk_stmt = self.sqlite_conn.prepare(&format!("PRAGMA foreign_key_list({})", table_name))?;
+            let mut fk_stmt = self
+                .sqlite_conn
+                .prepare(&format!("PRAGMA foreign_key_list({})", table_name))?;
             let fk_rows = fk_stmt.query_map(params![], |row| {
                 let to_table: String = row.get(2)?;
                 let from_column: String = row.get(3)?;
@@ -278,7 +319,10 @@ impl SqliteIngestor {
 
             for (i, col_name) in column_names.iter().enumerate() {
                 let value: RusqliteValue = row.get(i).map_err(|e| {
-                    IngestionError::MappingError(format!("Failed to get value for column {}: {}", col_name, e))
+                    IngestionError::MappingError(format!(
+                        "Failed to get value for column {}: {}",
+                        col_name, e
+                    ))
                 })?;
                 properties.insert(col_name.clone(), Value::from(value.clone()));
 
@@ -293,8 +337,8 @@ impl SqliteIngestor {
                         }
                         _ => {
                             return Err(IngestionError::MappingError(format!(
-                                        "Unsupported primary key type for column {}",
-                                        col_name
+                                "Unsupported primary key type for column {}",
+                                col_name
                             )));
                         }
                     }
@@ -331,8 +375,12 @@ impl SqliteIngestor {
             }
         }
 
-        self.id_mappings.insert(table_schema.name.clone(), table_id_mapping);
-        println!("Completed migrating {} rows from table {}", row_count, table_schema.name);
+        self.id_mappings
+            .insert(table_schema.name.clone(), table_id_mapping);
+        println!(
+            "Completed migrating {} rows from table {}",
+            row_count, table_schema.name
+        );
 
         Ok(())
     }
@@ -350,30 +398,28 @@ impl SqliteIngestor {
         let url = format!("{}/ingestnodes", self.instance);
 
         let client = Client::new();
-        let response = client
-            .post(&url)
-            .json(&nodes)
-            .send()
-            .map_err(|e| IngestionError::HttpError(format!("Failed to send nodes to {}: {}", url, e)))?;
+        let response = client.post(&url).json(&nodes).send().map_err(|e| {
+            IngestionError::HttpError(format!("Failed to send nodes to {}: {}", url, e))
+        })?;
 
         if !response.status().is_success() {
             return Err(IngestionError::HttpError(format!(
-                        "Request to {} failed with status: {}",
-                        url,
-                        response.status()
+                "Request to {} failed with status: {}",
+                url,
+                response.status()
             )));
         }
 
-        let node_ids: Vec<NodeResponse> = response
-            .json()
-            .map_err(|e| IngestionError::HttpError(format!("Failed to parse node response: {}", e)))?;
+        let node_ids: Vec<NodeResponse> = response.json().map_err(|e| {
+            IngestionError::HttpError(format!("Failed to parse node response: {}", e))
+        })?;
 
         if node_ids.len() != batch_nodes.len() {
             return Err(IngestionError::HttpError(format!(
-                        "Expected {} node IDs for table {}, got {}",
-                        batch_nodes.len(),
-                        table_name,
-                        node_ids.len()
+                "Expected {} node IDs for table {}, got {}",
+                batch_nodes.len(),
+                table_name,
+                node_ids.len()
             )));
         }
 
@@ -383,13 +429,19 @@ impl SqliteIngestor {
     pub fn create_edges(&mut self, schemas: &[TableSchema]) -> Result<(), IngestionError> {
         for schema in schemas {
             for fk in &schema.foreign_keys {
-                println!("Processing FK from {}.{} to {}.{}",
-                         fk.from_table, fk.from_column, fk.to_table, fk.to_column);
+                println!(
+                    "Processing FK from {}.{} to {}.{}",
+                    fk.from_table, fk.from_column, fk.to_table, fk.to_column
+                );
 
                 let query = format!(
                     "SELECT a.{}, a.{} FROM {} a JOIN {} b ON a.{} = b.{}",
-                    schema.primary_keys.iter().next().ok_or_else(||
-                        IngestionError::MappingError(format!("No primary key found for table {}", schema.name)))?,
+                    schema.primary_keys.iter().next().ok_or_else(|| {
+                        IngestionError::MappingError(format!(
+                            "No primary key found for table {}",
+                            schema.name
+                        ))
+                    })?,
                     fk.from_column, // get foreign key column
                     fk.from_table,
                     fk.to_table,
@@ -400,13 +452,19 @@ impl SqliteIngestor {
                 let mut stmt = self.sqlite_conn.prepare(&query)?;
                 let mut rows = stmt.query(params![])?;
 
-                let from_mappings = self.id_mappings.get(&fk.from_table)
-                    .ok_or_else(|| IngestionError::MappingError(
-                            format!("No ID mappings found for table {}", fk.from_table)))?;
+                let from_mappings = self.id_mappings.get(&fk.from_table).ok_or_else(|| {
+                    IngestionError::MappingError(format!(
+                        "No ID mappings found for table {}",
+                        fk.from_table
+                    ))
+                })?;
 
-                let to_mappings = self.id_mappings.get(&fk.to_table)
-                    .ok_or_else(|| IngestionError::MappingError(
-                            format!("No ID mappings found for table {}", fk.to_table)))?;
+                let to_mappings = self.id_mappings.get(&fk.to_table).ok_or_else(|| {
+                    IngestionError::MappingError(format!(
+                        "No ID mappings found for table {}",
+                        fk.to_table
+                    ))
+                })?;
 
                 let mut edge_count = 0;
                 let mut batch_edges: Vec<EdgePayload> = Vec::new();
@@ -470,8 +528,10 @@ impl SqliteIngestor {
                     );
                 }
 
-                println!("Created {} edges for relationship {}.{} -> {}.{}",
-                         edge_count, fk.from_table, fk.from_column, fk.to_table, fk.to_column);
+                println!(
+                    "Created {} edges for relationship {}.{} -> {}.{}",
+                    edge_count, fk.from_table, fk.from_column, fk.to_table, fk.to_column
+                );
             }
         }
 
@@ -490,21 +550,19 @@ impl SqliteIngestor {
         let url = format!("{}/ingestedges", self.instance);
 
         let client = Client::new();
-        let response = client
-            .post(&url)
-            .json(&batch_edges)
-            .send()
-            .map_err(|e| IngestionError::HttpError(format!("Failed to send edges to {}: {}", url, e)))?;
+        let response = client.post(&url).json(&batch_edges).send().map_err(|e| {
+            IngestionError::HttpError(format!("Failed to send edges to {}: {}", url, e))
+        })?;
 
         if !response.status().is_success() {
             return Err(IngestionError::HttpError(format!(
-                        "Request to {} failed with status: {} for FK {}.{} -> {}.{}",
-                        url,
-                        response.status(),
-                        fk.from_table,
-                        fk.from_column,
-                        fk.to_table,
-                        fk.to_column
+                "Request to {} failed with status: {} for FK {}.{} -> {}.{}",
+                url,
+                response.status(),
+                fk.from_table,
+                fk.from_column,
+                fk.to_table,
+                fk.to_column
             )));
         }
 
@@ -513,32 +571,61 @@ impl SqliteIngestor {
 
     pub fn dump_to_json(&mut self, output_path: &str) -> Result<(), IngestionError> {
         let schemas = self.extract_schema()?;
+        schemas.iter().for_each(|schema| {
+            let columns = schema
+                .columns
+                .iter()
+                .filter_map(|column| {
+                    let name = to_camel_case(&column.name);
+                    // if name contains id in any form, skip it
+                    if name.clone().to_lowercase().contains("id") {
+                        return None;
+                    }
+                    Some((name, to_camel_case(&column.data_type)))
+                })
+                .collect::<Vec<(String, String)>>();
+            self.graph_schema.nodes.insert(schema.name.clone(), columns);
+
+            // add edges to the graph schema
+            schema.foreign_keys.iter().for_each(|fk| {
+                self.graph_schema.edges.insert(
+                    // use ai here to generate edge name based on to and from tables
+                    format!("{}To{}", to_camel_case(&fk.from_table), to_camel_case(&fk.to_table)),
+                    EdgeSchema {
+                        from: to_camel_case(&fk.from_table),
+                        to: to_camel_case(&fk.to_table),
+                        properties: vec![],
+                    },
+                );
+            });
+        });
+
         let mut graph_data = GraphData {
             nodes: Vec::new(),
             edges: Vec::new(),
         };
-        
+
         // collect all nodes from all tables
         for schema in &schemas {
             let table_nodes = self.collect_table_nodes(schema)?;
             graph_data.nodes.extend(table_nodes);
         }
-        
+
         // create a mapping from table name and primary key to node index
         let mut node_indices = HashMap::new();
         for (idx, node) in graph_data.nodes.iter().enumerate() {
             let label = &node.label;
             let properties = &node.properties;
-            
+
             // find the primary key column for this table
-            let schema = schemas.iter().find(|s| s.name == *label)
-                .ok_or_else(|| IngestionError::MappingError(
-                    format!("Schema not found for table {}", label)))?;
-            
-            let pk = schema.primary_keys.iter().next()
-                .ok_or_else(|| IngestionError::MappingError(
-                    format!("No primary key found for table {}", label)))?;
-            
+            let schema = schemas.iter().find(|s| s.name == *label).ok_or_else(|| {
+                IngestionError::MappingError(format!("Schema not found for table {}", label))
+            })?;
+
+            let pk = schema.primary_keys.iter().next().ok_or_else(|| {
+                IngestionError::MappingError(format!("No primary key found for table {}", label))
+            })?;
+
             // get the primary key value
             if let Some(Value::Text(pk_value)) = properties.get(pk) {
                 node_indices.insert((label.clone(), pk_value.clone()), idx);
@@ -546,127 +633,204 @@ impl SqliteIngestor {
                 node_indices.insert((label.clone(), pk_value.to_string()), idx);
             }
         }
-        
+
         // collect all edges based on foreign keys
         for schema in &schemas {
             for fk in &schema.foreign_keys {
-                println!("Processing FK from {}.{} to {}.{}",
-                         fk.from_table, fk.from_column, fk.to_table, fk.to_column);
-                
+                println!(
+                    "Processing FK from {}.{} to {}.{}",
+                    fk.from_table, fk.from_column, fk.to_table, fk.to_column
+                );
+
                 let query = format!(
                     "SELECT a.{}, a.{} FROM {} a JOIN {} b ON a.{} = b.{}",
-                    schema.primary_keys.iter().next().ok_or_else(||
-                        IngestionError::MappingError(format!("No primary key found for table {}", schema.name)))?,
+                    schema.primary_keys.iter().next().ok_or_else(|| {
+                        IngestionError::MappingError(format!(
+                            "No primary key found for table {}",
+                            schema.name
+                        ))
+                    })?,
                     fk.from_column, // get foreign key column
                     fk.from_table,
                     fk.to_table,
                     fk.from_column, // join conditions
                     fk.to_column,
                 );
-                
+
                 let mut stmt = self.sqlite_conn.prepare(&query)?;
                 let mut rows = stmt.query(params![])?;
-                
+
                 while let Some(row) = rows.next()? {
                     // get the primary key value as a string
                     let from_pk: String = match row.get(0)? {
                         RusqliteValue::Integer(i) => i.to_string(),
                         RusqliteValue::Text(s) => s,
-                        _ => return Err(IngestionError::MappingError(
-                            format!("Unsupported primary key type for column {}", fk.from_column)
-                        )),
+                        _ => {
+                            return Err(IngestionError::MappingError(format!(
+                                "Unsupported primary key type for column {}",
+                                fk.from_column
+                            )))
+                        }
                     };
-                    
+
                     // get the foreign key value as a string
                     let to_fk: String = match row.get(1)? {
                         RusqliteValue::Integer(i) => i.to_string(),
                         RusqliteValue::Text(s) => s,
-                        _ => return Err(IngestionError::MappingError(
-                            format!("Unsupported foreign key type for column {}", fk.from_column)
-                        )),
+                        _ => {
+                            return Err(IngestionError::MappingError(format!(
+                                "Unsupported foreign key type for column {}",
+                                fk.from_column
+                            )))
+                        }
                     };
-                    
+
                     // look up the node indices
                     let from_key = (fk.from_table.clone(), from_pk);
                     let to_key = (fk.to_table.clone(), to_fk);
-                    
-                    if let (Some(&from_idx), Some(&to_idx)) = 
-                        (node_indices.get(&from_key), node_indices.get(&to_key)) {
-                        
+
+                    if let (Some(&from_idx), Some(&to_idx)) =
+                        (node_indices.get(&from_key), node_indices.get(&to_key))
+                    {
                         let edge_type = format!(
                             "{}_TO_{}",
                             fk.from_table.to_uppercase(),
                             fk.to_table.to_uppercase()
                         );
-                        
+
                         let edge = EdgePayload {
-                            edge_type,
+                            edge_type: edge_type.clone(),
                             from: from_idx as u64,
                             to: to_idx as u64,
                             properties: HashMap::new(),
                         };
-                        
+
                         graph_data.edges.push(edge);
                     }
                 }
             }
         }
-        
+
         // write the data to a JSON file
-        let json_data = serde_json::to_string_pretty(&graph_data)
-            .map_err(|e| IngestionError::MappingError(format!("Failed to serialize graph data: {}", e)))?;
-        
-        let mut file = File::create(output_path)
-            .map_err(|e| IngestionError::MappingError(format!("Failed to create output file: {}", e)))?;
-        
-        file.write_all(json_data.as_bytes())
-            .map_err(|e| IngestionError::MappingError(format!("Failed to write to output file: {}", e)))?;
-        
+        let json_data = serde_json::to_string_pretty(&graph_data).map_err(|e| {
+            IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
+        })?;
+
+        let mut file = File::create(output_path).map_err(|e| {
+            IngestionError::MappingError(format!("Failed to create output file: {}", e))
+        })?;
+
+        file.write_all(json_data.as_bytes()).map_err(|e| {
+            IngestionError::MappingError(format!("Failed to write to output file: {}", e))
+        })?;
+
         println!("Successfully dumped graph data to {}", output_path);
-        println!("Total nodes: {}, Total edges: {}", graph_data.nodes.len(), graph_data.edges.len());
-        
+        println!(
+            "Total nodes: {}, Total edges: {}",
+            graph_data.nodes.len(),
+            graph_data.edges.len()
+        );
+
         Ok(())
     }
-    
-    fn collect_table_nodes(&self, table_schema: &TableSchema) -> Result<Vec<NodePayload>, IngestionError> {
+
+    fn collect_table_nodes(
+        &mut self,
+        table_schema: &TableSchema,
+    ) -> Result<Vec<NodePayload>, IngestionError> {
         let mut nodes = Vec::new();
-        
+
         let query = format!("SELECT * FROM {}", table_schema.name);
         let mut stmt = self.sqlite_conn.prepare(&query)?;
-        
-        let column_names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
+
+        let column_names: Vec<String> = stmt.column_names().into_iter().filter_map(|name| {
+            let name = String::from(name);
+            // if name.clone().to_lowercase().contains("id") {
+            //     return None;
+            // }
+            // Some(to_camel_case(&name))
+            Some(name)
+        }).collect();
         let mut rows = stmt.query(params![])?;
-        
+
         while let Some(row) = rows.next()? {
             let mut properties = HashMap::new();
-            
+
             for (i, col_name) in column_names.iter().enumerate() {
                 let value: RusqliteValue = row.get(i).map_err(|e| {
-                    IngestionError::MappingError(format!("Failed to get value for column {}: {}", col_name, e))
+                    IngestionError::MappingError(format!(
+                        "Failed to get value for column {}: {}",
+                        col_name, e
+                    ))
                 })?;
                 properties.insert(col_name.clone(), Value::from(value.clone()));
             }
-            
+
             let node = NodePayload {
                 label: table_schema.name.clone(),
                 properties,
             };
-            
             nodes.push(node);
         }
-        
-        println!("Collected {} nodes from table {}", nodes.len(), table_schema.name);
+
+        println!(
+            "Collected {} nodes from table {}",
+            nodes.len(),
+            table_schema.name
+        );
         Ok(nodes)
     }
 
-    
+    fn create_schemas(&mut self, output_path: &str) -> Result<(), IngestionError> {
+        // create file if it doesn't exist
+        let mut file = File::create(output_path).map_err(|e| {
+            IngestionError::MappingError(format!("Failed to create output file: {}", e))
+        })?;
+
+        // go through the graph data and construct the helix schemas
+        self.graph_schema
+            .nodes
+            .iter()
+            .for_each(|(label, properties)| {
+                let mut str_to_write = format!("N::{} {{\n", to_camel_case(label));
+                properties
+                    .iter()
+                    .enumerate()
+                    .for_each(|(i, (property_name, property_type))| {
+                        str_to_write.push_str(&format!("\t{}: {}", to_camel_case(property_name), property_type));
+                        if i != properties.len() - 1 {
+                            str_to_write.push_str(",\n");
+                        }
+                    });
+                str_to_write.push_str("\n}\n\n");
+                file.write_all(str_to_write.as_bytes()).unwrap();
+            });
+
+        // edges section
+        self.graph_schema.edges.iter().for_each(|(edge_type, edge)| {
+            let mut str_to_write = format!("E::{} {{\n", edge_type);
+            str_to_write.push_str(&format!("\tFrom: {}\n", edge.from));
+            str_to_write.push_str(&format!("\tTo: {}\n", edge.to));
+            str_to_write.push_str("\tProperties: {\n");
+            edge.properties.iter().enumerate().for_each(|(i, (property_name, property_type))| {
+                str_to_write.push_str(&format!("\t\t{}: {}", to_camel_case(property_name), property_type));
+                if i != edge.properties.len() - 1 {
+                    str_to_write.push_str(",\n");
+                }
+            });
+            str_to_write.push_str("\t}\n");
+            str_to_write.push_str("\n}\n\n");
+            file.write_all(str_to_write.as_bytes()).unwrap();
+        });
+        Ok(())
+    }
 
     pub fn ingest(&mut self) -> Result<(), IngestionError> {
         let schemas = self.extract_schema()?;
 
-        for schema in &schemas {
-            self.ingest_table(schema)?;
-        }
+        // for schema in &schemas {
+        //     self.ingest_table(schema)?;
+        // }
 
         // create edges
         // create indexes
@@ -680,8 +844,52 @@ impl SqliteIngestor {
             file.write_all(b"{}").unwrap();
         }
         self.dump_to_json(path.to_str().unwrap())?;
-        
 
+        // create the schema file
+        let schema_path = Path::new("./schema.hx");
+        println!("Creating schema file at {}", schema_path.to_str().unwrap());
+        self.create_schemas(schema_path.to_str().unwrap())?;
+        println!("Successfully created schema file at {}", schema_path.to_str().unwrap());
         Ok(())
     }
+}
+
+pub fn to_camel_case(s: &str) -> String {
+    // Handle empty strings
+    if s.is_empty() {
+        return String::new();
+    }
+    
+    // Split by any non-alphanumeric character (spaces, underscores, hyphens)
+    let parts: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).collect();
+    
+    // Process each part and join them
+    parts.iter()
+        .filter(|part| !part.is_empty()) // Filter out empty parts
+        .map(|part| {
+            // Handle all uppercase words (like INTEGER)
+            if part.chars().all(|c| c.is_uppercase()) {
+                // Convert to title case (first letter uppercase, rest lowercase)
+                let mut result = String::with_capacity(part.len());
+                let mut chars = part.chars();
+                if let Some(first) = chars.next() {
+                    result.push(first);
+                }
+                for c in chars {
+                    result.push(c.to_lowercase().next().unwrap());
+                }
+                result
+            } else {
+                // For mixed case or lowercase words, capitalize the first letter
+                let mut result = String::with_capacity(part.len());
+                let mut chars = part.chars();
+                if let Some(first) = chars.next() {
+                    result.push(first.to_uppercase().next().unwrap());
+                }
+                result.extend(chars);
+                result
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("")
 }
