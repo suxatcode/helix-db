@@ -1,6 +1,12 @@
+use crate::helix_engine::graph_core::traversal::TraversalBuilder;
+use crate::helix_engine::graph_core::traversal_steps::SourceTraversalSteps;
 use crate::helix_engine::types::GraphError;
 use crate::helix_gateway::router::router::HandlerInput;
+use crate::protocol::items::{Edge, Node};
 use crate::protocol::response::Response;
+use crate::protocol::traversal_value::TraversalValue;
+use crate::protocol::value::Value as ProtocolValue;
+use get_routes::local_handler;
 use reqwest::blocking::Client;
 use rusqlite::{
     params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
@@ -10,9 +16,9 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use get_routes::local_handler;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -98,7 +104,7 @@ struct NodeResponse {
 
 #[derive(Serialize)]
 struct EdgePayload {
-    edge_type: String,
+    label: String,
     from: u64,
     to: u64,
     properties: HashMap<String, Value>,
@@ -486,7 +492,7 @@ impl SqliteIngestor {
                         );
 
                         let edge = EdgePayload {
-                            edge_type,
+                            label: edge_type,
                             from: from_node_id,
                             to: to_node_id,
                             properties: HashMap::new(), // TODO: might want to support properties
@@ -593,7 +599,11 @@ impl SqliteIngestor {
             schema.foreign_keys.iter().for_each(|fk| {
                 self.graph_schema.edges.insert(
                     // use ai here to generate edge name based on to and from tables
-                    format!("{}To{}", to_camel_case(&fk.from_table), to_camel_case(&fk.to_table)),
+                    format!(
+                        "{}To{}",
+                        to_camel_case(&fk.from_table),
+                        to_camel_case(&fk.to_table)
+                    ),
                     EdgeSchema {
                         from: to_camel_case(&fk.from_table),
                         to: to_camel_case(&fk.to_table),
@@ -702,7 +712,7 @@ impl SqliteIngestor {
                         );
 
                         let edge = EdgePayload {
-                            edge_type: edge_type.clone(),
+                            label: edge_type.clone(),
                             from: from_idx as u64,
                             to: to_idx as u64,
                             properties: HashMap::new(),
@@ -769,14 +779,18 @@ impl SqliteIngestor {
         let query = format!("SELECT * FROM {}", table_schema.name);
         let mut stmt = self.sqlite_conn.prepare(&query)?;
 
-        let column_names: Vec<String> = stmt.column_names().into_iter().filter_map(|name| {
-            let name = String::from(name);
-            // if name.clone().to_lowercase().contains("id") {
-            //     return None;
-            // }
-            // Some(to_camel_case(&name))
-            Some(name)
-        }).collect();
+        let column_names: Vec<String> = stmt
+            .column_names()
+            .into_iter()
+            .filter_map(|name| {
+                let name = String::from(name);
+                // if name.clone().to_lowercase().contains("id") {
+                //     return None;
+                // }
+                // Some(to_camel_case(&name))
+                Some(name)
+            })
+            .collect();
         let mut rows = stmt.query(params![])?;
 
         while let Some(row) = rows.next()? {
@@ -828,7 +842,11 @@ impl SqliteIngestor {
                     .iter()
                     .enumerate()
                     .for_each(|(i, (property_name, property_type))| {
-                        str_to_write.push_str(&format!("\t{}: {}", to_camel_case(property_name), property_type));
+                        str_to_write.push_str(&format!(
+                            "\t{}: {}",
+                            to_camel_case(property_name),
+                            property_type
+                        ));
                         if i != properties.len() - 1 {
                             str_to_write.push_str(",\n");
                         }
@@ -838,21 +856,30 @@ impl SqliteIngestor {
             });
 
         // edges section
-        self.graph_schema.edges.iter().for_each(|(edge_type, edge)| {
-            let mut str_to_write = format!("E::{} {{\n", edge_type);
-            str_to_write.push_str(&format!("\tFrom: {},\n", edge.from));
-            str_to_write.push_str(&format!("\tTo: {},\n", edge.to));
-            str_to_write.push_str("\tProperties: {\n");
-            edge.properties.iter().enumerate().for_each(|(i, (property_name, property_type))| {
-                str_to_write.push_str(&format!("\t\t{}: {}", to_camel_case(property_name), property_type));
-                if i != edge.properties.len() - 1 {
-                    str_to_write.push_str(",\n");
-                }
+        self.graph_schema
+            .edges
+            .iter()
+            .for_each(|(edge_type, edge)| {
+                let mut str_to_write = format!("E::{} {{\n", edge_type);
+                str_to_write.push_str(&format!("\tFrom: {},\n", edge.from));
+                str_to_write.push_str(&format!("\tTo: {},\n", edge.to));
+                str_to_write.push_str("\tProperties: {\n");
+                edge.properties.iter().enumerate().for_each(
+                    |(i, (property_name, property_type))| {
+                        str_to_write.push_str(&format!(
+                            "\t\t{}: {}",
+                            to_camel_case(property_name),
+                            property_type
+                        ));
+                        if i != edge.properties.len() - 1 {
+                            str_to_write.push_str(",\n");
+                        }
+                    },
+                );
+                str_to_write.push_str("\t}\n");
+                str_to_write.push_str("\n}\n\n");
+                file.write_all(str_to_write.as_bytes()).unwrap();
             });
-            str_to_write.push_str("\t}\n");
-            str_to_write.push_str("\n}\n\n");
-            file.write_all(str_to_write.as_bytes()).unwrap();
-        });
         Ok(())
     }
 
@@ -880,7 +907,10 @@ impl SqliteIngestor {
         let schema_path = Path::new("./schema.hx");
         println!("Creating schema file at {}", schema_path.to_str().unwrap());
         self.create_schemas(schema_path.to_str().unwrap())?;
-        println!("Successfully created schema file at {}", schema_path.to_str().unwrap());
+        println!(
+            "Successfully created schema file at {}",
+            schema_path.to_str().unwrap()
+        );
         Ok(())
     }
 }
@@ -890,12 +920,13 @@ pub fn to_camel_case(s: &str) -> String {
     if s.is_empty() {
         return String::new();
     }
-    
+
     // Split by any non-alphanumeric character (spaces, underscores, hyphens)
     let parts: Vec<&str> = s.split(|c: char| !c.is_alphanumeric()).collect();
-    
+
     // Process each part and join them
-    parts.iter()
+    parts
+        .iter()
         .filter(|part| !part.is_empty()) // Filter out empty parts
         .map(|part| {
             // Handle all uppercase words (like INTEGER)
@@ -933,8 +964,8 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
         "TEXT" => "String",
         "BOOLEAN" => "Boolean",
         "REAL" => "Float",
-        "DATE" => "String", // TODO: Implement date type
-        "TIME" => "String", // TODO: Implement time type
+        "DATE" => "String",     // TODO: Implement date type
+        "TIME" => "String",     // TODO: Implement time type
         "DATETIME" => "String", // TODO: Implement datetime type
         "BLOB" => "String",
         "JSON" => "String",
@@ -942,16 +973,16 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
         "URL" => "String",
         _ => {
             panic!("Unsupported type: {}", sql_type);
-        },
+        }
     };
     helix_type.to_string()
 }
 
-/// A handler that will automatically get built into 
-/// the helix container as an endpoint 
-/// 
+/// A handler that will automatically get built into
+/// the helix container as an endpoint
+///
 /// This handler will ingest a SQL(Lite) database into the helix instance
-/// 
+///
 /// The handler will take in a JSON payload with the following fields:
 /// - db_url: The URL of the SQL(Lite) database
 /// - instance: The instance name of the helix instance
@@ -964,6 +995,7 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
         job_id: String,
         job_name: String,
         batch_size: usize,
+        file_path: String,
     }
 
     let data: ingest_sqlData = match sonic_rs::from_slice(&input.request.body) {
@@ -971,16 +1003,78 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
         Err(err) => return Err(GraphError::from(err)),
     };
 
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+
     // read data from path $DATA_DIR/imports/<job_id>.json
     // but dont load the json into memory, just read the file
+    // line by line and parse the json objects
+    let path = Path::new(&data.file_path);
+    let node_file = File::open(path.join("nodes.jsonl")).unwrap();
+    let edge_file = File::open(path.join("edges.jsonl")).unwrap();
+    let node_reader = BufReader::new(node_file);
+    let edge_reader = BufReader::new(edge_file);
+    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
 
-    // let mut ingestor = SqliteIngestor::new(&data.db_url, None, 1000).unwrap();
-    // match ingestor.ingest() {
-    //     Ok(_) => {
-    //         response.body = sonic_rs::to_vec(&"Success").unwrap();
-    //     },
-    //     Err(err) => return Err(GraphError::from(err.to_string())),
-    // }
+    // TODO: need to look at overwriting the id's with the new UUIDs from helix
+    // but keeping all of the connections.
+    // this is because we can't use integers as ids for a graph database.
+    // would have to essentially map all of the generated ids to the old ids for the edges
+
+    // TODO: could look at using a byte stream to allow for zero copy ingestion
+    node_reader.lines().for_each(|line| {
+        let line = line.unwrap();
+        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
+        let label = match data.get("label") {
+            Some(ProtocolValue::String(label)) => label.to_string(),
+            _ => panic!("error getting value {}", line!()),
+        };
+        let properties = match data.remove("properties") {
+            Some(ProtocolValue::Object(properties)) => properties,
+            _ => panic!("error getting value {}", line!()),
+        };
+        // insert into db without returning the node
+        let _ = tr.add_v_temp(
+            &mut txn,
+            &label,
+            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+            None,
+        );
+    });
+    edge_reader.lines().for_each(|line| {
+        let line = line.unwrap();
+        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
+        let label = match data.get("label") {
+            Some(ProtocolValue::String(label)) => label.to_string(),
+            _ => panic!("error getting value {}", line!()),
+        };
+        let properties = match data.remove("properties") {
+            Some(ProtocolValue::Object(properties)) => properties,
+            _ => panic!("error getting value {}", line!()),
+        };
+        let from = match data.remove("from") {
+            Some(ProtocolValue::String(from)) => from.to_string(),
+            _ => panic!("error getting value {}", line!()),
+        };
+        let to = match data.remove("to") {
+            Some(ProtocolValue::String(to)) => to.to_string(),
+            _ => panic!("error getting value {}", line!()),
+        };
+        // insert into db without returning the edge
+        let _ = tr.add_e_temp(
+            &mut txn,
+            &label,
+            &from,
+            &to,
+            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+        );
+    });
+
+    txn.commit()?;
+
+ 
+
+    // the function will then need to log the fact the ingestion has been completed
+
     Ok(())
 }
-

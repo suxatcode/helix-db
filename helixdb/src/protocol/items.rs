@@ -1,14 +1,12 @@
 use super::count::Count;
+use super::traversal_value::TraversalValue;
+use super::value::{properties_format, Value};
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,
 };
 use sonic_rs::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, hash::Hash};
-use super::value::{properties_format, Value};
-use super::traversal_value::TraversalValue;
-
-
 
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
@@ -20,14 +18,23 @@ pub struct Node {
     pub properties: HashMap<String, Value>,
 }
 
-
 impl Node {
     pub const NUM_PROPERTIES: usize = 2;
     pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self { id: "".to_string(), label: label.to_string(), properties: HashMap::from_iter(properties) }
+        Self {
+            id: "".to_string(),
+            label: label.to_string(),
+            properties: HashMap::from_iter(properties),
+        }
+    }
+    pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().as_simple().to_string(),
+            label: label.to_string(),
+            properties: HashMap::from_iter(properties),
+        }
     }
 }
-
 
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,7 +60,7 @@ impl std::fmt::Debug for Node {
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Edge {
-    pub id: String,
+    pub id: String, // TODO: change to uuid::Uuid and implement SERDE manually
     pub label: String,
     pub from_node: String,
     pub to_node: String,
@@ -63,6 +70,13 @@ pub struct Edge {
 
 impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
+    pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
+        Self { id: "".to_string(), label: label.to_string(), from_node: "".to_string(), to_node: "".to_string(), properties: HashMap::from_iter(properties) }
+    }
+
+    pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
+        Self { id: uuid::Uuid::new_v4().as_simple().to_string(), label: label.to_string(), from_node: "".to_string(), to_node: "".to_string(), properties: HashMap::from_iter(properties) }
+    }
 }
 
 impl std::fmt::Display for Edge {

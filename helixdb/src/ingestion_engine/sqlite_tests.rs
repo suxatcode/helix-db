@@ -444,7 +444,7 @@ fn test_dump_to_json_content() {
 
     // Verify edge types
     for edge in &edges {
-        let edge_type = edge.get("edge_type").unwrap().as_str().unwrap();
+        let edge_type = edge.get("label").unwrap().as_str().unwrap();
         assert_eq!(
             edge_type, "USERS_TO_PARENTS",
             "Expected edge type 'USERS_TO_PARENTS', found {}",
