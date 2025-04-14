@@ -904,9 +904,23 @@ QUERY ingestedges() =>
                                         let mut input = String::new();
                                         std::io::stdin().read_line(&mut input).unwrap();
                                         
-                                        if let Err(e) = open::that("https://helix-db.com/dashboard") {
-                                            println!("Failed to open browser: {}", e);
-                                            println!("Please visit https://helix-db.com/dashboard manually");
+                                        #[cfg(target_os = "macos")]
+                                        {
+                                            if let Err(e) = std::process::Command::new("open")
+                                                .arg("https://helix-db.com/dashboard")
+                                                .spawn()
+                                            {
+                                                println!("Failed to open browser: {}", e);
+                                                println!("Please visit https://helix-db.com/dashboard manually");
+                                            }
+                                        }
+                                        
+                                        #[cfg(not(target_os = "macos"))]
+                                        {
+                                            if let Err(e) = open::that("https://helix-db.com/dashboard") {
+                                                println!("Failed to open browser: {}", e);
+                                                println!("Please visit https://helix-db.com/dashboard manually");
+                                            }
                                         }
                                     },
                                     Err(e) => {
