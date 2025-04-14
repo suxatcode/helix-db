@@ -46,8 +46,8 @@ pub enum CommandType {
     /// Update Helix CLI to the latest version
     Update(UpdateCommand),
 
-    /// SQLite -> Helix
-    IngestSqlite(IngestSqliteCommand),
+    /// Ingest data into Helix
+    Ingest(IngestCommand),
 }
 
 #[derive(Debug, Args)]
@@ -148,13 +148,31 @@ pub struct StartCommand {
 pub struct UpdateCommand {}
 
 #[derive(Debug, Args)]
-#[clap(name = "ingest_sqlite", about = "Migrate relationsal data from sqlite to helix")]
-pub struct IngestSqliteCommand {
-    #[clap(short, long, required = true, help = "Path to the sqlite.db file")]
-    pub path: String,
+#[clap(name = "ingest", about = "Ingest data into Helix")]
+pub struct IngestCommand {
+    /// Type of database to ingest from ('sqlite' or 'pg')
+    #[clap(short = 't', long = "type", value_parser = ["sqlite", "pg"])]
+    pub db_type: String,
 
-    #[clap(short, long, required = true, help = "Helixdb instance to ingest data into")]
+    /// Database connection string or path
+    #[clap(short, long = "db", help = "Database connection string or path")]
+    pub db_url: String,
+
+    /// Helix instance to ingest data into
+    #[clap(short = 'i', long = "instance", help = "Helixdb instance to ingest data into")]
     pub instance: String,
+
+    /// Batch size for ingestion (only used for PostgreSQL)
+    #[clap(short = 'b', long = "batch", default_value = "1000", help = "Batch size for ingestion")]
+    pub batch_size: usize,
+
+    /// Output directory for JSONL files
+    #[clap(short = 'o', long = "output", default_value = "./", help = "Output directory for JSONL files")]
+    pub output_dir: Option<String>,
+
+    /// Use SSL for PostgreSQL
+    #[clap(short = 's', long = "ssl", help = "Use SSL for PostgreSQL")]
+    pub use_ssl: bool,
 }
 
 #[derive(Debug)]

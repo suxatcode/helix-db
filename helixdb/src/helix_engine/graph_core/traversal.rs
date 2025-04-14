@@ -86,6 +86,19 @@ impl TraversalBuilder {
         Ok(())
     }
 
+    pub fn add_e_temp(
+        &mut self,
+        txn: &mut RwTxn,
+        edge_label: &str,
+        from_id: &str,
+        to_id: &str,
+        props: Vec<(String, Value)>,
+    ) -> Result<(), GraphError> {
+        self.storage
+            .create_edge_(txn, edge_label, from_id, to_id, props)?;
+        Ok(())
+    }
+
     pub fn mut_self(&mut self) -> &mut Self {
         self
     }

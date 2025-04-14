@@ -1,11 +1,14 @@
 use anyhow::Result;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
+use futures::TryStreamExt;
+use helixdb::ingestion_engine::sql_ingestion::IngestSqlRequest;
 use helixdb::protocol::{request::Request, response::Response};
 use socket2::{Domain, Socket, Type};
 use sonic_rs::{from_str, to_string};
 use sonic_rs::{Deserialize, JsonValueTrait, Serialize, Value};
 use std::io::Write;
+use std::path::Path;
 use std::{
     net::{SocketAddr},
     process::Command,
@@ -241,7 +244,39 @@ async fn main() -> Result<(), AdminError> {
                                     }
                                 }
                             }
-                        } else {
+                        } 
+                        else if request.path == "/download_ingestion_data" {
+                            let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
+                            let local_path = std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
+
+                            #[derive(Debug, Deserialize, Serialize)]
+                            pub struct DownloadIngestionDataRequest {
+                                user_id: String,
+                                instance_id: String,
+                                job_id: String,
+                            }
+                            let json_body: DownloadIngestionDataRequest = match sonic_rs::from_slice(&request.body) {
+                                Ok(json) => json,
+                                Err(e) => { 
+                                    response.status = 400;
+                                    response.body = format!("Failed to parse JSON: {}", e).into_bytes();
+                                    return Ok(());
+                                }
+                            };
+                            if let Err(e) = download_ingestion_data(
+                                &s3_client_clone,
+                                &bucket,
+                                &json_body.user_id,
+                                &json_body.instance_id,
+                                &local_path,
+                                &json_body.job_id,
+                            )
+                            .await
+                            {
+                                eprintln!("Failed to download ingestion data: {:?}", e);
+                            }
+                        }
+                        else {
                             response.status = 404;
                             response.body = "Endpoint not found".as_bytes().to_vec();
                         }
@@ -279,3 +314,44 @@ pub enum AdminError {
 }
 // replace binary
 // run
+
+
+async fn download_ingestion_data(
+    client: &Client,
+    bucket: &str,
+    user_id: &str,
+    instance_id: &str,
+    output_path: &str,
+    job_id: &str,
+) -> Result<()> {
+    let key = format!("{}/bulk_upload/{}/{}/ingestion.jsonl", user_id, instance_id, job_id);
+
+    // Create output file
+    let output_path = format!("{}/ingestion.jsonl", output_path);
+    let mut file = std::fs::File::create(&output_path)?;
+    // Get the object as a stream
+    let object = client.get_object().bucket(bucket).key(&key).send().await?;
+    let mut stream = object.body;
+
+    // Stream chunks directly to file
+    while let Some(chunk) = stream.try_next().await? {
+        file.write_all(&chunk)?;
+    }
+
+    let input = IngestSqlRequest {
+        job_id: job_id.to_string(),
+        job_name: job_id.to_string(),
+        batch_size: 100,
+        file_path: output_path.to_string(),
+    };
+    let input_json = sonic_rs::to_string(&input)?;
+    // call helix ingest command at localhost:6969/ingest_sql
+    let ingest_result = Command::new("curl")
+        .arg("http://localhost:6969/ingest_sql")
+        .arg("-X POST")
+        .arg("-H \"Content-Type: application/json\"")
+        .arg(format!("-d {}", input_json))
+        .output();
+    println!("Ingest result: {:?}", ingest_result);
+    Ok(())
+}

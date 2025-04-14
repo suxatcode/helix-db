@@ -4,7 +4,7 @@
 
 # HelixDB
 
-HelixDB is a multi-model database built for performance and simplicity.
+HelixDB is a graph-vector database built for performance and simplicity.
 
 
 ## Overview

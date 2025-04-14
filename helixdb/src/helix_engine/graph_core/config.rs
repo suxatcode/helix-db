@@ -62,7 +62,7 @@ impl Config {
 
     pub fn init_config() -> String {
         r#"
-{   
+{
     "vector_config": {
         "m": 16,
         "ef_construction": 128,
@@ -72,7 +72,8 @@ impl Config {
     "graph_config": {
         "secondary_indices": []
     }
-}"#
+}
+"#
         .to_string()
     }
 }

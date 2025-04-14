@@ -225,6 +225,65 @@ impl HelixGraphStorage {
         }
         Ok(())
     }
+
+    pub fn create_edge_(
+        &self,
+        txn: &mut RwTxn,
+        label: &str,
+        from_node: &str,
+        to_node: &str,
+        properties: impl IntoIterator<Item = (String, Value)>,
+    ) -> Result<(), GraphError> {
+        // Check if nodes exist
+
+        // if self.check_exists(from_node)? || self.check_exists(to_node)? {
+        //     return Err(GraphError::New(
+        //         "One or both nodes do not exist".to_string(),
+        //     ));
+        // }
+        if self
+            .nodes_db
+            .get(txn, Self::node_key(from_node).as_slice())?
+            .is_none()
+            || self
+                .nodes_db
+                .get(txn, Self::node_key(to_node).as_slice())?
+                .is_none()
+        {
+            return Err(GraphError::NodeNotFound);
+        }
+
+        let edge = Edge {
+            id: Uuid::new_v4().to_string(),
+            label: label.to_string(),
+            from_node: from_node.to_string(),
+            to_node: to_node.to_string(),
+            properties: HashMap::from_iter(properties),
+        };
+
+        // Store edge data
+        self.edges_db
+            .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
+
+        // Store edge label index
+        self.edge_labels_db
+            .put(txn, &Self::edge_label_key(label, &edge.id), &())?;
+
+        // Store edge - node maps
+        self.out_edges_db.put(
+            txn,
+            &Self::out_edge_key(from_node, to_node),
+            &edge.id.as_bytes(),
+        )?;
+
+        self.in_edges_db.put(
+            txn,
+            &Self::in_edge_key(to_node, from_node),
+            &edge.id.as_bytes(),
+        )?;
+
+        Ok(())
+    }
 }
 
 impl DBMethods for HelixGraphStorage {
