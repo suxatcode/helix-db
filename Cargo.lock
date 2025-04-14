@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "helix-cli"
-version = "1.0.55"
+version = "1.0.56"
 dependencies = [
  "chrono",
  "clap",
