@@ -1048,7 +1048,16 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
                         let _ = tr.add_v_temp(
                             &mut txn,
                             &label,
-                            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+                            properties
+                                .into_iter()
+                                .filter_map(|(k, v)| {
+                                    if k.to_lowercase().contains("id") {
+                                        None
+                                    } else {
+                                        Some((k, v))
+                                    }
+                                })
+                                .collect(),
                             None,
                         );
                     }
@@ -1075,7 +1084,16 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
                             &label,
                             &from,
                             &to,
-                            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+                            properties
+                                .into_iter()
+                                .filter_map(|(k, v)| {
+                                    if k.to_lowercase().contains("id") {
+                                        None
+                                    } else {
+                                        Some((k, v))
+                                    }
+                                })
+                                .collect(),
                         );
                     }
                     _ => panic!("error getting value {}", line!()),
@@ -1084,7 +1102,7 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
             _ => panic!("error getting value {}", line!()),
         }
     });
-    
+
     txn.commit()?;
 
     // the function will then need to log the fact the ingestion has been completed
