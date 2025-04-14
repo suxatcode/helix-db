@@ -6,8 +6,11 @@ use crate::protocol::items::{Edge, Node};
 use crate::protocol::response::Response;
 use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::value::Value as ProtocolValue;
+use chrono::{DateTime, Utc};
 use get_routes::local_handler;
 use reqwest::blocking::Client;
+use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -17,11 +20,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio_postgres::{Client as PgClient, Config, NoTls, Row, Statement, types::Type};
+use tokio_postgres::{types::Type, Client as PgClient, Config, NoTls, Row, Statement};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::*;
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -87,6 +87,7 @@ pub struct EdgeSchema {
 
 #[derive(Serialize)]
 struct NodePayload {
+    payload_type: String,
     label: String,
     properties: HashMap<String, Value>,
 }
@@ -98,6 +99,7 @@ struct NodeResponse {
 
 #[derive(Serialize)]
 struct EdgePayload {
+    payload_type: String,
     label: String,
     from: u64,
     to: u64,
@@ -215,10 +217,10 @@ impl PostgresIngestor {
     ) -> Result<Self, IngestionError> {
         // Parse the connection string
         let config = Config::from_str(db_url).unwrap();
-        
+
         // Connect to the database
         let (client, connection) = config.connect(NoTls).await?;
-        
+
         // Spawn a task to handle the connection
         tokio::spawn(async move {
             if let Err(e) = connection.await {
@@ -351,9 +353,10 @@ impl PostgresIngestor {
         // Prepare the query to fetch all rows
         let query = format!("SELECT * FROM {}", table_schema.name);
         let stmt = self.pg_client.prepare(&query).await?;
-        
+
         // Get column names
-        let column_names: Vec<String> = stmt.columns()
+        let column_names: Vec<String> = stmt
+            .columns()
             .iter()
             .map(|col| col.name().to_string())
             .collect();
@@ -364,7 +367,7 @@ impl PostgresIngestor {
 
         // Execute the query and process rows in batches
         let rows = self.pg_client.query(&query, &[]).await?;
-        
+
         for row in rows {
             let mut properties = HashMap::new();
             let mut primary_key_value = String::new();
@@ -393,6 +396,7 @@ impl PostgresIngestor {
             }
 
             let node = NodePayload {
+                payload_type: "node".to_string(),
                 label: table_schema.name.clone(),
                 properties,
             };
@@ -402,7 +406,9 @@ impl PostgresIngestor {
             row_count += 1;
 
             if row_count % self.batch_size == 0 || row_count == max_rows as usize {
-                let node_ids = self.send_node_batch(&batch_nodes, &table_schema.name).await?;
+                let node_ids = self
+                    .send_node_batch(&batch_nodes, &table_schema.name)
+                    .await?;
 
                 for ((_, pk), node_id) in batch_nodes.iter().zip(node_ids.iter()) {
                     if !pk.is_empty() {
@@ -434,7 +440,7 @@ impl PostgresIngestor {
 
     fn extract_value_from_row(&self, row: &Row, index: usize) -> Result<Value, IngestionError> {
         let col_type = row.columns()[index].type_();
-        
+
         // For timestamp types, we'll use a different approach
         if col_type == &Type::TIMESTAMP || col_type == &Type::TIMESTAMPTZ {
             // Try to get as string first
@@ -465,7 +471,7 @@ impl PostgresIngestor {
                 }
             }
         }
-        
+
         // For other types, use the standard approach
         match col_type {
             &Type::INT2 => {
@@ -647,7 +653,7 @@ impl PostgresIngestor {
                             },
                         },
                     };
-                    
+
                     // Get the foreign key value as a string
                     let to_fk_value: String = match row.try_get::<_, i32>(1) {
                         Ok(val) => val.to_string(),
@@ -660,9 +666,10 @@ impl PostgresIngestor {
                         },
                     };
 
-                    if let (Some(&from_node_id), Some(&to_node_id)) =
-                        (from_mappings.get(&from_pk_value), to_mappings.get(&to_fk_value))
-                    {
+                    if let (Some(&from_node_id), Some(&to_node_id)) = (
+                        from_mappings.get(&from_pk_value),
+                        to_mappings.get(&to_fk_value),
+                    ) {
                         let edge_type = format!(
                             "{}_TO_{}",
                             fk.from_table.to_uppercase(),
@@ -670,6 +677,7 @@ impl PostgresIngestor {
                         );
 
                         let edge = EdgePayload {
+                            payload_type: "edge".to_string(),
                             label: edge_type,
                             from: from_node_id,
                             to: to_node_id,
@@ -756,15 +764,12 @@ impl PostgresIngestor {
 
     pub async fn dump_to_json(&mut self, output_path: &str) -> Result<(), IngestionError> {
         let schemas = self.extract_schema().await?;
-        
+
         // Helper function to normalize table names by removing timestamps and random numbers
         fn normalize_table_name(name: &str) -> String {
-            name.split('_')
-                .next()
-                .unwrap_or(name)
-                .to_string()
+            name.split('_').next().unwrap_or(name).to_string()
         }
-        
+
         // Process all tables from the schema
         for schema in &schemas {
             let normalized_name = normalize_table_name(&schema.name);
@@ -776,7 +781,9 @@ impl PostgresIngestor {
                     Some((name, map_sql_type_to_helix_type(&column.data_type)))
                 })
                 .collect::<Vec<(String, String)>>();
-            self.graph_schema.nodes.insert(normalized_name.clone(), columns);
+            self.graph_schema
+                .nodes
+                .insert(normalized_name.clone(), columns);
 
             // Add edges to the graph schema based on foreign key relationships
             schema.foreign_keys.iter().for_each(|fk| {
@@ -820,9 +827,12 @@ impl PostgresIngestor {
             let properties = &node.properties;
 
             // Find the primary key column for this table
-            let schema = schemas.iter().find(|s| normalize_table_name(&s.name) == *label).ok_or_else(|| {
-                IngestionError::MappingError(format!("Schema not found for table {}", label))
-            })?;
+            let schema = schemas
+                .iter()
+                .find(|s| normalize_table_name(&s.name) == *label)
+                .ok_or_else(|| {
+                    IngestionError::MappingError(format!("Schema not found for table {}", label))
+                })?;
 
             let pk = schema.primary_keys.iter().next().ok_or_else(|| {
                 IngestionError::MappingError(format!("No primary key found for table {}", label))
@@ -879,6 +889,7 @@ impl PostgresIngestor {
                         );
 
                         let edge = EdgePayload {
+                            payload_type: "edge".to_string(),
                             label: edge_type.clone(),
                             from: from_idx as u64,
                             to: to_idx as u64,
@@ -892,26 +903,17 @@ impl PostgresIngestor {
         }
 
         // Write nodes to JSONL file
-        let nodes_path = Path::new(output_path).join("nodes.jsonl");
-        let mut nodes_file = File::create(&nodes_path).map_err(|e| {
+        let mut file = File::create(format!("{}/ingestion.jsonl", output_path)).map_err(|e| {
             IngestionError::MappingError(format!("Failed to create nodes file: {}", e))
         })?;
-        println!("Created nodes file at {}", nodes_path.to_str().unwrap());
-
-        // Write edges to JSONL file
-        let edges_path = Path::new(output_path).join("edges.jsonl");
-        let mut edges_file = File::create(&edges_path).map_err(|e| {
-            IngestionError::MappingError(format!("Failed to create edges file: {}", e))
-        })?;
-        println!("Created edges file at {}", edges_path.to_str().unwrap());
-
+        println!("Created nodes file at {}", output_path);
         // Write nodes and edges
         for node in &graph_data.nodes {
             let mut json_data = serde_json::to_string(node).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to serialize node: {}", e))
             })?;
             json_data.push('\n');
-            nodes_file.write_all(json_data.as_bytes()).map_err(|e| {
+            file.write_all(json_data.as_bytes()).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to write node: {}", e))
             })?;
         }
@@ -921,7 +923,7 @@ impl PostgresIngestor {
                 IngestionError::MappingError(format!("Failed to serialize edge: {}", e))
             })?;
             json_data.push('\n');
-            edges_file.write_all(json_data.as_bytes()).map_err(|e| {
+            file.write_all(json_data.as_bytes()).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to write edge: {}", e))
             })?;
         }
@@ -961,11 +963,12 @@ impl PostgresIngestor {
         let query = format!("SELECT * FROM {}", table_schema.name);
         let stmt = self.pg_client.prepare(&query).await?;
 
-        let column_names: Vec<String> = stmt.columns()
+        let column_names: Vec<String> = stmt
+            .columns()
             .iter()
             .map(|col| col.name().to_string())
             .collect();
-            
+
         let rows = self.pg_client.query(&query, &[]).await?;
 
         for row in rows {
@@ -982,6 +985,7 @@ impl PostgresIngestor {
             }
 
             let node = NodePayload {
+                payload_type: "node".to_string(),
                 label: table_schema.name.clone(),
                 properties,
             };
@@ -1135,9 +1139,9 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
         "VARCHAR" => "String",
         "CHAR" => "String",
         "BOOLEAN" => "Boolean",
-        "DATE" => "String",     // TODO: Implement date type
-        "TIME" => "String",     // TODO: Implement time type
-        "TIMESTAMP" => "String", // TODO: Implement datetime type
+        "DATE" => "String",                        // TODO: Implement date type
+        "TIME" => "String",                        // TODO: Implement time type
+        "TIMESTAMP" => "String",                   // TODO: Implement datetime type
         "TIMESTAMP WITHOUT TIME ZONE" => "String", // Handle timestamp without time zone
         "TIMESTAMP WITH TIME ZONE" => "String",    // Handle timestamp with time zone
         "BLOB" => "String",
@@ -1154,7 +1158,7 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
         "CHARACTER LARGE OBJECT" => "String",
         "TEXT LARGE OBJECT" => "String",
         "BYTEA" => "String",
-        "STRING" => "String",  // Add explicit handling for "String" type
+        "STRING" => "String", // Add explicit handling for "String" type
         _ => {
             // Instead of panicking, return "String" as a fallback
             "String"
@@ -1162,111 +1166,3 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
     };
     helix_type.to_string()
 }
-
-/// A handler that will automatically get built into
-/// the helix container as an endpoint
-///
-/// This handler will ingest a PostgreSQL database into the helix instance
-///
-/// The handler will take in a JSON payload with the following fields:
-/// - db_url: The URL of the PostgreSQL database
-/// - instance: The instance name of the helix instance
-/// - batch_size: The batch size for the ingestion
-///
-/// NOTE
-/// - This function is simply meant to read from the jsonl data and upload it to the db
-/// - It does not handle converting the sql data to helix format
-/// - It does not handle uploading or downloading from s3
-///
-/// ALSO
-/// - The ingest function above does the conversion to helix format
-/// - The CLI will do the uploading to s3
-/// - The admin server or cli will handle the downloading from s3
-#[local_handler]
-pub fn ingest_postgres(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct ingest_postgres_data {
-        job_id: String,
-        job_name: String,
-        batch_size: usize,
-        file_path: String,
-    }
-
-    let data: ingest_postgres_data = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
-
-    // read data from path $DATA_DIR/imports/<job_id>.json
-    // but dont load the json into memory, just read the file
-    // line by line and parse the json objects
-    let path = Path::new(&data.file_path);
-    let node_file = File::open(path.join("nodes.jsonl")).unwrap();
-    let edge_file = File::open(path.join("edges.jsonl")).unwrap();
-    let node_reader = BufReader::new(node_file);
-    let edge_reader = BufReader::new(edge_file);
-    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
-
-    // TODO: need to look at overwriting the id's with the new UUIDs from helix
-    // but keeping all of the connections.
-    // this is because we can't use integers as ids for a graph database.
-    // would have to essentially map all of the generated ids to the old ids for the edges
-
-    // TODO: could look at using a byte stream to allow for zero copy ingestion
-    node_reader.lines().for_each(|line| {
-        let line = line.unwrap();
-        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
-        let label = match data.get("label") {
-            Some(ProtocolValue::String(label)) => label.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        let properties = match data.remove("properties") {
-            Some(ProtocolValue::Object(properties)) => properties,
-            _ => panic!("error getting value {}", line!()),
-        };
-        // insert into db without returning the node
-        let _ = tr.add_v_temp(
-            &mut txn,
-            &label,
-            properties.into_iter().map(|(k, v)| (k, v)).collect(),
-            None,
-        );
-    });
-    edge_reader.lines().for_each(|line| {
-        let line = line.unwrap();
-        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
-        let label = match data.get("label") {
-            Some(ProtocolValue::String(label)) => label.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        let properties = match data.remove("properties") {
-            Some(ProtocolValue::Object(properties)) => properties,
-            _ => panic!("error getting value {}", line!()),
-        };
-        let from = match data.remove("from") {
-            Some(ProtocolValue::String(from)) => from.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        let to = match data.remove("to") {
-            Some(ProtocolValue::String(to)) => to.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        // insert into db without returning the edge
-        let _ = tr.add_e_temp(
-            &mut txn,
-            &label,
-            &from,
-            &to,
-            properties.into_iter().map(|(k, v)| (k, v)).collect(),
-        );
-    });
-
-    txn.commit()?;
-
-    // the function will then need to log the fact the ingestion has been completed
-
-    Ok(())
-} 

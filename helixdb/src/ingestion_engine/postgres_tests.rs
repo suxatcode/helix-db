@@ -451,33 +451,27 @@ async fn test_postgres_full_ingestion() {
         .expect("Failed to run ingestion process");
 
     // Verify that the output files were created
-    let nodes_path = Path::new(output_dir).join("nodes.jsonl");
-    let edges_path = Path::new(output_dir).join("edges.jsonl");
+    let path = Path::new(output_dir).join("ingestion.jsonl");
     let schema_path = Path::new(output_dir).join("schema.hx");
 
-    assert!(nodes_path.exists());
-    assert!(edges_path.exists());
+    assert!(path.exists());
     assert!(schema_path.exists());
 
     // Read and verify the nodes file
-    let nodes_content = fs::read_to_string(nodes_path).expect("Failed to read nodes file");
+    let content = fs::read_to_string(path).expect("Failed to read nodes file");
     let mut found_node_types: HashSet<String> = HashSet::new();
-    nodes_content.lines().for_each(|line| {
-        let node: JsonValue = serde_json::from_str(line).unwrap();
-        let node_type = node["label"].as_str().unwrap();
-        found_node_types.insert(node_type.to_string());
+    let mut found_edge_types: HashSet<String> = HashSet::new();
+    content.lines().for_each(|line| {
+        let value: JsonValue = serde_json::from_str(line).unwrap();
+        if value["payload_type"] == "node" {
+            found_node_types.insert(value["label"].as_str().unwrap().to_string());
+        } else if value["payload_type"] == "edge" {
+            found_edge_types.insert(value["label"].as_str().unwrap().to_string());
+        } 
     });
+
     // We should have 8 nodes (2 users + 2 posts + 2 comments + 2 tags)
     assert_eq!(found_node_types.len(), 10);
-
-    // Read and verify the edges file
-    let edges_content = fs::read_to_string(edges_path).expect("Failed to read edges file");
-    let mut found_edge_types: HashSet<String> = HashSet::new();
-    edges_content.lines().for_each(|line| {
-        let edge: JsonValue = serde_json::from_str(line).unwrap();
-            let edge_type = edge["label"].as_str().unwrap();
-        found_edge_types.insert(edge_type.to_string());
-    });
 
     // We should have 6 edges (2 post-author + 2 comment-post + 2 comment-author + 2 post-tag)
     assert_eq!(found_edge_types.len(), 9);
@@ -723,35 +717,26 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
         .expect("Failed to run ingestion process");
 
     // Verify that the output files were created
-    let nodes_path = Path::new(output_dir).join("nodes.jsonl");
-    let edges_path = Path::new(output_dir).join("edges.jsonl");
+    let path = Path::new(output_dir).join("ingestion.jsonl");
     let schema_path = Path::new(output_dir).join("schema.hx");
 
-    assert!(nodes_path.exists());
-    assert!(edges_path.exists());
+    assert!(path.exists());
     assert!(schema_path.exists());
 
     // Read and verify the nodes file
-    let nodes_content = fs::read_to_string(nodes_path).expect("Failed to read nodes file");
+    let content = fs::read_to_string(path).expect("Failed to read nodes file");
     let mut found_node_types: HashSet<String> = HashSet::new();
-    nodes_content.lines().for_each(|line| {
-        let node: JsonValue = serde_json::from_str(line).unwrap();
-        let node_type = node["label"].as_str().unwrap();
-        found_node_types.insert(node_type.to_string());
+    let mut found_edge_types: HashSet<String> = HashSet::new();
+    content.lines().for_each(|line| {
+        let value: JsonValue = serde_json::from_str(line).unwrap();
+        if value["payload_type"] == "node" {
+            found_node_types.insert(value["label"].as_str().unwrap().to_string());
+        } else if value["payload_type"] == "edge" {
+            found_edge_types.insert(value["label"].as_str().unwrap().to_string());
+        } 
     });
 
     assert_eq!(found_node_types.len(), 10);
-
-    // Read and verify the edges file
-    let edges_content = fs::read_to_string(edges_path).expect("Failed to read edges file");
-    let mut found_edge_types: HashSet<String> = HashSet::new();
-    edges_content.lines().for_each(|line| {
-        let edge: JsonValue = serde_json::from_str(line).unwrap();
-        let edge_type = edge["label"].as_str().unwrap();
-        found_edge_types.insert(edge_type.to_string());
-    });
-
-    // We should have 5 edges (2 product-category + 1 order-customer + 2 order-item relationships)
     assert_eq!(found_edge_types.len(), 9);
 
     // Read and verify the schema file

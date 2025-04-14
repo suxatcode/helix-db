@@ -93,6 +93,7 @@ pub struct EdgeSchema {
 
 #[derive(Serialize)]
 struct NodePayload {
+    payload_type: String,
     label: String,
     properties: HashMap<String, Value>,
 }
@@ -104,6 +105,7 @@ struct NodeResponse {
 
 #[derive(Serialize)]
 struct EdgePayload {
+    payload_type: String,
     label: String,
     from: u64,
     to: u64,
@@ -355,6 +357,7 @@ impl SqliteIngestor {
             }
 
             let node = NodePayload {
+                payload_type: "node".to_string(),
                 label: table_schema.name.clone(),
                 properties,
             };
@@ -492,6 +495,7 @@ impl SqliteIngestor {
                         );
 
                         let edge = EdgePayload {
+                            payload_type: "edge".to_string(),
                             label: edge_type,
                             from: from_node_id,
                             to: to_node_id,
@@ -712,6 +716,7 @@ impl SqliteIngestor {
                         );
 
                         let edge = EdgePayload {
+                            payload_type: "edge".to_string(),
                             label: edge_type.clone(),
                             from: from_idx as u64,
                             to: to_idx as u64,
@@ -729,23 +734,18 @@ impl SqliteIngestor {
         //     IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
         // })?;
 
-        let nodes_path = Path::new(output_path).join("nodes.jsonl");
-        let edges_path = Path::new(output_path).join("edges.jsonl");
-        let mut nodes_file = File::create(&nodes_path).map_err(|e| {
+        let path = Path::new(output_path).join("ingestion.jsonl");
+        let mut file = File::create(&path).map_err(|e| {
             IngestionError::MappingError(format!("Failed to create output file: {}", e))
         })?;
-        println!("Created nodes file at {}", nodes_path.to_str().unwrap());
-        let mut edges_file = File::create(&edges_path).map_err(|e| {
-            IngestionError::MappingError(format!("Failed to create output file: {}", e))
-        })?;
-        println!("Created edges file at {}", edges_path.to_str().unwrap());
+        println!("Created ingestion file at {}", path.to_str().unwrap());
         for node in &graph_data.nodes {
             let mut json_data = serde_json::to_string(node).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to serialize graph data: {}", e))
             })?;
             //append a newline to the json data
             json_data.push_str("\n");
-            nodes_file.write_all(json_data.as_bytes()).map_err(|e| {
+            file.write_all(json_data.as_bytes()).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to write to output file: {}", e))
             })?;
         }
@@ -755,7 +755,7 @@ impl SqliteIngestor {
             })?;
             //append a newline to the json data
             json_data.push_str("\n");
-            edges_file.write_all(json_data.as_bytes()).map_err(|e| {
+            file.write_all(json_data.as_bytes()).map_err(|e| {
                 IngestionError::MappingError(format!("Failed to write to output file: {}", e))
             })?;
         }
@@ -812,6 +812,7 @@ impl SqliteIngestor {
             }
 
             let node = NodePayload {
+                payload_type: "node".to_string(),
                 label: table_schema.name.clone(),
                 properties,
             };
@@ -978,6 +979,13 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
     helix_type.to_string()
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct IngestSqlRequest {
+    pub job_id: String,
+    pub job_name: String,
+    pub batch_size: usize,
+    pub file_path: String,
+}
 /// A handler that will automatically get built into
 /// the helix container as an endpoint
 ///
@@ -999,15 +1007,7 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
 /// - The admin server or cli will handle the downloading from s3
 #[local_handler]
 pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct ingest_sqlData {
-        job_id: String,
-        job_name: String,
-        batch_size: usize,
-        file_path: String,
-    }
-
-    let data: ingest_sqlData = match sonic_rs::from_slice(&input.request.body) {
+    let data: IngestSqlRequest = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
@@ -1019,10 +1019,8 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
     // but dont load the json into memory, just read the file
     // line by line and parse the json objects
     let path = Path::new(&data.file_path);
-    let node_file = File::open(path.join("nodes.jsonl")).unwrap();
-    let edge_file = File::open(path.join("edges.jsonl")).unwrap();
-    let node_reader = BufReader::new(node_file);
-    let edge_reader = BufReader::new(edge_file);
+    let file = File::open(path.join("ingestion.jsonl")).unwrap();
+    let reader = BufReader::new(file);
     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
 
     // TODO: need to look at overwriting the id's with the new UUIDs from helix
@@ -1031,57 +1029,63 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
     // would have to essentially map all of the generated ids to the old ids for the edges
 
     // TODO: could look at using a byte stream to allow for zero copy ingestion
-    node_reader.lines().for_each(|line| {
+    reader.lines().for_each(|line| {
         let line = line.unwrap();
         let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
-        let label = match data.get("label") {
-            Some(ProtocolValue::String(label)) => label.to_string(),
+        match data.get("payload_type") {
+            Some(ProtocolValue::String(payload_type)) => {
+                match payload_type.as_str() {
+                    "node" => {
+                        let label = match data.get("label") {
+                            Some(ProtocolValue::String(label)) => label.to_string(),
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        let properties = match data.remove("properties") {
+                            Some(ProtocolValue::Object(properties)) => properties,
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        // insert into db without returning the node
+                        let _ = tr.add_v_temp(
+                            &mut txn,
+                            &label,
+                            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+                            None,
+                        );
+                    }
+                    "edge" => {
+                        let label = match data.get("label") {
+                            Some(ProtocolValue::String(label)) => label.to_string(),
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        let properties = match data.remove("properties") {
+                            Some(ProtocolValue::Object(properties)) => properties,
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        let from = match data.remove("from") {
+                            Some(ProtocolValue::String(from)) => from.to_string(),
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        let to = match data.remove("to") {
+                            Some(ProtocolValue::String(to)) => to.to_string(),
+                            _ => panic!("error getting value {}", line!()),
+                        };
+                        // insert into db without returning the edge
+                        let _ = tr.add_e_temp(
+                            &mut txn,
+                            &label,
+                            &from,
+                            &to,
+                            properties.into_iter().map(|(k, v)| (k, v)).collect(),
+                        );
+                    }
+                    _ => panic!("error getting value {}", line!()),
+                }
+            }
             _ => panic!("error getting value {}", line!()),
-        };
-        let properties = match data.remove("properties") {
-            Some(ProtocolValue::Object(properties)) => properties,
-            _ => panic!("error getting value {}", line!()),
-        };
-        // insert into db without returning the node
-        let _ = tr.add_v_temp(
-            &mut txn,
-            &label,
-            properties.into_iter().map(|(k, v)| (k, v)).collect(),
-            None,
-        );
+        }
     });
-    edge_reader.lines().for_each(|line| {
-        let line = line.unwrap();
-        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
-        let label = match data.get("label") {
-            Some(ProtocolValue::String(label)) => label.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        let properties = match data.remove("properties") {
-            Some(ProtocolValue::Object(properties)) => properties,
-            _ => panic!("error getting value {}", line!()),
-        };
-        let from = match data.remove("from") {
-            Some(ProtocolValue::String(from)) => from.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        let to = match data.remove("to") {
-            Some(ProtocolValue::String(to)) => to.to_string(),
-            _ => panic!("error getting value {}", line!()),
-        };
-        // insert into db without returning the edge
-        let _ = tr.add_e_temp(
-            &mut txn,
-            &label,
-            &from,
-            &to,
-            properties.into_iter().map(|(k, v)| (k, v)).collect(),
-        );
-    });
-
+    
     txn.commit()?;
-
-
 
     // the function will then need to log the fact the ingestion has been completed
 

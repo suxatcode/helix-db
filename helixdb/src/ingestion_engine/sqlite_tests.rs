@@ -343,18 +343,24 @@ fn test_dump_to_json_basic() {
     assert!(output_path.exists(), "JSONL file was not created");
 
     // Read the JSONL file
-    let nodes_jsonl_content = fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
-    let edges_jsonl_content = fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
-
     // Verify that the file contains multiple lines (at least one node and one edge)
-    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
-    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
+    let jsonl_content =
+        fs::read_to_string(output_path.join("ingestion.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "node"
+    }).collect();
+    let edges_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "edge"
+    }).collect();
+
     assert!(
         nodes_lines.len() >= 1,
         "JSONL file should contain at least 1 node"
     );
     assert!(
-        edges_lines.len() >= 1,
+            edges_lines.len() >= 1,
         "JSONL file should contain at least 1 edge"
     );
 
@@ -393,12 +399,16 @@ fn test_dump_to_json_content() {
         .expect("Failed to dump to JSONL");
 
     // Read the JSONL file
-    let nodes_jsonl_content =
-        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
-    let edges_jsonl_content =
-        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
-    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
-    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
+    let jsonl_content =
+        fs::read_to_string(output_path.join("ingestion.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "node"
+    }).collect();
+    let edges_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "edge"
+    }).collect();
 
     // Parse each line as a JSON object
     let mut nodes = Vec::new();
@@ -479,12 +489,16 @@ fn test_dump_to_json_node_properties() {
         .expect("Failed to dump to JSONL");
 
     // Read the JSONL file
-    let nodes_jsonl_content =
-        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
-    let edges_jsonl_content =
-        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
-    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
-    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
+    let jsonl_content =
+        fs::read_to_string(output_path.join("ingestion.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "node"
+    }).collect();
+    let edges_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "edge"
+    }).collect();
 
     // Parse each line as a JSON object
     let mut nodes = Vec::new();
@@ -579,12 +593,16 @@ fn test_dump_to_json_edge_relationships() {
         .expect("Failed to dump to JSONL");
 
     // Read the JSONL file
-    let nodes_jsonl_content =
-        fs::read_to_string(output_path.join("nodes.jsonl")).expect("Failed to read JSONL file");
-    let edges_jsonl_content =
-        fs::read_to_string(output_path.join("edges.jsonl")).expect("Failed to read JSONL file");
-    let nodes_lines: Vec<&str> = nodes_jsonl_content.lines().collect();
-    let edges_lines: Vec<&str> = edges_jsonl_content.lines().collect();
+    let jsonl_content =
+        fs::read_to_string(output_path.join("ingestion.jsonl")).expect("Failed to read JSONL file");
+    let nodes_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "node"
+    }).collect();
+    let edges_lines: Vec<&str> = jsonl_content.lines().filter(|line| {
+        let json_obj: JsonValue = serde_json::from_str(line).expect("Failed to parse JSON line");
+        json_obj.get("payload_type").unwrap().as_str().unwrap() == "edge"
+    }).collect();
 
     // Parse each line as a JSON object
     let mut nodes = Vec::new();

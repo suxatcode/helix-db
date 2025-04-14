@@ -816,108 +816,117 @@ QUERY ingestedges() =>
 
             println!("\t✅ Helix project initialised at {}", path.display());
         }
-        args::CommandType::IngestSqlite(command) => {
-            let path_str = command.path; // already required in clap object
-            let instance = command.instance; // already required in clap object
+        args::CommandType::Ingest(command) => {
+            match command.db_type.as_str() {
+                "sqlite" => {
+                    let path_str = command.db_url; // Database path for SQLite
+                    let instance = command.instance;
 
-            let path = Path::new(&path_str);
-            if !path.exists() {
-                println!("❌The file '{}' does not exist", path.display());
-                return;
-            }
-
-            let valid_extensions = [".sqlite", ".db", ".sqlite3"];
-            let is_valid_extension = path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| valid_extensions.iter().any(|&valid_ext| valid_ext == ext))
-                .unwrap_or(false);
-
-            if !is_valid_extension {
-                println!("❌The file '{}' must have a .sqlite, .db, or .sqlite3 extension.", path.display());
-                return;
-            }
-
-            let instance_manager = InstanceManager::new().unwrap();
-            match instance_manager.list_instances() {
-                Ok(instances) => {
-                    if instances.is_empty() {
-                        println!("There are no running Helix instances!");
+                    let path = Path::new(&path_str);
+                    if !path.exists() {
+                        println!("❌The file '{}' does not exist", path.display());
                         return;
                     }
-                    let mut is_valid_instance = false;
-                    for iter_instance in instances {
-                        if iter_instance.id == instance {
-                            is_valid_instance = true;
-                            break;
+
+                    let valid_extensions = [".sqlite", ".db", ".sqlite3"];
+                    let is_valid_extension = path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| valid_extensions.iter().any(|&valid_ext| valid_ext == ext))
+                        .unwrap_or(false);
+
+                    if !is_valid_extension {
+                        println!("❌The file '{}' must have a .sqlite, .db, or .sqlite3 extension.", path.display());
+                        return;
+                    }
+
+                    let instance_manager = InstanceManager::new().unwrap();
+                    match instance_manager.list_instances() {
+                        Ok(instances) => {
+                            if instances.is_empty() {
+                                println!("There are no running Helix instances!");
+                                return;
+                            }
+                            let mut is_valid_instance = false;
+                            for iter_instance in instances {
+                                if iter_instance.id == instance {
+                                    is_valid_instance = true;
+                                    break;
+                                }
+                            }
+                            if !is_valid_instance {
+                                println!("No Helix instance found with id: '{}'!", instance);
+                                return;
+                            } else {
+                                println!("Helix instance found with id: '{}'!", instance);
+                            }
+                        }
+                        Err(e) => {
+                            println!("Error while searching for Helix instances: {}", e);
                         }
                     }
-                    if !is_valid_instance {
-                        println!("No Helix instance found with id: '{}'!", instance);
-                        return;
-                    } else {
-                        println!("Helix instance found with id: '{}'!", instance);
+
+                    let mut ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
+                    // TODO: Add ingestion logic
+                }
+                "pg" | "postgres" => {
+                    let spinner = create_spinner("Connecting to PostgreSQL database...");
+                    
+                    // Create output directory if specified
+                    let output_dir = command.output_dir.as_deref().unwrap_or("./");
+                    if !Path::new(output_dir).exists() {
+                        fs::create_dir_all(output_dir).unwrap_or_else(|e| {
+                            finish_spinner_with_message(&spinner, false, &format!("Failed to create output directory: {}", e));
+                            std::process::exit(1);
+                        });
                     }
-                }
-                Err(e) => {
-                    println!("Error while searching for Helix instances: {}", e);
-                }
-            }
-
-            let mut ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
-            // ingestor.verify_sqlite().unwrap();
-            //ingestor.ingest().unwrap(); // TODO: catch error here if throws
-            // ingestor.verify();
-
-            // TODO: ingestor verify db file is not corrupted or anything
-            // TODO: ingestor.ingest()?;
-            // TODO: verify ingestion and schema
-        }
-        args::CommandType::IngestPostgres(command) => {
-            let spinner = create_spinner("Connecting to PostgreSQL database...");
-            
-            // Create output directory if specified
-            let output_dir = command.output_dir.as_deref().unwrap_or("./");
-            if !Path::new(output_dir).exists() {
-                fs::create_dir_all(output_dir).unwrap_or_else(|e| {
-                    finish_spinner_with_message(&spinner, false, &format!("Failed to create output directory: {}", e));
-                    std::process::exit(1);
-                });
-            }
-            
-            // Run the PostgreSQL ingestion
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(async {
-                let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size).await;
-                
-                match ingestor {
-                    Ok(mut ingestor) => {
-                        finish_spinner_with_message(&spinner, true, "Connected to PostgreSQL database");
+                    
+                    // Run the PostgreSQL ingestion
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let result = rt.block_on(async {
+                        let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size).await;
                         
-                        let dump_spinner = create_spinner("Dumping data to JSONL files...");
-                        match ingestor.dump_to_json(output_dir).await {
-                            Ok(_) => {
-                                finish_spinner_with_message(&dump_spinner, true, "Successfully dumped data to JSONL files");
+                        match ingestor {
+                            Ok(mut ingestor) => {
+                                finish_spinner_with_message(&spinner, true, "Connected to PostgreSQL database");
                                 
-                                // Create schema file
-                                let schema_path = Path::new(output_dir).join("schema.hx");
-                                println!("Schema file created at: {}", schema_path.display());
-                                
-                                println!("PostgreSQL ingestion completed successfully!");
-                                println!("You can now use the JSONL files to import data into your Helix instance.");
+                                let dump_spinner = create_spinner("Dumping data to JSONL files...");
+                                match ingestor.dump_to_json(output_dir).await {
+                                    Ok(_) => {
+                                        finish_spinner_with_message(&dump_spinner, true, "Successfully dumped data to JSONL files");
+                                        
+                                        // Create schema file
+                                        let schema_path = Path::new(output_dir).join("schema.hx");
+                                        println!("Schema file created at: {}", schema_path.display());
+                                        
+                                        println!("PostgreSQL ingestion completed successfully!");
+                                        println!("Press ENTER to open the Helix dashboard in your browser...");
+                                        let mut input = String::new();
+                                        std::io::stdin().read_line(&mut input).unwrap();
+                                        
+                                        if let Err(e) = open::that("https://helix-db.com/dashboard") {
+                                            println!("Failed to open browser: {}", e);
+                                            println!("Please visit https://helix-db.com/dashboard manually");
+                                        }
+                                    },
+                                    Err(e) => {
+                                        finish_spinner_with_message(&dump_spinner, false, &format!("Failed to dump data: {}", e));
+                                        std::process::exit(1);
+                                    }
+                                }
                             },
                             Err(e) => {
-                                finish_spinner_with_message(&dump_spinner, false, &format!("Failed to dump data: {}", e));
+                                finish_spinner_with_message(&spinner, false, &format!("Failed to connect to PostgreSQL: {}", e));
                                 std::process::exit(1);
                             }
                         }
-                    },
-                    Err(e) => {
-                        finish_spinner_with_message(&spinner, false, &format!("Failed to connect to PostgreSQL: {}", e));
-                        std::process::exit(1);
-                    }
+                    });
                 }
-            });
+                _ => {
+                    println!("❌ Invalid database type. Must be either 'sqlite' or 'pg/postgres'");
+                    return;
+                }
+            }
         }
     }
 }
