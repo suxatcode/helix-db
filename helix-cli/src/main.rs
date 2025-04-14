@@ -910,16 +910,16 @@ QUERY ingestedges() =>
                                                 .arg("https://helix-db.com/dashboard")
                                                 .spawn()
                                             {
-                                                println!("Failed to open browser: {}", e);
-                                                println!("Please visit https://helix-db.com/dashboard manually");
+                                                println!("Failed to open url");
+                                                println!("Please visit https://helix-db.com/dashboard");
                                             }
                                         }
                                         
                                         #[cfg(not(target_os = "macos"))]
                                         {
                                             if let Err(e) = open::that("https://helix-db.com/dashboard") {
-                                                println!("Failed to open browser: {}", e);
-                                                println!("Please visit https://helix-db.com/dashboard manually");
+                                                println!("Failed to open url");
+                                                println!("Please visit https://helix-db.com/dashboard");
                                             }
                                         }
                                     },
