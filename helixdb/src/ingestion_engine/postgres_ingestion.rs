@@ -478,6 +478,22 @@ impl PostgresIngestor {
     fn extract_value_from_row(&self, row: &Row, index: usize) -> Result<Value, IngestionError> {
         let col_type = row.columns()[index].type_();
 
+        // Handle date type specifically
+        if col_type == &Type::DATE {
+            match row.try_get::<_, Option<chrono::NaiveDate>>(index) {
+                Ok(Some(date)) => return Ok(Value::Text(date.to_string())),
+                Ok(None) => return Ok(Value::Null),
+                Err(_) => {
+                    // If that fails, try as string
+                    let val: Option<String> = row.try_get(index)?;
+                    match val {
+                        Some(v) => return Ok(Value::Text(v)),
+                        None => return Ok(Value::Null),
+                    }
+                }
+            }
+        }
+
         // For timestamp types, we'll use a different approach
         if col_type == &Type::TIMESTAMP || col_type == &Type::TIMESTAMPTZ {
             // Try to get as string first
