@@ -884,7 +884,7 @@ QUERY ingestedges() =>
                     // Run the PostgreSQL ingestion
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     let result = rt.block_on(async {
-                        let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size).await;
+                        let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size, command.use_ssl).await;
                         
                         match ingestor {
                             Ok(mut ingestor) => {

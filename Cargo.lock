@@ -2027,9 +2027,11 @@ dependencies = [
  "get_routes",
  "heed3",
  "inventory",
+ "native-tls",
  "pest",
  "pest_derive",
  "polars",
+ "postgres-native-tls",
  "rand 0.9.0",
  "rayon",
  "reqwest",
@@ -3639,6 +3641,18 @@ name = "portable-atomic"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "280dc24453071f1b63954171985a0b0d30058d287960968b9b2aca264c8d4ee6"
+
+[[package]]
+name = "postgres-native-tls"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1f39498473c92f7b6820ae970382c1d83178a3454c618161cb772e8598d9f6f"
+dependencies = [
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-postgres",
+]
 
 [[package]]
 name = "postgres-protocol"

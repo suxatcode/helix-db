@@ -33,6 +33,8 @@ reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde_json = "1.0.110"
 get_routes = { path = "../get_routes" }
 rust_decimal = { version = "1.34", features = ["tokio-pg"] }
+native-tls = "0.2"
+postgres-native-tls = "0.5"
 
 
 [dev-dependencies]

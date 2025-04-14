@@ -169,6 +169,10 @@ pub struct IngestCommand {
     /// Output directory for JSONL files
     #[clap(short = 'o', long = "output", default_value = "./", help = "Output directory for JSONL files")]
     pub output_dir: Option<String>,
+
+    /// Use SSL for PostgreSQL
+    #[clap(short = 's', long = "ssl", help = "Use SSL for PostgreSQL")]
+    pub use_ssl: bool,
 }
 
 #[derive(Debug)]

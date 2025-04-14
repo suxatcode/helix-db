@@ -8,6 +8,8 @@ use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::value::Value as ProtocolValue;
 use chrono::{DateTime, Utc};
 use get_routes::local_handler;
+use native_tls::TlsConnector;
+use postgres_native_tls::MakeTlsConnector;
 use reqwest::blocking::Client;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
@@ -20,7 +22,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio_postgres::{types::Type, Client as PgClient, Config, NoTls, Row, Statement};
+use tokio_postgres::{
+    config::SslMode, types::Type, Client as PgClient, Config, NoTls, Row, Statement, tls::TlsStream as TlsStreams,
+};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -214,19 +218,52 @@ impl PostgresIngestor {
         db_url: &str,
         instance: Option<String>,
         batch_size: usize,
+        use_ssl: bool,
     ) -> Result<Self, IngestionError> {
-        // Parse the connection string
-        let config = Config::from_str(db_url).unwrap();
-
-        // Connect to the database
-        let (client, connection) = config.connect(NoTls).await?;
-
-        // Spawn a task to handle the connection
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("PostgreSQL connection error: {}", e);
+        // Parse the connection string and update SSL mode if needed
+        let mut config = Config::from_str(db_url).unwrap();
+        let client = match use_ssl {
+            true => {
+                config.ssl_mode(SslMode::Require);
+                let (client, connection) = {
+                    // Create a TLS connector with native-tls
+                    let tls_connector = TlsConnector::builder()
+                        .danger_accept_invalid_certs(true) // Only use this for development/testing
+                        .build()
+                        .map_err(|e| IngestionError::MappingError(format!("TLS error: {}", e)))?;
+        
+                    let connector = MakeTlsConnector::new(tls_connector);
+                    let tls_config = config.clone();
+                    tls_config.connect(connector).await?
+                };
+                // Connect to the database
+                // let (client, connection) = config.connect(tls).await?;
+        
+                // Spawn a task to handle the connection
+                tokio::spawn(async move {
+                    if let Err(e) = connection.await {
+                        eprintln!("PostgreSQL connection error: {}", e);
+                    }
+                });
+                client
             }
-        });
+            false => {
+                config.ssl_mode(SslMode::Disable);
+                let (client, connection) = config.connect(NoTls).await?;
+                // Spawn a task to handle the connection
+                tokio::spawn(async move {
+                    if let Err(e) = connection.await {
+                        eprintln!("PostgreSQL connection error: {}", e);
+                    }
+                });
+                client
+            }
+        };
+
+        // Parse the connection string
+
+        // Set up the connection with or without TLS
+        
 
         Ok(PostgresIngestor {
             pg_client: client,

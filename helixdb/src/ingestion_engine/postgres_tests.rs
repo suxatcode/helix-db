@@ -440,6 +440,7 @@ async fn test_postgres_full_ingestion() {
         &format!("postgres://postgres:postgres@localhost:5432/postgres"),
         Some("test_instance".to_string()),
         1000,
+        true,
     )
     .await
     .expect("Failed to create PostgreSQL ingestor");
@@ -494,6 +495,7 @@ async fn test_postgres_error_handling() {
         "postgres://invalid:invalid@localhost:5432/invalid",
         Some("test_instance".to_string()),
         1000,
+        true,
     )
     .await;
 
@@ -505,6 +507,7 @@ async fn test_postgres_error_handling() {
         "postgres://postgres:postgres@localhost:5432/nonexistent_db",
         Some("test_instance".to_string()),
         1000,
+        true,
     )
     .await;
 
@@ -706,6 +709,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
         &format!("postgres://postgres:postgres@localhost:5432/postgres"),
         Some("test_instance".to_string()),
         1000,
+        true,
     )
     .await
     .expect("Failed to create PostgreSQL ingestor");
