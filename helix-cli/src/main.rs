@@ -1,9 +1,15 @@
 use args::{CliError, HelixCLI};
 use clap::Parser;
+use helixdb::{
+    helix_engine::graph_core::config::Config,
+    helixc::{
+        generator::generator::CodeGenerator,
+        parser::helix_parser::{HelixParser, Source},
+    }, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
+};
 use indicatif::{ProgressBar, ProgressStyle};
-use tempfile::{NamedTempFile, TempDir};
-use std::path::PathBuf;
 use instance_manager::InstanceManager;
+use std::path::PathBuf;
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
@@ -13,15 +19,6 @@ use std::{
     process::{Command, Stdio},
     thread::sleep,
     time::Duration,
-};
-use helixdb::{
-    helix_engine::graph_core::config::Config,
-    ingestion_engine::sql_ingestion::SqliteIngestor,
-    ingestion_engine::postgres_ingestion::PostgresIngestor,
-    helixc::{
-        generator::generator::CodeGenerator,
-        parser::helix_parser::{HelixParser, Source},
-    },
 };
 
 pub mod args;
@@ -232,7 +229,7 @@ fn main() {
             // TODO: remove this once remote instance is supported
             if !local {
                 println!("Building for remote instance is not supported yet, use --local flag to build for local machine");
-                println!("Example: helix build --local");
+                println!("Example: helix deploy --local");
                 println!();
                 println!("Building for local machine will be available within the next 2 weeks");
                 return;
@@ -611,7 +608,7 @@ fn main() {
                     }
                     if !path.exists() {
                         println!("\t❌ Path does not exist");
-                        return
+                        return;
                     }
                     path
                 }
@@ -628,14 +625,22 @@ fn main() {
                 }
             };
 
-            if repo_path.clone().join("helix-db").exists() && repo_path.clone().join("helix-db").is_dir() {
-                println!("\t✅ Helix repo already exists at {}", repo_path.join("helix-db").display());
+            if repo_path.clone().join("helix-db").exists()
+                && repo_path.clone().join("helix-db").is_dir()
+            {
+                println!(
+                    "\t✅ Helix repo already exists at {}",
+                    repo_path.join("helix-db").display()
+                );
                 return;
             }
 
             // Create the directory structure if it doesn't exist
             match fs::create_dir_all(&repo_path) {
-                Ok(_) => println!("\t✅ Created directory structure at {}", repo_path.display()),
+                Ok(_) => println!(
+                    "\t✅ Created directory structure at {}",
+                    repo_path.display()
+                ),
                 Err(e) => {
                     println!("\t❌ Failed to create directory structure");
                     println!("\t|");
@@ -801,15 +806,15 @@ QUERY size() =>
 "#,
             )
             .unwrap();
-/*
-QUERY ingestnodes() =>
-    AddN<Type>({ field: val })
-    return "Success"
+            /*
+            QUERY ingestnodes() =>
+                AddN<Type>({ field: val })
+                return "Success"
 
-QUERY ingestedges() =>
-    AddE<Type>({ field: val })::To(node1)::From(node2)
-    return "Sucess"
-*/
+            QUERY ingestedges() =>
+                AddE<Type>({ field: val })::To(node1)::From(node2)
+                return "Sucess"
+            */
 
             let config_path = path.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
@@ -835,10 +840,13 @@ QUERY ingestedges() =>
                         .map(|ext| valid_extensions.iter().any(|&valid_ext| valid_ext == ext))
                         .unwrap_or(false);
 
-                    if !is_valid_extension {
-                        println!("❌The file '{}' must have a .sqlite, .db, or .sqlite3 extension.", path.display());
-                        return;
-                    }
+            if !is_valid_extension {
+                println!(
+                    "❌The file '{}' must have a .sqlite, .db, or .sqlite3 extension.",
+                    path.display()
+                );
+                return;
+            }
 
                     let instance_manager = InstanceManager::new().unwrap();
                     match instance_manager.list_instances() {
