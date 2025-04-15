@@ -51,7 +51,7 @@ impl CodeGenerator {
         "    ".repeat(self.indent_level)
     }
 
-    fn generate_props_macro(&mut self, props: &[(String, ValueType)]) -> String {
+    fn generate_props_macro(&mut self, props: &HashMap<String, ValueType>) -> String {
         let props_str = props
             .iter()
             .map(|(k, v)| format!("\"{}\".to_string() => {}", k, self.value_type_to_rust(v)))
@@ -1248,17 +1248,35 @@ impl CodeGenerator {
             .vertex_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
-        let props = if let Some(fields) = &add_vertex.fields {
-            self.generate_props_macro(fields)
+        
+        let (props, possible_id) = if let Some(fields) = &add_vertex.fields {
+            let possible_id = match fields.get("id") {
+                Some(ValueType::Literal(Value::String(s))) => Some(s.clone()),
+                Some(ValueType::Identifier(identifier)) => Some(format!("data.{}.clone()", identifier)),
+                _ => None,
+            };
+            (self.generate_props_macro(&fields), possible_id)
         } else {
-            "props!{}".to_string()
+            ("props!{}".to_string(), None)
         };
 
+
+
         output.push_str(&mut self.indent());
-        output.push_str(&format!(
-            "tr.add_v(&mut txn, \"{}\", {}, None);\n",
-            vertex_type, props
-        ));
+        match possible_id {
+            Some(id) => {
+                output.push_str(&format!(
+                    "tr.add_v(&mut txn, \"{}\", {}, None, Some({}));\n",
+                    vertex_type, props, id
+                ));
+            }
+            None => {
+                output.push_str(&format!(
+                    "tr.add_v(&mut txn, \"{}\", {}, None, None);\n",
+                    vertex_type, props
+                ));
+            }
+        }
 
         if let Some(name) = var_name {
             output.push_str(&mut self.indent());
@@ -1369,7 +1387,7 @@ impl CodeGenerator {
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
                         "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n",
-                        id, id
+                        id, to_snake_case(id)
                     ));
                 }
                 Expression::StringLiteral(value) => {
@@ -1429,9 +1447,10 @@ impl CodeGenerator {
     }
 
     fn value_type_to_rust(&mut self, value: &ValueType) -> String {
+        println!("value: {:?}", value);
         match value {
             ValueType::Literal(value) => self.value_to_rust(value),
-            ValueType::Identifier(identifier) => format!("\"{}\"", identifier),
+            ValueType::Identifier(identifier) => format!("data.{}", to_snake_case(identifier)),
             _ => unreachable!(),
         }
     }

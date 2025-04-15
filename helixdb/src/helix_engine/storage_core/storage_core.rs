@@ -548,9 +548,10 @@ impl StorageMethods for HelixGraphStorage {
         label: &str,
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&[String]>,
+        id: Option<String>,
     ) -> Result<Node, GraphError> {
         let node = Node {
-            id: Uuid::new_v4().to_string(),
+            id: id.unwrap_or(Uuid::new_v4().to_string()),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         };
@@ -934,7 +935,7 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node = storage
-            .create_node(&mut txn, "person", props! {}, None)
+            .create_node(&mut txn, "person", props! {}, None, None)
             .unwrap();
         txn.commit().unwrap();
 
@@ -952,10 +953,10 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let edge = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -981,7 +982,7 @@ mod tests {
         };
 
         let node = storage
-            .create_node(&mut txn, "person", properties, None)
+            .create_node(&mut txn, "person", properties, None, None)
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
@@ -1001,10 +1002,10 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None   )
             .unwrap(); // TODO: Handle Error
 
         let edge_props = props! {
@@ -1042,13 +1043,13 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node3 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
 
         storage
@@ -1071,10 +1072,10 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let edge = storage
             .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -1094,7 +1095,7 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
@@ -1109,10 +1110,10 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
 
         let edge1 = storage
@@ -1140,7 +1141,7 @@ mod tests {
             "active" => true,
         };
         let node = storage
-            .create_node(&mut txn, "person", properties, None)
+            .create_node(&mut txn, "person", properties, None, None)
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
@@ -1167,13 +1168,13 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.graph_env.write_txn().unwrap();
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "thing", props!(), None)
+            .create_node(&mut txn, "thing", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node3 = storage
-            .create_node(&mut txn, "other", props!(), None)
+            .create_node(&mut txn, "other", props!(), None, None)
             .unwrap(); // TODO: Handle Error
 
         txn.commit().unwrap();
@@ -1201,13 +1202,13 @@ mod tests {
         let storage = setup_temp_db();
         let mut txn = storage.graph_env.write_txn().unwrap();
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "thing", props!(), None)
+            .create_node(&mut txn, "thing", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node3 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         println!("node1: {:?}, node2: {:?}, node3: {:?}", node1, node2, node3);
 
@@ -1231,13 +1232,13 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node1 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node3 = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
 
         let edge1 = storage
@@ -1286,7 +1287,7 @@ mod tests {
         let mut nodes = Vec::new();
         for _ in 0..6 {
             let node = storage
-                .create_node(&mut txn, "person", props!(), None)
+                .create_node(&mut txn, "person", props!(), None, None)
                 .unwrap();
             nodes.push(node);
         }
@@ -1355,6 +1356,7 @@ mod tests {
                     "age" => 22,
                 },
                 Some(&["name".to_string(), "age".to_string()]),
+                None,
             )
             .unwrap(); // TODO: Handle Error
         let node2 = storage
@@ -1366,6 +1368,7 @@ mod tests {
                     "age" => 25,
                 },
                 Some(&["name".to_string(), "age".to_string()]),
+                None,
             )
             .unwrap(); // TODO: Handle Error
 
@@ -1389,7 +1392,7 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node = storage
-            .create_node(&mut txn, "person", props!(), None)
+            .create_node(&mut txn, "person", props!(), None, None           )
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
@@ -1437,6 +1440,7 @@ mod tests {
                     "age" => 22,
                 },
                 Some(&["name".to_string(), "age".to_string()]),
+                None,
             )
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
@@ -1493,6 +1497,7 @@ mod tests {
                     props! {
                         "name" => *name
                     },
+                    None,
                     None,
                 )
             })

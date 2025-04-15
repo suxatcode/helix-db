@@ -507,7 +507,7 @@ fn main() {
                 DB_DIR
             };
 
-            let _ = match &command.output {
+            let output = match &command.output {
                 Some(output) => output.to_owned(),
                 None => dirs::home_dir()
                     .map(|path| {
@@ -531,7 +531,7 @@ fn main() {
                 return;
             }
 
-            let _ = match compile_hql_to_source(&files) {
+            let source = match compile_hql_to_source(&files) {
                 Ok(source) => source,
                 Err(e) => {
                     println!("\n\t❌ Failed to parse source");
@@ -540,6 +540,16 @@ fn main() {
                     return;
                 }
             };
+            println!("\t✅ Successfully parsed source {:?}", source);
+            let mut code = String::new();
+            let mut generator = CodeGenerator::new();
+            code.push_str(&generator.generate_headers());
+            code.push_str(&generator.generate_source(&source));
+
+            // write source to file
+            let file_path = PathBuf::from(&output).join("queries.rs");
+            fs::write(file_path, code).unwrap();
+            println!("\t✅ Successfully compiled queries to {}", output);
         }
         args::CommandType::Check(command) => {
             let path = if let Some(p) = &command.path {

@@ -42,6 +42,7 @@ pub trait SourceTraversalSteps {
         node_label: &str,
         props: Vec<(String, Value)>,
         secondary_indices: Option<&[String]>,
+        id: Option<String>,
     ) -> &mut Self;
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e(

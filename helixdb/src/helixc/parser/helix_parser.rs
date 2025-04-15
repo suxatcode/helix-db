@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
@@ -233,13 +233,13 @@ pub enum EvaluatesToNumber {
 #[derive(Debug, Clone)]
 pub struct AddNode {
     pub vertex_type: Option<String>,
-    pub fields: Option<Vec<(String, ValueType)>>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AddEdge {
     pub edge_type: Option<String>,
-    pub fields: Option<Vec<(String, ValueType)>>,
+    pub fields: Option<HashMap<String, ValueType>>,
     pub connection: EdgeConnection,
     pub from_identifier: bool,
 }
@@ -697,7 +697,7 @@ impl HelixParser {
     fn parse_property_assignments(
         &self,
         pair: Pair<Rule>,
-    ) -> Result<Vec<(String, ValueType)>, ParserError> {
+    ) -> Result<HashMap<String, ValueType>, ParserError> {
         pair.into_inner()
             .map(|p| {
                 let mut pairs = p.into_inner();
