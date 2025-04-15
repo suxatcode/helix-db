@@ -87,6 +87,7 @@ pub trait StorageMethods {
         label: &str,
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&[String]>,
+        id: Option<String>,
     ) -> Result<Node, GraphError>;
 
     /// Creates an edge entry between two nodes

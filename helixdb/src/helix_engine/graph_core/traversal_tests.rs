@@ -31,13 +31,13 @@ fn test_v() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let thing = storage
-        .create_node(&mut txn, "thing", props!(), None)
+        .create_node(&mut txn, "thing", props!(), None, None)
         .unwrap();
     txn.commit().unwrap();
 
@@ -74,13 +74,13 @@ fn test_e() {
     // (person2)-[follows]->(person3)
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let knows_edge = storage
@@ -178,10 +178,10 @@ fn test_v_nodes_without_edges() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     txn.commit().unwrap();
@@ -208,7 +208,7 @@ fn test_add_v() {
     let mut txn = storage.graph_env.write_txn().unwrap();
     let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
 
-    traversal.add_v(&mut txn, "person", props! {}, None);
+    traversal.add_v(&mut txn, "person", props! {}, None, None);
 
     match &traversal.current_step {
         TraversalValue::NodeArray(node) => {
@@ -231,10 +231,10 @@ fn test_add_e() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let node1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let node2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     txn.commit().unwrap();
@@ -261,13 +261,13 @@ fn test_out() {
 
     // Create graph: (person1)-[knows]->(person2)-[knows]->(person3)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -301,10 +301,10 @@ fn test_out_e() {
 
     // Create graph: (person1)-[knows]->(person2)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge = storage
@@ -336,10 +336,10 @@ fn test_in() {
 
     // Create graph: (person1)-[knows]->(person2)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -370,10 +370,10 @@ fn test_in_e() {
 
     // Create test graph: (person1)-[knows]->(person2)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge = storage
@@ -404,10 +404,10 @@ fn test_traversal_validation() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let node1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let node2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let edge = storage
         .create_edge(&mut txn, "knows", &node1.id, &node2.id, props!())
@@ -435,13 +435,13 @@ fn test_complex_traversal() {
     //     +-------<------[follows]------<-------+
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -501,7 +501,7 @@ fn test_count_single_node() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
     let person = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
@@ -518,13 +518,13 @@ fn test_count_node_array() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     txn.commit().unwrap();
@@ -545,13 +545,13 @@ fn test_count_mixed_steps() {
 
     // Create a graph with multiple paths
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -588,7 +588,7 @@ fn test_range_subset() {
     let _: Vec<Node> = (0..5)
         .map(|_| {
             storage
-                .create_node(&mut txn, "person", props!(), None)
+                .create_node(&mut txn, "person", props!(), None, None)
                 .unwrap()
         })
         .collect();
@@ -615,7 +615,7 @@ fn test_range_chaining() {
     let nodes: Vec<Node> = (0..5)
         .map(|i| {
             storage
-                .create_node(&mut txn, "person", props! { "name" => i }, None)
+                .create_node(&mut txn, "person", props! { "name" => i }, None, None)
                 .unwrap()
         })
         .collect();
@@ -682,7 +682,7 @@ fn test_v_from_id() {
 
     // Create a test node
     let person = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let node_id = person.id.clone();
 
@@ -708,10 +708,10 @@ fn test_v_from_id_with_traversal() {
 
     // Create test graph: (person1)-[knows]->(person2)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     storage
         .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
@@ -739,10 +739,10 @@ fn test_e_from_id() {
 
     // Create test graph and edge
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let edge = storage
         .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
@@ -794,13 +794,13 @@ fn test_v_from_id_chain_operations() {
 
     // Create test graph: (person1)-[knows]->(person2)-[likes]->(person3)
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -835,10 +835,10 @@ fn test_e_from_id_chain_operations() {
 
     // Create test graph and edges
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let edge = storage
         .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
@@ -863,13 +863,13 @@ fn test_filter_nodes() {
 
     // Create nodes with different properties
     let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
         .unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 30 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 30 }, None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props! { "age" => 35 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None )
         .unwrap();
 
     txn.commit().unwrap();
@@ -911,10 +911,10 @@ fn test_filter_macro_single_argument() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let _ = storage
-        .create_node(&mut txn, "person", props! { "name" => "Alice" }, None)
+        .create_node(&mut txn, "person", props! { "name" => "Alice" }, None, None)
         .unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props! { "name" => "Bob" }, None)
+        .create_node(&mut txn, "person", props! { "name" => "Bob" }, None, None)
         .unwrap();
 
     fn has_name(val: &Node) -> Result<bool, GraphError> {
@@ -939,10 +939,10 @@ fn test_filter_macro_multiple_arguments() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props! { "age" => 30 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 30 }, None, None)
         .unwrap();
 
     fn age_greater_than(val: &Node, min_age: i32) -> Result<bool, GraphError> {
@@ -984,10 +984,10 @@ fn test_filter_edges() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let _ = storage
@@ -1051,7 +1051,7 @@ fn test_filter_empty_result() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
         .unwrap();
 
     txn.commit().unwrap();
@@ -1094,6 +1094,7 @@ fn test_filter_chain() {
             "person",
             props! { "age" => 25, "name" => "Alice" },
             None,
+            None,
         )
         .unwrap();
     let person2 = storage
@@ -1102,10 +1103,11 @@ fn test_filter_chain() {
             "person",
             props! { "age" => 30, "name" => "Bob" },
             None,
+            None,
         )
         .unwrap();
     let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 35 }, None)
+        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None)
         .unwrap();
 
     txn.commit().unwrap();
@@ -1154,10 +1156,10 @@ fn test_in_v() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge = storage
@@ -1184,10 +1186,10 @@ fn test_out_v() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge = storage
@@ -1214,13 +1216,13 @@ fn test_both() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     storage
@@ -1252,10 +1254,10 @@ fn test_both_e() {
     let mut txn = storage.graph_env.write_txn().unwrap();
     let db = Arc::clone(&storage);
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge1 = storage
@@ -1298,10 +1300,10 @@ fn test_both_v() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let person1 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
     let person2 = storage
-        .create_node(&mut txn, "person", props!(), None)
+        .create_node(&mut txn, "person", props!(), None, None)
         .unwrap();
 
     let edge = storage
@@ -1343,7 +1345,7 @@ fn test_shortest_mutual_path() {
         .iter()
         .map(|name| {
             storage
-                .create_node(&mut txn, "person", props! { "name" => *name }, None)
+                .create_node(&mut txn, "person", props! { "name" => *name }, None, None)
                 .unwrap()
         })
         .collect();

@@ -287,10 +287,11 @@ impl SourceTraversalSteps for TraversalBuilder {
         node_label: &str,
         props: Vec<(String, Value)>,
         secondary_indices: Option<&[String]>,
+        id: Option<String>,
     ) -> &mut Self {
         match self
             .storage
-            .create_node(txn, node_label, props, secondary_indices)
+            .create_node(txn, node_label, props, secondary_indices, id)
         {
             Ok(node) => {
                 self.current_step = TraversalValue::from(node);
@@ -703,6 +704,7 @@ impl TraversalMethods for TraversalBuilder {
         self.current_step = TraversalValue::Count(Count::new(match &self.current_step {
             TraversalValue::NodeArray(nodes) => nodes.len(),
             TraversalValue::EdgeArray(edges) => edges.len(),
+            TraversalValue::VectorArray(vectors) => vectors.len(),
             TraversalValue::Empty => 0,
             _ => panic!("Invalid traversal step for count {:?}", &self.current_step),
         }));
