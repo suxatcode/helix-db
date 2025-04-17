@@ -414,7 +414,7 @@ mod vector_tests {
 
 
 impl<'a> Filterable<'a> for HVector {
-    fn type_name(&'a self) -> FilterableType {
+    fn type_name(&self) -> FilterableType {
         FilterableType::Vector
     }
 

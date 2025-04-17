@@ -17,14 +17,14 @@ use super::return_values::ReturnValue;
 /// Trait for types that can be filtered based on their properties.
 /// Implemented by both Node and Edge types.
 pub trait Filterable<'a> {
-    fn type_name(&'a self) -> FilterableType;
+    fn type_name(&self) -> FilterableType;
 
-    fn id(&'a self) -> &'a str;
+    fn id(&self) -> &str;
 
-    fn label(&'a self) -> &'a str;
+    fn label(&self) -> &str;
 
-    fn from_node(&'a self) -> String;
-    fn to_node(&'a self) -> String;
+    fn from_node(&self) -> String;
+    fn to_node(&self) -> String;
 
     fn properties(self) -> HashMap<String, Value>;
 
@@ -44,27 +44,27 @@ pub trait Filterable<'a> {
 
 impl<'a> Filterable<'a> for Node {
     #[inline(always)]
-    fn type_name(&'a self) -> FilterableType {
+    fn type_name(&self) -> FilterableType {
         FilterableType::Node
     }
 
     #[inline(always)]
-    fn id(&'a self) -> &'a str {
+    fn id(&self) -> &str {
         &self.id
     }
 
     #[inline(always)]
-    fn label(&'a self) -> &'a str {
+    fn label(&self) -> &str {
         &self.label
     }
 
     #[inline(always)]
-    fn from_node(&'a self) -> String {
+    fn from_node(&self) -> String {
         unreachable!()
     }
 
     #[inline(always)]
-    fn to_node(&'a self) -> String {
+    fn to_node(&self) -> String {
         unreachable!()
     }
 
@@ -107,27 +107,27 @@ impl<'a> Filterable<'a> for Node {
 
 impl<'a> Filterable<'a> for Edge {
     #[inline(always)]
-    fn type_name(&'a self) -> FilterableType {
+    fn type_name(&self) -> FilterableType {
         FilterableType::Edge
     }
 
     #[inline(always)]
-    fn id(&'a self) -> &'a str {
+    fn id(&self) -> &str {
         &self.id
     }
 
     #[inline(always)]
-    fn label(&'a self) -> &'a str {
+    fn label(&self) -> &str {
         &self.label
     }
 
     #[inline(always)]
-    fn from_node(&'a self) -> String {
+    fn from_node(&self) -> String {
         self.from_node.clone()
     }
 
     #[inline(always)]
-    fn to_node(&'a self) -> String {
+    fn to_node(&self) -> String {
         self.to_node.clone()
     }
 
