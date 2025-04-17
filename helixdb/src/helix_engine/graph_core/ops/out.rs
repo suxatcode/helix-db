@@ -15,9 +15,9 @@ use crate::{
 
 use super::tr_val::{Traversable, TraversalVal};
 
-struct OutNodes<'a> {
+pub struct OutNodes<'a> {
     iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
-    storage: &'a Arc<HelixGraphStorage>,
+    storage: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     edge_label: &'a str,
 }
@@ -62,7 +62,7 @@ where
 pub trait OutAdapter: Iterator {
     fn out<'a>(
         self,
-        db: &'a Arc<HelixGraphStorage>,
+        db: Arc<HelixGraphStorage>,
         txn: &'a RoTxn<'a>,
         edge_label: &'a str,
     ) -> Out<'a, Self, impl FnMut(TraversalVal) -> OutNodes<'a>>
@@ -71,17 +71,21 @@ pub trait OutAdapter: Iterator {
         Self::Item: Send,
     {
         // iterate through the iterator and create a new iterator on the out edges
-        let storage = db.clone();
+
+        let db = Arc::clone(&db);
         let iter = self
-            .map(move |item| out_nodes(item, &storage, txn, edge_label))
+            .map(move |item| out_nodes(item, db.clone(), txn, edge_label))
             .flatten();
+        // println!("{:?}",
+        //     iter.clone()
+        // );
         Out { iter }
     }
 }
 
 pub fn out_nodes<'a>(
     item: TraversalVal,
-    db: &'a Arc<HelixGraphStorage>,
+    db: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     edge_label: &'a str,
 ) -> OutNodes<'a> {

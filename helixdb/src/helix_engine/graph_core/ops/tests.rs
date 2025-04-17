@@ -42,8 +42,7 @@ fn test_new_out() {
     let db = Arc::new(db);
     let txn = db.graph_env.read_txn().unwrap();
     let res = V::new(&db, &txn)
-        .out(&db, &txn, "follows")
-        .out(&db, &txn, "follows")
+        .out(db.clone(), &txn, "follows")
         .collect::<Vec<_>>();
 
     println!("{:?}", res);
