@@ -969,15 +969,16 @@ fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
         .map_err(CliError::Io)?
         .any(|file| file.unwrap().file_name() == "schema.hx")
     {
-        //println!("{}", CliError::from("\t❌ No schema file found"));
-        return Err(CliError::from("No schema file found"));
+        println!("{}", CliError::from("\t❌ No schema file found"));
+        // return Err(CliError::from("No schema file found"));
     }
 
     if !fs::read_dir(&path)
         .map_err(CliError::Io)?
-            .any(|file| file.unwrap().file_name() == "config.hx.json")
+        .any(|file| file.unwrap().file_name() == "config.hx.json")
     {
-        return Err(CliError::from("No config.hx.json file found"));
+        println!("{}", CliError::from("\t❌ No config.hx.json file found"));
+        // return Err(CliError::from("No config.hx.json file found"));
     }
 
     let files: Vec<DirEntry> = fs::read_dir(&path)?
