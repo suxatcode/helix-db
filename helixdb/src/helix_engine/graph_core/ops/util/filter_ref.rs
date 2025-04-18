@@ -1,4 +1,6 @@
-use super::tr_val::TraversalVal;
+use crate::helix_engine::types::GraphError;
+
+use super::super::tr_val::TraversalVal;
 use heed3::RoTxn;
 
 pub struct FilterRef<'a, I, F> {
@@ -10,7 +12,7 @@ pub struct FilterRef<'a, I, F> {
 // implementing iterator for filter ref
 impl<'a, I, F> Iterator for FilterRef<'a, I, F>
 where
-    I: Iterator<Item = TraversalVal>,
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
     F: Fn(&I::Item, &RoTxn) -> bool,
 {
     type Item = I::Item;

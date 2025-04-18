@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-use super::tr_val::TraversalVal;
+use super::super::tr_val::TraversalVal;
 
 pub struct V<'a> {
     iter: heed3::RoIter<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
@@ -42,7 +42,6 @@ impl<'a> Iterator for V<'a> {
 impl<'a> V<'a> {
     pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn) -> Self {
         let iter = storage.nodes_db.lazily_decode_data().iter(txn).unwrap();
-
         V { iter }
     }
 }

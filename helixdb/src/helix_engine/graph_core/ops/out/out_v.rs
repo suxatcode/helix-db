@@ -1,4 +1,4 @@
-use super::tr_val::TraversalVal;
+use super::super::tr_val::TraversalVal;
 use crate::helix_engine::storage_core::{
     storage_core::HelixGraphStorage, storage_methods::StorageMethods,
 };

@@ -8,19 +8,16 @@ use crate::{
         graph_core::{
             config::Config,
             ops::{
-                filter_mut::FilterMutAdapter, filter_ref::FilterRefAdapter, range::RangeAdapter,
+                source::{add_v::AddN, v::V},
                 tr_val::TraversalVal,
+                util::{filter_ref::FilterRefAdapter, range::RangeAdapter},
+                *,
             },
         },
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     },
     props,
     protocol::value::Value,
-};
-
-use super::{
-    out::OutAdapter,
-    v::{self, V},
 };
 
 fn setup_temp_db() -> HelixGraphStorage {
@@ -59,20 +56,41 @@ fn setup_temp_db() -> HelixGraphStorage {
 fn test_new_out() {
     let db = setup_temp_db();
     let db = Arc::new(db);
-    let txn = db.graph_env.read_txn().unwrap();
-    let res = V::new(&db, &txn)
-        .filter_ref(&txn, |item, txn| {
-            if let TraversalVal::Node(node) = item {
-                match node.properties.get("name").unwrap() {
-                    Value::String(st) => st == "xav",
-                    _ => false,
-                }
-            } else {
-                false
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let res = AddN::new(
+        &db,
+        &mut txn,
+        "person",
+        props! { "name" => "xav"},
+        None,
+        Some("3".to_string()),
+    )
+    .filter_ref(&txn, |item, txn| {
+        if let Ok(TraversalVal::Node(node)) = item {
+            match node.properties.get("name").unwrap() {
+                Value::String(st) => st == "xav",
+                _ => false,
             }
-        })
-        .range(0, 4)
-        .collect::<Vec<_>>();
+        } else {
+            false
+        }
+    })
+    .filter_map(|x| x.ok())
+    .collect::<Vec<_>>();
+
+    // let res = V::new(&db, &txn)
+    //     .filter_ref(&txn, |item, txn| {
+    //         if let TraversalVal::Node(node) = item {
+    //             match node.properties.get("name").unwrap() {
+    //                 Value::String(st) => st == "xav",
+    //                 _ => false,
+    //             }
+    //         } else {
+    //             false
+    //         }
+    //     })
+    //     .range(0, 4)
+    //     .collect::<Vec<_>>();
 
     println!("{:?}", res);
     assert!(false);

@@ -1,4 +1,3 @@
-
 use crate::helix_engine::graph_core::config::Config;
 use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
@@ -1005,7 +1004,7 @@ mod tests {
             .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         let node2 = storage
-            .create_node(&mut txn, "person", props!(), None, None   )
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
 
         let edge_props = props! {
@@ -1392,7 +1391,7 @@ mod tests {
         let mut txn = storage.graph_env.write_txn().unwrap();
 
         let node = storage
-            .create_node(&mut txn, "person", props!(), None, None           )
+            .create_node(&mut txn, "person", props!(), None, None)
             .unwrap(); // TODO: Handle Error
         txn.commit().unwrap();
 
