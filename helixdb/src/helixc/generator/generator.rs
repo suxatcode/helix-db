@@ -586,7 +586,7 @@ impl CodeGenerator {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", s));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == data.{} )));\n", id));
                 }
                 _ => output.push_str(&format!("// Unhandled value type in EQ\n {:?}", value)),
             },
@@ -598,7 +598,7 @@ impl CodeGenerator {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val > {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > data.{} )));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GT\n"),
             },
@@ -613,7 +613,7 @@ impl CodeGenerator {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if val >= \"{}\")));\n", s));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {})));\n", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= data.{} )));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GTE\n"),
             },
@@ -625,7 +625,7 @@ impl CodeGenerator {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val < {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < data.{} )));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LT\n"),
             },
@@ -637,13 +637,13 @@ impl CodeGenerator {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val <= {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {})));\n", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= data.{} )));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LTE\n"),
             },
             BooleanOp::NotEqual(value) => match &**value {
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", id));
+                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != data.{} )));\n", id));
                 }
                 Expression::StringLiteral(s) => {
                     output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", s));
