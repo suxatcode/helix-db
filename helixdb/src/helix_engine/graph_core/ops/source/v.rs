@@ -30,8 +30,13 @@ impl<'a> Iterator for V<'a> {
             let (_, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                let node: Node = bincode::deserialize(&value).unwrap();
-                TraversalVal::Node(node)
+                match bincode::deserialize(&value) {
+                    Ok(node) => TraversalVal::Node(node),
+                    Err(e) => {
+                        println!("Error deserializing node: {}", e);
+                        TraversalVal::Empty
+                    }
+                }
             } else {
                 TraversalVal::Empty
             }

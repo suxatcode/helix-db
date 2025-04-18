@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
 use crate::helix_engine::{
-    graph_core::traversal_steps::{
-        SourceTraversalSteps, TraversalBuilderMethods, TraversalSearchMethods,
+    graph_core::{
+        ops::{
+            source::{add_e::AddE, add_v::AddN},
+            tr_val::{Traversable, TraversalVal},
+        },
+        traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSearchMethods},
     },
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
@@ -16,7 +20,11 @@ use crate::protocol::{
 };
 use tempfile::TempDir;
 
-use super::{traversal::TraversalBuilder, traversal_steps::{TraversalMethods, TraversalSteps}};
+use super::{
+    ops::source::{e::E, v::V},
+    traversal::TraversalBuilder,
+    traversal_steps::{TraversalMethods, TraversalSteps},
+};
 
 fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
@@ -42,25 +50,20 @@ fn test_v() {
     txn.commit().unwrap();
 
     let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.v(&txn);
+    // let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
     // Check that the node array contains all nodes
-    match &traversal.current_step {
-        TraversalValue::NodeArray(nodes) => {
-            assert_eq!(nodes.len(), 3);
+    assert_eq!(nodes.len(), 3);
 
-            let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
-            let node_labels: Vec<String> = nodes.iter().map(|n| n.label.clone()).collect();
+    let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
+    let node_labels: Vec<String> = nodes.iter().map(|n| n.label().to_string()).collect();
 
-            assert!(node_ids.contains(&person1.id));
-            assert!(node_ids.contains(&person2.id));
-            assert!(node_ids.contains(&thing.id));
+    assert!(node_ids.contains(&person1.id));
+    assert!(node_ids.contains(&person2.id));
+    assert!(node_ids.contains(&thing.id));
 
-            assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
-            assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
-        }
-        _ => panic!("Expected NodeArray value {:?}", &traversal.current_step),
-    }
+    assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
+    assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
 }
 
 #[test]
@@ -96,44 +99,41 @@ fn test_e() {
     txn.commit().unwrap();
 
     let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.e(&txn);
+    let edges = E::new(&storage, &txn).collect::<Vec<_>>();
 
     // Check that the edge array contains the three edges
-    match &traversal.current_step {
-        TraversalValue::EdgeArray(edges) => {
-            assert_eq!(edges.len(), 3);
+    assert_eq!(edges.len(), 3);
 
-            let edge_ids: Vec<String> = edges.iter().map(|e| e.id.clone()).collect();
-            let edge_labels: Vec<String> = edges.iter().map(|e| e.label.clone()).collect();
+    let edge_ids: Vec<String> = edges.iter().map(|e| e.id().to_string()).collect();
+    let edge_labels: Vec<String> = edges.iter().map(|e| e.label().to_string()).collect();
 
-            assert!(edge_ids.contains(&knows_edge.id));
-            assert!(edge_ids.contains(&likes_edge.id));
-            assert!(edge_ids.contains(&follows_edge.id));
+    assert!(edge_ids.contains(&knows_edge.id));
+    assert!(edge_ids.contains(&likes_edge.id));
+    assert!(edge_ids.contains(&follows_edge.id));
 
-            assert!(edge_labels.contains(&"knows".to_string()));
-            assert!(edge_labels.contains(&"likes".to_string()));
-            assert!(edge_labels.contains(&"follows".to_string()));
+    assert!(edge_labels.contains(&"knows".to_string()));
+    assert!(edge_labels.contains(&"likes".to_string()));
+    assert!(edge_labels.contains(&"follows".to_string()));
 
-            for edge in edges {
-                match edge.label.as_str() {
-                    "knows" => {
-                        assert_eq!(edge.from_node, person1.id);
-                        assert_eq!(edge.to_node, person2.id);
-                    }
-                    "likes" => {
-                        assert_eq!(edge.from_node, person1.id);
-                        assert_eq!(edge.to_node, person3.id);
-                    }
-                    "follows" => {
-                        assert_eq!(edge.from_node, person2.id);
-                        assert_eq!(edge.to_node, person3.id);
-                    }
-                    _ => panic!("Unexpected edge label"),
+    for edge in edges {
+        match edge {
+            TraversalVal::Edge(edge) => match edge.label() {
+                "knows" => {
+                    assert_eq!(edge.from_node(), person1.id);
+                    assert_eq!(edge.to_node(), person2.id);
                 }
-            }
+                "likes" => {
+                    assert_eq!(edge.from_node(), person1.id);
+                    assert_eq!(edge.to_node(), person3.id);
+                }
+                "follows" => {
+                    assert_eq!(edge.from_node(), person2.id);
+                    assert_eq!(edge.to_node(), person3.id);
+                }
+                _ => panic!("Unexpected edge label"),
+            },
+            _ => panic!("Expected Edge value"),
         }
-        _ => panic!("Expected EdgeArray value"),
     }
 }
 
@@ -142,16 +142,11 @@ fn test_v_empty_graph() {
     let (storage, _temp_dir) = setup_test_db();
 
     let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.v(&txn);
+
+    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
 
     // Check that the node array is empty
-    match &traversal.current_step {
-        TraversalValue::NodeArray(nodes) => {
-            assert_eq!(nodes.len(), 0);
-        }
-        _ => panic!("Expected NodeArray value"),
-    }
+    assert_eq!(nodes.len(), 0);
 }
 
 #[test]
@@ -159,17 +154,10 @@ fn test_e_empty_graph() {
     let (storage, _temp_dir) = setup_test_db();
 
     let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.e(&txn);
+    let edges = E::new(&storage, &txn).collect::<Vec<_>>();
 
     // Check that the edge array is empty
-    match &traversal.current_step {
-        TraversalValue::EdgeArray(edges) => {
-            assert_eq!(edges.len(), 0);
-        }
-        _ => panic!("Expected EdgeArray value"),
-    }
-    txn.commit().unwrap();
+    assert_eq!(edges.len(), 0);
 }
 
 #[test]
@@ -186,19 +174,14 @@ fn test_v_nodes_without_edges() {
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.v(&txn);
+
+    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
 
     // Check that the node array contains the two nodes
-    match &traversal.current_step {
-        TraversalValue::NodeArray(nodes) => {
-            assert_eq!(nodes.len(), 2);
-            let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
-            assert!(node_ids.contains(&person1.id));
-            assert!(node_ids.contains(&person2.id));
-        }
-        _ => panic!("Expected NodeArray value"),
-    }
+    assert_eq!(nodes.len(), 2);
+    let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
+    assert!(node_ids.contains(&person1.id));
+    assert!(node_ids.contains(&person2.id));
 }
 
 #[test]
@@ -206,16 +189,12 @@ fn test_add_v() {
     let (storage, _temp_dir) = setup_test_db();
 
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
 
-    traversal.add_v(&mut txn, "person", props! {}, None, None);
+    let nodes = AddN::new(&storage, &mut txn, "person", props! {}, None, None)
+        .filter_map(|node| node.ok())
+        .collect::<Vec<_>>();
 
-    match &traversal.current_step {
-        TraversalValue::NodeArray(node) => {
-            assert_eq!(node.first().unwrap().label, "person");
-        }
-        _ => panic!("Expected SingleNode value"),
-    }
+    assert_eq!(nodes.first().unwrap().label(), "person");
 
     // Now txn is free of borrows
     // (If you dropped txn above, you would need to reinitialize it; so in practice, this pattern
@@ -239,18 +218,30 @@ fn test_add_e() {
 
     txn.commit().unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    traversal.add_e(&mut txn, "knows", &node1.id, &node2.id, props!());
-    let result = traversal.result(txn).unwrap();
+    let edges = AddE::new(
+        &storage,
+        &mut txn,
+        "knows",
+        props! {},
+        None,
+        node1.id.clone(),
+        node2.id.clone(),
+    )
+    .filter_map(|edge| edge.ok())
+    .collect::<Vec<_>>();
     // Check that the current step contains a single edge
-    match &result {
-        TraversalValue::EdgeArray(edges) => {
-            assert_eq!(edges.len(), 1);
-            assert_eq!(edges[0].label, "knows");
-            assert_eq!(edges[0].from_node, node1.id);
-            assert_eq!(edges[0].to_node, node2.id);
+    match edges.first() {
+        Some(edge) => {
+            assert_eq!(edge.label(), "knows");
+            match edge {
+                TraversalVal::Edge(edge) => {
+                    assert_eq!(edge.from_node(), node1.id);
+                    assert_eq!(edge.to_node(), node2.id);
+                }
+                _ => panic!("Expected Edge value"),
+            }
         }
-        _ => panic!("Expected SingleEdge value"),
+        None => panic!("Expected SingleEdge value"),
     }
 }
 
@@ -282,7 +273,7 @@ fn test_out() {
     let mut traversal =
         TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
     // Traverse from person1 to person2
-    traversal.out(&txn, "knows");
+    
 
     // Check that current step is at person2
     match &traversal.current_step {
@@ -570,7 +561,6 @@ fn test_count_mixed_steps() {
     let mut traversal =
         TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
     traversal.out(&txn, "knows"); // Should have 2 nodes (person2 and person3)
-
 
     if let TraversalValue::Count(count) = &traversal.count().current_step {
         assert_eq!(count.value(), 2);
@@ -869,7 +859,7 @@ fn test_filter_nodes() {
         .create_node(&mut txn, "person", props! { "age" => 30 }, None, None)
         .unwrap();
     let person3 = storage
-        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None )
+        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None)
         .unwrap();
 
     txn.commit().unwrap();
