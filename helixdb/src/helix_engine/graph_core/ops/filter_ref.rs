@@ -1,19 +1,5 @@
-use std::sync::Arc;
-
-use heed3::{RoTxn, RwTxn};
-
-use crate::{
-    helix_engine::{
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-        types::GraphError,
-    },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
-    },
-};
-
 use super::tr_val::TraversalVal;
+use heed3::RoTxn;
 
 pub struct FilterRef<'a, I, F> {
     iter: I,

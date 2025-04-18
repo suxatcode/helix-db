@@ -8,7 +8,8 @@ use crate::{
         graph_core::{
             config::Config,
             ops::{
-                filter_mut::FilterMutAdapter, filter_ref::FilterRefAdapter, tr_val::TraversalVal,
+                filter_mut::FilterMutAdapter, filter_ref::FilterRefAdapter, range::RangeAdapter,
+                tr_val::TraversalVal,
             },
         },
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -70,6 +71,7 @@ fn test_new_out() {
                 false
             }
         })
+        .range(0, 4)
         .collect::<Vec<_>>();
 
     println!("{:?}", res);
