@@ -5,10 +5,16 @@ use tempfile::TempDir;
 
 use crate::{
     helix_engine::{
-        graph_core::config::Config,
+        graph_core::{
+            config::Config,
+            ops::{
+                filter_mut::FilterMutAdapter, filter_ref::FilterRefAdapter, tr_val::TraversalVal,
+            },
+        },
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     },
     props,
+    protocol::value::Value,
 };
 
 use super::{
@@ -22,10 +28,22 @@ fn setup_temp_db() -> HelixGraphStorage {
     let storage = HelixGraphStorage::new(db_path, Config::default()).unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
     storage
-        .create_node(&mut txn, "person", props! {}, None, Some("1".to_string()))
+        .create_node(
+            &mut txn,
+            "person",
+            props! { "name" => "xav"},
+            None,
+            Some("1".to_string()),
+        )
         .unwrap();
     storage
-        .create_node(&mut txn, "person", props! {}, None, Some("2".to_string()))
+        .create_node(
+            &mut txn,
+            "person",
+            props! {"name" => "gog"},
+            None,
+            Some("2".to_string()),
+        )
         .unwrap();
     storage
         .create_edge(&mut txn, "follows", "1", "2", props! {})
@@ -42,7 +60,16 @@ fn test_new_out() {
     let db = Arc::new(db);
     let txn = db.graph_env.read_txn().unwrap();
     let res = V::new(&db, &txn)
-        .out(db.clone(), &txn, "follows")
+        .filter_ref(&txn, |item, txn| {
+            if let TraversalVal::Node(node) = item {
+                match node.properties.get("name").unwrap() {
+                    Value::String(st) => st == "xav",
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        })
         .collect::<Vec<_>>();
 
     println!("{:?}", res);

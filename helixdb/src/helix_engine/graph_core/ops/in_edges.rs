@@ -15,15 +15,15 @@ use crate::{
 
 use super::tr_val::{Traversable, TraversalVal};
 
-pub struct OutNodesIterator<'a> {
+pub struct InEdgesIterator<'a> {
     iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
     storage: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     edge_label: &'a str,
 }
 
-// implementing iterator for OutIterator
-impl<'a> Iterator for OutNodesIterator<'a> {
+// implementing iterator for InEdgesIterator
+impl<'a> Iterator for InEdgesIterator<'a> {
     type Item = TraversalVal;
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
@@ -32,9 +32,7 @@ impl<'a> Iterator for OutNodesIterator<'a> {
             let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
                 if self.edge_label.is_empty() || edge.label == self.edge_label {
-                    if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
-                        return Some(TraversalVal::Node(node));
-                    }
+                    return Some(TraversalVal::Edge(edge));
                 }
             }
         }
@@ -42,17 +40,17 @@ impl<'a> Iterator for OutNodesIterator<'a> {
     }
 }
 
-pub struct OutNodes<'a, I: Iterator<Item = TraversalVal>, F>
+pub struct InEdges<'a, I: Iterator<Item = TraversalVal>, F>
 where
-    F: FnMut(TraversalVal) -> OutNodesIterator<'a>,
+    F: FnMut(TraversalVal) -> InEdgesIterator<'a>,
 {
     iter: std::iter::Flatten<std::iter::Map<I, F>>,
 }
 
-impl<'a, I, F> Iterator for OutNodes<'a, I, F>
+impl<'a, I, F> Iterator for InEdges<'a, I, F>
 where
     I: Iterator<Item = TraversalVal>,
-    F: FnMut(TraversalVal) -> OutNodesIterator<'a>,
+    F: FnMut(TraversalVal) -> InEdgesIterator<'a>,
 {
     type Item = TraversalVal;
     fn next(&mut self) -> Option<Self::Item> {
@@ -60,41 +58,41 @@ where
     }
 }
 
-pub trait OutAdapter: Iterator {
-    fn out<'a>(
+pub trait InEdgesAdapter: Iterator {
+    fn in_edges<'a>(
         self,
         db: Arc<HelixGraphStorage>,
         txn: &'a RoTxn<'a>,
         edge_label: &'a str,
-    ) -> OutNodes<'a, Self, impl FnMut(TraversalVal) -> OutNodesIterator<'a>>
+    ) -> InEdges<'a, Self, impl FnMut(TraversalVal) -> InEdgesIterator<'a>>
     where
         Self: Sized + Iterator<Item = TraversalVal> + 'a,
         Self::Item: Send,
     {
-        // iterate through the iterator and create a new iterator on the out edges
+        // iterate through the iterator and create a new iterator on the in edges
         let db = Arc::clone(&db);
         let iter = self
-            .map(move |item| out_nodes(item, db.clone(), txn, edge_label))
+            .map(move |item| in_edges(item, db.clone(), txn, edge_label))
             .flatten();
-        OutNodes { iter }
+        InEdges { iter }
     }
 }
 
-/// Returns an iterator over the out nodes of the given node
-pub fn out_nodes<'a>(
+/// Returns an iterator over the in edges of the given node
+pub fn in_edges<'a>(
     item: TraversalVal,
     db: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     edge_label: &'a str,
-) -> OutNodesIterator<'a> {
+) -> InEdgesIterator<'a> {
     let prefix = HelixGraphStorage::out_edge_key(item.id(), "");
     let iter = db
-        .out_edges_db
+        .in_edges_db
         .lazily_decode_data()
         .prefix_iter(txn, &prefix)
         .unwrap();
 
-    OutNodesIterator {
+    InEdgesIterator {
         iter,
         storage: db,
         txn,
@@ -102,4 +100,4 @@ pub fn out_nodes<'a>(
     }
 }
 
-impl<T: ?Sized> OutAdapter for T where T: Iterator {}
+impl<T: ?Sized> InEdgesAdapter for T where T: Iterator {}

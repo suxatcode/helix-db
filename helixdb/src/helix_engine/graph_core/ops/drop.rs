@@ -1,22 +1,18 @@
 use std::sync::Arc;
 
-use heed3::{RoTxn, RwTxn};
+use heed3::RwTxn;
 
 use crate::{
     helix_engine::storage_core::{
         storage_core::HelixGraphStorage, storage_methods::StorageMethods,
     },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
-    },
+    protocol::filterable::{Filterable, FilterableType},
 };
 
 pub struct Drop<'a, I> {
     iter: I,
     storage: Arc<HelixGraphStorage>,
     txn: RwTxn<'a>,
-    edge_label: String,
 }
 
 // implementing iterator for Drop
@@ -32,10 +28,10 @@ where
             Some(item) => {
                 match item.type_name() {
                     FilterableType::Node => {
-                        self.storage.drop_node(&mut self.txn, &item.id());
+                        self.storage.drop_node(&mut self.txn, &item.id()).unwrap();
                     }
                     FilterableType::Edge => {
-                        self.storage.drop_edge(&mut self.txn, &item.id());
+                        self.storage.drop_edge(&mut self.txn, &item.id()).unwrap();
                     }
                     // FilterableType::Vector => self.storage.drop_vector(&self.txn, &item.id());
                     _ => {
@@ -50,7 +46,7 @@ where
 }
 
 pub trait DropAdapter: Iterator {
-    fn drop(self, db: Arc<HelixGraphStorage>, txn: RwTxn<'_>, edge_label: String) -> Drop<Self>
+    fn drop(self, db: Arc<HelixGraphStorage>, txn: RwTxn<'_>) -> Drop<Self>
     where
         Self: Sized + Iterator,
         Self::Item: Send,
@@ -59,7 +55,6 @@ pub trait DropAdapter: Iterator {
             iter: self,
             storage: db,
             txn,
-            edge_label,
         }
     }
 }
