@@ -57,6 +57,7 @@ fn test_new_out() {
     let db = setup_temp_db();
     let db = Arc::new(db);
     let mut txn = db.graph_env.write_txn().unwrap();
+    let reference = &mut txn;
     let res = AddN::new(
         &db,
         &mut txn,

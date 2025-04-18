@@ -15,7 +15,7 @@ use crate::{
 
 pub struct FilterMut<'a, I, F> {
     iter: I,
-    txn: &'a RwTxn<'a>,
+    txn: &'a mut RwTxn<'a>,
     f: F,
 }
 
@@ -24,13 +24,13 @@ impl<'a, I, F> Iterator for FilterMut<'a, I, F>
 where
     I: Iterator,
     I::Item: Filterable<'a>,
-    F: Fn(&mut I::Item, &RwTxn) -> bool,
+    F: Fn(&mut I::Item, &mut RwTxn) -> bool,
 {
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
-            Some(mut item) => match (self.f)(&mut item, &self.txn) {
+            Some(mut item) => match (self.f)(&mut item, &mut self.txn) {
                 true => Some(item),
                 false => None,
             },
@@ -42,7 +42,7 @@ where
 pub trait FilterMutAdapter: Iterator {
     /// FilterMut filters the iterator by taking a mutable
     /// reference to each item and a transaction.
-    fn filter_mut<'a, F>(self, txn: &'a RwTxn<'a>, f: F) -> FilterMut<'a, Self, F>
+    fn filter_mut<'a, F>(self, txn: &'a mut RwTxn<'a>, f: F) -> FilterMut<'a, Self, F>
     where
         Self: Sized + Iterator,
         Self::Item: Send,

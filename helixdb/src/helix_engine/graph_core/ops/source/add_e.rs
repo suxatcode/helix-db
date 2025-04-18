@@ -14,85 +14,23 @@ use crate::{
 
 use super::super::tr_val::TraversalVal;
 
-pub struct AddE<'a> {
-    storage: &'a Arc<HelixGraphStorage>,
-    txn: &'a mut RwTxn<'a>,
-    edge: Edge,
+pub struct AddE {
+    result: Option<Result<TraversalVal, GraphError>>,
 }
 
-impl<'a> Iterator for AddE<'a> {
+impl Iterator for AddE {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self
-            .storage
-            .nodes_db
-            .get(
-                self.txn,
-                HelixGraphStorage::node_key(&self.edge.from_node).as_slice(),
-            )
-            .map_or(false, |node| node.is_none())
-            || self
-                .storage
-                .nodes_db
-                .get(
-                    self.txn,
-                    HelixGraphStorage::node_key(&self.edge.to_node).as_slice(),
-                )
-                .map_or(false, |node| node.is_none())
-        {
-            return Some(Err(GraphError::NodeNotFound));
-        }
-
-        match bincode::serialize(&self.edge) {
-            Ok(bytes) => {
-                if let Err(e) = self.storage.edges_db.put(
-                    self.txn,
-                    &HelixGraphStorage::edge_key(&self.edge.id),
-                    &bytes.clone(),
-                ) {
-                    return Some(Err(GraphError::from(e)));
-                }
-            }
-            Err(e) => return Some(Err(GraphError::from(e))),
-        }
-
-        match self.storage.edge_labels_db.put(
-            self.txn,
-            &HelixGraphStorage::edge_label_key(&self.edge.label, &self.edge.id),
-            &(),
-        ) {
-            Ok(_) => {}
-            Err(e) => return Some(Err(GraphError::from(e))),
-        }
-
-        match self.storage.out_edges_db.put(
-            self.txn,
-            &HelixGraphStorage::out_edge_key(&self.edge.from_node, &self.edge.to_node),
-            &self.edge.id.as_bytes(),
-        ) {
-            Ok(_) => {}
-            Err(e) => return Some(Err(GraphError::from(e))),
-        }
-
-        match self.storage.in_edges_db.put(
-            self.txn,
-            &HelixGraphStorage::in_edge_key(&self.edge.from_node, &self.edge.to_node),
-            &self.edge.id.as_bytes(),
-        ) {
-            Ok(_) => {}
-            Err(e) => return Some(Err(GraphError::from(e))),
-        }
-
-        Some(Ok(TraversalVal::Edge(self.edge.clone()))) // TODO: Look into way to remove clone
+        self.result.take()
     }
 }
 
-impl<'a> AddE<'a> {
+impl AddE {
     pub fn new(
-        storage: &'a Arc<HelixGraphStorage>,
-        txn: &'a mut RwTxn<'a>,
-        label: &'a str,
+        storage: &Arc<HelixGraphStorage>,
+        txn: &mut RwTxn,
+        label: &str,
         properties: impl IntoIterator<Item = (String, Value)>,
         id: Option<String>,
         from_node: String,
@@ -105,7 +43,61 @@ impl<'a> AddE<'a> {
             from_node,
             to_node,
         };
+        let mut result: Option<Result<TraversalVal, GraphError>> = None;
+        if storage
+            .nodes_db
+            .get(txn, HelixGraphStorage::node_key(&edge.from_node).as_slice())
+            .map_or(false, |node| node.is_none())
+            || storage
+                .nodes_db
+                .get(txn, HelixGraphStorage::node_key(&edge.to_node).as_slice())
+                .map_or(false, |node| node.is_none())
+        {
+            result = Some(Err(GraphError::NodeNotFound));
+        }
 
-        AddE { storage, txn, edge }
+        match bincode::serialize(&edge) {
+            Ok(bytes) => {
+                if let Err(e) = storage.edges_db.put(
+                    txn,
+                    &HelixGraphStorage::edge_key(&edge.id),
+                    &bytes.clone(),
+                ) {
+                    result = Some(Err(GraphError::from(e)));
+                }
+            }
+            Err(e) => result = Some(Err(GraphError::from(e))),
+        }
+
+        match storage.edge_labels_db.put(
+            txn,
+            &HelixGraphStorage::edge_label_key(&edge.label, &edge.id),
+            &(),
+        ) {
+            Ok(_) => {}
+            Err(e) => result = Some(Err(GraphError::from(e))),
+        }
+
+        match storage.out_edges_db.put(
+            txn,
+            &HelixGraphStorage::out_edge_key(&edge.from_node, &edge.to_node),
+            &edge.id.as_bytes(),
+        ) {
+            Ok(_) => {}
+            Err(e) => result = Some(Err(GraphError::from(e))),
+        }
+
+        match storage.in_edges_db.put(
+            txn,
+            &HelixGraphStorage::in_edge_key(&edge.from_node, &edge.to_node),
+            &edge.id.as_bytes(),
+        ) {
+            Ok(_) => {}
+            Err(e) => result = Some(Err(GraphError::from(e))),
+        }
+        if result.is_none() {
+            result = Some(Ok(TraversalVal::Edge(edge)));
+        }
+        AddE { result }
     }
 }
