@@ -7,6 +7,7 @@ license = "GPL-3.0"
 authors = ["HelixDB Team"]
 repository = "https://github.com/HelixDB/helix-db"
 
+
 [dependencies]
 pest = "2.7"
 pest_derive = "2.7"

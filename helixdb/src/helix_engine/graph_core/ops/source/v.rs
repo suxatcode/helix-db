@@ -6,8 +6,9 @@ use heed3::{
 };
 
 use crate::{
-    helix_engine::storage_core::{
-        storage_core::HelixGraphStorage, storage_methods::StorageMethods,
+    helix_engine::{
+        graph_core::traversal_iter::RoTraversalIterator,
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     },
     protocol::{
         filterable::{Filterable, FilterableType},
@@ -45,8 +46,17 @@ impl<'a> Iterator for V<'a> {
 }
 
 impl<'a> V<'a> {
-    pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn) -> Self {
+    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'a RoTxn) -> RoTraversalIterator<'a, Self> {
         let iter = storage.nodes_db.lazily_decode_data().iter(txn).unwrap();
-        V { iter }
+
+        // Create the base V iterator
+        let v_iter = V { iter };
+
+        // Wrap it with the RoTraversalIterator adapter
+        RoTraversalIterator {
+            inner: v_iter,
+            storage: storage.clone(),
+            txn,
+        }
     }
 }

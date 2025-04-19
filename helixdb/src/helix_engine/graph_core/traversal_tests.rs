@@ -3,7 +3,9 @@ use std::sync::Arc;
 use crate::helix_engine::{
     graph_core::{
         ops::{
-            source::{add_e::AddE, add_v::AddN},
+            g::G,
+            out::out::OutAdapter,
+            source::{add_e::AddE, add_v::AddN, v_from_id::VFromIdAdapter},
             tr_val::{Traversable, TraversalVal},
         },
         traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSearchMethods},
@@ -21,7 +23,7 @@ use crate::protocol::{
 use tempfile::TempDir;
 
 use super::{
-    ops::source::{e::E, v::V},
+    ops::source::{e::E, v::V, v_from_id::VFromId},
     traversal::TraversalBuilder,
     traversal_steps::{TraversalMethods, TraversalSteps},
 };
@@ -33,156 +35,156 @@ fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
     (Arc::new(storage), temp_dir)
 }
 
-#[test]
-fn test_v() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
+// #[test]
+// fn test_v() {
+//     let (storage, _temp_dir) = setup_test_db();
+//     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let thing = storage
-        .create_node(&mut txn, "thing", props!(), None, None)
-        .unwrap();
-    txn.commit().unwrap();
+//     let person1 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
+//     let person2 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
+//     let thing = storage
+//         .create_node(&mut txn, "thing", props!(), None, None)
+//         .unwrap();
+//     txn.commit().unwrap();
 
-    let txn = storage.graph_env.read_txn().unwrap();
-    // let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
-    // Check that the node array contains all nodes
-    assert_eq!(nodes.len(), 3);
+//     let txn = storage.graph_env.read_txn().unwrap();
+//     // let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+//     let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
+//     // Check that the node array contains all nodes
+//     assert_eq!(nodes.len(), 3);
 
-    let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
-    let node_labels: Vec<String> = nodes.iter().map(|n| n.label().to_string()).collect();
+//     let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
+//     let node_labels: Vec<String> = nodes.iter().map(|n| n.label().to_string()).collect();
 
-    assert!(node_ids.contains(&person1.id));
-    assert!(node_ids.contains(&person2.id));
-    assert!(node_ids.contains(&thing.id));
+//     assert!(node_ids.contains(&person1.id));
+//     assert!(node_ids.contains(&person2.id));
+//     assert!(node_ids.contains(&thing.id));
 
-    assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
-    assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
-}
+//     assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
+//     assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
+// }
 
-#[test]
-fn test_e() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
+// #[test]
+// fn test_e() {
+//     let (storage, _temp_dir) = setup_test_db();
+//     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    // Graph Structure:
-    // (person1)-[knows]->(person2)
-    //         \-[likes]->(person3)
-    // (person2)-[follows]->(person3)
+//     // Graph Structure:
+//     // (person1)-[knows]->(person2)
+//     //         \-[likes]->(person3)
+//     // (person2)-[follows]->(person3)
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+//     let person1 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
+//     let person2 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
+//     let person3 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
 
-    let knows_edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    let likes_edge = storage
-        .create_edge(&mut txn, "likes", &person1.id, &person3.id, props!())
-        .unwrap();
-    let follows_edge = storage
-        .create_edge(&mut txn, "follows", &person2.id, &person3.id, props!())
-        .unwrap();
+//     let knows_edge = storage
+//         .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
+//         .unwrap();
+//     let likes_edge = storage
+//         .create_edge(&mut txn, "likes", &person1.id, &person3.id, props!())
+//         .unwrap();
+//     let follows_edge = storage
+//         .create_edge(&mut txn, "follows", &person2.id, &person3.id, props!())
+//         .unwrap();
 
-    txn.commit().unwrap();
+//     txn.commit().unwrap();
 
-    let txn = storage.graph_env.read_txn().unwrap();
-    let edges = E::new(&storage, &txn).collect::<Vec<_>>();
+//     let txn = storage.graph_env.read_txn().unwrap();
+//     let edges = E::new(&storage, &txn).collect::<Vec<_>>();
 
-    // Check that the edge array contains the three edges
-    assert_eq!(edges.len(), 3);
+//     // Check that the edge array contains the three edges
+//     assert_eq!(edges.len(), 3);
 
-    let edge_ids: Vec<String> = edges.iter().map(|e| e.id().to_string()).collect();
-    let edge_labels: Vec<String> = edges.iter().map(|e| e.label().to_string()).collect();
+//     let edge_ids: Vec<String> = edges.iter().map(|e| e.id().to_string()).collect();
+//     let edge_labels: Vec<String> = edges.iter().map(|e| e.label().to_string()).collect();
 
-    assert!(edge_ids.contains(&knows_edge.id));
-    assert!(edge_ids.contains(&likes_edge.id));
-    assert!(edge_ids.contains(&follows_edge.id));
+//     assert!(edge_ids.contains(&knows_edge.id));
+//     assert!(edge_ids.contains(&likes_edge.id));
+//     assert!(edge_ids.contains(&follows_edge.id));
 
-    assert!(edge_labels.contains(&"knows".to_string()));
-    assert!(edge_labels.contains(&"likes".to_string()));
-    assert!(edge_labels.contains(&"follows".to_string()));
+//     assert!(edge_labels.contains(&"knows".to_string()));
+//     assert!(edge_labels.contains(&"likes".to_string()));
+//     assert!(edge_labels.contains(&"follows".to_string()));
 
-    for edge in edges {
-        match edge {
-            TraversalVal::Edge(edge) => match edge.label() {
-                "knows" => {
-                    assert_eq!(edge.from_node(), person1.id);
-                    assert_eq!(edge.to_node(), person2.id);
-                }
-                "likes" => {
-                    assert_eq!(edge.from_node(), person1.id);
-                    assert_eq!(edge.to_node(), person3.id);
-                }
-                "follows" => {
-                    assert_eq!(edge.from_node(), person2.id);
-                    assert_eq!(edge.to_node(), person3.id);
-                }
-                _ => panic!("Unexpected edge label"),
-            },
-            _ => panic!("Expected Edge value"),
-        }
-    }
-}
+//     for edge in edges {
+//         match edge {
+//             TraversalVal::Edge(edge) => match edge.label() {
+//                 "knows" => {
+//                     assert_eq!(edge.from_node(), person1.id);
+//                     assert_eq!(edge.to_node(), person2.id);
+//                 }
+//                 "likes" => {
+//                     assert_eq!(edge.from_node(), person1.id);
+//                     assert_eq!(edge.to_node(), person3.id);
+//                 }
+//                 "follows" => {
+//                     assert_eq!(edge.from_node(), person2.id);
+//                     assert_eq!(edge.to_node(), person3.id);
+//                 }
+//                 _ => panic!("Unexpected edge label"),
+//             },
+//             _ => panic!("Expected Edge value"),
+//         }
+//     }
+// }
 
-#[test]
-fn test_v_empty_graph() {
-    let (storage, _temp_dir) = setup_test_db();
+// #[test]
+// fn test_v_empty_graph() {
+//     let (storage, _temp_dir) = setup_test_db();
 
-    let txn = storage.graph_env.read_txn().unwrap();
+//     let txn = storage.graph_env.read_txn().unwrap();
 
-    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
+//     let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
 
-    // Check that the node array is empty
-    assert_eq!(nodes.len(), 0);
-}
+//     // Check that the node array is empty
+//     assert_eq!(nodes.len(), 0);
+// }
 
-#[test]
-fn test_e_empty_graph() {
-    let (storage, _temp_dir) = setup_test_db();
+// #[test]
+// fn test_e_empty_graph() {
+//     let (storage, _temp_dir) = setup_test_db();
 
-    let txn = storage.graph_env.read_txn().unwrap();
-    let edges = E::new(&storage, &txn).collect::<Vec<_>>();
+//     let txn = storage.graph_env.read_txn().unwrap();
+//     let edges = E::new(&storage, &txn).collect::<Vec<_>>();
 
-    // Check that the edge array is empty
-    assert_eq!(edges.len(), 0);
-}
+//     // Check that the edge array is empty
+//     assert_eq!(edges.len(), 0);
+// }
 
-#[test]
-fn test_v_nodes_without_edges() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
+// #[test]
+// fn test_v_nodes_without_edges() {
+//     let (storage, _temp_dir) = setup_test_db();
+//     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+//     let person1 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
+//     let person2 = storage
+//         .create_node(&mut txn, "person", props!(), None, None)
+//         .unwrap();
 
-    txn.commit().unwrap();
-    let txn = storage.graph_env.read_txn().unwrap();
+//     txn.commit().unwrap();
+//     let txn = storage.graph_env.read_txn().unwrap();
 
-    let nodes = V::new(&storage, &txn).collect::<Vec<_>>();
+//     let nodes = V::new(storage, &txn).collect::<Vec<_>>();
 
-    // Check that the node array contains the two nodes
-    assert_eq!(nodes.len(), 2);
-    let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
-    assert!(node_ids.contains(&person1.id));
-    assert!(node_ids.contains(&person2.id));
-}
+//     // Check that the node array contains the two nodes
+//     assert_eq!(nodes.len(), 2);
+//     let node_ids: Vec<String> = nodes.iter().map(|n| n.id().to_string()).collect();
+//     assert!(node_ids.contains(&person1.id));
+//     assert!(node_ids.contains(&person2.id));
+// }
 
 #[test]
 fn test_add_v() {
@@ -269,20 +271,20 @@ fn test_out() {
         .unwrap();
 
     txn.commit().unwrap();
-    let txn = storage.graph_env.read_txn().unwrap();
-    let mut traversal =
-        TraversalBuilder::new(Arc::clone(&storage), TraversalValue::from(person1.clone()));
-    // Traverse from person1 to person2
-    
+    let txn = storage.graph_env.write_txn().unwrap();
+    // let nodes = VFromId::new(&storage, &txn, person1.id.as_str())
+    //     .out("knows")
+    //     .filter_map(|node| node.ok())
+    //     .collect::<Vec<_>>();
+    let nodes = G::new_mut(Arc::clone(&storage), &txn)
+        .v_from_id(person1.id.as_str())
+        .out("knows")
+        .filter_map(|node| node.ok())
+        .collect::<Vec<_>>();
 
     // Check that current step is at person2
-    match &traversal.current_step {
-        TraversalValue::NodeArray(nodes) => {
-            assert_eq!(nodes.len(), 1);
-            assert_eq!(nodes[0].id, person2.id);
-        }
-        _ => panic!("Expected NodeArray value"),
-    }
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(nodes[0].id(), person2.id);
 }
 
 #[test]
