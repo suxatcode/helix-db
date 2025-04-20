@@ -1,42 +1,78 @@
-use super::super::tr_val::TraversalVal;
-use crate::helix_engine::storage_core::{
-    storage_core::HelixGraphStorage, storage_methods::StorageMethods,
+use crate::{
+    helix_engine::{
+        graph_core::{
+            ops::tr_val::TraversalVal,
+            traversal_iter::{RoTraversalIterator},
+        },
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+    },
+    protocol::items::{Edge, Node},
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, RwTxn};
 use std::sync::Arc;
 
-pub struct OutVIterator<'a, I> {
+pub struct OutVIterator<'a, I, T> {
     iter: I,
     storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
+    txn: &'a T,
 }
 
 // implementing iterator for OutIterator
-impl<'a, I> Iterator for OutVIterator<'a, I>
+impl<'a, I> Iterator for OutVIterator<'a, I, RoTxn<'a>>
 where
-    I: Iterator<Item = TraversalVal>,
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
-    type Item = TraversalVal;
+    type Item = Result<TraversalVal, GraphError>;
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some(item) => match item {
-                TraversalVal::Edge(item) => Some(TraversalVal::Node(
+                Ok(TraversalVal::Edge(item)) => Some(Ok(TraversalVal::Node(
                     self.storage.get_node(self.txn, &item.to_node).unwrap(),
-                )), // TODO: handle unwrap
+                ))), // TODO: handle unwrap
                 _ => return None,
             },
             None => None,
         }
     }
 }
-pub trait OutVAdapter: Iterator {
-    fn out_v<'a>(self, db: Arc<HelixGraphStorage>, txn: &'a RoTxn<'a>) -> OutVIterator<'a, Self>
+
+impl<'a, I> Iterator for OutVIterator<'a, I, RwTxn<'a>>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+{
+    type Item = Result<TraversalVal, GraphError>;
+
+    /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            Some(item) => match item {
+                Ok(TraversalVal::Edge(item)) => Some(Ok(TraversalVal::Node(
+                    self.storage.get_node(self.txn, &item.to_node).unwrap(),
+                ))), // TODO: handle unwrap
+                _ => return None,
+            },
+            None => None,
+        }
+    }
+}
+pub trait OutVAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+    fn out_v(self, db: Arc<HelixGraphStorage>, txn: &'a T) -> OutVIterator<'a, Self, T>
     where
-        Self: Sized + Iterator<Item = TraversalVal> + 'a,
-        Self::Item: Send,
-    {
+        Self: Sized + Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
+        Self::Item: Send;
+}
+
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutVAdapter<'a, RoTxn<'a>>
+    for RoTraversalIterator<'a, I>
+{
+    fn out_v(
+        self,
+        db: Arc<HelixGraphStorage>,
+        txn: &'a RoTxn<'a>,
+    ) -> OutVIterator<'a, Self, RoTxn<'a>> {
         OutVIterator {
             iter: self,
             storage: db,
@@ -45,4 +81,18 @@ pub trait OutVAdapter: Iterator {
     }
 }
 
-impl<T: ?Sized> OutVAdapter for T where T: Iterator {}
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutVAdapter<'a, RwTxn<'a>>
+//     for RwTraversalIterator<'a, I>
+// {
+//     fn out_v(
+//         self,
+//         db: Arc<HelixGraphStorage>,
+//         txn: &'a RwTxn<'a>,
+//     ) -> OutVIterator<'a, Self, RwTxn<'a>> {
+//         OutVIterator {
+//             iter: self,
+//             storage: db,
+//             txn,
+//         }
+//     }
+// }

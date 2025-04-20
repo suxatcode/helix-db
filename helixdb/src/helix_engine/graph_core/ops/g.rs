@@ -6,7 +6,7 @@ use crate::{
     decode_str,
     helix_engine::{
         graph_core::traversal_iter::{
-            RoTraversalIterator, RoTraversalIteratorAdapter, RwTraversalIterator,
+            RoTraversalIterator,
         },
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
@@ -49,18 +49,18 @@ impl G {
         }
     }
 
-    pub fn new_mut<'a>(
-        storage: Arc<HelixGraphStorage>,
-        txn: &'a RwTxn<'a>,
-    ) -> RwTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        Self: Sized,
-    {
-        let iter = std::iter::once(Ok(TraversalVal::Empty));
-        RwTraversalIterator {
-            inner: iter,
-            storage,
-            txn,
-        }
-    }
+    // pub fn new_mut<'a>(
+    //     storage: Arc<HelixGraphStorage>,
+    //     txn: &'a RwTxn<'a>,
+    // ) -> RwTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    // where
+    //     Self: Sized,
+    // {
+    //     let iter = std::iter::once(Ok(TraversalVal::Empty));
+    //     RwTraversalIterator {
+    //         inner: iter,
+    //         storage,
+    //         txn,
+    //     }
+    // }
 }

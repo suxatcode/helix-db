@@ -7,7 +7,7 @@ use heed3::{
 
 use crate::{
     helix_engine::{
-        graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
+        graph_core::traversal_iter::{RoTraversalIterator},
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
@@ -81,23 +81,23 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a
     }
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a>
-    for RwTraversalIterator<'a, I>
-{
-    type OutputIter = RwTraversalIterator<'a, VFromId<'a, RwTxn<'a>>>;
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a>
+//     for RwTraversalIterator<'a, I>
+// {
+//     type OutputIter = RwTraversalIterator<'a, VFromId<'a, RwTxn<'a>>>;
 
-    fn v_from_id(self, id: &'a str) -> Self::OutputIter {
-        let v_from_id = VFromId {
-            iter: std::iter::once(Ok(TraversalVal::Empty)),
-            storage: Arc::clone(&self.storage),
-            txn: self.txn,
-            id,
-        };
+//     fn v_from_id(self, id: &'a str) -> Self::OutputIter {
+//         let v_from_id = VFromId {
+//             iter: std::iter::once(Ok(TraversalVal::Empty)),
+//             storage: Arc::clone(&self.storage),
+//             txn: self.txn,
+//             id,
+//         };
 
-        RwTraversalIterator {
-            inner: v_from_id,
-            storage: self.storage,
-            txn: self.txn,
-        }
-    }
-}
+//         RwTraversalIterator {
+//             inner: v_from_id,
+//             storage: self.storage,
+//             txn: self.txn,
+//         }
+//     }
+// }

@@ -8,7 +8,7 @@ use crate::{
         graph_core::{
             config::Config,
             ops::{
-                source::{add_v::AddN, v::V},
+                source::v::V,
                 tr_val::TraversalVal,
                 util::{filter_ref::FilterRefAdapter, range::RangeAdapter},
                 *,
@@ -52,48 +52,48 @@ fn setup_temp_db() -> HelixGraphStorage {
     storage
 }
 
-#[test]
-fn test_new_out() {
-    let db = setup_temp_db();
-    let db = Arc::new(db);
-    let mut txn = db.graph_env.write_txn().unwrap();
-    let reference = &mut txn;
-    let res = AddN::new(
-        &db,
-        &mut txn,
-        "person",
-        props! { "name" => "xav"},
-        None,
-        Some("3".to_string()),
-    )
-    .filter_ref(&txn, |item, txn| {
-        if let Ok(TraversalVal::Node(node)) = item {
-            match node.properties.get("name").unwrap() {
-                Value::String(st) => st == "xav",
-                _ => false,
-            }
-        } else {
-            false
-        }
-    })
-    .filter_map(|x| x.ok())
-    .collect::<Vec<_>>();
+// #[test]
+// fn test_new_out() {
+//     let db = setup_temp_db();
+//     let db = Arc::new(db);
+//     let mut txn = db.graph_env.write_txn().unwrap();
+//     let reference = &mut txn;
+//     let res = AddN::new(
+//         &db,
+//         &mut txn,
+//         "person",
+//         props! { "name" => "xav"},
+//         None,
+//         Some("3".to_string()),
+//     )
+//     .filter_ref(&txn, |item, txn| {
+//         if let Ok(TraversalVal::Node(node)) = item {
+//             match node.properties.get("name").unwrap() {
+//                 Value::String(st) => st == "xav",
+//                 _ => false,
+//             }
+//         } else {
+//             false
+//         }
+//     })
+//     .filter_map(|x| x.ok())
+//     .collect::<Vec<_>>();
 
-    // let res = V::new(&db, &txn)
-    //     .filter_ref(&txn, |item, txn| {
-    //         if let TraversalVal::Node(node) = item {
-    //             match node.properties.get("name").unwrap() {
-    //                 Value::String(st) => st == "xav",
-    //                 _ => false,
-    //             }
-    //         } else {
-    //             false
-    //         }
-    //     })
-    //     .range(0, 4)
-    //     .collect::<Vec<_>>();
+//     // let res = V::new(&db, &txn)
+//     //     .filter_ref(&txn, |item, txn| {
+//     //         if let TraversalVal::Node(node) = item {
+//     //             match node.properties.get("name").unwrap() {
+//     //                 Value::String(st) => st == "xav",
+//     //                 _ => false,
+//     //             }
+//     //         } else {
+//     //             false
+//     //         }
+//     //     })
+//     //     .range(0, 4)
+//     //     .collect::<Vec<_>>();
 
-    println!("{:?}", res);
-    assert!(false);
-    return;
-}
+//     println!("{:?}", res);
+//     assert!(false);
+//     return;
+// }

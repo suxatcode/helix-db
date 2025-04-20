@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use heed3::{types::Bytes, RoTxn};
+use heed3::{types::Bytes, RoTxn, RwTxn};
 
 use crate::{
     decode_str,
-    helix_engine::storage_core::{
-        storage_core::HelixGraphStorage, storage_methods::StorageMethods,
+    helix_engine::{
+        graph_core::traversal_iter::RoTraversalIterator,
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
     },
     protocol::{
         filterable::{Filterable, FilterableType},
@@ -15,25 +17,43 @@ use crate::{
 
 use super::super::tr_val::{Traversable, TraversalVal};
 
-pub struct InNodesIterator<'a> {
+pub struct InNodesIterator<'a, T> {
     iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
     storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
+    txn: &'a T,
     edge_label: &'a str,
 }
 
-// implementing iterator for InNodesIterator
-impl<'a> Iterator for InNodesIterator<'a> {
-    type Item = TraversalVal;
+// implementing iterator for OutIterator
+impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a>> {
+    type Item = Result<TraversalVal, GraphError>;
 
-    /// Returns the next incoming node by decoding the edge id and then getting the edge and node
+    /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Ok((_, value))) = self.iter.next() {
             let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
                 if self.edge_label.is_empty() || edge.label == self.edge_label {
                     if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
-                        return Some(TraversalVal::Node(node));
+                        return Some(Ok(TraversalVal::Node(node)));
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+impl<'a> Iterator for InNodesIterator<'a, RwTxn<'a>> {
+    type Item = Result<TraversalVal, GraphError>;
+
+    /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(Ok((_, value))) = self.iter.next() {
+            let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
+            if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
+                if self.edge_label.is_empty() || edge.label == self.edge_label {
+                    if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
+                        return Some(Ok(TraversalVal::Node(node)));
                     }
                 }
             }
@@ -42,64 +62,120 @@ impl<'a> Iterator for InNodesIterator<'a> {
     }
 }
 
-pub struct InNodes<'a, I: Iterator<Item = TraversalVal>, F>
+pub struct InNodes<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, F, T>
 where
-    F: FnMut(TraversalVal) -> InNodesIterator<'a>,
+    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, T>,
+    InNodesIterator<'a, T>: std::iter::Iterator,
+    T: 'a,
 {
     iter: std::iter::Flatten<std::iter::Map<I, F>>,
 }
 
-impl<'a, I, F> Iterator for InNodes<'a, I, F>
+impl<'a, I, F> Iterator for InNodes<'a, I, F, RoTxn<'a>>
 where
-    I: Iterator<Item = TraversalVal>,
-    F: FnMut(TraversalVal) -> InNodesIterator<'a>,
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RoTxn<'a>>,
 {
-    type Item = TraversalVal;
+    type Item = Result<TraversalVal, GraphError>;
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-pub trait InAdapter: Iterator {
-    fn in_<'a>(
+impl<'a, I, F> Iterator for InNodes<'a, I, F, RwTxn<'a>>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RwTxn<'a>>,
+{
+    type Item = Result<TraversalVal, GraphError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub trait InAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+    fn in_(
         self,
-        db: Arc<HelixGraphStorage>,
-        txn: &'a RoTxn<'a>,
         edge_label: &'a str,
-    ) -> InNodes<'a, Self, impl FnMut(TraversalVal) -> InNodesIterator<'a>>
+    ) -> InNodes<'a, Self, impl FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, T>, T>
     where
-        Self: Sized + Iterator<Item = TraversalVal> + 'a,
-        Self::Item: Send,
-    {
-        // iterate through the iterator and create a new iterator on the out edges
-        let db = Arc::clone(&db);
-        let iter = self
-            .map(move |item| in_nodes(item, db.clone(), txn, edge_label))
-            .flatten();
-        InNodes { iter }
+        InNodesIterator<'a, T>: std::iter::Iterator;
+}
+
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a, RoTxn<'a>>
+    for RoTraversalIterator<'a, I>
+{
+    fn in_(
+        self,
+        edge_label: &'a str,
+    ) -> InNodes<
+        'a,
+        Self,
+        impl FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RoTxn<'a>>,
+        RoTxn<'a>,
+    > {
+        {
+            // iterate through the iterator and create a new iterator on the out edges
+            let db = Arc::clone(&self.storage);
+            let storage = Arc::clone(&self.storage);
+            let txn = self.txn;
+            let iter = self
+                .map(move |item| {
+                    let prefix = HelixGraphStorage::out_edge_key(item.unwrap().id(), "");
+                    let iter = db
+                        .in_edges_db
+                        .lazily_decode_data()
+                        .prefix_iter(txn, &prefix)
+                        .unwrap();
+
+                    InNodesIterator {
+                        iter,
+                        storage: Arc::clone(&storage),
+                        txn,
+                        edge_label,
+                    }
+                })
+                .flatten();
+            InNodes { iter }
+        }
     }
 }
 
-/// Returns an iterator over the out nodes of the given node
-pub fn in_nodes<'a>(
-    item: TraversalVal,
-    db: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
-    edge_label: &'a str,
-) -> InNodesIterator<'a> {
-    let prefix = HelixGraphStorage::out_edge_key(item.id(), "");
-    let iter = db
-        .out_edges_db
-        .lazily_decode_data()
-        .prefix_iter(txn, &prefix)
-        .unwrap();
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a, RwTxn<'a>>
+//     for RwTraversalIterator<'a, I>
+// {
+//     fn in_(
+//         self,
+//         edge_label: &'a str,
+//     ) -> InNodes<
+//         'a,
+//         Self,
+//         impl FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RwTxn<'a>>,
+//         RwTxn<'a>,
+//     > {
+//         {
+//             // iterate through the iterator and create a new iterator on the out edges
+//             let db = Arc::clone(&self.storage);
+//             let storage = Arc::clone(&self.storage);
+//             let txn = self.txn;
+//             let iter = self
+//                 .map(move |item| {
+//                     let prefix = HelixGraphStorage::out_edge_key(item.unwrap().id(), "");
+//                     let iter = db
+//                         .in_edges_db
+//                         .lazily_decode_data()
+//                         .prefix_iter(txn, &prefix)
+//                         .unwrap();
 
-    InNodesIterator {
-        iter,
-        storage: db,
-        txn,
-        edge_label,
-    }
-}
-
-impl<T: ?Sized> InAdapter for T where T: Iterator {}
+//                     InNodesIterator {
+//                         iter,
+//                         storage: Arc::clone(&storage),
+//                         txn,
+//                         edge_label,
+//                     }
+//                 })
+//                 .flatten();
+//             InNodes { iter }
+//         }
+//     }
+// }

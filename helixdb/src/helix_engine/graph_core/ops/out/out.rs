@@ -5,7 +5,7 @@ use heed3::{types::Bytes, RoTxn, RwTxn};
 use crate::{
     decode_str,
     helix_engine::{
-        graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
+        graph_core::traversal_iter::{RoTraversalIterator},
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
@@ -146,41 +146,41 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
     }
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'a, RwTxn<'a>>
-    for RwTraversalIterator<'a, I>
-{
-    fn out(
-        self,
-        edge_label: &'a str,
-    ) -> OutNodes<
-        'a,
-        Self,
-        impl FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, RwTxn<'a>>,
-        RwTxn<'a>,
-    > {
-        {
-            // iterate through the iterator and create a new iterator on the out edges
-            let db = Arc::clone(&self.storage);
-            let storage = Arc::clone(&self.storage);
-            let txn = self.txn;
-            let iter = self
-                .map(move |item| {
-                    let prefix = HelixGraphStorage::out_edge_key(item.unwrap().id(), "");
-                    let iter = db
-                        .out_edges_db
-                        .lazily_decode_data()
-                        .prefix_iter(txn, &prefix)
-                        .unwrap();
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'a, RwTxn<'a>>
+//     for RwTraversalIterator<'a, I>
+// {
+//     fn out(
+//         self,
+//         edge_label: &'a str,
+//     ) -> OutNodes<
+//         'a,
+//         Self,
+//         impl FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, RwTxn<'a>>,
+//         RwTxn<'a>,
+//     > {
+//         {
+//             // iterate through the iterator and create a new iterator on the out edges
+//             let db = Arc::clone(&self.storage);
+//             let storage = Arc::clone(&self.storage);
+//             let txn = self.txn;
+//             let iter = self
+//                 .map(move |item| {
+//                     let prefix = HelixGraphStorage::out_edge_key(item.unwrap().id(), "");
+//                     let iter = db
+//                         .out_edges_db
+//                         .lazily_decode_data()
+//                         .prefix_iter(txn, &prefix)
+//                         .unwrap();
 
-                    OutNodesIterator {
-                        iter,
-                        storage: Arc::clone(&storage),
-                        txn,
-                        edge_label,
-                    }
-                })
-                .flatten();
-            OutNodes { iter }
-        }
-    }
-}
+//                     OutNodesIterator {
+//                         iter,
+//                         storage: Arc::clone(&storage),
+//                         txn,
+//                         edge_label,
+//                     }
+//                 })
+//                 .flatten();
+//             OutNodes { iter }
+//         }
+//     }
+// }
