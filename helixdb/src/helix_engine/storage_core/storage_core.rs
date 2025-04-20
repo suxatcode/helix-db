@@ -445,13 +445,19 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter {
             let (_, value) = result?;
             let edge_id = decode_str!(value);
-            if edge_label.is_empty() {
-                let edge = self.get_edge(txn, edge_id)?;
-                if let Ok(node) = self.get_node(txn, &edge.to_node) {
-                    nodes.push(node);
+
+            match self.get_edge(txn, edge_id) {
+                Ok(edge) => {
+                    if let Ok(node) = self.get_node(txn, &edge.to_node) {
+                        nodes.push(node);
+                    }
+                }
+                Err(e) => {
+                    println!("error: {:?}", e);
                 }
             }
         }
+        // println!("nodes: {:?}", nodes.len());
 
         Ok(nodes)
     }
@@ -472,11 +478,14 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter {
             let (_, value) = result?;
             let edge_id = decode_str!(value);
-            let edge = self.get_edge(txn, edge_id)?;
-
-            if edge_label.is_empty() || edge.label == edge_label {
-                if let Ok(node) = self.get_node(txn, &edge.from_node) {
-                    nodes.push(node);
+            match self.get_edge(txn, edge_id) {
+                Ok(edge) => {
+                    if let Ok(node) = self.get_node(txn, &edge.from_node) {
+                        nodes.push(node);
+                    }
+                }
+                Err(e) => {
+                    println!("error: {:?}", e);
                 }
             }
         }

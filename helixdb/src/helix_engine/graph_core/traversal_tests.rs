@@ -1,6 +1,7 @@
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
+    time::Instant,
 };
 
 use crate::helix_engine::{
@@ -14,7 +15,7 @@ use crate::helix_engine::{
                 n::NAdapter, n_from_id::NFromIdAdapter,
             },
             tr_val::{Traversable, TraversalVal},
-            util::range::RangeAdapter,
+            util::{dedup::DedupAdapter, range::RangeAdapter},
         },
         traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSearchMethods},
     },
@@ -29,6 +30,7 @@ use crate::protocol::{
     value::Value,
 };
 use heed3::RoTxn;
+use rand::Rng;
 use tempfile::TempDir;
 
 use super::{
@@ -1205,3 +1207,109 @@ fn test_out_n() {
 //     assert_eq!(nodes[2].id, users[1].id); // Bob
 //     assert_eq!(nodes[3].id, users[0].id); // Alice
 // }
+
+#[test]
+fn huge_traversal() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let mut nodes = Vec::with_capacity(1_000_000);
+
+    for i in 0..40_000 {
+        let node = storage
+            .create_node(&mut txn, "person", props! { "name" => i}, None, None)
+            .unwrap();
+        nodes.push(node);
+
+        for _ in 0..3 {
+            let random_node = &nodes[rand::rng().random_range(0..nodes.len())];
+            storage
+                .create_edge(
+                    &mut txn,
+                    "knows",
+                    &nodes[i as usize].id,
+                    &random_node.id,
+                    props!(),
+                )
+                .unwrap();
+        }
+        if i % 1000 == 0 {
+            println!("created {} nodes", i);
+        }
+    }
+    txn.commit().unwrap();
+
+    let txn = storage.graph_env.read_txn().unwrap();
+    let now = Instant::now();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n()
+        .out_e("knows")
+        .to_n()
+        .out("knows")
+        .filter_ref(|val, _| {
+            if let Ok(TraversalVal::Node(node)) = val {
+                if let Some(value) = node.check_property("name") {
+                    match value {
+                        Value::Integer(name) => return *name < 1000,
+                        _ => return false,
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        })
+        .out("knows")
+        .out("knows")
+        .out("knows")
+        .out("knows")
+        .dedup()
+        .range(0, 100)
+        .collect_to::<Vec<_>>();
+    println!("optimized version time: {:?}", now.elapsed());
+    println!("traversal: {:?}", traversal.len());
+    txn.commit().unwrap();
+
+    let txn = storage.graph_env.read_txn().unwrap();
+    let now = Instant::now();
+    let mut tr = TraversalBuilder::new(
+        Arc::clone(&storage), 
+        TraversalValue::Empty);
+    tr.v(&txn)
+        .out_e(&txn, "knows")
+        .in_v(&txn)
+        .out(&txn, "knows")
+        .filter_nodes(&txn, |val| {
+            if let Some(value) = val.check_property("name") {
+                match value {
+                    Value::Integer(name) => return Ok(*name < 1000),
+                    _ => return Err(GraphError::Default),
+                }
+            } else {
+                return Err(GraphError::Default);
+            }
+        })
+        .out(&txn, "knows")
+        .out(&txn, "knows")
+        .out(&txn, "knows")
+        .out(&txn, "knows")
+        .range(0, 100);
+
+    let result = tr.finish();
+    println!("original version time: {:?}", now.elapsed());
+    println!(
+        "traversal: {:?}",
+        match result {
+            Ok(TraversalValue::NodeArray(nodes)) => nodes.len(),
+            Err(e) => {
+                println!("error: {:?}", e);
+                0
+            }
+            _ => {
+                println!("error: {:?}", result);
+                0
+            }
+        }
+    );
+}

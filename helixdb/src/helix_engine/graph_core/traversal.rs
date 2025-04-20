@@ -346,6 +346,7 @@ impl TraversalSteps for TraversalBuilder {
                 self.current_step = TraversalValue::NodeArray(new_current);
             }
         } else {
+            println!("error: {:?}", self.current_step);
             self.current_step = TraversalValue::Empty;
         }
         self.store_error(e);

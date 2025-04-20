@@ -3,7 +3,7 @@ use std::sync::Arc;
 use heed3::{RoTxn, RwTxn};
 
 use crate::helix_engine::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
-
+use itertools::Itertools;
 use super::ops::tr_val::TraversalVal;
 
 pub struct RoTraversalIterator<'a, I> {
@@ -27,6 +27,10 @@ where
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterator<'a, I> {
     pub fn collect_to<B: FromIterator<TraversalVal>>(self) -> B {
         self.inner.filter_map(|item| item.ok()).collect::<B>()
+    }
+
+    pub fn collect_dedup<B: FromIterator<TraversalVal>>(self) -> B {
+        self.inner.filter_map(|item| item.ok()).unique().collect::<B>()
     }
 }
 pub struct RwTraversalIterator<'a, 'b, I> {
