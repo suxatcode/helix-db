@@ -1,25 +1,19 @@
-use crate::{
-    helix_engine::{
-        graph_core::{
-            ops::tr_val::TraversalVal,
-            traversal_iter::{RoTraversalIterator},
-        },
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-        types::GraphError,
-    },
-    protocol::items::{Edge, Node},
+use crate::helix_engine::{
+    graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
+    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+    types::GraphError,
 };
 use heed3::{RoTxn, RwTxn};
 use std::sync::Arc;
 
-pub struct OutVIterator<'a, I, T> {
+pub struct ToNIterator<'a, I, T> {
     iter: I,
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
 }
 
 // implementing iterator for OutIterator
-impl<'a, I> Iterator for OutVIterator<'a, I, RoTxn<'a>>
+impl<'a, I> Iterator for ToNIterator<'a, I, RoTxn<'a>>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -39,7 +33,7 @@ where
     }
 }
 
-impl<'a, I> Iterator for OutVIterator<'a, I, RwTxn<'a>>
+impl<'a, I> Iterator for ToNIterator<'a, I, RwTxn<'a>>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -58,38 +52,40 @@ where
         }
     }
 }
-pub trait OutVAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
-    fn out_v(self, db: Arc<HelixGraphStorage>, txn: &'a T) -> OutVIterator<'a, Self, T>
-    where
-        Self: Sized + Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
-        Self::Item: Send;
+pub trait ToNAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+    fn to_n(
+        self,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutVAdapter<'a, RoTxn<'a>>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ToNAdapter<'a, RoTxn<'a>>
     for RoTraversalIterator<'a, I>
 {
-    fn out_v(
+    fn to_n(
         self,
-        db: Arc<HelixGraphStorage>,
-        txn: &'a RoTxn<'a>,
-    ) -> OutVIterator<'a, Self, RoTxn<'a>> {
-        OutVIterator {
-            iter: self,
-            storage: db,
-            txn,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+        let iter = ToNIterator {
+            iter: self.inner,
+            storage: Arc::clone(&self.storage),
+            txn: self.txn,
+        };
+        RoTraversalIterator {
+            inner: iter,
+            storage: self.storage,
+            txn: self.txn,
         }
     }
 }
 
-// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutVAdapter<'a, RwTxn<'a>>
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InVAdapter<'a, RwTxn<'a>>
 //     for RwTraversalIterator<'a, I>
 // {
-//     fn out_v(
+//     fn in_v(
 //         self,
 //         db: Arc<HelixGraphStorage>,
 //         txn: &'a RwTxn<'a>,
-//     ) -> OutVIterator<'a, Self, RwTxn<'a>> {
-//         OutVIterator {
+//     ) -> InVIterator<'a, Self, RwTxn<'a>> {
+//         InVIterator {
 //             iter: self,
 //             storage: db,
 //             txn,

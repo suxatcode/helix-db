@@ -1,7 +1,12 @@
+use crate::{
+    helix_engine::vector_core::vector::HVector,
+    protocol::{
+        items::{Edge, Node},
+        traversal_value::TraversalValue,
+        value::Value,
+    },
+};
 use heed3::{RoTxn, RwTxn};
-use crate::{helix_engine::vector_core::vector::HVector, protocol::{
-    items::{Edge, Node}, traversal_value::TraversalValue, value::Value
-}};
 
 use crate::helix_engine::types::GraphError;
 
@@ -28,12 +33,7 @@ pub trait SourceTraversalSteps {
 
     // fn e_from_type(&mut self, txn: &RoTxn, edge_label: &str) -> &mut Self;
 
-    fn v_from_secondary_index(
-        &mut self,
-        txn: &RoTxn,
-        index: &str,
-        value: &Value,
-    ) -> &mut Self;
+    fn v_from_secondary_index(&mut self, txn: &RoTxn, index: &str, value: &Value) -> &mut Self;
 
     /// Creates a new node in the graph and adds it to current traversal step
     fn add_v(
@@ -270,24 +270,29 @@ pub trait TraversalBuilderMethods {
 
 pub trait TraversalSearchMethods {
     /// Finds the shortest path from a given node to the currnet node using BFS
-    fn shortest_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self;
+    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: &str) -> &mut Self;
 
     /// Finds the shortes path from the current node to a given node using BFS
-    fn shortest_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self;
+    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self;
 
     /// Finds the shortes path between two given nodes using BFS
-    fn shortest_path_between(&mut self, txn: &RoTxn, from_id: &str, to_id: &str) -> &mut Self;
+    fn shortest_path_between(
+        &mut self,
+        txn: &RoTxn,
+        edge_label: &str,
+        from_id: &str,
+        to_id: &str,
+    ) -> &mut Self;
 
-    // fn shortest_mutual_path_between(
-    //     &mut self,
-    //     txn: &RoTxn,
-    //     from_id: &str,
-    //     to_id: &str,
-    // ) -> &mut Self;
+    fn shortest_mutual_path_from(
+        &mut self,
+        txn: &RoTxn,
+        edge_label: &str,
+        from_id: &str,
+    ) -> &mut Self;
 
-    fn shortest_mutual_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self;
-
-    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self;
+    /// Finds the shortest mutual path from the current node to a given node using BFS
+    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self;
 }
 
 pub trait VectorTraversalSteps {

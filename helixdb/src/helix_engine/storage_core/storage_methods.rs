@@ -132,6 +132,7 @@ pub trait SearchMethods {
     fn shortest_path(
         &self,
         txn: &RoTxn<'_>,
+        edge_label: &str,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;
@@ -139,6 +140,7 @@ pub trait SearchMethods {
     fn shortest_mutual_path(
         &self,
         txn: &RoTxn<'_>,
+        edge_label: &str,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError>;

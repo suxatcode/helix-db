@@ -1,4 +1,4 @@
-use crate::helix_engine::types::GraphError;
+use crate::helix_engine::{graph_core::traversal_iter::RoTraversalIterator, types::GraphError};
 
 use super::super::tr_val::TraversalVal;
 use heed3::RoTxn;
@@ -18,27 +18,44 @@ where
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            Some(item) => match (self.f)(&item, &self.txn) {
-                true => Some(item),
-                false => None,
+        while let Some(item) = self.iter.next() {
+            if (self.f)(&item, &self.txn) {
+                return Some(item);
+            }
+        }
+        None
+    }
+}
+
+pub trait FilterRefAdapter<'a>: Iterator + Sized {
+    /// FilterRef filters the iterator by taking a reference
+    /// to each item and a transaction.
+    fn filter_ref<F>(
+        self,
+        f: F,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&Result<TraversalVal, GraphError>, &RoTxn) -> bool;
+}
+
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> FilterRefAdapter<'a>
+    for RoTraversalIterator<'a, I>
+{
+    fn filter_ref<F>(
+        self,
+        f: F,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&Result<TraversalVal, GraphError>, &RoTxn) -> bool,
+    {
+        RoTraversalIterator {
+            inner: FilterRef {
+                iter: self.inner,
+                txn: self.txn,
+                f,
             },
-            None => None,
+            storage: self.storage,
+            txn: self.txn,
         }
     }
 }
-
-pub trait FilterRefAdapter: Iterator {
-    /// FilterRef filters the iterator by taking a reference
-    /// to each item and a transaction.
-    fn filter_ref<'a, F>(self, txn: &'a RoTxn<'a>, f: F) -> FilterRef<'a, Self, F>
-    where
-        Self: Sized + Iterator,
-        Self::Item: Send,
-        F: Fn(&Self::Item, &RoTxn) -> bool,
-    {
-        FilterRef { iter: self, txn, f }
-    }
-}
-
-impl<T: ?Sized> FilterRefAdapter for T where T: Iterator {}

@@ -865,10 +865,16 @@ impl TraversalMethods for TraversalBuilder {
 }
 
 impl TraversalSearchMethods for TraversalBuilder {
-    fn shortest_path_between(&mut self, txn: &RoTxn, from_id: &str, to_id: &str) -> &mut Self {
+    fn shortest_path_between(
+        &mut self,
+        txn: &RoTxn,
+        edge_label: &str,
+        from_id: &str,
+        to_id: &str,
+    ) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let paths = {
-            match s.shortest_path(txn, from_id, to_id) {
+            match s.shortest_path(txn, edge_label, from_id, to_id) {
                 Ok(paths) => paths,
                 Err(err) => {
                     // self.store_error(err);
@@ -885,7 +891,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self {
+    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self {
         let mut paths = Vec::with_capacity(24);
         let nodes = match &self.current_step {
             TraversalValue::NodeArray(nodes) => nodes.clone(),
@@ -898,7 +904,7 @@ impl TraversalSearchMethods for TraversalBuilder {
             }
         };
         for node in nodes {
-            match self.storage.shortest_path(txn, &node.id, to_id) {
+            match self.storage.shortest_path(txn, edge_label, &node.id, to_id) {
                 Ok(path) => paths.push(path),
                 Err(e) => self.store_error(e),
             }
@@ -907,14 +913,17 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self {
+    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: &str) -> &mut Self {
         let mut paths = Vec::with_capacity(24);
         let nodes = match &self.current_step {
             TraversalValue::NodeArray(nodes) => nodes.clone(),
             _ => unreachable!(),
         };
         for node in nodes {
-            match self.storage.shortest_path(txn, from_id, &node.id) {
+            match self
+                .storage
+                .shortest_path(txn, edge_label, from_id, &node.id)
+            {
                 Ok(path) => paths.push(path),
                 Err(e) => self.store_error(e),
             }
@@ -923,7 +932,12 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_mutual_path_from(&mut self, txn: &RoTxn, from_id: &str) -> &mut Self {
+    fn shortest_mutual_path_from(
+        &mut self,
+        txn: &RoTxn,
+        edge_label: &str,
+        from_id: &str,
+    ) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let mut e = GraphError::Empty;
         let nodes = match &self.current_step {
@@ -940,7 +954,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         let mut paths = Vec::with_capacity(24);
 
         for node in nodes {
-            match s.shortest_mutual_path(txn, from_id, &node.id) {
+            match s.shortest_mutual_path(txn, edge_label, from_id, &node.id) {
                 Ok(path) => {
                     paths.push(path);
                 }
@@ -955,7 +969,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, to_id: &str) -> &mut Self {
+    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let mut e = GraphError::Empty;
         let nodes = match &self.current_step {
@@ -972,7 +986,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         let mut paths = Vec::with_capacity(24);
 
         for node in nodes {
-            match s.shortest_mutual_path(txn, &node.id, to_id) {
+            match s.shortest_mutual_path(txn, edge_label, &node.id, to_id) {
                 Ok(path) => {
                     paths.push(path);
                 }

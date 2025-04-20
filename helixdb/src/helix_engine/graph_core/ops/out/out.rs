@@ -2,17 +2,10 @@ use std::sync::Arc;
 
 use heed3::{types::Bytes, RoTxn, RwTxn};
 
-use crate::{
-    decode_str,
-    helix_engine::{
-        graph_core::traversal_iter::{RoTraversalIterator},
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-        types::GraphError,
-    },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
-    },
+use crate::helix_engine::{
+    graph_core::traversal_iter::RoTraversalIterator,
+    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+    types::GraphError,
 };
 
 use super::super::tr_val::{Traversable, TraversalVal};
@@ -33,10 +26,8 @@ impl<'a> Iterator for OutNodesIterator<'a, RoTxn<'a>> {
         while let Some(Ok((_, value))) = self.iter.next() {
             let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
-                if self.edge_label.is_empty() || edge.label == self.edge_label {
-                    if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
-                        return Some(Ok(TraversalVal::Node(node)));
-                    }
+                if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
+                    return Some(Ok(TraversalVal::Node(node)));
                 }
             }
         }
@@ -51,10 +42,8 @@ impl<'a> Iterator for OutNodesIterator<'a, RwTxn<'a>> {
         while let Some(Ok((_, value))) = self.iter.next() {
             let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
-                if self.edge_label.is_empty() || edge.label == self.edge_label {
-                    if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
-                        return Some(Ok(TraversalVal::Node(node)));
-                    }
+                if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
+                    return Some(Ok(TraversalVal::Node(node)));
                 }
             }
         }
@@ -97,14 +86,10 @@ pub trait OutAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> +
     fn out(
         self,
         edge_label: &'a str,
-    ) -> OutNodes<
-        'a,
-        Self,
-        impl FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, T>,
-        T,
-    >
-    where
-        OutNodesIterator<'a, T>: std::iter::Iterator;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    // where
+    //     OutNodesIterator<'a, T>: std::iter::Iterator,
+    //     T: 'a;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'a, RoTxn<'a>>
@@ -113,20 +98,17 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
     fn out(
         self,
         edge_label: &'a str,
-    ) -> OutNodes<
-        'a,
-        Self,
-        impl FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, RoTxn<'a>>,
-        RoTxn<'a>,
-    > {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         {
             // iterate through the iterator and create a new iterator on the out edges
             let db = Arc::clone(&self.storage);
             let storage = Arc::clone(&self.storage);
             let txn = self.txn;
             let iter = self
+                .inner
                 .map(move |item| {
-                    let prefix = HelixGraphStorage::out_edge_key(item.unwrap().id(), "");
+                    let prefix =
+                        HelixGraphStorage::out_edge_key(item.unwrap().id(), edge_label, "");
                     let iter = db
                         .out_edges_db
                         .lazily_decode_data()
@@ -135,13 +117,18 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
 
                     OutNodesIterator {
                         iter,
-                        storage: Arc::clone(&storage),
+                        storage: Arc::clone(&db),
                         txn,
                         edge_label,
                     }
                 })
                 .flatten();
-            OutNodes { iter }
+
+            RoTraversalIterator {
+                inner: OutNodes { iter },
+                storage,
+                txn,
+            }
         }
     }
 }

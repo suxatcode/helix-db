@@ -3,8 +3,10 @@ use std::sync::Arc;
 use heed3::{RoTxn, RwTxn};
 
 use crate::{
-    helix_engine::storage_core::{
-        storage_core::HelixGraphStorage, storage_methods::StorageMethods,
+    helix_engine::{
+        graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
     },
     protocol::{
         filterable::{Filterable, FilterableType},
@@ -22,7 +24,7 @@ pub struct Range<I> {
 // implementing iterator for Range
 impl<I> Iterator for Range<I>
 where
-    I: Iterator,
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
     type Item = I::Item;
 
@@ -34,7 +36,7 @@ where
                 None => return None, // out of items
             }
         }
-        
+
         // return between start and end
         if self.curr_idx < self.end {
             match self.iter.next() {
@@ -51,20 +53,41 @@ where
     }
 }
 
-pub trait RangeAdapter: Iterator {
+pub trait RangeAdapter<'a>: Iterator {
     /// Range returns a slice of the current step between two points
-    fn range(self, start: usize, end: usize) -> Range<Self>
+    fn range(
+        self,
+        start: usize,
+        end: usize,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        Self: Sized + Iterator,
+        Self::Item: Send;
+}
+
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> RangeAdapter<'a>
+    for RoTraversalIterator<'a, I>
+{
+    fn range(
+        self,
+        start: usize,
+        end: usize,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         Self: Sized + Iterator,
         Self::Item: Send,
     {
-        Range {
-            iter: self,
-            curr_idx: 0,
-            start,
-            end,
+        {
+            RoTraversalIterator {
+                inner: Range {
+                    iter: self.inner,
+                    curr_idx: 0,
+                    start,
+                    end,
+                },
+                storage: Arc::clone(&self.storage),
+                txn: self.txn,
             }
         }
     }
-
-impl<T: ?Sized> RangeAdapter for T where T: Iterator {}
+}

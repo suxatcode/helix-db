@@ -158,23 +158,27 @@ impl HelixGraphStorage {
     }
 
     #[inline(always)]
-    pub fn out_edge_key(source_node_id: &str, sink_node_id: &str) -> Vec<u8> {
+    pub fn out_edge_key(source_node_id: &str, label: &str, to_node_id: &str) -> Vec<u8> {
         [
             OUT_EDGES_PREFIX,
             source_node_id.as_bytes(),
             b":",
-            sink_node_id.as_bytes(),
+            label.as_bytes(),
+            b":",
+            to_node_id.as_bytes(),
         ]
         .concat()
     }
 
     #[inline(always)]
-    pub fn in_edge_key(sink_node_id: &str, source_node_id: &str) -> Vec<u8> {
+    pub fn in_edge_key(to_node_id: &str, label: &str, from_node_id: &str) -> Vec<u8> {
         [
             IN_EDGES_PREFIX,
-            sink_node_id.as_bytes(),
+            to_node_id.as_bytes(),
             b":",
-            source_node_id.as_bytes(),
+            label.as_bytes(),
+            b":",
+            from_node_id.as_bytes(),
         ]
         .concat()
     }
@@ -271,13 +275,13 @@ impl HelixGraphStorage {
         // Store edge - node maps
         self.out_edges_db.put(
             txn,
-            &Self::out_edge_key(from_node, to_node),
+            &Self::out_edge_key(from_node, label, to_node),
             &edge.id.as_bytes(),
         )?;
 
         self.in_edges_db.put(
             txn,
-            &Self::in_edge_key(to_node, from_node),
+            &Self::in_edge_key(to_node, label, from_node),
             &edge.id.as_bytes(),
         )?;
 
@@ -379,7 +383,7 @@ impl StorageMethods for HelixGraphStorage {
     ) -> Result<Vec<Edge>, GraphError> {
         let mut edges = Vec::with_capacity(512);
 
-        let prefix = Self::out_edge_key(node_id, "");
+        let prefix = Self::out_edge_key(node_id, edge_label, "");
         let iter = self
             .out_edges_db
             .lazily_decode_data()
@@ -406,7 +410,7 @@ impl StorageMethods for HelixGraphStorage {
     ) -> Result<Vec<Edge>, GraphError> {
         let mut edges = Vec::with_capacity(512);
 
-        let prefix = Self::in_edge_key(node_id, "");
+        let prefix = Self::in_edge_key(node_id, edge_label, "");
         let iter = self
             .in_edges_db
             .lazily_decode_data()
@@ -432,7 +436,7 @@ impl StorageMethods for HelixGraphStorage {
         edge_label: &str,
     ) -> Result<Vec<Node>, GraphError> {
         let mut nodes = Vec::with_capacity(512);
-        let prefix = Self::out_edge_key(node_id, "");
+        let prefix = Self::out_edge_key(node_id, edge_label, "");
         let iter = self
             .out_edges_db
             .lazily_decode_data()
@@ -441,9 +445,8 @@ impl StorageMethods for HelixGraphStorage {
         for result in iter {
             let (_, value) = result?;
             let edge_id = decode_str!(value);
-            let edge = self.get_edge(txn, edge_id)?;
-
-            if edge_label.is_empty() || edge.label == edge_label {
+            if edge_label.is_empty() {
+                let edge = self.get_edge(txn, edge_id)?;
                 if let Ok(node) = self.get_node(txn, &edge.to_node) {
                     nodes.push(node);
                 }
@@ -460,7 +463,7 @@ impl StorageMethods for HelixGraphStorage {
         edge_label: &str,
     ) -> Result<Vec<Node>, GraphError> {
         let mut nodes = Vec::with_capacity(512);
-        let prefix = Self::in_edge_key(node_id, "");
+        let prefix = Self::in_edge_key(node_id, edge_label, "");
         let iter = self
             .in_edges_db
             .lazily_decode_data()
@@ -635,13 +638,13 @@ impl StorageMethods for HelixGraphStorage {
         // Store edge - node maps
         self.out_edges_db.put(
             txn,
-            &Self::out_edge_key(from_node, to_node),
+            &Self::out_edge_key(from_node, label, to_node),
             &edge.id.as_bytes(),
         )?;
 
         self.in_edges_db.put(
             txn,
-            &Self::in_edge_key(to_node, from_node),
+            &Self::in_edge_key(to_node, label, from_node),
             &edge.id.as_bytes(),
         )?;
 
@@ -653,7 +656,7 @@ impl StorageMethods for HelixGraphStorage {
         let node = self.get_node(txn, id)?;
 
         // Delete outgoing edges
-        let out_prefix = Self::out_edge_key(id, "");
+        let out_prefix = Self::out_edge_key(id, "", "");
         let mut out_edges = Vec::new();
         {
             let iter = self
@@ -673,7 +676,7 @@ impl StorageMethods for HelixGraphStorage {
         }
 
         // Delete incoming edges
-        let in_prefix = Self::in_edge_key(id, "");
+        let in_prefix = Self::in_edge_key(id, "", "");
         let mut in_edges = Vec::new();
         {
             let iter = self
@@ -699,10 +702,14 @@ impl StorageMethods for HelixGraphStorage {
 
             self.edge_labels_db
                 .delete(txn, &Self::edge_label_key(&edge.label, &edge.id))?;
-            self.out_edges_db
-                .delete(txn, &Self::out_edge_key(&edge.from_node, &edge.to_node))?;
-            self.in_edges_db
-                .delete(txn, &Self::in_edge_key(&edge.to_node, &edge.from_node))?;
+            self.out_edges_db.delete(
+                txn,
+                &Self::out_edge_key(&edge.from_node, &edge.to_node, &edge.id),
+            )?;
+            self.in_edges_db.delete(
+                txn,
+                &Self::in_edge_key(&edge.to_node, &edge.from_node, &edge.id),
+            )?;
         }
 
         // Delete node data and label
@@ -725,10 +732,14 @@ impl StorageMethods for HelixGraphStorage {
         self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
         self.edge_labels_db
             .delete(txn, &Self::edge_label_key(&edge.label, edge_id))?;
-        self.out_edges_db
-            .delete(txn, &Self::out_edge_key(&edge.from_node, &edge.to_node))?;
-        self.in_edges_db
-            .delete(txn, &Self::in_edge_key(&edge.to_node, &edge.from_node))?;
+        self.out_edges_db.delete(
+            txn,
+            &Self::out_edge_key(&edge.from_node, &edge.to_node, &edge.id),
+        )?;
+        self.in_edges_db.delete(
+            txn,
+            &Self::in_edge_key(&edge.to_node, &edge.from_node, &edge.id),
+        )?;
 
         Ok(())
     }
@@ -775,6 +786,7 @@ impl SearchMethods for HelixGraphStorage {
     fn shortest_path(
         &self,
         txn: &RoTxn,
+        edge_label: &str,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
@@ -807,7 +819,7 @@ impl SearchMethods for HelixGraphStorage {
         };
 
         while let Some(current_id) = queue.pop_front() {
-            let out_prefix = Self::out_edge_key(&current_id, "");
+            let out_prefix = Self::out_edge_key(&current_id, edge_label, "");
             let iter = self
                 .out_edges_db
                 .lazily_decode_data()
@@ -841,6 +853,7 @@ impl SearchMethods for HelixGraphStorage {
     fn shortest_mutual_path(
         &self,
         txn: &RoTxn,
+        edge_label: &str,
         from_id: &str,
         to_id: &str,
     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
@@ -872,7 +885,7 @@ impl SearchMethods for HelixGraphStorage {
         };
 
         while let Some(current_id) = queue.pop_front() {
-            let out_prefix = Self::out_edge_key(&current_id, "");
+            let out_prefix = Self::out_edge_key(&current_id, edge_label, "");
             let iter = self
                 .out_edges_db
                 .lazily_decode_data()
@@ -885,7 +898,7 @@ impl SearchMethods for HelixGraphStorage {
                 println!("To Node: {}", to_node);
                 println!("Current: {}", current_id);
                 // Check if there's a reverse edge
-                let reverse_edge_key = Self::out_edge_key(&to_node, &current_id);
+                let reverse_edge_key = Self::out_edge_key(&to_node, edge_label, &current_id);
 
                 let has_reverse_edge = self.out_edges_db.get(&txn, &reverse_edge_key)?.is_some();
 
@@ -1326,12 +1339,12 @@ mod tests {
 
         let txn = storage.graph_env.read_txn().unwrap();
         let shortest_path1 = storage
-            .shortest_path(&txn, &nodes[0].id, &nodes[5].id)
+            .shortest_path(&txn, "knows", &nodes[0].id, &nodes[5].id)
             .unwrap()
             .1
             .len();
         let shortest_path2 = storage
-            .shortest_path(&txn, &nodes[1].id, &nodes[5].id)
+            .shortest_path(&txn, "knows", &nodes[1].id, &nodes[5].id)
             .unwrap()
             .1
             .len();
@@ -1529,7 +1542,7 @@ mod tests {
         // Test shortest path
         let txn = storage.graph_env.read_txn().unwrap();
         let (nodes, edges) = storage
-            .shortest_mutual_path(&txn, &users[0].id, &users[1].id)
+            .shortest_mutual_path(&txn, "follows", &users[0].id, &users[1].id)
             .unwrap();
 
         assert_eq!(nodes.len(), 2);
@@ -1557,7 +1570,7 @@ mod tests {
         // Test shortest path
         let txn = storage.graph_env.read_txn().unwrap();
         let (nodes, edges) = storage
-            .shortest_mutual_path(&txn, &users[0].id, &users[2].id)
+            .shortest_mutual_path(&txn, "follows", &users[0].id, &users[2].id)
             .unwrap();
 
         assert_eq!(nodes.len(), 3);
@@ -1578,7 +1591,7 @@ mod tests {
 
         // Test shortest path
         let txn = storage.graph_env.read_txn().unwrap();
-        let result = storage.shortest_mutual_path(&txn, &users[0].id, &users[1].id);
+        let result = storage.shortest_mutual_path(&txn, "follows", &users[0].id, &users[1].id);
 
         assert!(result.is_err());
         assert!(result
@@ -1602,7 +1615,7 @@ mod tests {
 
         // Test shortest path
         let txn = storage.graph_env.read_txn().unwrap();
-        let result = storage.shortest_mutual_path(&txn, &users[0].id, &users[1].id);
+        let result = storage.shortest_mutual_path(&txn, "follows", &users[0].id, &users[1].id);
         println!("{:?}", result);
         assert!(result.is_err());
         assert!(result
@@ -1641,7 +1654,7 @@ mod tests {
         // Test shortest path from Alice to David
         let txn = storage.graph_env.read_txn().unwrap();
         let (nodes, edges) = storage
-            .shortest_mutual_path(&txn, &users[0].id, &users[3].id)
+            .shortest_mutual_path(&txn, "follows", &users[0].id, &users[3].id)
             .unwrap();
 
         // Should find path through mutual connections

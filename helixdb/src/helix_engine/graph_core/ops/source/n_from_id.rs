@@ -19,14 +19,14 @@ use crate::{
 
 use super::super::tr_val::TraversalVal;
 
-pub struct VFromId<'a, T> {
+pub struct NFromId<'a, T> {
     iter: Once<Result<TraversalVal, GraphError>>, // Use Once instead of Empty so we get exactly one item
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
     id: &'a str,
 }
 
-impl<'a> Iterator for VFromId<'a, RoTxn<'a>> {
+impl<'a> Iterator for NFromId<'a, RoTxn<'a>> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -40,7 +40,7 @@ impl<'a> Iterator for VFromId<'a, RoTxn<'a>> {
     }
 }
 
-impl<'a> Iterator for VFromId<'a, RwTxn<'a>> {
+impl<'a> Iterator for NFromId<'a, RwTxn<'a>> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -54,19 +54,19 @@ impl<'a> Iterator for VFromId<'a, RwTxn<'a>> {
     }
 }
 
-pub trait VFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait NFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     type OutputIter: Iterator<Item = Result<TraversalVal, GraphError>>;
 
-    fn v_from_id(self, id: &'a str) -> Self::OutputIter;
+    fn n_from_id(self, id: &'a str) -> Self::OutputIter;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    type OutputIter = RoTraversalIterator<'a, VFromId<'a, RoTxn<'a>>>;
+    type OutputIter = RoTraversalIterator<'a, NFromId<'a, RoTxn<'a>>>;
 
-    fn v_from_id(self, id: &'a str) -> Self::OutputIter {
-        let v_from_id = VFromId {
+    fn n_from_id(self, id: &'a str) -> Self::OutputIter {
+        let n_from_id = NFromId {
             iter: std::iter::once(Ok(TraversalVal::Empty)),
             storage: Arc::clone(&self.storage),
             txn: self.txn,
@@ -74,17 +74,17 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a
         };
 
         RoTraversalIterator {
-            inner: v_from_id,
+            inner: n_from_id,
             storage: self.storage,
             txn: self.txn,
         }
     }
 }
 
-// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> VFromIdAdapter<'a>
+// impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a>
 //     for RwTraversalIterator<'a, I>
 // {
-//     type OutputIter = RwTraversalIterator<'a, VFromId<'a, RwTxn<'a>>>;
+//     type OutputIter = RwTraversalIterator<'a, NFromId<'a, RwTxn<'a>>>;
 
 //     fn v_from_id(self, id: &'a str) -> Self::OutputIter {
 //         let v_from_id = VFromId {

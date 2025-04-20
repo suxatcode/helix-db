@@ -32,11 +32,11 @@ pub trait AddNAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<String>,
-    ) -> Self;
+    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
 }
 
-impl<'a> AddNAdapter<'a>
-    for RwTraversalIterator<'a, std::iter::Once<Result<TraversalVal, GraphError>>>
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'a>
+    for RwTraversalIterator<'a, 'b, I>
 {
     fn add_n(
         self,
@@ -44,7 +44,7 @@ impl<'a> AddNAdapter<'a>
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<String>,
-    ) -> Self {
+    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
         let node = Node {
             id: id.unwrap_or(Uuid::new_v4().to_string()),
             label: label.to_string(),
