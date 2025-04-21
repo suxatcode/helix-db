@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Start PostgreSQL server with specified configuration
 docker run --rm \
   --name helix-postgres \
   -e POSTGRES_USER=postgres \

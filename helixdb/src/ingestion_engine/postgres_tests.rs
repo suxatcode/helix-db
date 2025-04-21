@@ -1,19 +1,12 @@
 use crate::ingestion_engine::postgres_ingestion::{to_camel_case, PostgresIngestor};
-use chrono;
-use rand;
 use rust_decimal::Decimal;
-use serde_json::{json, Value as JsonValue};
-use std::collections::{HashMap, HashSet};
+use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio_postgres::{types::Type, Config, NoTls};
+use tokio_postgres::{Config, NoTls};
 
-use super::postgres_ingestion::GraphSchema;
-
-// Helper function to clean up the database before tests
 async fn cleanup_database(client: &mut tokio_postgres::Client) -> Result<(), Box<dyn std::error::Error>> {
     // Drop existing tables if they exist
     let tables = client
@@ -47,9 +40,54 @@ async fn cleanup_database(client: &mut tokio_postgres::Client) -> Result<(), Box
     Ok(())
 }
 
-// Helper function to create a mock PostgreSQL database
+static PARENTS_DATA: &[(&str, i32, &str)] = &[
+    ("Ryan Williams", 61, "Dallas"),
+    ("David Christian", 47, "New York"),
+    ("Lawrence Dorsey", 66, "Dallas"),
+    ("Kayla Mendoza", 63, "New York"),
+    ("Aaron Stewart", 60, "San Antonio"),
+    ("Victoria Edwards", 50, "Philadelphia"),
+    ("James Perry", 50, "San Antonio"),
+    ("Taylor Riddle", 55, "San Diego"),
+    ("Christopher Garcia", 46, "San Diego"),
+    ("Julie Dudley", 44, "Los Angeles"),
+    ("Linda Chen", 48, "Dallas"),
+    ("Lisa Lee", 45, "Philadelphia"),
+    ("Samantha Lewis", 60, "Phoenix"),
+    ("Michael Silva", 42, "Los Angeles"),
+    ("Sherry Pena", 42, "Chicago"),
+    ("Joel Bolton", 46, "New York"),
+    ("Samuel Jones", 40, "Phoenix"),
+    ("Scott Jones", 49, "Phoenix"),
+    ("Kevin Wright", 43, "San Diego"),
+    ("Lisa Garza", 62, "Philadelphia"),
+];
+
+// Global static data for users
+static USERS_DATA: &[(&str, i32, &str, i32)] = &[
+    ("Heather Pittman", 28, "Dallas", 8),
+    ("Angela Wallace", 19, "San Diego", 19),
+    ("Barry Kelly", 19, "Chicago", 5),
+    ("Lisa Barnes", 33, "New York", 5),
+    ("Stephen Reynolds", 33, "Dallas", 18),
+    ("Seth Gomez", 27, "San Diego", 5),
+    ("Michelle Vance", 21, "Houston", 11),
+    ("Regina Kirby", 27, "Dallas", 20),
+    ("Linda Johnson", 36, "Philadelphia", 10),
+    ("Virginia Copeland", 39, "San Jose", 9),
+    ("Timothy Reed", 30, "Los Angeles", 7),
+    ("Ashley Olsen", 28, "Chicago", 4),
+    ("Kelly Walter", 21, "Chicago", 8),
+    ("Anita Manning", 25, "Philadelphia", 15),
+    ("Carl Dillon", 26, "San Diego", 11),
+    ("James Keller", 36, "Houston", 11),
+    ("Joe Moore", 30, "San Diego", 9),
+    ("Brian Silva", 30, "Phoenix", 11),
+    ("Stephen Riley", 38, "Phoenix", 14),
+    ("Carolyn Gonzalez", 19, "Los Angeles", 13),
+];
+
 pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_postgres::Config), tokio_postgres::Error> {
-    // Create a configuration for the PostgreSQL connection
     let mut config = Config::new();
     config
         .host("localhost")
@@ -58,37 +96,32 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
         .password("postgres")
         .dbname("postgres");
 
-    // Connect to the database
     let (mut client, connection) = config.connect(NoTls).await?;
-    
-    // Spawn the connection handler
+
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
 
-    // Clean up the database first
     cleanup_database(&mut client).await.expect("Failed to clean up database");
 
-    // Create tables with unique names based on timestamp and random number
     let parents_table = format!("parents");
     let users_table = format!("users");
 
-    // Now create the tables with explicit sequence names to avoid conflicts
     client
         .batch_execute(&format!(
             r#"
             CREATE SEQUENCE {parents}_id_seq;
             CREATE SEQUENCE {users}_id_seq;
-            
+
             CREATE TABLE {parents} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{parents}_id_seq'),
                 name TEXT NOT NULL,
                 age INTEGER NOT NULL,
                 grew_up_in TEXT NOT NULL
             );
-            
+
             CREATE TABLE {users} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{users}_id_seq'),
                 name TEXT NOT NULL,
@@ -102,31 +135,7 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
         ))
         .await?;
 
-    // Insert data into parents table
-    let parents_data = vec![
-        ("Ryan Williams", 61, "Dallas"),
-        ("David Christian", 47, "New York"),
-        ("Lawrence Dorsey", 66, "Dallas"),
-        ("Kayla Mendoza", 63, "New York"),
-        ("Aaron Stewart", 60, "San Antonio"),
-        ("Victoria Edwards", 50, "Philadelphia"),
-        ("James Perry", 50, "San Antonio"),
-        ("Taylor Riddle", 55, "San Diego"),
-        ("Christopher Garcia", 46, "San Diego"),
-        ("Julie Dudley", 44, "Los Angeles"),
-        ("Linda Chen", 48, "Dallas"),
-        ("Lisa Lee", 45, "Philadelphia"),
-        ("Samantha Lewis", 60, "Phoenix"),
-        ("Michael Silva", 42, "Los Angeles"),
-        ("Sherry Pena", 42, "Chicago"),
-        ("Joel Bolton", 46, "New York"),
-        ("Samuel Jones", 40, "Phoenix"),
-        ("Scott Jones", 49, "Phoenix"),
-        ("Kevin Wright", 43, "San Diego"),
-        ("Lisa Garza", 62, "Philadelphia"),
-    ];
-
-    for parent in parents_data {
+    for parent in PARENTS_DATA {
         client
             .execute(
                 &format!(
@@ -138,31 +147,7 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
             .await?;
     }
 
-    // Insert data into users table
-    let users_data = vec![
-        ("Heather Pittman", 28, "Dallas", 8),
-        ("Angela Wallace", 19, "San Diego", 19),
-        ("Barry Kelly", 19, "Chicago", 5),
-        ("Lisa Barnes", 33, "New York", 5),
-        ("Stephen Reynolds", 33, "Dallas", 18),
-        ("Seth Gomez", 27, "San Diego", 5),
-        ("Michelle Vance", 21, "Houston", 11),
-        ("Regina Kirby", 27, "Dallas", 20),
-        ("Linda Johnson", 36, "Philadelphia", 10),
-        ("Virginia Copeland", 39, "San Jose", 9),
-        ("Timothy Reed", 30, "Los Angeles", 7),
-        ("Ashley Olsen", 28, "Chicago", 4),
-        ("Kelly Walter", 21, "Chicago", 8),
-        ("Anita Manning", 25, "Philadelphia", 15),
-        ("Carl Dillon", 26, "San Diego", 11),
-        ("James Keller", 36, "Houston", 11),
-        ("Joe Moore", 30, "San Diego", 9),
-        ("Brian Silva", 30, "Phoenix", 11),
-        ("Stephen Riley", 38, "Phoenix", 14),
-        ("Carolyn Gonzalez", 19, "Los Angeles", 13),
-    ];
-
-    for user in users_data {
+    for user in USERS_DATA {
         client
             .execute(
                 &format!(
@@ -177,7 +162,6 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
     Ok((client, config))
 }
 
-// Helper function to create a temporary directory for test outputs
 fn create_temp_dir() -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix("postgres_test")
@@ -185,7 +169,6 @@ fn create_temp_dir() -> tempfile::TempDir {
         .expect("Failed to create temp directory")
 }
 
-// Test the to_camel_case function
 #[test]
 fn test_to_camel_case() {
     assert_eq!(to_camel_case("hello_world"), "HelloWorld");
@@ -199,7 +182,6 @@ fn test_to_camel_case() {
     assert_eq!(to_camel_case("hello_world_test"), "HelloWorldTest");
 }
 
-// Test the map_sql_type_to_helix_type function
 #[test]
 fn test_map_sql_type_to_helix_type() {
     use super::postgres_ingestion::map_sql_type_to_helix_type;
@@ -224,6 +206,86 @@ fn test_map_sql_type_to_helix_type() {
     assert_eq!(map_sql_type_to_helix_type("bytea"), "String");
 }
 
+#[tokio::test]
+async fn test_postgres_custom_ingestion() {
+    match create_mock_postgres_db().await {
+        Ok((mut client, _config)) => {
+            let row = client
+                .query_one("SELECT COUNT(*) FROM parents", &[])
+                .await
+                .expect("Failed to query parents table");
+            let parent_count: i64 = row.get(0);
+            assert_eq!(parent_count, 20, "Expected 20 parents in the table");
+
+            let row = client
+                .query_one("SELECT COUNT(*) FROM users", &[])
+                .await
+                .expect("Failed to query users table");
+            let user_count: i64 = row.get(0);
+            assert_eq!(user_count, 20, "Expected 20 users in the table");
+
+            // ------------------------------------------------------------------------------------
+
+            let parent_rows = client
+                .query("SELECT id, name, age, grew_up_in FROM parents ORDER BY id", &[])
+                .await
+                .expect("Failed to query parents table");
+
+            assert_eq!(parent_rows.len(), PARENTS_DATA.len(), "Unexpected number of parents");
+            for (i, row) in parent_rows.iter().enumerate() {
+                let id: i32 = row.get(0);
+                let name: &str = row.get(1);
+                let age: i32 = row.get(2);
+                let grew_up_in: &str = row.get(3);
+
+                assert_eq!(id, (i + 1) as i32, "Parent ID mismatch at index {}", i);
+                assert_eq!(name, PARENTS_DATA[i].0, "Parent name mismatch at index {}", i);
+                assert_eq!(age, PARENTS_DATA[i].1, "Parent age mismatch at index {}", i);
+                assert_eq!(grew_up_in, PARENTS_DATA[i].2, "Parent grew_up_in mismatch at index {}", i);
+            }
+
+            let user_rows = client
+                .query("SELECT id, name, age, city, parent_id FROM users ORDER BY id", &[])
+                .await
+                .expect("Failed to query users table");
+
+            assert_eq!(user_rows.len(), USERS_DATA.len(), "Unexpected number of users");
+            for (i, row) in user_rows.iter().enumerate() {
+                let id: i32 = row.get(0);
+                let name: &str = row.get(1);
+                let age: i32 = row.get(2);
+                let city: &str = row.get(3);
+                let parent_id: i32 = row.get(4);
+
+                assert_eq!(id, (i + 1) as i32, "User ID mismatch at index {}", i);
+                assert_eq!(name, USERS_DATA[i].0, "User name mismatch at index {}", i);
+                assert_eq!(age, USERS_DATA[i].1, "User age mismatch at index {}", i);
+                assert_eq!(city, USERS_DATA[i].2, "User city mismatch at index {}", i);
+                assert_eq!(parent_id, USERS_DATA[i].3, "User parent_id mismatch at index {}", i);
+            }
+
+            let invalid_parents = client
+                .query_one(
+                    "SELECT COUNT(*) FROM users WHERE parent_id NOT IN (SELECT id FROM parents)",
+                    &[],
+                )
+                .await
+                .expect("Failed to verify foreign key integrity");
+            let invalid_count: i64 = invalid_parents.get(0);
+            assert_eq!(invalid_count, 0, "Found users with invalid parent_id references");
+
+            // ------------------------------------------------------------------------------------
+
+            cleanup_database(&mut client)
+                .await
+                .expect("Failed to clean up database");
+        }
+        Err(e) => {
+            panic!("Failed to create a mock database: {:?}", e);
+        }
+    }
+}
+
 // Test the full ingestion process
 #[tokio::test]
 async fn test_postgres_full_ingestion() {
@@ -236,20 +298,17 @@ async fn test_postgres_full_ingestion() {
         .password("postgres")
         .dbname("postgres");
 
-    // Connect to the database
     let (mut client, connection) = config
         .connect(NoTls)
         .await
         .expect("Failed to connect to database");
 
-    // Spawn the connection handler
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
 
-    // Clean up the database first
     cleanup_database(&mut client)
         .await
         .expect("Failed to clean up database");
@@ -270,14 +329,14 @@ async fn test_postgres_full_ingestion() {
             CREATE SEQUENCE {comments}_id_seq;
             CREATE SEQUENCE {tags}_id_seq;
             CREATE SEQUENCE {post_tags}_id_seq;
-            
+
             CREATE TABLE {users} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{users}_id_seq'),
                 username TEXT NOT NULL UNIQUE,
                 email TEXT NOT NULL UNIQUE,
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             CREATE TABLE {posts} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{posts}_id_seq'),
                 title TEXT NOT NULL,
@@ -286,7 +345,7 @@ async fn test_postgres_full_ingestion() {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             CREATE TABLE {comments} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{comments}_id_seq'),
                 content TEXT NOT NULL,
@@ -294,12 +353,12 @@ async fn test_postgres_full_ingestion() {
                 author_id INTEGER REFERENCES {users_ref}(id),
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             CREATE TABLE {tags} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{tags}_id_seq'),
                 name TEXT NOT NULL UNIQUE
             );
-            
+
             CREATE TABLE {post_tags} (
                 post_id INTEGER REFERENCES {posts_ref}(id),
                 tag_id INTEGER REFERENCES {tags_ref}(id),
@@ -468,7 +527,7 @@ async fn test_postgres_full_ingestion() {
             found_node_types.insert(value["label"].as_str().unwrap().to_string());
         } else if value["payload_type"] == "edge" {
             found_edge_types.insert(value["label"].as_str().unwrap().to_string());
-        } 
+        }
     });
 
     // We should have 8 nodes (2 users + 2 posts + 2 comments + 2 tags)
@@ -560,13 +619,13 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
             CREATE SEQUENCE {customers}_id_seq;
             CREATE SEQUENCE {orders}_id_seq;
             CREATE SEQUENCE {order_items}_id_seq;
-            
+
             CREATE TABLE {categories} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{categories}_id_seq'),
                 name TEXT NOT NULL,
                 description TEXT
             );
-            
+
             CREATE TABLE {products} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{products}_id_seq'),
                 name TEXT NOT NULL,
@@ -575,7 +634,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
                 description TEXT,
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             CREATE TABLE {customers} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{customers}_id_seq'),
                 name TEXT NOT NULL,
@@ -583,7 +642,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
                 address TEXT,
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            
+
             CREATE TABLE {orders} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{orders}_id_seq'),
                 customer_id INTEGER REFERENCES {customers_ref}(id),
@@ -591,7 +650,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
                 status TEXT NOT NULL,
                 total_amount DECIMAL(10, 2) NOT NULL
             );
-            
+
             CREATE TABLE {order_items} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{order_items}_id_seq'),
                 order_id INTEGER REFERENCES {orders_ref}(id),
@@ -737,7 +796,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
             found_node_types.insert(value["label"].as_str().unwrap().to_string());
         } else if value["payload_type"] == "edge" {
             found_edge_types.insert(value["label"].as_str().unwrap().to_string());
-        } 
+        }
     });
 
     assert_eq!(found_node_types.len(), 10);
@@ -763,10 +822,10 @@ async fn test_postgres_simple_schema() -> Result<(), Box<dyn std::error::Error>>
     config.user("postgres");
     config.password("postgres");
     config.dbname("postgres");
-    
+
     let (mut client, connection) = config.connect(NoTls).await?;
     tokio::spawn(connection);
-    
+
     cleanup_database(&mut client).await?;
     // ... rest of the test code ...
     Ok(())

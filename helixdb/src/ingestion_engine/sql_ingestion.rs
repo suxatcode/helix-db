@@ -236,73 +236,68 @@ impl SqliteIngestor {
     }
 
     pub fn extract_schema(&mut self) -> Result<Vec<TableSchema>, IngestionError> {
-        let mut schemas = Vec::new();
-
-        // statement
-        let mut stmt = self.sqlite_conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-        )?;
-        let table_names: Vec<String> = stmt
+        let table_names: Vec<String> = self
+            .sqlite_conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )?
             .query_map(params![], |row| row.get(0))?
             .collect::<SqliteResult<Vec<String>>>()?;
 
-        for table_name in table_names {
-            let mut columns: Vec<ColumnInfo> = Vec::new();
-            let mut primary_keys = HashSet::new();
+        table_names
+            .into_iter()
+            .map(|table_name| {
+                let mut col_stmt = self
+                    .sqlite_conn
+                    .prepare(&format!("PRAGMA table_info({})", table_name))?;
 
-            let mut col_stmt = self
-                .sqlite_conn
-                .prepare(&format!("PRAGMA table_info({})", table_name))?;
-            let col_rows = col_stmt.query_map(params![], |row| {
-                let name: String = row.get(1)?;
-                let data_type: String = row.get(2)?;
-                let is_pk: i32 = row.get(5)?;
+                let (columns, primary_keys): (Vec<ColumnInfo>, HashSet<String>) = col_stmt // statement
+                    .query_map(params![], |row| {
+                        let name: String = row.get(1)?;
+                        let is_pk: i32 = row.get(5)?;
+                        Ok((
+                            ColumnInfo {
+                                name: name.clone(),
+                                data_type: row.get(2)?,
+                                is_primary_key: is_pk > 0,
+                            },
+                            if is_pk > 0 { Some(name) } else { None },
+                        ))
+                    })?
+                    .collect::<SqliteResult<Vec<_>>>()?
+                    .into_iter()
+                    .fold(
+                        (Vec::new(), HashSet::new()),
+                        |(mut cols, mut pks), (col, pk)| {
+                            cols.push(col);
+                            if let Some(pk) = pk {
+                                pks.insert(pk);
+                            }
+                            (cols, pks)
+                        },
+                    );
 
-                if is_pk > 0 {
-                    primary_keys.insert(name.clone());
-                }
+                let foreign_keys: Vec<ForeignKey> = self
+                    .sqlite_conn
+                    .prepare(&format!("PRAGMA foreign_key_list({})", table_name))?
+                    .query_map(params![], |row| {
+                        Ok(ForeignKey {
+                            from_table: table_name.clone(),
+                            from_column: row.get(3)?,
+                            to_table: row.get(2)?,
+                            to_column: row.get(4)?,
+                        })
+                    })?
+                    .collect::<SqliteResult<Vec<_>>>()?;
 
-                Ok(ColumnInfo {
-                    name,
-                    data_type,
-                    is_primary_key: is_pk > 0,
+                Ok(TableSchema {
+                    name: table_name,
+                    columns,
+                    primary_keys,
+                    foreign_keys,
                 })
-            })?;
-
-            for col_res in col_rows {
-                columns.push(col_res?);
-            }
-
-            let mut fk_stmt = self
-                .sqlite_conn
-                .prepare(&format!("PRAGMA foreign_key_list({})", table_name))?;
-            let fk_rows = fk_stmt.query_map(params![], |row| {
-                let to_table: String = row.get(2)?;
-                let from_column: String = row.get(3)?;
-                let to_column: String = row.get(4)?;
-
-                Ok(ForeignKey {
-                    from_table: table_name.clone(),
-                    from_column,
-                    to_table,
-                    to_column,
-                })
-            })?;
-
-            let mut foreign_keys: Vec<ForeignKey> = Vec::new();
-            for fk_result in fk_rows {
-                foreign_keys.push(fk_result?);
-            }
-
-            schemas.push(TableSchema {
-                name: table_name,
-                columns,
-                primary_keys,
-                foreign_keys,
-            });
-        }
-
-        Ok(schemas)
+            })
+            .collect::<Result<Vec<TableSchema>, IngestionError>>()
     }
 
     pub fn ingest_table(&mut self, table_schema: &TableSchema) -> Result<(), IngestionError> {
