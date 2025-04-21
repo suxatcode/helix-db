@@ -121,7 +121,7 @@ where
                 return_value
             }
         };
-        properties.insert("id".to_string(), ReturnValue::from(item.id().to_string()));
+        properties.insert("id".to_string(), ReturnValue::from(item.uuid()));
         properties.insert(
             "label".to_string(),
             ReturnValue::from(item.label().to_string()),
@@ -257,7 +257,7 @@ impl ReturnValue {
                     if v.exclude {
                         let _ = a.remove(k);
                     } else if let Some(new_name) = &v.new_name {
-                        if let Some(value) = a.remove(k) { 
+                        if let Some(value) = a.remove(k) {
                             a.insert(new_name.clone(), value);
                         }
                     } else {

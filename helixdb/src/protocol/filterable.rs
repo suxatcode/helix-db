@@ -21,6 +21,8 @@ pub trait Filterable<'a> {
 
     fn id(&self) -> &u128;
 
+    fn uuid(&self) -> String;
+
     fn label(&self) -> &str;
 
     fn from_node(&self) -> u128;
@@ -51,6 +53,11 @@ impl<'a> Filterable<'a> for Node {
     #[inline(always)]
     fn id(&self) -> &u128 {
         &self.id
+    }
+
+    #[inline(always)]
+    fn uuid(&self) -> String {
+        uuid::Uuid::from_u128(self.id).to_string()
     }
 
     #[inline(always)]
@@ -114,6 +121,11 @@ impl<'a> Filterable<'a> for Edge {
     #[inline(always)]
     fn id(&self) -> &u128 {
         &self.id
+    }
+
+    #[inline(always)]
+    fn uuid(&self) -> String {
+        uuid::Uuid::from_u128(self.id).to_string()
     }
 
     #[inline(always)]

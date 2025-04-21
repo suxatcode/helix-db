@@ -428,6 +428,10 @@ impl<'a> Filterable<'a> for HVector {
         &self.id
     }
 
+    fn uuid(&self) -> String {
+        uuid::Uuid::from_u128(self.id).to_string()
+    }
+
     fn label(&self) -> &str {
         "vector"
     }

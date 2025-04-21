@@ -41,7 +41,7 @@ impl std::fmt::Display for Node {
         write!(
             f,
             "{{ id: {}, label: {}, properties: {:?} }}",
-            self.id, self.label, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.properties
         )
     }
 }
@@ -51,7 +51,7 @@ impl std::fmt::Debug for Node {
         write!(
             f,
             "{{ id: {}, label: {}, properties: {:?} }}",
-            self.id, self.label, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.properties
         )
     }
 }
@@ -84,7 +84,7 @@ impl std::fmt::Display for Edge {
         write!(
             f,
             "{{ id: {}, label: {}, from_node: {}, to_node: {}, properties: {:?} }}",
-            self.id, self.label, self.from_node, self.to_node, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.from_node, self.to_node, self.properties
         )
     }
 }
@@ -94,7 +94,7 @@ impl std::fmt::Debug for Edge {
         write!(
             f,
             "{{ id: {}, label: {}, from_node: {}, to_node: {}, properties: {:?} }}",
-            self.id, self.label, self.from_node, self.to_node, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.from_node, self.to_node, self.properties
         )
     }
 }
