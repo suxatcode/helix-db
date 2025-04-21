@@ -7,7 +7,6 @@ license = "GPL-3.0"
 authors = ["HelixDB Team"]
 repository = "https://github.com/HelixDB/helix-db"
 
-
 [dependencies]
 pest = "2.7"
 pest_derive = "2.7"
@@ -36,8 +35,8 @@ get_routes = { path = "../get_routes" }
 rust_decimal = { version = "1.34", features = ["tokio-pg"] }
 native-tls = "0.2"
 postgres-native-tls = "0.5"
+#pgvector = "0.3"
 itertools = "0.14.0"
-
 
 [dev-dependencies]
 criterion = "0.5"
