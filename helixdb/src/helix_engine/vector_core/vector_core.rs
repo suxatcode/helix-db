@@ -13,6 +13,8 @@ use std::{
 };
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
+const DB_VECTOR_DATA: &str = "vector_data"; // for vector data (v:)
+
 const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
 const VECTOR_PREFIX: &[u8] = b"v:";
 const ENTRY_POINT_KEY: &str = "entry_point";
@@ -138,6 +140,7 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
 
 pub struct VectorCore {
     vectors_db: Database<Bytes, Bytes>,
+    vector_data_db: Database<Bytes, Bytes>,
     out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
     num_of_vecs: usize,
@@ -146,9 +149,12 @@ pub struct VectorCore {
 impl VectorCore {
     pub fn new(env: &Env, txn: &mut RwTxn, config: HNSWConfig) -> Result<Self, VectorError> {
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
+        let vector_data_db = env.create_database(txn, Some(DB_VECTOR_DATA))?;
         let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
+
         Ok(Self {
             vectors_db,
+            vector_data_db,
             out_edges_db,
             config,
             num_of_vecs: 0,
@@ -157,7 +163,7 @@ impl VectorCore {
 
     #[inline(always)]
     fn vector_key(id: u128, level: usize) -> Vec<u8> {
-        [VECTOR_PREFIX, &id.to_le_bytes(),  &level.to_le_bytes()].concat()
+        [VECTOR_PREFIX, &id.to_le_bytes(), &level.to_le_bytes()].concat()
     }
 
     #[inline(always)]
@@ -165,9 +171,7 @@ impl VectorCore {
         [
             OUT_EDGES_PREFIX,
             &source_id.to_le_bytes(),
-            
             &level.to_le_bytes(),
-            
             &sink_id.to_le_bytes(),
         ]
         .concat()
@@ -233,6 +237,8 @@ impl VectorCore {
         }
     }
 
+    // #[inline(always)]
+    // fn get_vector_(&self, txn: &RoTxn, id: u128) -> Result<Vec<f64>, VectorError> {
     #[inline(always)]
     fn put_vector(&self, txn: &mut RwTxn, vector: &HVector) -> Result<(), VectorError> {
         self.vectors_db

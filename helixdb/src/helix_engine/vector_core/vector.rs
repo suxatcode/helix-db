@@ -17,6 +17,7 @@ pub struct HVector {
     pub level: usize,
     pub distance: Option<f64>,
     data: Vec<f64>,
+    pub properties: HashMap<String, Value>,
 }
 
 impl Eq for HVector {}
@@ -69,6 +70,7 @@ impl HVector {
             level: 0,
             data,
             distance: None,
+            properties: HashMap::new(),
         }
     }
 
@@ -80,6 +82,7 @@ impl HVector {
             level,
             data,
             distance: None,
+            properties: HashMap::new(),
         }
     }
 
@@ -98,6 +101,8 @@ impl HVector {
         self.level
     }
 
+    /// Converts the HVector to an vec of bytes by accessing the data field directly
+    /// and converting each f64 to a byte slice
     pub fn to_bytes(&self) -> Vec<u8> {
         let size = self.data.len() * std::mem::size_of::<f64>();
         let mut bytes = Vec::with_capacity(size);
@@ -107,6 +112,7 @@ impl HVector {
         bytes
     }
 
+    /// Converts a byte array into a HVector by chunking the bytes into f64 values
     pub fn from_bytes(id: u128, level: usize, bytes: &[u8]) -> Result<Self, VectorError> {
         if bytes.len() % std::mem::size_of::<f64>() != 0 {
             return Err(VectorError::InvalidVectorData);
@@ -126,6 +132,7 @@ impl HVector {
             level,
             data,
             distance: None,
+            properties: HashMap::new(),
         })
     }
 
