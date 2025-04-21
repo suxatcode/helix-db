@@ -231,14 +231,14 @@ impl PostgresIngestor {
                         .danger_accept_invalid_certs(true) // Only use this for development/testing
                         .build()
                         .map_err(|e| IngestionError::MappingError(format!("TLS error: {}", e)))?;
-        
+
                     let connector = MakeTlsConnector::new(tls_connector);
                     let tls_config = config.clone();
                     tls_config.connect(connector).await?
                 };
                 // Connect to the database
                 // let (client, connection) = config.connect(tls).await?;
-        
+
                 // Spawn a task to handle the connection
                 tokio::spawn(async move {
                     if let Err(e) = connection.await {
@@ -263,7 +263,7 @@ impl PostgresIngestor {
         // Parse the connection string
 
         // Set up the connection with or without TLS
-        
+
 
         Ok(PostgresIngestor {
             pg_client: client,
@@ -282,9 +282,9 @@ impl PostgresIngestor {
 
         // Get all tables from the public schema
         let query = "
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_type = 'BASE TABLE'
             AND table_name NOT LIKE 'pg_%'
             AND table_name NOT LIKE 'sql_%'
