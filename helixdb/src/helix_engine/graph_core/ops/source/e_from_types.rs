@@ -31,8 +31,8 @@ impl<'a> Iterator for EFromTypes<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|value| {
             let (key, _) = value.unwrap();
-            let edge_id = std::str::from_utf8(&key[self.length..])?;
-            let edge: Edge = match self.storage.get_edge(self.txn, edge_id) {
+            let edge_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..])?;
+            let edge: Edge = match self.storage.get_edge(self.txn, &edge_id) {
                 Ok(edge) => edge,
                 Err(e) => return Err(e),
             };
@@ -43,7 +43,7 @@ impl<'a> Iterator for EFromTypes<'a> {
 
 impl<'a> EFromTypes<'a> {
     pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn, label: &str) -> Self {
-        let prefix = HelixGraphStorage::edge_label_key(label, "");
+        let prefix = HelixGraphStorage::edge_label_key(label, None);
         let iter = storage
             .edge_labels_db
             .lazily_decode_data()

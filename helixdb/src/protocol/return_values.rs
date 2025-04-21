@@ -50,7 +50,7 @@ impl From<&Value> for ReturnValue {
 
 impl From<Count> for ReturnValue {
     fn from(count: Count) -> Self {
-        ReturnValue::Value(Value::Integer(count.value() as i32))
+        ReturnValue::Value(Value::I32(count.value() as i32))
     }
 }
 
@@ -74,13 +74,19 @@ impl From<&str> for ReturnValue {
 
 impl From<i32> for ReturnValue {
     fn from(integer: i32) -> Self {
-        ReturnValue::Value(Value::Integer(integer))
+        ReturnValue::Value(Value::I32(integer))
     }
 }
 
 impl From<f64> for ReturnValue {
     fn from(float: f64) -> Self {
-        ReturnValue::Value(Value::Float(float))
+        ReturnValue::Value(Value::F64(float))
+    }
+}
+
+impl From<u128> for ReturnValue {
+    fn from(integer: u128) -> Self {
+        ReturnValue::Value(Value::U128(integer))
     }
 }
 

@@ -41,7 +41,7 @@ impl HNSWConfig {
 
 #[derive(PartialEq)]
 struct Candidate {
-    id: String,
+    id: u128,
     distance: f64,
 }
 
@@ -156,19 +156,19 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn vector_key(id: &str, level: usize) -> Vec<u8> {
-        [VECTOR_PREFIX, id.as_bytes(), b":", &level.to_le_bytes()].concat()
+    fn vector_key(id: u128, level: usize) -> Vec<u8> {
+        [VECTOR_PREFIX, &id.to_le_bytes(),  &level.to_le_bytes()].concat()
     }
 
     #[inline(always)]
-    fn out_edges_key(source_id: &str, sink_id: &str, level: usize) -> Vec<u8> {
+    fn out_edges_key(source_id: u128, sink_id: u128, level: usize) -> Vec<u8> {
         [
             OUT_EDGES_PREFIX,
-            source_id.as_bytes(),
-            b":",
+            &source_id.to_le_bytes(),
+            
             &level.to_le_bytes(),
-            b":",
-            sink_id.as_bytes(),
+            
+            &sink_id.to_le_bytes(),
         ]
         .concat()
     }
@@ -188,13 +188,12 @@ impl VectorCore {
     fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
         let ep_id = self.vectors_db.get(txn, ENTRY_POINT_KEY.as_bytes())?;
         if let Some(ep_id) = ep_id {
+            let mut arr = [0u8; 16];
+            let len = std::cmp::min(ep_id.len(), 16);
+            arr[..len].copy_from_slice(&ep_id[..len]);
+
             let ep = self
-                .get_vector(
-                    txn,
-                    unsafe { std::str::from_utf8_unchecked(&ep_id) },
-                    0,
-                    true,
-                )
+                .get_vector(txn, u128::from_le_bytes(arr), 0, true)
                 .map_err(|_| VectorError::EntryPointNotFound)?;
             Ok(ep)
         } else {
@@ -206,7 +205,7 @@ impl VectorCore {
     fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db
-            .put(txn, &entry_key, entry.get_id().as_bytes())
+            .put(txn, &entry_key, &entry.get_id().to_le_bytes())
             .map_err(VectorError::from)?;
 
         Ok(())
@@ -216,7 +215,7 @@ impl VectorCore {
     fn get_vector(
         &self,
         txn: &RoTxn,
-        id: &str,
+        id: u128,
         level: usize,
         with_data: bool,
     ) -> Result<HVector, VectorError> {
@@ -224,8 +223,8 @@ impl VectorCore {
         match self.vectors_db.get(txn, key.as_ref())? {
             Some(bytes) => {
                 let vector = match with_data {
-                    true => HVector::from_bytes(id.to_string(), level, &bytes),
-                    false => Ok(HVector::from_slice(id.to_string(), level, vec![])),
+                    true => HVector::from_bytes(id, level, &bytes),
+                    false => Ok(HVector::from_slice(id, level, vec![])),
                 }?;
                 Ok(vector)
             }
@@ -250,10 +249,10 @@ impl VectorCore {
     fn get_neighbors(
         &self,
         txn: &RoTxn,
-        id: &str,
+        id: u128,
         level: usize,
     ) -> Result<Vec<HVector>, VectorError> {
-        let out_key = Self::out_edges_key(id, "", level);
+        let out_key = Self::out_edges_key(id, 0, level);
         let mut neighbors = Vec::with_capacity(self.config.m_max_0.min(512)); // TODO: why 512?
 
         let iter = self
@@ -262,13 +261,15 @@ impl VectorCore {
             .prefix_iter(txn, &out_key)?;
 
         let prefix_len = out_key.len();
-        let id_bytes = id.as_bytes();
 
         for result in iter {
             if let Ok((key, _)) = result {
-                let neighbor_id = unsafe { std::str::from_utf8_unchecked(&key[prefix_len..]) };
+                let mut arr = [0u8; 16];
+                let len = std::cmp::min(key.len(), 16);
+                arr[..len].copy_from_slice(&key[prefix_len..len]);
+                let neighbor_id = u128::from_le_bytes(arr);
 
-                if neighbor_id.as_bytes() != id_bytes {
+                if neighbor_id != id {
                     if let Ok(vector) = self.get_vector(txn, neighbor_id, level, true) {
                         neighbors.push(vector);
                     }
@@ -284,11 +285,11 @@ impl VectorCore {
     fn set_neighbours<'a>(
         &self,
         txn: &mut RwTxn,
-        id: &str,
+        id: u128,
         neighbors: &'a BinaryHeap<HVector>,
         level: usize,
     ) -> Result<(), VectorError> {
-        let prefix = Self::out_edges_key(id, "", level);
+        let prefix = Self::out_edges_key(id, 0, level);
 
         let mut keys_to_delete: HashSet<Vec<u8>> = self
             .out_edges_db
@@ -365,7 +366,7 @@ impl VectorCore {
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
         entry_point.set_distance(entry_point.distance_to(query));
         candidates.push(Candidate {
-            id: entry_point.get_id().to_string(),
+            id: entry_point.get_id(),
             distance: entry_point.get_distance(),
         });
         results.push(entry_point.clone());
@@ -382,7 +383,7 @@ impl VectorCore {
                 break;
             }
 
-            for mut neighbor in self.get_neighbors(txn, &curr_cand.id, level)? {
+            for mut neighbor in self.get_neighbors(txn, curr_cand.id, level)? {
                 if !visited.insert(neighbor.get_id().to_string()) {
                     continue;
                 }
@@ -393,7 +394,7 @@ impl VectorCore {
                 if results.len() < ef || distance < f.get_distance() {
                     neighbor.set_distance(distance);
                     candidates.push(Candidate {
-                        id: neighbor.get_id().to_string(),
+                        id: neighbor.get_id(),
                         distance,
                     });
                     results.push(neighbor);
@@ -410,7 +411,7 @@ impl VectorCore {
 
 impl HNSW for VectorCore {
     fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError> {
-        let query = HVector::from_slice("".to_string(), 0, query.to_vec());
+        let query = HVector::from_slice(0, 0, query.to_vec());
 
         let mut entry_point = self.get_entry_point(txn)?;
 
@@ -433,12 +434,12 @@ impl HNSW for VectorCore {
         &self,
         txn: &mut RwTxn,
         data: &[f64],
-        nid: Option<String>,
+        nid: Option<u128>,
     ) -> Result<HVector, VectorError> {
-        let id = nid.unwrap_or(uuid::Uuid::new_v4().as_simple().to_string());
+        let id = nid.unwrap_or(uuid::Uuid::new_v4().as_u128());
         let new_level = self.get_new_level();
 
-        let mut query = HVector::from_slice(id.clone(), 0, data.to_vec());
+        let mut query = HVector::from_slice(id, 0, data.to_vec());
         //self.num_of_vecs += 1;
 
         self.put_vector(txn, &query)?;
@@ -471,7 +472,7 @@ impl HNSW for VectorCore {
 
             let neighbors = self.select_neighbors(txn, &query, nearest, level, true)?;
 
-            self.set_neighbours(txn, &query.get_id(), &neighbors, level)?;
+            self.set_neighbours(txn, query.get_id(), &neighbors, level)?;
 
             for e in neighbors {
                 let id = e.get_id();

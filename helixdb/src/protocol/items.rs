@@ -12,7 +12,7 @@ use std::{collections::HashMap, fmt, hash::Hash};
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Node {
-    pub id: String,
+    pub id: u128,
     pub label: String,
     #[serde(with = "properties_format")]
     pub properties: HashMap<String, Value>,
@@ -22,14 +22,14 @@ impl Node {
     pub const NUM_PROPERTIES: usize = 2;
     pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
         Self {
-            id: "".to_string(),
+            id: uuid::Uuid::new_v4().as_u128(),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         }
     }
     pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().as_simple().to_string(),
+            id: uuid::Uuid::new_v4().as_u128(),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         }
@@ -60,10 +60,10 @@ impl std::fmt::Debug for Node {
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Edge {
-    pub id: String, // TODO: change to uuid::Uuid and implement SERDE manually
+    pub id: u128, // TODO: change to uuid::Uuid and implement SERDE manually
     pub label: String,
-    pub from_node: String,
-    pub to_node: String,
+    pub from_node: u128,
+    pub to_node: u128,
     #[serde(with = "properties_format")]
     pub properties: HashMap<String, Value>,
 }
@@ -71,11 +71,11 @@ pub struct Edge {
 impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
     pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self { id: "".to_string(), label: label.to_string(), from_node: "".to_string(), to_node: "".to_string(), properties: HashMap::from_iter(properties) }
+        Self { id: uuid::Uuid::new_v4().as_u128(), label: label.to_string(), from_node: 0, to_node: 0, properties: HashMap::from_iter(properties) }
     }
 
     pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self { id: uuid::Uuid::new_v4().as_simple().to_string(), label: label.to_string(), from_node: "".to_string(), to_node: "".to_string(), properties: HashMap::from_iter(properties) }
+        Self { id: uuid::Uuid::new_v4().as_u128(), label: label.to_string(), from_node: 0, to_node: 0, properties: HashMap::from_iter(properties) }
     }
 }
 

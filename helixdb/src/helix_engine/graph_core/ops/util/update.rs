@@ -37,7 +37,7 @@ where
                                 match bincode::serialize(v) {
                                     Ok(serialized) => {
                                         if let Err(e) =
-                                            db.put(self.txn, &serialized, node.id.as_bytes())
+                                            db.put(self.txn, &serialized, &node.id.to_le_bytes())
                                         {
                                             return Some(Err(GraphError::from(e)));
                                         }

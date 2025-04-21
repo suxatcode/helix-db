@@ -90,8 +90,8 @@ impl TraversalBuilder {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        from_id: &str,
-        to_id: &str,
+        from_id: u128,
+        to_id: u128,
         props: Vec<(String, Value)>,
     ) -> Result<(), GraphError> {
         self.storage
@@ -195,8 +195,8 @@ impl SourceTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn v_from_id(&mut self, txn: &RoTxn, node_id: &str) -> &mut Self {
-        match self.storage.get_node(txn, node_id) {
+    fn v_from_id(&mut self, txn: &RoTxn, node_id: u128) -> &mut Self {
+        match self.storage.get_node(txn, &node_id) {
             Ok(node) => {
                 self.current_step = TraversalValue::from(node);
             }
@@ -212,7 +212,7 @@ impl SourceTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[&str]) -> &mut Self {
+    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[u128]) -> &mut Self {
         let mut new_current = Vec::with_capacity(node_ids.len());
         for node_id in node_ids {
             match self.storage.get_node(txn, node_id) {
@@ -230,8 +230,8 @@ impl SourceTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn e_from_id(&mut self, txn: &RoTxn, edge_id: &str) -> &mut Self {
-        match self.storage.get_edge(txn, edge_id) {
+    fn e_from_id(&mut self, txn: &RoTxn, edge_id: u128) -> &mut Self {
+        match self.storage.get_edge(txn, &edge_id) {
             Ok(edge) => {
                 self.current_step = TraversalValue::from(edge);
             }
@@ -287,7 +287,7 @@ impl SourceTraversalSteps for TraversalBuilder {
         node_label: &str,
         props: Vec<(String, Value)>,
         secondary_indices: Option<&[String]>,
-        id: Option<String>,
+        id: Option<u128>,
     ) -> &mut Self {
         match self
             .storage
@@ -307,13 +307,13 @@ impl SourceTraversalSteps for TraversalBuilder {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        from_id: &str,
-        to_id: &str,
+        from_id: u128,
+        to_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self {
         match self
             .storage
-            .create_edge(txn, edge_label, from_id, to_id, props)
+            .create_edge(txn, edge_label, &from_id, &to_id, props)
         {
             Ok(edge) => {
                 self.current_step = TraversalValue::from(edge);
@@ -607,7 +607,7 @@ impl TraversalSteps for TraversalBuilder {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        from_id: &str,
+        from_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self {
         let mut e = GraphError::Empty;
@@ -618,7 +618,7 @@ impl TraversalSteps for TraversalBuilder {
                     match self.storage.create_edge(
                         txn,
                         edge_label,
-                        from_id,
+                        &from_id,
                         &node.id,
                         props.clone(),
                     ) {
@@ -639,7 +639,7 @@ impl TraversalSteps for TraversalBuilder {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        to_id: &str,
+        to_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self {
         let mut e = GraphError::Empty;
@@ -649,7 +649,7 @@ impl TraversalSteps for TraversalBuilder {
                 for node in nodes {
                     match self
                         .storage
-                        .create_edge(txn, edge_label, &node.id, to_id, props.clone())
+                        .create_edge(txn, edge_label, &node.id, &to_id, props.clone())
                     {
                         Ok(edge) => new_current.push(edge),
                         Err(err) => e = err,
@@ -870,12 +870,12 @@ impl TraversalSearchMethods for TraversalBuilder {
         &mut self,
         txn: &RoTxn,
         edge_label: &str,
-        from_id: &str,
-        to_id: &str,
+        from_id: u128,
+        to_id: u128,
     ) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let paths = {
-            match s.shortest_path(txn, edge_label, from_id, to_id) {
+            match s.shortest_path(txn, edge_label, &from_id, &to_id) {
                 Ok(paths) => paths,
                 Err(err) => {
                     // self.store_error(err);
@@ -892,7 +892,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self {
+    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: u128) -> &mut Self {
         let mut paths = Vec::with_capacity(24);
         let nodes = match &self.current_step {
             TraversalValue::NodeArray(nodes) => nodes.clone(),
@@ -905,7 +905,10 @@ impl TraversalSearchMethods for TraversalBuilder {
             }
         };
         for node in nodes {
-            match self.storage.shortest_path(txn, edge_label, &node.id, to_id) {
+            match self
+                .storage
+                .shortest_path(txn, edge_label, &node.id, &to_id)
+            {
                 Ok(path) => paths.push(path),
                 Err(e) => self.store_error(e),
             }
@@ -914,7 +917,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: &str) -> &mut Self {
+    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: u128) -> &mut Self {
         let mut paths = Vec::with_capacity(24);
         let nodes = match &self.current_step {
             TraversalValue::NodeArray(nodes) => nodes.clone(),
@@ -923,7 +926,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         for node in nodes {
             match self
                 .storage
-                .shortest_path(txn, edge_label, from_id, &node.id)
+                .shortest_path(txn, edge_label, &from_id, &node.id)
             {
                 Ok(path) => paths.push(path),
                 Err(e) => self.store_error(e),
@@ -937,7 +940,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         &mut self,
         txn: &RoTxn,
         edge_label: &str,
-        from_id: &str,
+        from_id: u128,
     ) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let mut e = GraphError::Empty;
@@ -955,7 +958,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         let mut paths = Vec::with_capacity(24);
 
         for node in nodes {
-            match s.shortest_mutual_path(txn, edge_label, from_id, &node.id) {
+            match s.shortest_mutual_path(txn, edge_label, &from_id, &node.id) {
                 Ok(path) => {
                     paths.push(path);
                 }
@@ -970,7 +973,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         self
     }
 
-    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self {
+    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: u128) -> &mut Self {
         let s = Arc::clone(&self.storage);
         let mut e = GraphError::Empty;
         let nodes = match &self.current_step {
@@ -987,7 +990,7 @@ impl TraversalSearchMethods for TraversalBuilder {
         let mut paths = Vec::with_capacity(24);
 
         for node in nodes {
-            match s.shortest_mutual_path(txn, edge_label, &node.id, to_id) {
+            match s.shortest_mutual_path(txn, edge_label, &node.id, &to_id) {
                 Ok(path) => {
                     paths.push(path);
                 }

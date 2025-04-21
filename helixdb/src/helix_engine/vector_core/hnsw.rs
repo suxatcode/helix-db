@@ -27,7 +27,7 @@ pub trait HNSW {
     /// # Returns
     ///
     /// An HVector of the data inserted
-    fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<String>) -> Result<HVector, VectorError>;
+    fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<u128>) -> Result<HVector, VectorError>;
 
     /// Load a full hnsw index with all vectors at once
     ///

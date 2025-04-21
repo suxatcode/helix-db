@@ -1,5 +1,9 @@
 use crate::helixc::parser::helix_parser::{
-    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema, EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, Step, Traversal, ValueType, VectorData
+    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema,
+    EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType,
+    NodeSchema, Parameter, Query, SearchVector, Source,
+    StartNode::{Anonymous, Edge, Node, Variable},
+    Statement, Step, Traversal, ValueType, VectorData,
 };
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
@@ -271,7 +275,9 @@ impl CodeGenerator {
             Statement::Drop(expr) => self.generate_drop(expr, query),
             Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
             Statement::SearchVector(search_vector) => self.generate_search_vector(search_vector),
-            Statement::BatchAddVector(batch_add_vector) => self.generate_batch_add_vector(batch_add_vector),
+            Statement::BatchAddVector(batch_add_vector) => {
+                self.generate_batch_add_vector(batch_add_vector)
+            }
         }
     }
 
@@ -1248,19 +1254,19 @@ impl CodeGenerator {
             .vertex_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
-        
+
         let (props, possible_id) = if let Some(fields) = &add_vertex.fields {
             let possible_id = match fields.get("id") {
                 Some(ValueType::Literal(Value::String(s))) => Some(s.clone()),
-                Some(ValueType::Identifier(identifier)) => Some(format!("data.{}.clone()", identifier)),
+                Some(ValueType::Identifier(identifier)) => {
+                    Some(format!("data.{}.clone()", identifier))
+                }
                 _ => None,
             };
             (self.generate_props_macro(&fields), possible_id)
         } else {
             ("props!{}".to_string(), None)
         };
-
-
 
         output.push_str(&mut self.indent());
         match possible_id {
@@ -1458,8 +1464,8 @@ impl CodeGenerator {
     fn value_to_rust(&mut self, value: &Value) -> String {
         match value {
             Value::String(s) => format!("\"{}\"", s),
-            Value::Integer(i) => i.to_string(),
-            Value::Float(f) => f.to_string(),
+            Value::I32(i) => i.to_string(),
+            Value::F64(f) => f.to_string(),
             Value::Boolean(b) => b.to_string(),
             Value::Array(arr) => format!(
                 "vec![{}]",

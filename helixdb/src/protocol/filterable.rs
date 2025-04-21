@@ -19,12 +19,12 @@ use super::return_values::ReturnValue;
 pub trait Filterable<'a> {
     fn type_name(&self) -> FilterableType;
 
-    fn id(&self) -> &str;
+    fn id(&self) -> &u128;
 
     fn label(&self) -> &str;
 
-    fn from_node(&self) -> String;
-    fn to_node(&self) -> String;
+    fn from_node(&self) -> u128;
+    fn to_node(&self) -> u128;
 
     fn properties(self) -> HashMap<String, Value>;
 
@@ -49,7 +49,7 @@ impl<'a> Filterable<'a> for Node {
     }
 
     #[inline(always)]
-    fn id(&self) -> &str {
+    fn id(&self) -> &u128 {
         &self.id
     }
 
@@ -59,12 +59,12 @@ impl<'a> Filterable<'a> for Node {
     }
 
     #[inline(always)]
-    fn from_node(&self) -> String {
+    fn from_node(&self) -> u128 {
         unreachable!()
     }
 
     #[inline(always)]
-    fn to_node(&self) -> String {
+    fn to_node(&self) -> u128 {
         unreachable!()
     }
 
@@ -112,7 +112,7 @@ impl<'a> Filterable<'a> for Edge {
     }
 
     #[inline(always)]
-    fn id(&self) -> &str {
+    fn id(&self) -> &u128 {
         &self.id
     }
 
@@ -122,13 +122,13 @@ impl<'a> Filterable<'a> for Edge {
     }
 
     #[inline(always)]
-    fn from_node(&self) -> String {
-        self.from_node.clone()
+    fn from_node(&self) -> u128 {
+        self.from_node
     }
 
     #[inline(always)]
-    fn to_node(&self) -> String {
-        self.to_node.clone()
+    fn to_node(&self) -> u128 {
+        self.to_node
     }
 
     #[inline(always)]

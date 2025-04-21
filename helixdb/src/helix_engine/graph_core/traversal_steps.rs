@@ -23,11 +23,11 @@ pub trait SourceTraversalSteps {
     fn e(&mut self, txn: &RoTxn) -> &mut Self;
 
     /// Adds node with specific id to current traversal step
-    fn v_from_id(&mut self, txn: &RoTxn, node_id: &str) -> &mut Self;
+    fn v_from_id(&mut self, txn: &RoTxn, node_id: u128) -> &mut Self;
 
-    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[&str]) -> &mut Self;
+    fn v_from_ids(&mut self, txn: &RoTxn, node_ids: &[u128]) -> &mut Self;
     /// Adds edge with specific id to current traversal step
-    fn e_from_id(&mut self, txn: &RoTxn, edge_id: &str) -> &mut Self;
+    fn e_from_id(&mut self, txn: &RoTxn, edge_id: u128) -> &mut Self;
 
     fn v_from_types(&mut self, txn: &RoTxn, node_labels: &[&str]) -> &mut Self;
 
@@ -42,15 +42,15 @@ pub trait SourceTraversalSteps {
         node_label: &str,
         props: Vec<(String, Value)>,
         secondary_indices: Option<&[String]>,
-        id: Option<String>,
+        id: Option<u128>,
     ) -> &mut Self;
     /// Creates a new edge in the graph between two nodes and adds it to current traversal step
     fn add_e(
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        from_id: &str,
-        to_id: &str,
+        from_id: u128,
+        to_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self;
 }
@@ -94,7 +94,7 @@ pub trait TraversalSteps {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        to_id: &str,
+        to_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self;
 
@@ -103,7 +103,7 @@ pub trait TraversalSteps {
         &mut self,
         txn: &mut RwTxn,
         edge_label: &str,
-        from_id: &str,
+        from_id: u128,
         props: Vec<(String, Value)>,
     ) -> &mut Self;
 
@@ -270,29 +270,29 @@ pub trait TraversalBuilderMethods {
 
 pub trait TraversalSearchMethods {
     /// Finds the shortest path from a given node to the currnet node using BFS
-    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: &str) -> &mut Self;
+    fn shortest_path_from(&mut self, txn: &RoTxn, edge_label: &str, from_id: u128) -> &mut Self;
 
     /// Finds the shortes path from the current node to a given node using BFS
-    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self;
+    fn shortest_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: u128) -> &mut Self;
 
     /// Finds the shortes path between two given nodes using BFS
     fn shortest_path_between(
         &mut self,
         txn: &RoTxn,
         edge_label: &str,
-        from_id: &str,
-        to_id: &str,
+        from_id: u128,
+        to_id: u128,
     ) -> &mut Self;
 
     fn shortest_mutual_path_from(
         &mut self,
         txn: &RoTxn,
         edge_label: &str,
-        from_id: &str,
+        from_id: u128,
     ) -> &mut Self;
 
     /// Finds the shortest mutual path from the current node to a given node using BFS
-    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: &str) -> &mut Self;
+    fn shortest_mutual_path_to(&mut self, txn: &RoTxn, edge_label: &str, to_id: u128) -> &mut Self;
 }
 
 pub trait VectorTraversalSteps {

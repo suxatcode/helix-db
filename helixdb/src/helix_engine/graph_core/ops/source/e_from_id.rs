@@ -23,7 +23,7 @@ pub struct EFromId<'a, T> {
     iter: Once<Result<TraversalVal, GraphError>>, // Use Once instead of Empty so we get exactly one item
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
-    id: &'a str,
+    id: &'a u128,
 }
 
 impl<'a> Iterator for EFromId<'a, RoTxn<'a>> {
@@ -57,7 +57,7 @@ impl<'a> Iterator for EFromId<'a, RwTxn<'a>> {
 pub trait EFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     type OutputIter: Iterator<Item = Result<TraversalVal, GraphError>>;
 
-    fn e_from_id(self, id: &'a str) -> Self::OutputIter;
+    fn e_from_id(self, id: &'a u128) -> Self::OutputIter;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> EFromIdAdapter<'a>
@@ -65,7 +65,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> EFromIdAdapter<'a
 {
     type OutputIter = RoTraversalIterator<'a, EFromId<'a, RoTxn<'a>>>;
 
-    fn e_from_id(self, id: &'a str) -> Self::OutputIter {
+    fn e_from_id(self, id: &'a u128) -> Self::OutputIter {
         let e_from_id = EFromId {
             iter: std::iter::once(Ok(TraversalVal::Empty)),
             storage: Arc::clone(&self.storage),

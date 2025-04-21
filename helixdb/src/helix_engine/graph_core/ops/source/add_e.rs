@@ -28,9 +28,9 @@ pub trait AddEAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
         self,
         label: &'a str,
         properties: impl IntoIterator<Item = (String, Value)>,
-        id: Option<String>,
-        from_node: String,
-        to_node: String,
+        id: Option<u128>,
+        from_node: u128,
+        to_node: u128,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
 }
 
@@ -41,12 +41,12 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         self,
         label: &'a str,
         properties: impl IntoIterator<Item = (String, Value)>,
-        id: Option<String>,
-        from_node: String,
-        to_node: String,
+        id: Option<u128>,
+        from_node: u128,
+        to_node: u128,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
         let edge = Edge {
-            id: id.unwrap_or(Uuid::new_v4().to_string()),
+            id: id.unwrap_or(Uuid::new_v4().as_u128()),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
             from_node,
@@ -58,7 +58,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             .nodes_db
             .get(
                 self.txn,
-                HelixGraphStorage::node_key(&edge.from_node).as_slice(),
+                &HelixGraphStorage::node_key(&edge.from_node),
             )
             .map_or(false, |node| node.is_none())
             || self
@@ -66,7 +66,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 .nodes_db
                 .get(
                     self.txn,
-                    HelixGraphStorage::node_key(&edge.to_node).as_slice(),
+                    &HelixGraphStorage::node_key(&edge.to_node),
                 )
                 .map_or(false, |node| node.is_none())
         {
@@ -88,7 +88,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         match self.storage.edge_labels_db.put(
             self.txn,
-            &HelixGraphStorage::edge_label_key(&edge.label, &edge.id),
+            &HelixGraphStorage::edge_label_key(&edge.label, Some(&edge.id)),
             &(),
         ) {
             Ok(_) => {}
@@ -97,8 +97,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         match self.storage.out_edges_db.put(
             self.txn,
-            &HelixGraphStorage::out_edge_key(&edge.from_node, &edge.to_node, &edge.label),
-            &edge.id.as_bytes(),
+            &HelixGraphStorage::out_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
+            &edge.id.to_le_bytes(),
         ) {
             Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),
@@ -106,8 +106,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         match self.storage.in_edges_db.put(
             self.txn,
-            &HelixGraphStorage::in_edge_key(&edge.from_node, &edge.to_node, &edge.label),
-            &edge.id.as_bytes(),
+            &HelixGraphStorage::in_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
+            &edge.id.to_le_bytes(),
         ) {
             Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),

@@ -47,24 +47,24 @@ impl PartialEq for TraversalVal {
 }
 
 pub trait Traversable {
-    fn id<'a>(&'a self) -> &'a str;
-    fn label<'a>(&'a self) -> &'a str;
+    fn id(&self) -> u128;
+    fn label(&self) -> String;
 }
 
 impl Traversable for TraversalVal {
-    fn id<'a>(&'a self) -> &'a str {
+    fn id(&self) -> u128 {
         match self {
-            TraversalVal::Node(node) => node.id.as_str(),
-            TraversalVal::Edge(edge) => edge.id.as_str(),
-            TraversalVal::Vector(vector) => vector.id(),
+            TraversalVal::Node(node) => node.id,
+            TraversalVal::Edge(edge) => edge.id,
+            TraversalVal::Vector(vector) => *vector.id(),
             _ => panic!("Invalid traversal value"),
         }
     }
 
-    fn label<'a>(&'a self) -> &'a str {
+    fn label(&self) -> String {
         match self {
-            TraversalVal::Node(node) => node.label.as_str(),
-            TraversalVal::Edge(edge) => edge.label.as_str(),
+            TraversalVal::Node(node) => node.label.clone(),
+            TraversalVal::Edge(edge) => edge.label.clone(),
             _ => panic!("Invalid traversal value"),
         }
     }

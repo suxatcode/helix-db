@@ -1071,19 +1071,19 @@ pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), G
                             _ => panic!("error getting value {}", line!()),
                         };
                         let from = match data.remove("from") {
-                            Some(ProtocolValue::String(from)) => from.to_string(),
+                            Some(ProtocolValue::U128(from)) => from,
                             _ => panic!("error getting value {}", line!()),
                         };
                         let to = match data.remove("to") {
-                            Some(ProtocolValue::String(to)) => to.to_string(),
+                            Some(ProtocolValue::U128(to)) => to,
                             _ => panic!("error getting value {}", line!()),
                         };
                         // insert into db without returning the edge
                         let _ = tr.add_e_temp(
                             &mut txn,
                             &label,
-                            &from,
-                            &to,
+                            from,
+                            to,
                             properties
                                 .into_iter()
                                 .filter_map(|(k, v)| {

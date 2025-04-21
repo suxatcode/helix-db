@@ -2,17 +2,26 @@ use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,
 };
-use sonic_rs::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::{collections::HashMap, fmt};
+use sonic_rs::{Deserialize, Serialize};
+use std::{collections::HashMap, env::consts::OS, fmt};
 
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Value {
     String(String),
-    Float(f64),
-    Integer(i32),
+    F32(f32),
+    F64(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
     Boolean(bool),
     Array(Vec<Value>),
     Object(HashMap<String, Value>),
@@ -29,8 +38,17 @@ impl Serialize for Value {
         if serializer.is_human_readable() {
             match self {
                 Value::String(s) => s.serialize(serializer),
-                Value::Float(f) => f.serialize(serializer),
-                Value::Integer(i) => i.serialize(serializer),
+                Value::F32(f) => f.serialize(serializer),
+                Value::F64(f) => f.serialize(serializer),
+                Value::I8(i) => i.serialize(serializer),
+                Value::I16(i) => i.serialize(serializer),
+                Value::I32(i) => i.serialize(serializer),
+                Value::I64(i) => i.serialize(serializer),
+                Value::U8(i) => i.serialize(serializer),
+                Value::U16(i) => i.serialize(serializer),
+                Value::U32(i) => i.serialize(serializer),
+                Value::U64(i) => i.serialize(serializer),
+                Value::U128(i) => i.serialize(serializer),
                 Value::Boolean(b) => b.serialize(serializer),
                 Value::Array(arr) => {
                     use serde::ser::SerializeSeq;
@@ -53,12 +71,25 @@ impl Serialize for Value {
         } else {
             match self {
                 Value::String(s) => serializer.serialize_newtype_variant("Value", 0, "String", s),
-                Value::Float(f) => serializer.serialize_newtype_variant("Value", 1, "Float", f),
-                Value::Integer(i) => serializer.serialize_newtype_variant("Value", 2, "Integer", i),
-                Value::Boolean(b) => serializer.serialize_newtype_variant("Value", 3, "Boolean", b),
-                Value::Array(a) => serializer.serialize_newtype_variant("Value", 4, "Array", a),
-                Value::Object(obj) => serializer.serialize_newtype_variant("Value", 5, "Object", obj),
-                Value::Empty => serializer.serialize_unit_variant("Value", 6, "Empty"),
+                Value::F32(f) => serializer.serialize_newtype_variant("Value", 1, "F32", f),
+                Value::F64(f) => serializer.serialize_newtype_variant("Value", 2, "F64", f),
+                Value::I8(i) => serializer.serialize_newtype_variant("Value", 3, "I8", i),
+                Value::I16(i) => serializer.serialize_newtype_variant("Value", 4, "I16", i),
+                Value::I32(i) => serializer.serialize_newtype_variant("Value", 5, "I32", i),
+                Value::I64(i) => serializer.serialize_newtype_variant("Value", 6, "I64", i),
+                Value::U8(i) => serializer.serialize_newtype_variant("Value", 7, "U8", i),
+                Value::U16(i) => serializer.serialize_newtype_variant("Value", 8, "U16", i),
+                Value::U32(i) => serializer.serialize_newtype_variant("Value", 9, "U32", i),
+                Value::U64(i) => serializer.serialize_newtype_variant("Value", 10, "U64", i),
+                Value::U128(i) => serializer.serialize_newtype_variant("Value", 11, "U128", i),
+                Value::Boolean(b) => {
+                    serializer.serialize_newtype_variant("Value", 12, "Boolean", b)
+                }
+                Value::Array(a) => serializer.serialize_newtype_variant("Value", 13, "Array", a),
+                Value::Object(obj) => {
+                    serializer.serialize_newtype_variant("Value", 14, "Object", obj)
+                }
+                Value::Empty => serializer.serialize_unit_variant("Value", 15, "Empty"),
             }
         }
     }
@@ -101,11 +132,11 @@ impl<'de> Deserialize<'de> for Value {
             }
 
             #[inline]
-            fn visit_i32<E>(self, value: i32) -> Result<Value, E>
+            fn visit_f32<E>(self, value: f32) -> Result<Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(Value::Integer(value))
+                Ok(Value::F32(value))
             }
 
             #[inline]
@@ -113,7 +144,79 @@ impl<'de> Deserialize<'de> for Value {
             where
                 E: serde::de::Error,
             {
-                Ok(Value::Float(value))
+                Ok(Value::F64(value))
+            }
+
+            #[inline]
+            fn visit_i8<E>(self, value: i8) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::I8(value))
+            }
+
+            #[inline]
+            fn visit_i16<E>(self, value: i16) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::I16(value))
+            }
+
+            #[inline]
+            fn visit_i32<E>(self, value: i32) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::I32(value))
+            }
+
+            #[inline]
+            fn visit_i64<E>(self, value: i64) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::I64(value))
+            }
+
+            #[inline]
+            fn visit_u8<E>(self, value: u8) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::U8(value))
+            }
+
+            #[inline]
+            fn visit_u16<E>(self, value: u16) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::U16(value))
+            }
+
+            #[inline]
+            fn visit_u32<E>(self, value: u32) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::U32(value))
+            }
+
+            #[inline]
+            fn visit_u64<E>(self, value: u64) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::U64(value))
+            }
+
+            #[inline]
+            fn visit_u128<E>(self, value: u128) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::U128(value))
             }
 
             #[inline]
@@ -153,11 +256,21 @@ impl<'de> Deserialize<'de> for Value {
                 let (variant_idx, variant_data) = data.variant_seed(VariantIdxDeserializer)?;
                 match variant_idx {
                     0 => Ok(Value::String(variant_data.newtype_variant()?)),
-                    1 => Ok(Value::Float(variant_data.newtype_variant()?)),
-                    2 => Ok(Value::Integer(variant_data.newtype_variant()?)),
-                    3 => Ok(Value::Boolean(variant_data.newtype_variant()?)),
-                    4 => Ok(Value::Array(variant_data.newtype_variant()?)),
-                    5 => {
+                    1 => Ok(Value::F32(variant_data.newtype_variant()?)),
+                    2 => Ok(Value::F64(variant_data.newtype_variant()?)),
+                    3 => Ok(Value::I8(variant_data.newtype_variant()?)),
+                    4 => Ok(Value::I16(variant_data.newtype_variant()?)),
+                    5 => Ok(Value::I32(variant_data.newtype_variant()?)),
+                    6 => Ok(Value::I64(variant_data.newtype_variant()?)),
+                    7 => Ok(Value::U8(variant_data.newtype_variant()?)),
+                    8 => Ok(Value::U16(variant_data.newtype_variant()?)),
+                    9 => Ok(Value::U32(variant_data.newtype_variant()?)),
+                    10 => Ok(Value::U64(variant_data.newtype_variant()?)),
+                    11 => Ok(Value::U128(variant_data.newtype_variant()?)),
+                    12 => Ok(Value::Boolean(variant_data.newtype_variant()?)),
+                    13 => Ok(Value::Array(variant_data.newtype_variant()?)),
+                    14 => Ok(Value::Object(variant_data.newtype_variant()?)),
+                    15 => {
                         variant_data.unit_variant()?;
                         Ok(Value::Empty)
                     }
@@ -207,7 +320,7 @@ impl<'de> Deserialize<'de> for Value {
             // For binary, use enum variant indices
             deserializer.deserialize_enum(
                 "Value",
-                &["String", "Float", "Integer", "Boolean", "Array", "Empty"],
+                &["String", "F32", "F64", "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64", "U128", "Boolean", "Array", "Object", "Empty"],
                 ValueVisitor,
             )
         }
@@ -257,14 +370,6 @@ impl From<String> for Value {
         Value::String(s.trim_matches('"').to_string())
     }
 }
-
-impl From<i32> for Value {
-    #[inline]
-    fn from(i: i32) -> Self {
-        Value::Integer(i)
-    }
-}
-
 impl From<bool> for Value {
     #[inline]
     fn from(b: bool) -> Self {
@@ -272,10 +377,80 @@ impl From<bool> for Value {
     }
 }
 
+impl From<f32> for Value {
+    #[inline]
+    fn from(f: f32) -> Self {
+        Value::F32(f)
+    }
+}
+
 impl From<f64> for Value {
     #[inline]
     fn from(f: f64) -> Self {
-        Value::Float(f)
+        Value::F64(f)
+    }
+}
+
+impl From<i8> for Value {
+    #[inline]
+    fn from(i: i8) -> Self {
+        Value::I8(i)
+    }
+}
+
+impl From<i16> for Value {
+    #[inline]
+    fn from(i: i16) -> Self {
+        Value::I16(i)
+    }
+}
+
+impl From<i32> for Value {
+    #[inline]
+    fn from(i: i32) -> Self {
+        Value::I32(i)
+    }
+}
+
+impl From<i64> for Value {
+    #[inline]
+    fn from(i: i64) -> Self {
+        Value::I64(i)
+    }
+}
+
+impl From<u8> for Value {
+    #[inline]
+    fn from(i: u8) -> Self {
+        Value::U8(i)
+    }
+}
+
+impl From<u16> for Value {
+    #[inline]
+    fn from(i: u16) -> Self {
+        Value::U16(i)
+    }
+}
+
+impl From<u32> for Value {
+    #[inline]
+    fn from(i: u32) -> Self {
+        Value::U32(i)
+    }
+}
+
+impl From<u64> for Value {
+    #[inline]
+    fn from(i: u64) -> Self {
+        Value::U64(i)
+    }
+}
+
+impl From<u128> for Value {
+    #[inline]
+    fn from(i: u128) -> Self {
+        Value::U128(i)
     }
 }
 
@@ -283,6 +458,17 @@ impl From<Vec<Value>> for Value {
     #[inline]
     fn from(v: Vec<Value>) -> Self {
         Value::Array(v)
+    }
+}
+
+impl From<usize> for Value {
+    #[inline]
+    fn from(v: usize) -> Self {
+        if cfg!(target_pointer_width = "64") {
+            Value::U64(v as u64)
+        } else {
+            Value::U128(v as u128)
+        }
     }
 }
 
@@ -300,18 +486,20 @@ impl From<JsonValue> for Value {
     fn from(v: JsonValue) -> Self {
         match v {
             JsonValue::String(s) => Value::String(s),
-            JsonValue::Number(n) =>{
+            JsonValue::Number(n) => {
                 if n.is_u64() {
-                    Value::Integer(n.as_u64().unwrap() as i32)
+                    Value::U64(n.as_u64().unwrap() as u64)
                 } else if n.is_i64() {
-                    Value::Integer(n.as_i64().unwrap() as i32)
+                    Value::I64(n.as_i64().unwrap())
                 } else {
-                    Value::Float(n.as_f64().unwrap())
+                    Value::F64(n.as_f64().unwrap())
                 }
-            },
+            }
             JsonValue::Bool(b) => Value::Boolean(b),
             JsonValue::Array(a) => Value::Array(a.into_iter().map(|v| v.into()).collect()),
-            JsonValue::Object(o) => Value::Object(o.into_iter().map(|(k, v)| (k, v.into())).collect()),
+            JsonValue::Object(o) => {
+                Value::Object(o.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
             JsonValue::Null => Value::Empty,
         }
     }

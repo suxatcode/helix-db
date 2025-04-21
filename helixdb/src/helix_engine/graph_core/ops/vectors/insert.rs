@@ -1,0 +1,49 @@
+use std::{collections::HashMap, iter::Once, sync::Arc};
+
+use heed3::{RoTxn, RwTxn};
+use uuid::Uuid;
+
+use crate::{
+    helix_engine::{
+        graph_core::traversal_iter::RwTraversalIterator,
+        storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::hnsw::HNSW,
+    },
+    protocol::{filterable::Filterable, items::Node, value::Value},
+};
+
+use super::super::tr_val::TraversalVal;
+
+pub struct InsertVIterator {
+    inner: std::iter::Once<Result<TraversalVal, GraphError>>,
+}
+
+impl Iterator for InsertVIterator {
+    type Item = Result<TraversalVal, GraphError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+}
+
+pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+    fn insert_v(self, query: Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
+}
+
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a>
+    for RwTraversalIterator<'a, 'b, I>
+{
+    fn insert_v(self, query: Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
+        let vector = self.storage.vectors.insert(self.txn, &query, None);
+
+        let result = match vector {
+            Ok(vector) => Ok(TraversalVal::Vector(vector)),
+            Err(e) => Err(GraphError::from(e)),
+        };
+
+        RwTraversalIterator {
+            inner: std::iter::once(result),
+            storage: self.storage,
+            txn: self.txn,
+        }
+    }
+}

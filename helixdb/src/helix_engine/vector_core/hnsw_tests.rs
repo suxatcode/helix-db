@@ -1,9 +1,19 @@
-use rand::prelude::SliceRandom;
-use polars::prelude::*;
-use rayon::prelude::*;
+use crate::helix_engine::vector_core::{
+    hnsw::HNSW,
+    vector::HVector,
+    vector_core::{HNSWConfig, VectorCore},
+};
 use heed3::{Env, EnvOpenOptions};
-use crate::helix_engine::vector_core::{vector::HVector, hnsw::HNSW, vector_core::{HNSWConfig, VectorCore}};
-use std::{env, io::{Read, BufReader, Error as IoError}, collections::HashSet, time::Instant, fs::{self, File}};
+use polars::prelude::*;
+use rand::prelude::SliceRandom;
+use rayon::prelude::*;
+use std::{
+    collections::HashSet,
+    env,
+    fs::{self, File},
+    io::{BufReader, Error as IoError, Read},
+    time::Instant,
+};
 
 fn setup_temp_env() -> Env {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -21,28 +31,26 @@ fn setup_temp_env() -> Env {
     }
 }
 
-fn calc_ground_truths(vectors: Vec<HVector>, query_vectors: Vec<(String, Vec<f64>)>, k: usize) -> Vec<Vec<String>> {
+fn calc_ground_truths(
+    vectors: Vec<HVector>,
+    query_vectors: Vec<(String, Vec<f64>)>,
+    k: usize,
+) -> Vec<Vec<String>> {
     query_vectors
-    .par_iter()
-    .map(|(_, query)| {
-        let hquery = HVector::from_slice("".to_string(), 0, query.clone());
+        .par_iter()
+        .map(|(_, query)| {
+            let hquery = HVector::from_slice(0, 0, query.clone());
 
-        let mut distances: Vec<(String, f64)> = vectors
-            .iter()
-            .map(|hvector| {
-                (hvector.get_id().to_string(), hvector.distance_to(&hquery))
-            })
-            .collect();
+            let mut distances: Vec<(String, f64)> = vectors
+                .iter()
+                .map(|hvector| (hvector.get_id().to_string(), hvector.distance_to(&hquery)))
+                .collect();
 
-        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-        distances
-            .iter()
-            .take(k)
-            .map(|(id, _)| id.clone())
-            .collect()
-    })
-    .collect()
+            distances.iter().take(k).map(|(id, _)| id.clone()).collect()
+        })
+        .collect()
 }
 
 fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsError> {
@@ -81,10 +89,7 @@ fn load_dbpedia_vectors(limit: usize) -> Result<Vec<(String, Vec<f64>)>, PolarsE
                 let chunked = f64_series.f64().unwrap();
                 let vector: Vec<f64> = chunked.into_no_null_iter().collect();
 
-                all_vectors.push((
-                    _id.unwrap().to_string(),
-                    vector
-                ));
+                all_vectors.push((_id.unwrap().to_string(), vector));
 
                 total_loaded += 1;
             }
@@ -169,22 +174,23 @@ fn test_recall_precision_real_data() {
     let mut txn = env.write_txn().unwrap();
 
     let mut total_insertion_time = std::time::Duration::from_secs(0);
-    let index = VectorCore::new(
-        &env,
-        &mut txn,
-        HNSWConfig::new(None, None, None),
-    ).unwrap();
+    let index = VectorCore::new(&env, &mut txn, HNSWConfig::new(None, None, None)).unwrap();
 
     let mut all_vectors: Vec<HVector> = Vec::new();
 
     let over_all_time = Instant::now();
     for (i, (id, data)) in vectors.iter().enumerate() {
         let start_time = Instant::now();
-        let vec = index.insert(&mut txn, data, Some(id.clone())).unwrap();
+        let vec = index.insert(&mut txn, data, Some(id.parse::<u128>().unwrap())).unwrap();
         all_vectors.push(vec);
         let time = start_time.elapsed();
         if i % 1000 == 0 {
-            println!("{} => inserting in {} ms, vector: {}", i, time.as_millis(), id);
+            println!(
+                "{} => inserting in {} ms, vector: {}",
+                i,
+                time.as_millis(),
+                id
+            );
             println!("time taken so far: {:?}", over_all_time.elapsed());
         }
         total_insertion_time += time;
@@ -193,7 +199,10 @@ fn test_recall_precision_real_data() {
     let txn = env.read_txn().unwrap();
     println!("{:?}", index.config);
 
-    println!("total insertion time: {:.2?} seconds", total_insertion_time.as_secs_f64());
+    println!(
+        "total insertion time: {:.2?} seconds",
+        total_insertion_time.as_secs_f64()
+    );
     println!(
         "average insertion time per vec: {:.2?} milliseconds",
         total_insertion_time.as_millis() as f64 / n_base as f64
@@ -214,7 +223,8 @@ fn test_recall_precision_real_data() {
         let search_duration = start_time.elapsed();
         total_search_time += search_duration;
 
-        let result_indices: HashSet<String> = results.into_iter()
+        let result_indices: HashSet<String> = results
+            .into_iter()
             .map(|hvector| hvector.get_id().to_string())
             .collect();
 
@@ -223,13 +233,16 @@ fn test_recall_precision_real_data() {
         let true_positives = result_indices.intersection(&gt_indices).count();
 
         let recall: f64 = true_positives as f64 / gt_indices.len() as f64;
-        let precision:f64 = true_positives as f64 / result_indices.len() as f64;
+        let precision: f64 = true_positives as f64 / result_indices.len() as f64;
 
         total_recall += recall;
         total_precision += precision;
     }
 
-    println!("total search time: {:.2?} seconds", total_search_time.as_secs_f64());
+    println!(
+        "total search time: {:.2?} seconds",
+        total_search_time.as_secs_f64()
+    );
     println!(
         "average search time per query: {:.2?} milliseconds",
         total_search_time.as_millis() as f64 / n_query as f64
@@ -237,6 +250,9 @@ fn test_recall_precision_real_data() {
 
     total_recall = total_recall / n_query as f64;
     total_precision = total_precision / n_query as f64;
-    println!("{}: avg. recall: {:.4?}, avg. precision: {:.4?}", test_id, total_recall, total_precision);
+    println!(
+        "{}: avg. recall: {:.4?}, avg. precision: {:.4?}",
+        test_id, total_recall, total_precision
+    );
     assert!(total_recall >= 0.8, "recall not high enough!");
 }

@@ -32,8 +32,8 @@ impl<'a> Iterator for NFromTypes<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|value| {
             let (key, _) = value.unwrap();
-            let node_id = std::str::from_utf8(&key[self.length..])?;
-            let node: Node = match self.storage.get_node(self.txn, node_id) {
+            let node_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..])?;
+            let node: Node = match self.storage.get_node(self.txn, &node_id) {
                 Ok(node) => node,
                 Err(e) => return Err(e),
             };
@@ -57,7 +57,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypesAdapter
         let db = self.storage.clone();
         let txn: &RoTxn<'_> = self.txn;
         let iter = types.iter().flat_map(move |label| {
-            let prefix = HelixGraphStorage::node_label_key(label, "");
+            let prefix = HelixGraphStorage::node_label_key(label, None);
             let iter = db
                 .node_labels_db
                 .lazily_decode_data()

@@ -266,8 +266,8 @@ impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
         match value {
             Value::String(s) => ValueType::Literal(Value::String(s)),
-            Value::Integer(i) => ValueType::Literal(Value::Integer(i)),
-            Value::Float(f) => ValueType::Literal(Value::Float(f)),
+            Value::I32(i) => ValueType::Literal(Value::I32(i)),
+            Value::F64(f) => ValueType::Literal(Value::F64(f)),
             Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
             Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
             Value::Empty => ValueType::Literal(Value::Empty),
@@ -721,12 +721,12 @@ impl HelixParser {
                             Rule::integer => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|i| ValueType::from(Value::Integer(i)))
+                                .map(|i| ValueType::from(Value::I32(i)))
                                 .map_err(|_| ParserError::from("Invalid integer value")),
                             Rule::float => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|f| ValueType::from(Value::Float(f)))
+                                .map(|f| ValueType::from(Value::F64(f)))
                                 .map_err(|_| ParserError::from("Invalid float value")),
                             Rule::boolean => Ok(ValueType::from(Value::Boolean(
                                 value_pair.as_str() == "true",
@@ -1126,13 +1126,13 @@ impl HelixParser {
             Rule::string_literal => {
                 FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
             }
-            Rule::integer => FieldValue::Literal(Value::Integer(
+            Rule::integer => FieldValue::Literal(Value::I32(
                 value_pair
                     .as_str()
                     .parse()
                     .map_err(|_| ParserError::from("Invalid integer literal"))?,
             )),
-            Rule::float => FieldValue::Literal(Value::Float(
+            Rule::float => FieldValue::Literal(Value::F64(
                 value_pair
                     .as_str()
                     .parse()
@@ -1168,13 +1168,13 @@ impl HelixParser {
             Rule::string_literal => {
                 FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
             }
-            Rule::integer => FieldValue::Literal(Value::Integer(
+            Rule::integer => FieldValue::Literal(Value::I32(
                 value_pair
                     .as_str()
                     .parse()
                     .map_err(|_| ParserError::from("Invalid integer literal"))?,
             )),
-            Rule::float => FieldValue::Literal(Value::Float(
+            Rule::float => FieldValue::Literal(Value::F64(
                 value_pair
                     .as_str()
                     .parse()

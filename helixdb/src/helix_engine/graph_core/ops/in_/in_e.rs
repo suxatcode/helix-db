@@ -14,7 +14,6 @@ pub struct InEdgesIterator<'a, T> {
     iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
-    edge_label: &'a str,
 }
 
 // implementing iterator for OutIterator
@@ -24,9 +23,15 @@ impl<'a> Iterator for InEdgesIterator<'a, RoTxn<'a>> {
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
-            if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
-                return Some(Ok(TraversalVal::Edge(edge)));
+            if let Ok(data) = value.decode() {
+                let edge_id = HelixGraphStorage::get_u128_from_bytes(data).unwrap();
+                if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
+                    return Some(Ok(TraversalVal::Edge(edge)));
+                }
+            } else {
+                return Some(Err(GraphError::ConversionError(
+                    "Error decoding edge".to_string(),
+                )));
             }
         }
         None
@@ -38,9 +43,15 @@ impl<'a> Iterator for InEdgesIterator<'a, RwTxn<'a>> {
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
-            if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
-                return Some(Ok(TraversalVal::Edge(edge)));
+            if let Ok(data) = value.decode() {
+                let edge_id = HelixGraphStorage::get_u128_from_bytes(data).unwrap();
+                if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
+                    return Some(Ok(TraversalVal::Edge(edge)));
+                }
+            } else {
+                return Some(Err(GraphError::ConversionError(
+                    "Error decoding edge".to_string(),
+                )));
             }
         }
         None
@@ -99,7 +110,8 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
             let txn = self.txn;
             let iter = self
                 .map(move |item| {
-                    let prefix = HelixGraphStorage::in_edge_key(item.unwrap().id(), edge_label, "");
+                    let prefix =
+                        HelixGraphStorage::in_edge_key(&item.unwrap().id(), edge_label, None);
                     let iter = db
                         .in_edges_db
                         .lazily_decode_data()
@@ -110,7 +122,6 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
                         iter,
                         storage: Arc::clone(&db),
                         txn,
-                        edge_label,
                     }
                 })
                 .flatten();

@@ -31,7 +31,7 @@ pub trait AddNAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
         label: &'a str,
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&'a [String]>,
-        id: Option<String>,
+        id: Option<u128>,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
 }
 
@@ -43,10 +43,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         label: &'a str,
         properties: impl IntoIterator<Item = (String, Value)>,
         secondary_indices: Option<&'a [String]>,
-        id: Option<String>,
+        id: Option<u128>,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
         let node = Node {
-            id: id.unwrap_or(Uuid::new_v4().to_string()),
+            id: id.unwrap_or(Uuid::new_v4().as_u128()),
             label: label.to_string(),
             properties: properties.into_iter().collect(),
         };
@@ -80,7 +80,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                     };
                     match bincode::serialize(&key) {
                         Ok(serialized) => {
-                            if let Err(e) = db.put(self.txn, &serialized, node.id.as_bytes()) {
+                            if let Err(e) = db.put(self.txn, &serialized, &node.id.to_le_bytes()) {
                                 result = Err(GraphError::from(e));
                             }
                         }

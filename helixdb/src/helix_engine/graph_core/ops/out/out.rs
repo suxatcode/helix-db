@@ -24,8 +24,8 @@ impl<'a> Iterator for OutNodesIterator<'a, RoTxn<'a>> {
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
-            if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
+            let edge_id = HelixGraphStorage::get_u128_from_bytes(value.decode().unwrap()).unwrap();
+            if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
                 if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
                     return Some(Ok(TraversalVal::Node(node)));
                 }
@@ -40,8 +40,8 @@ impl<'a> Iterator for OutNodesIterator<'a, RwTxn<'a>> {
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = std::str::from_utf8(value.decode().unwrap()).unwrap();
-            if let Ok(edge) = self.storage.get_edge(self.txn, edge_id) {
+            let edge_id = HelixGraphStorage::get_u128_from_bytes(value.decode().unwrap()).unwrap();
+            if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
                 if let Ok(node) = self.storage.get_node(self.txn, &edge.to_node) {
                     return Some(Ok(TraversalVal::Node(node)));
                 }
@@ -108,7 +108,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
                 .inner
                 .map(move |item| {
                     let prefix =
-                        HelixGraphStorage::out_edge_key(item.unwrap().id(), edge_label, "");
+                        HelixGraphStorage::out_edge_key(&item.unwrap().id(), edge_label, None);
                     let iter = db
                         .out_edges_db
                         .lazily_decode_data()
