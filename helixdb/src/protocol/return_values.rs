@@ -1,3 +1,5 @@
+use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
+
 use super::count::Count;
 use super::filterable::{Filterable, FilterableType};
 use super::items::{Edge, Node};
@@ -92,7 +94,7 @@ impl From<u128> for ReturnValue {
 
 impl<I> From<I> for ReturnValue
 where
-    for<'a> I: Filterable<'a> + Clone,
+    I: Filterable + Clone,
 {
     #[inline]
     fn from(item: I) -> Self {
@@ -156,50 +158,48 @@ impl ReturnValue {
 
     #[inline(always)]
     fn process_items_with_mixin<T>(
-        items: Vec<T>,
-        mut mixin: RefMut<HashMap<String, ResponseRemapping>>,
+        item: T,
+        mixin: &mut RefMut<HashMap<u128, ResponseRemapping>>,
     ) -> ReturnValue
     where
-        for<'a> T: Filterable<'a> + Clone,
+        T: Filterable + Clone,
     {
-        ReturnValue::Array(
-            items
-                .into_iter()
-                .map(|item| {
-                    let id = item.id().to_string();
-                    if let Some(m) = mixin.get_mut(&id) {
-                        if m.should_spread {
-                            ReturnValue::from(item).mixin_remapping(&mut m.remappings)
-                        } else {
-                            ReturnValue::default().mixin_remapping(&mut m.remappings)
-                        }
-                    } else {
-                        ReturnValue::from(item)
-                    }
-                })
-                .collect(),
-        )
+        let id = item.id();
+        if let Some(m) = mixin.get_mut(&id) {
+            if m.should_spread {
+                ReturnValue::from(item).mixin_remapping(&mut m.remappings)
+            } else {
+                ReturnValue::default().mixin_remapping(&mut m.remappings)
+            }
+        } else {
+            ReturnValue::from(item)
+        }
     }
 
     #[inline]
     pub fn from_traversal_value_array_with_mixin(
-        traversal_value: TraversalValue,
-        mixin: RefMut<HashMap<String, ResponseRemapping>>,
+        traversal_value: Vec<TraversalVal>,
+        mut mixin: RefMut<HashMap<u128, ResponseRemapping>>,
     ) -> Self {
-        match traversal_value {
-            TraversalValue::VectorArray(vectors) => {
-                ReturnValue::process_items_with_mixin(vectors, mixin)
-            }
-            TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
-            TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
-            TraversalValue::ValueArray(values) => ReturnValue::Empty,
-            TraversalValue::Count(count) => ReturnValue::from(count),
-            TraversalValue::Empty => ReturnValue::Empty,
-            _ => {
-                println!("not working");
-                unreachable!()
-            }
-        }
+        ReturnValue::Array(
+            traversal_value
+                .into_iter()
+                .map(|val| match val {
+                    TraversalVal::Node(node) => {
+                        ReturnValue::process_items_with_mixin(node, &mut mixin)
+                    }
+                    TraversalVal::Edge(edge) => {
+                        ReturnValue::process_items_with_mixin(edge, &mut mixin)
+                    }
+                    TraversalVal::Vector(vector) => {
+                        ReturnValue::process_items_with_mixin(vector, &mut mixin)
+                    }
+                    TraversalVal::Count(count) => ReturnValue::from(count),
+                    TraversalVal::Empty => ReturnValue::Empty,
+                    _ => unreachable!(),
+                })
+                .collect(),
+        )
     }
 
     #[inline(always)]
@@ -275,7 +275,7 @@ impl ReturnValue {
     #[ignore = "No use for this function yet, however, I believe it may be useful in the future so I'm keeping it here"]
     pub fn mixin_other<I>(&self, item: I, mut secondary_properties: ResponseRemapping) -> Self
     where
-        for<'a> I: Filterable<'a> + Clone,
+        I: Filterable + Clone,
     {
         let mut return_val = ReturnValue::default();
         if !secondary_properties.should_spread {

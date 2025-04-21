@@ -16,7 +16,7 @@ use super::return_values::ReturnValue;
 
 /// Trait for types that can be filtered based on their properties.
 /// Implemented by both Node and Edge types.
-pub trait Filterable<'a> {
+pub trait Filterable {
     fn type_name(&self) -> FilterableType;
 
     fn id(&self) -> &u128;
@@ -30,13 +30,13 @@ pub trait Filterable<'a> {
 
     fn properties(self) -> HashMap<String, Value>;
 
-    fn properties_mut(&'a mut self) -> &'a mut HashMap<String, Value>;
+    fn properties_mut(&mut self) -> &mut HashMap<String, Value>;
 
-    fn properties_ref(&'a self) -> &'a HashMap<String, Value>;
+    fn properties_ref(&self) -> &HashMap<String, Value>;
 
-    fn check_property(&'a self, key: &str) -> Option<&'a Value>;
+    fn check_property(&self, key: &str) -> Option<&Value>;
 
-    fn find_property(
+    fn find_property<'a>(
         &'a self,
         key: &str,
         secondary_properties: &'a HashMap<String, ReturnValue>,
@@ -44,7 +44,7 @@ pub trait Filterable<'a> {
     ) -> Option<&'a ReturnValue>;
 }
 
-impl<'a> Filterable<'a> for Node {
+impl Filterable for Node {
     #[inline(always)]
     fn type_name(&self) -> FilterableType {
         FilterableType::Node
@@ -81,22 +81,22 @@ impl<'a> Filterable<'a> for Node {
     }
 
     #[inline(always)]
-    fn properties_ref(&'a self) -> &'a HashMap<String, Value> {
+    fn properties_ref(&self) -> &HashMap<String, Value> {
         &self.properties
     }
 
     #[inline(always)]
-    fn properties_mut(&'a mut self) -> &'a mut HashMap<String, Value> {
+    fn properties_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.properties
     }
 
     #[inline(always)]
-    fn check_property(&'a self, key: &str) -> Option<&'a Value> {
+    fn check_property(&self, key: &str) -> Option<&Value> {
         self.properties.get(key)
     }
 
     #[inline(always)]
-    fn find_property(
+    fn find_property<'a>(
         &'a self,
         key: &str,
         secondary_properties: &'a HashMap<String, ReturnValue>,
@@ -112,7 +112,7 @@ impl<'a> Filterable<'a> for Node {
     }
 }
 
-impl<'a> Filterable<'a> for Edge {
+impl Filterable for Edge {
     #[inline(always)]
     fn type_name(&self) -> FilterableType {
         FilterableType::Edge
@@ -149,22 +149,22 @@ impl<'a> Filterable<'a> for Edge {
     }
 
     #[inline(always)]
-    fn properties_ref(&'a self) -> &'a HashMap<String, Value> {
+    fn properties_ref(&self) -> &HashMap<String, Value> {
         &self.properties
     }
 
     #[inline(always)]
-    fn properties_mut(&'a mut self) -> &'a mut HashMap<String, Value> {
+    fn properties_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.properties
     }
 
     #[inline(always)]
-    fn check_property(&'a self, key: &str) -> Option<&'a Value> {
+    fn check_property(&self, key: &str) -> Option<&Value> {
         self.properties.get(key)
     }
 
     #[inline(always)]
-    fn find_property(
+    fn find_property<'a>(
         &'a self,
         key: &str,
         secondary_properties: &'a HashMap<String, ReturnValue>,

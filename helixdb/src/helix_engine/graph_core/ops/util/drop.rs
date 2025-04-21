@@ -16,10 +16,9 @@ pub struct Drop<'a, I> {
 }
 
 // implementing iterator for Drop
-impl<'a, 'b, I> Iterator for Drop<'a, I>
+impl<'a, I> Iterator for Drop<'a, I>
 where
-    I: Iterator<Item: Filterable<'b>>,
-    <I as std::iter::Iterator>::Item: 'b,
+    I: Iterator<Item: Filterable>,
 {
     type Item = ();
 

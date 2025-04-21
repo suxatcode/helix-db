@@ -419,7 +419,7 @@ impl HVector {
 //     }
 // }
 
-impl<'a> Filterable<'a> for HVector {
+impl Filterable for HVector {
     fn type_name(&self) -> FilterableType {
         FilterableType::Vector
     }
