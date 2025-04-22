@@ -36,6 +36,8 @@ pub trait FilterRefAdapter<'a>: Iterator + Sized {
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&Result<TraversalVal, GraphError>, &RoTxn) -> bool;
+
+    
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> FilterRefAdapter<'a>

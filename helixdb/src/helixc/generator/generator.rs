@@ -21,6 +21,22 @@ impl CodeGenerator {
             current_variables: HashMap::new(),
         }
     }
+    /**
+     * helix_engine::graph_core::ops::{
+        g::G,
+        in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},
+        out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},
+        source::{
+            add_e::AddEAdapter, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId,
+            e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypes,
+        },
+        tr_val::TraversalVal,
+        util::{
+            dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
+            filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update,
+        },
+    },
+     */
 
     pub fn generate_headers(&mut self) -> String {
         let mut output = String::new();
@@ -29,13 +45,21 @@ impl CodeGenerator {
         output.push_str("use std::sync::Arc;\n");
         output.push_str("use std::time::Instant;\n\n");
         output.push_str("use get_routes::handler;\n");
+        output.push_str("use helixdb::helix_engine::vector_core::vector::HVector;\n");
         output.push_str("use helixdb::{\n");
         output.push_str("    node_matches,\n");
         output.push_str("    props,\n");
         output.push_str("    helix_engine::graph_core::traversal::TraversalBuilder,\n");
-        output.push_str("    helix_engine::graph_core::traversal_steps::{\n");
-        output.push_str("        SourceTraversalSteps, TraversalBuilderMethods, TraversalSteps, TraversalMethods,\n");
-        output.push_str("        TraversalSearchMethods, VectorTraversalSteps\n");
+        output.push_str("    helix_engine::graph_core::ops::{\n");
+        output.push_str("        g::G,\n");
+        output.push_str("        in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},\n");
+        output.push_str(
+            "        out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},\n",
+        );
+        output.push_str("        vectors::{ insert::InsertVAdapter, search::SearchVAdapter},\n");
+        output.push_str("        source::{add_e::AddEAdapter, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypes},\n");
+        output.push_str("        tr_val::TraversalVal,\n");
+        output.push_str("        util::{dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut, filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update},\n");
         output.push_str("    },\n");
         output.push_str("    helix_engine::types::GraphError,\n");
         output.push_str("    helix_gateway::router::router::HandlerInput,\n");
@@ -186,7 +210,7 @@ impl CodeGenerator {
 
         //
         output.push_str(&mut self.indent());
-        output.push_str("let mut remapping_vals: RefCell<HashMap<String, ResponseRemapping>> = RefCell::new(HashMap::new());\n");
+        output.push_str("let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());\n");
 
         // Setup database transaction
         output.push_str(&mut self.indent());
@@ -284,15 +308,21 @@ impl CodeGenerator {
     fn generate_add_vector(&mut self, add_vector: &AddVector) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
         match &add_vector.data {
             Some(VectorData::Vector(vec)) => {
-                output.push_str(&format!("tr.insert_vector(&mut txn, &{:?});\n", vec));
+                output.push_str(&mut self.indent());
+                output.push_str(&format!(
+                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?});\n",
+                    vec
+                ));
             }
             Some(VectorData::Identifier(id)) => {
-                output.push_str(&format!("tr.insert_vector(&mut txn, &data.{});\n", id));
+                output.push_str(&mut self.indent());
+                output.push_str(&format!(
+                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{});\n",
+                    id
+                ));
             }
             None => (),
         };
@@ -302,19 +332,20 @@ impl CodeGenerator {
 
     fn generate_batch_add_vector(&mut self, batch_add_vector: &BatchAddVector) -> String {
         let mut output = String::new();
-        output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+
         //iterate over the vectors and insert them
         output.push_str(&mut self.indent());
         match &batch_add_vector.vec_identifier {
             Some(id) => output.push_str(&format!("for vec in data.{} {{\n", id)),
             None => (),
         };
+        output.push_str(&mut self.indent());
+        output.push_str(&mut self.indent());
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
 
         output.push_str(&mut self.indent());
-        output.push_str("    tr.insert_vector(&mut txn, &vec);\n");
+        output.push_str(&mut self.indent());
+        output.push_str("let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec);\n");
         output.push_str(&mut self.indent());
         output.push_str("}\n");
         output
@@ -323,9 +354,7 @@ impl CodeGenerator {
     fn generate_search_vector(&mut self, vec: &SearchVector) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
         let k = match &vec.k {
             Some(EvaluatesToNumber::Integer(k)) => k.to_string(),
             Some(EvaluatesToNumber::Float(k)) => k.to_string(),
@@ -334,10 +363,18 @@ impl CodeGenerator {
         };
         match &vec.data {
             Some(VectorData::Vector(v)) => {
-                output.push_str(&format!("tr.vector_search(&txn, &{:?}, {});\n", v, k));
+                output.push_str(&mut self.indent());
+                output.push_str(&format!(
+                    "let tr = tr.search_v::<fn(&HVector) -> bool>(&{:?}, {}, None);\n",
+                    v, k
+                ));
             }
             Some(VectorData::Identifier(id)) => {
-                output.push_str(&format!("tr.vector_search(&txn, &data.{}, {});\n", id, k));
+                output.push_str(&mut self.indent());
+                output.push_str(&format!(
+                    "let tr = tr.search_v::<fn(&HVector) -> bool>(&data.{}, {}, None);\n",
+                    id, k
+                ));
             }
             None => panic!("No vector data provided for search vector, {:?}", vec),
         };
@@ -349,9 +386,7 @@ impl CodeGenerator {
         let var_name = &assignment.variable;
 
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
 
         output.push_str(&mut self.generate_expression(&assignment.value, query));
 
@@ -363,7 +398,7 @@ impl CodeGenerator {
 
         match assignment.value {
             _ => output.push_str(&format!(
-                "let {} = tr.finish()?;\n\n",
+                "let {} = tr.collect_to::<Vec<_>>();\n\n",
                 to_snake_case(var_name)
             )),
         }
@@ -382,7 +417,7 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(id) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));",
+                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone());",
                         to_snake_case(var_name)
                     ));
                 }
@@ -436,17 +471,17 @@ impl CodeGenerator {
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
-                        output.push_str(&format!("tr.v_from_id(&txn, {});\n", var_name));
+                        output.push_str(&format!("let tr = tr.n_from_id({});\n", var_name));
                     } else {
                         output.push_str(&format!(
-                            "tr.v_from_id(&txn, &data.{});\n",
+                            "let tr = tr.n_from_id(&data.{});\n",
                             to_snake_case(&ids[0])
                         ));
                     }
                 } else if let Some(types) = types {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "tr.v_from_types(&txn, &[{}]);\n",
+                        "let tr = tr.n_from_types(&[{}]);\n",
                         types
                             .iter()
                             .map(|t| format!("\"{}\"", t))
@@ -455,33 +490,33 @@ impl CodeGenerator {
                     ));
                 } else {
                     output.push_str(&mut self.indent());
-                    output.push_str("tr.v(&txn);\n");
+                    output.push_str("let tr = tr.n();\n");
                 }
             }
             Edge { types, ids } => {
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
-                        output.push_str(&format!("tr.e_from_id(&txn, {});\n", var_name));
+                        output.push_str(&format!("let tr = tr.e_from_id({});\n", var_name));
                     } else {
                         output.push_str(&format!(
-                            "tr.e_from_id(&txn, &data.{});\n",
+                            "let tr = tr.e_from_id(&data.{});\n",
                             to_snake_case(&ids[0])
                         ));
                     }
                 } else if let Some(types) = types {
                     output.push_str(&mut self.indent());
-                    output.push_str("tr.e(&txn);\n");
+                    output.push_str("let tr = tr.e();\n");
                 } else {
                     output.push_str(&mut self.indent());
-                    output.push_str("tr.e(&txn);\n");
+                    output.push_str("let tr = tr.e();\n");
                 }
             }
             Variable(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n",
+                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone());\n",
                         to_snake_case(var_name)
                     ));
                 }
@@ -521,52 +556,40 @@ impl CodeGenerator {
                 Step::Node(graph_step) => match graph_step {
                     GraphStep::Out(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
+                            output.push_str(&format!("let tr = tr.out(\"{}\");\n", types[0]));
                         } else {
-                            output.push_str("tr.out(&txn, \"\");\n");
+                            output.push_str("let tr = tr.out(\"\");\n");
                         }
                     }
                     GraphStep::In(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("tr.in_(&txn, \"{}\");\n", types[0]));
+                            output.push_str(&format!("let tr = tr.in_(\"{}\");\n", types[0]));
                         } else {
-                            output.push_str("tr.in_(&txn, \"\");\n");
+                            output.push_str("let tr = tr.in_(\"\");\n");
                         }
                     }
                     GraphStep::OutE(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("tr.out_e(&txn, \"{}\");\n", types[0]));
+                            output.push_str(&format!("let tr = tr.out_e(\"{}\");\n", types[0]));
                         } else {
-                            output.push_str("tr.out_e(&txn, \"\");\n");
+                            output.push_str("let tr = tr.out_e(\"\");\n");
                         }
                     }
                     GraphStep::InE(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("tr.in_e(&txn, \"{}\");\n", types[0]));
+                            output.push_str(&format!("let tr = tr.in_e(\"{}\");\n", types[0]));
                         } else {
-                            output.push_str("tr.in_e(&txn, \"\");\n");
+                            output.push_str("let tr = tr.in_e(\"\");\n");
                         }
                     }
-                    GraphStep::Both(types) => {
-                        if let Some(types) = types {
-                            output.push_str(&format!("tr.both(&txn, \"{}\");\n", types[0]));
-                        } else {
-                            output.push_str("tr.both(&txn, \"\");\n");
-                        }
-                    }
-                    GraphStep::BothE(types) => {
-                        if let Some(types) = types {
-                            output.push_str(&format!("tr.both_e(&txn, \"{}\");\n", types[0]));
-                        } else {
-                            output.push_str("tr.both_e(&txn, \"\");\n");
-                        }
-                    }
+                    GraphStep::BothE(_) => unreachable!(),
+                    GraphStep::Both(_) => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InN => output.push_str("tr.in_v(&txn);\n"),
-                    GraphStep::OutN => output.push_str("tr.out_v(&txn);\n"),
-                    GraphStep::BothN => output.push_str("tr.both_v(&txn);\n"),
+                    GraphStep::InN => output.push_str("let tr = tr.in_v();\n"),
+                    GraphStep::OutN => output.push_str("let tr = tr.out_v();\n"),
+                    GraphStep::BothN => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 _ => output.push_str(&mut self.generate_step(step, query)),
@@ -580,88 +603,88 @@ impl CodeGenerator {
         match bool_op {
             BooleanOp::Equal(value) => match &**value {
                 Expression::BooleanLiteral(b) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if *val == {})));\n", b));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Boolean(val) if *val == {})));\n", b));
                 }
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if *val == {})));\n", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if *val == {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if *val == {})));\n", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if *val == {})));\n", f));
                 }
                 Expression::StringLiteral(s) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", s));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", s));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::String(val) if *val == \"{}\")));\n", id));
                 }
                 _ => output.push_str(&format!("// Unhandled value type in EQ\n {:?}", value)),
             },
             BooleanOp::GreaterThan(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val > {})));\n", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if val > {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val > {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GT\n"),
             },
             BooleanOp::GreaterThanOrEqual(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {})));\n", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val >= {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val >= {})));\n", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if val >= {})));\n", f));
                 }
                 Expression::StringLiteral(s) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if val >= \"{}\")));\n", s));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::String(val) if val >= \"{}\")));\n", s));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {})));\n", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val >= {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GTE\n"),
             },
             BooleanOp::LessThan(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val < {})));\n", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if val < {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val < {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LT\n"),
             },
             BooleanOp::LessThanOrEqual(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {})));\n", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val <= {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val <= {})));\n", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if val <= {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {})));\n", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if val <= {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LTE\n"),
             },
             BooleanOp::NotEqual(value) => match &**value {
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", id));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", id));
                 }
                 Expression::StringLiteral(s) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", s));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::String(val) if *val != \"{}\"))", s));
                 }
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if *val != {}))", i));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Integer(val) if *val != {}))", i));
                 }
                 Expression::FloatLiteral(f) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if *val != {}))", f));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Float(val) if *val != {}))", f));
                 }
                 Expression::BooleanLiteral(b) => {
-                    output.push_str(&format!("tr.filter_nodes(&txn, |node| Ok(matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if *val != {}))", b));
+                    output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok(matches!(val.check_properties(current_prop).unwrap(), Value::Boolean(val) if *val != {}))", b));
                 }
                 _ => output.push_str(&format!("// Unhandled value type in NEQ\n {:?}", value)),
             },
@@ -702,47 +725,47 @@ impl CodeGenerator {
             Step::Node(graph_step) => match graph_step {
                 GraphStep::Out(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.out(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("let tr = tr.out(\"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.out(&txn, \"\");\n");
+                        output.push_str("let tr = tr.out(\"\");\n");
                     }
                 }
                 GraphStep::In(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.in_(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("let tr = tr.in_(\"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.in_(&txn, \"\");\n");
+                        output.push_str("let tr = tr.in_(\"\");\n");
                     }
                 }
                 GraphStep::OutE(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.out_e(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("let tr = tr.out_e(\"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.out_e(&txn, \"\");\n");
+                        output.push_str("let tr = tr.out_e(\"\");\n");
                     }
                 }
                 GraphStep::InE(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.in_e(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("let tr = tr.in_e(&txn, \"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.in_e(&txn, \"\");\n");
+                        output.push_str("let tr = tr.in_e(\"\");\n");
                     }
                 }
-                GraphStep::OutN => output.push_str("tr.out_v(&txn);\n"),
-                GraphStep::InN => output.push_str("tr.in_v(&txn);\n"),
-                GraphStep::BothN => output.push_str("tr.both_v(&txn);\n"),
+                GraphStep::OutN => output.push_str("let tr = tr.out_v();\n"),
+                GraphStep::InN => output.push_str("let tr = tr.in_v();\n"),
+                GraphStep::BothN => unreachable!(),
                 GraphStep::BothE(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.both_e(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("tr.both_e(\"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.both_e(&txn, \"\");\n");
+                        output.push_str("tr.both_e(\"\");\n");
                     }
                 }
                 GraphStep::Both(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("tr.both(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!("tr.both(\"{}\");\n", types[0]));
                     } else {
-                        output.push_str("tr.both(&txn, \"\");\n");
+                        output.push_str("tr.both(\"\");\n");
                     }
                 }
             },
@@ -758,18 +781,18 @@ impl CodeGenerator {
                     _ => unreachable!(),
                 };
 
-                output.push_str(&format!("tr.range({}, {});\n", start, end));
+                output.push_str(&format!("let tr = tr.range({}, {});\n", start, end));
             }
             Step::Where(expr) => {
                 match &**expr {
                     Expression::BooleanLiteral(b) => {
-                        output.push_str(&format!("tr.filter_nodes(&txn, |_| Ok({}));\n", b));
+                        output.push_str(&format!("let tr = tr.filter_ref(|val, _| Ok({}));\n", b));
                     }
                     Expression::Exists(traversal) => {
                         output.push_str(&mut self.generate_exists_check(traversal, query));
                     }
                     Expression::And(exprs) => {
-                        output.push_str("tr.filter_nodes(&txn, |node| {\n");
+                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("    Ok(");
                         for (i, expr) in exprs.iter().enumerate() {
@@ -783,7 +806,7 @@ impl CodeGenerator {
                         output.push_str("});\n");
                     }
                     Expression::Or(exprs) => {
-                        output.push_str("tr.filter_nodes(&txn, |node| {\n");
+                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("    Ok(");
                         for (i, expr) in exprs.iter().enumerate() {
@@ -798,7 +821,7 @@ impl CodeGenerator {
                     }
                     Expression::Traversal(_) => {
                         // For traversal-based conditions
-                        output.push_str("tr.filter_nodes(&txn, |node| {\n");
+                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("    Ok(");
                         output.push_str(&mut self.generate_filter_condition(expr, query));
@@ -810,7 +833,7 @@ impl CodeGenerator {
                         // output.push_str(&mut self.indent());
                         // output.push_str("    tr.count();\n");
                         // output.push_str(&mut self.indent());
-                        // output.push_str("    let count = tr.finish()?.as_count().unwrap();\n");
+                        // output.push_str("    let count = let tr = tr.finish()?.as_count().unwrap();\n");
                         // output.push_str(&mut self.indent());
                         // output.push_str("    Ok(count > 0)\n");
                         // output.push_str(&mut self.indent());
@@ -822,10 +845,10 @@ impl CodeGenerator {
                 }
             }
             Step::Count => {
-                output.push_str("tr.count();\n");
+                output.push_str("let count = tr.count();\n");
             }
             // Step::ID => {
-            //     // output.push_str("tr.id();\n");
+            //     // output.push_str("let tr = tr.id();\n");
             // }
             Step::Update(update) => {
                 let props = update
@@ -840,10 +863,7 @@ impl CodeGenerator {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                output.push_str(&format!(
-                    "tr.update_props(&mut txn, props!{{ {} }});\n",
-                    props
-                ));
+                output.push_str(&format!("tr.update(props!{{ {} }});\n", props));
             }
             Step::Object(obj) => {
                 // Assume the current variable (e.g. from an earlier assignment) is named "current_var"
@@ -870,8 +890,14 @@ impl CodeGenerator {
         match expr {
             Expression::BooleanLiteral(b) => b.to_string(),
             Expression::Exists(traversal) => {
-                format!("{{ let mut inner_tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone())); {} inner_tr.count(); let count = inner_tr.finish()?.as_count().unwrap(); count > 0 }}", 
-                    self.generate_traversal(traversal, query))
+                format!(
+                    "{{ 
+                let inner_tr = G::new(Arc::clone(&db), val.clone()); 
+                let inner_tr = {};
+                let count = inner_tr.count(); 
+                count > 0 }}",
+                    self.generate_traversal(traversal, query)
+                )
             }
             Expression::Traversal(traversal) => {
                 // For traversals that check properties with boolean operations
@@ -899,85 +925,85 @@ impl CodeGenerator {
                                 match bool_op {
                                     BooleanOp::Equal(value) => match &**value {
                                         Expression::BooleanLiteral(b) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val == {}))", prop_name, b));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val == {}))", prop_name, b));
                                         }
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val == {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val == {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val == {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val == {}))", prop_name, f));
                                         }
                                         Expression::StringLiteral(s) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
                                     BooleanOp::GreaterThan(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val > {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val > {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val > {}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GT */"),
                                     },
                                     BooleanOp::GreaterThanOrEqual(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val >= {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val >= {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val >= {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val >= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val >= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val >= {}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GTE */"),
                                     },
                                     BooleanOp::LessThan(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val < {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val < {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val < {}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LT */"),
                                     },
                                     BooleanOp::LessThanOrEqual(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val <= {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val <= {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val <= {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val <= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val <= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val <= {}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LTE */"),
                                     },
                                     BooleanOp::NotEqual(value) => match &**value {
                                         Expression::StringLiteral(s) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, s));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, s));
                                         }
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val != {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Integer(val) if *val != {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val != {}))", prop_name, f));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Float(val) if *val != {}))", prop_name, f));
                                         }
                                         Expression::BooleanLiteral(b) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val != {}))", prop_name, b));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val != {}))", prop_name, b));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("node.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },
@@ -988,7 +1014,7 @@ impl CodeGenerator {
                                 }
                             } else {
                                 output.push_str(&format!(
-                                    "node.check_property(\"{}\").is_some()",
+                                    "val.check_property(\"{}\").is_some()",
                                     prop_name
                                 ));
                             }
@@ -999,8 +1025,7 @@ impl CodeGenerator {
                             return output;
                         }
                         Step::Count => {
-                            output.push_str("tr.count();\n");
-                            output.push_str("let count = tr.finish()?.as_count().unwrap();\n");
+                            output.push_str("let count = tr.count();\n");
                             if let Some(Step::BooleanOperation(bool_op)) =
                                 traversal.steps.get(i + 1)
                             {
@@ -1075,19 +1100,19 @@ impl CodeGenerator {
                         Step::BooleanOperation(bo) => match bo {
                             BooleanOp::Equal(value) => match &**value {
                                 Expression::BooleanLiteral(b) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if *val == {}))\n", b));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Boolean(val) if *val == {}))\n", b));
                                 }
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if *val == {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if *val == {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if *val == {}))\n", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if *val == {}))\n", f));
                                 }
                                 Expression::StringLiteral(s) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\"))\n", s));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if *val == \"{}\"))\n", s));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val == {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if *val == {}))\n", id));
                                 }
                                 _ => output.push_str(&format!(
                                     "// Unhandled value type in EQ\n {:?}",
@@ -1096,49 +1121,49 @@ impl CodeGenerator {
                             },
                             BooleanOp::GreaterThan(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val > {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val > {}))\n", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if val > {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val > {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val > {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in GT\n"),
                             },
                             BooleanOp::GreaterThanOrEqual(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val >= {}))\n", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if val >= {}))\n", f));
                                 }
                                 Expression::StringLiteral(s) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::String(val) if val >= \"{}\"))\n", s));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if val >= \"{}\"))\n", s));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val >= {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in GTE\n"),
                             },
                             BooleanOp::LessThan(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val < {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val < {}))\n", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if val < {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val < {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val < {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in LT\n"),
                             },
                             BooleanOp::LessThanOrEqual(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if val <= {}))\n", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if val <= {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
                                     output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if val <= {}))\n", id));
@@ -1147,19 +1172,19 @@ impl CodeGenerator {
                             },
                             BooleanOp::NotEqual(value) => match &**value {
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\")", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\")", id));
                                 }
                                 Expression::StringLiteral(s) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\")", s));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\")", s));
                                 }
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Integer(val) if *val != {})", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Integer(val) if *val != {})", i));
                                 }
                                 Expression::FloatLiteral(f) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Float(val) if *val != {})", f));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Float(val) if *val != {})", f));
                                 }
                                 Expression::BooleanLiteral(b) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::Boolean(val) if *val != {})", b));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Boolean(val) if *val != {})", b));
                                 }
                                 _ => output.push_str(&format!(
                                     "// Unhandled value type in NEQ\n {:?}",
@@ -1174,7 +1199,7 @@ impl CodeGenerator {
                             inner_traversal = true;
                             if i == 0 {
                                 output.push_str("{");
-                                output.push_str("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));");
+                                output.push_str("let tr = G::new(Arc::clone(&db), val.clone());");
                                 output.push_str(&mut self.generate_step(step, query));
                             } else {
                                 output.push_str(&mut self.generate_step(step, query));
@@ -1246,9 +1271,7 @@ impl CodeGenerator {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
 
         let vertex_type = add_vertex
             .vertex_type
@@ -1272,13 +1295,13 @@ impl CodeGenerator {
         match possible_id {
             Some(id) => {
                 output.push_str(&format!(
-                    "tr.add_v(&mut txn, \"{}\", {}, None, Some({}));\n",
+                    "let tr =tr.add_v(&mut txn, \"{}\", {}, None, Some({}));\n",
                     vertex_type, props, id
                 ));
             }
             None => {
                 output.push_str(&format!(
-                    "tr.add_v(&mut txn, \"{}\", {}, None, None);\n",
+                    "let tr = tr.add_v(&mut txn, \"{}\", {}, None, None);\n",
                     vertex_type, props
                 ));
             }
@@ -1286,7 +1309,10 @@ impl CodeGenerator {
 
         if let Some(name) = var_name {
             output.push_str(&mut self.indent());
-            output.push_str(&format!("let {} = tr.result(txn)?;\n", name));
+            output.push_str(&format!(
+                "let {} = tr.filter_map(|i| i.ok()).collect::<Vec<_>>()?;\n",
+                name
+            ));
             self.current_variables
                 .insert(name.to_string(), name.to_string());
         }
@@ -1298,9 +1324,7 @@ impl CodeGenerator {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
 
         let edge_type = add_edge
             .edge_type
@@ -1337,7 +1361,7 @@ impl CodeGenerator {
 
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            "tr.add_e(&mut txn, \"{}\", {}, {}, {});\n",
+            "tr.add_e(\"{}\", {}, {}, {});\n",
             edge_type, from_id, to_id, props
         ));
         // output.push_str(&format!("tr.result()?;\n"));
@@ -1348,33 +1372,29 @@ impl CodeGenerator {
     fn generate_drop(&mut self, expr: &Expression, query: &Query) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str(
-            "let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);\n",
-        );
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
         match expr {
             Expression::Traversal(traversal) => {
                 output.push_str(&mut self.generate_traversal(traversal, query));
             }
             _ => {
-                output.push_str("tr.drop(&mut txn);\n");
+                output.push_str("tr.drop();\n");
             }
         }
         output.push_str(&mut self.indent());
-        output.push_str("tr.drop(&mut txn);\n");
+        output.push_str("tr.drop();\n");
         output
     }
 
     fn generate_exists_check(&mut self, traversal: &Traversal, query: &Query) -> String {
         let mut output = String::new();
-        output.push_str("tr.filter_nodes(&txn, |node| {\n");
+        output.push_str("let tr = tr.filter_ref(&txn, |val| {\n");
         output.push_str(&mut self.indent());
-        output.push_str("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));\n");
+        output.push_str("let tr = G::new(Arc::clone(&db), &txn, val.clone());\n");
         output.push_str(&mut self.indent());
         output.push_str(&mut self.generate_traversal(traversal, query));
         output.push_str(&mut self.indent());
-        output.push_str("tr.count();\n");
-        output.push_str(&mut self.indent());
-        output.push_str("let count = tr.finish()?.as_count().unwrap();\n");
+        output.push_str("let count = tr.count();\n");
         output.push_str(&mut self.indent());
         output.push_str("Ok(count > 0)\n");
         output.push_str(&mut self.indent());
@@ -1410,7 +1430,7 @@ impl CodeGenerator {
                 Expression::Traversal(traversal) => {
                     output.push_str(&mut self.generate_traversal(traversal, query));
                     output.push_str(&mut self.indent());
-                    output.push_str("let return_val = tr.finish()?;\n");
+                    output.push_str("let return_val = tr.collect::<Vec<_>>()?;\n");
                     output.push_str(&mut self.indent());
                     if let Variable(var_name) = &traversal.start {
                         output.push_str(&format!(
@@ -1434,22 +1454,6 @@ impl CodeGenerator {
         output.push_str("response.body = sonic_rs::to_vec(&return_vals).unwrap();\n\n");
 
         output
-    }
-
-    fn expression_to_return_value(&mut self, expr: &Expression) -> String {
-        match expr {
-            Expression::Identifier(id) => {
-                if let Some(var_name) = self.current_variables.get(id) {
-                    var_name.clone()
-                } else {
-                    format!("\"{}\"", id)
-                }
-            }
-            Expression::Traversal(traversal) => {
-                format!("tr.finish()?")
-            }
-            _ => String::new(),
-        }
     }
 
     fn value_type_to_rust(&mut self, value: &ValueType) -> String {
@@ -1478,23 +1482,6 @@ impl CodeGenerator {
         }
     }
 
-    fn expression_to_value(&mut self, expr: &Expression) -> String {
-        match expr {
-            Expression::StringLiteral(s) => format!("\"{}\"", s),
-            Expression::IntegerLiteral(i) => i.to_string(),
-            Expression::FloatLiteral(f) => f.to_string(),
-            Expression::BooleanLiteral(b) => b.to_string(),
-            Expression::Identifier(id) => {
-                if let Some(var_name) = self.current_variables.get(id) {
-                    format!("&{}", var_name)
-                } else {
-                    format!("\"{}\"", id)
-                }
-            }
-            _ => String::new(),
-        }
-    }
-
     fn generate_exclude_remapping(
         &mut self,
         is_node: bool,
@@ -1513,7 +1500,7 @@ impl CodeGenerator {
         let mut output = String::new();
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            "tr.for_each_{}(&txn, |{}, txn| {{\n",
+            "let tr = tr.for_each_{}(&txn, |{}, txn| {{\n",
             item_type, var_name
         ));
         for field in exclude.fields.iter() {
@@ -1561,7 +1548,7 @@ impl CodeGenerator {
         query: &Query,
     ) -> String {
         /*
-        tr.for_each_node(&txn, |node, txn| {
+        let tr = tr.for_each_node(&txn, |node, txn| {
             // generate traversal if there is one
 
             // generate for that traversal if there is one
@@ -1584,7 +1571,7 @@ impl CodeGenerator {
         };
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            "tr.for_each_{}(&txn, |{}, txn| {{\n",
+            "let tr = tr.for_each_{}(&txn, |{}, txn| {{\n",
             item_type, var_name
         ));
         output.push_str(&mut self.indent());
@@ -1602,15 +1589,17 @@ impl CodeGenerator {
                             if let Some((field_name, _)) = obj.fields.first() {
                                 if field_name.as_str() == "id" {
                                     output.push_str(&format!(
-                                        "let {} = tr.finish()?.get_id()?;\n",
+                                        "let {} = tr.collect::<Vec<_>>()?[0].id();\n",
                                         to_snake_case(key)
                                     ));
                                 }
                             }
                         }
                         _ => {
-                            output
-                                .push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
+                            output.push_str(&format!(
+                                "let {} = tr.collect::<Vec<_>>();\n",
+                                to_snake_case(key)
+                            ));
                         }
                     }
                 }
@@ -1625,7 +1614,7 @@ impl CodeGenerator {
                                 if let Some((field_name, _)) = obj.fields.first() {
                                     if field_name.as_str() == "id" {
                                         output.push_str(&format!(
-                                            "let {} = tr.finish()?.get_id()?;\n",
+                                            "let {} = tr.collect::<Vec<_>>()?[0].id();\n",
                                             to_snake_case(key)
                                         ));
                                     }
@@ -1633,15 +1622,17 @@ impl CodeGenerator {
                             }
                             _ => {
                                 output.push_str(&format!(
-                                    "let {} = tr.finish()?;\n",
+                                    "let {} = tr.collect::<Vec<_>>()?[0];\n",
                                     to_snake_case(key)
                                 ));
                             }
                         },
 
                         _ => {
-                            output
-                                .push_str(&format!("let {} = tr.finish()?;\n", to_snake_case(key)));
+                            output.push_str(&format!(
+                                "let {} = tr.collect::<Vec<_>>();\n",
+                                to_snake_case(key)
+                            ));
                         }
                     }
                 }
@@ -1938,7 +1929,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("is_enabled"));
         assert!(generated.contains("=="));
     }
@@ -1957,7 +1948,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("out_e"));
         assert!(generated.contains("count"));
         assert!(generated.contains("count > 0"));
@@ -1979,7 +1970,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("verified"));
         assert!(generated.contains("is_enabled"));
@@ -2000,7 +1991,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
 
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("||"));
         assert!(generated.contains("verified"));
         assert!(generated.contains("followers_count"));
@@ -2023,7 +2014,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("out"));
         assert!(generated.contains("in_"));
         assert!(generated.contains("count"));
@@ -2049,7 +2040,7 @@ mod tests {
         println!("Source:\n{:?}", source);
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("||"));
         assert!(generated.contains("verified"));
@@ -2071,7 +2062,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("property_name"));
         assert!(generated.contains("=="));
         assert!(generated.contains("value"));
@@ -2095,7 +2086,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("tr.filter_nodes"));
+        assert!(generated.contains("let tr = tr.filter_nodes"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("property1"));
         assert!(generated.contains("property2"));

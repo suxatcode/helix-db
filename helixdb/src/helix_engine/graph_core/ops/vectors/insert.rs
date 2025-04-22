@@ -26,7 +26,7 @@ impl Iterator for InsertVIterator {
 }
 
 pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
-    fn insert_v<F>(self, query: Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    fn insert_v<F>(self, query: &Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
     where
         F: Fn(&HVector) -> bool;
 }
@@ -34,7 +34,7 @@ pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a>
     for RwTraversalIterator<'a, 'b, I>
 {
-    fn insert_v<F>(self, query: Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    fn insert_v<F>(self, query: &Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
     where
         F: Fn(&HVector) -> bool,
     {
