@@ -296,9 +296,13 @@ pub trait TraversalSearchMethods {
 }
 
 pub trait VectorTraversalSteps {
-    fn vector_search(&mut self, txn: &RoTxn, query: &[f64], k: usize) -> &mut Self;
+    fn vector_search<F>(&mut self, txn: &RoTxn, query: &[f64], k: usize, filter: Option<&[F]>) -> &mut Self
+    where
+        F: Fn(&HVector) -> bool;
 
-    fn insert_vector(&mut self, txn: &mut RwTxn, vector: &[f64]) -> &mut Self;
+    fn insert_vector<F>(&mut self, txn: &mut RwTxn, vector: &[f64], filter: Option<&[F]>) -> &mut Self
+    where
+        F: Fn(&HVector) -> bool;
 
     fn delete_vector(&mut self, txn: &mut RwTxn, vector_id: &str) -> &mut Self;
 

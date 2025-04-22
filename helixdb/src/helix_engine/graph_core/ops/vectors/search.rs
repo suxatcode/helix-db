@@ -10,7 +10,7 @@ use crate::{
         graph_core::traversal_iter::RoTraversalIterator,
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
-        vector_core::hnsw::HNSW,
+        vector_core::{hnsw::HNSW, vector::HVector},
     },
     protocol::{
         filterable::{Filterable, FilterableType},
@@ -34,22 +34,32 @@ impl<I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator for SearchV<
 }
 
 pub trait SearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
-    fn search_v(
+    fn search_v<F>(
         self,
         query: Vec<f64>,
         k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+        filter: Option<&[F]>,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&HVector) -> bool;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    fn search_v(
+    fn search_v<F>(
         self,
         query: Vec<f64>,
         k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let vectors = self.storage.vectors.search(self.txn, &query, k);
+        filter: Option<&[F]>,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&HVector) -> bool,
+    {
+        let vectors = self
+            .storage
+            .vectors
+            .search(self.txn, &query, k, filter, false);
 
         let iter = vectors
             .unwrap() // TODO: handle error

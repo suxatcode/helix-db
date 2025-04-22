@@ -685,43 +685,54 @@ impl StorageMethods for HelixGraphStorage {
 
         // Delete outgoing edges
         let out_prefix = Self::out_edge_key(id, "", None);
-        let mut out_edges = Vec::new();
-        {
+        let out_edges = {
             let iter = self
                 .out_edges_db
                 .lazily_decode_data()
                 .prefix_iter(&txn, &out_prefix)?;
 
+            let capacity = match iter.size_hint() {
+                (_, Some(upper)) => upper,
+                (lower, None) => lower,
+            };
+            let mut out_edges = Vec::with_capacity(capacity);
+
             for result in iter {
-                let (key, _) = result?;
-                let edge_id = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
+                let (_, value) = result?;
+                let edge_id = decode_u128!(value);
 
                 if let Some(edge_data) = &self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
                     let edge: Edge = bincode::deserialize(edge_data)?;
                     out_edges.push(edge);
                 }
             }
-        }
+            out_edges
+        };
 
         // Delete incoming edges
         let in_prefix = Self::in_edge_key(id, "", None);
-        let mut in_edges = Vec::new();
-        {
+        let in_edges = {
             let iter = self
                 .in_edges_db
                 .lazily_decode_data()
                 .prefix_iter(&txn, &in_prefix)?;
+            let capacity = match iter.size_hint() {
+                (_, Some(c)) => c,
+                (c, None) => c,
+            };
+            let mut in_edges = Vec::with_capacity(capacity);
 
             for result in iter {
-                let (key, _) = result?;
-                let edge_id = Self::get_u128_from_bytes(&key[in_prefix.len()..])?;
+                let (_, value) = result?;
+                let edge_id = decode_u128!(value);
 
                 if let Some(edge_data) = self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
                     let edge: Edge = bincode::deserialize(edge_data)?;
                     in_edges.push(edge);
                 }
             }
-        }
+            in_edges
+        };
 
         // Delete all related data
         for edge in out_edges.iter().chain(in_edges.iter()) {

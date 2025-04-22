@@ -1,6 +1,6 @@
-use heed3::{RoTxn, RwTxn};
 use crate::helix_engine::types::VectorError;
 use crate::helix_engine::vector_core::vector::HVector;
+use heed3::{RoTxn, RwTxn};
 
 pub trait HNSW {
     /// Search for the k nearest neighbors of a query vector
@@ -14,7 +14,16 @@ pub trait HNSW {
     /// # Returns
     ///
     /// A vector of tuples containing the id and distance of the nearest neighbors
-    fn search(&self, txn: &RoTxn, query: &[f64], k: usize) -> Result<Vec<HVector>, VectorError>;
+    fn search<F>(
+        &self,
+        txn: &RoTxn,
+        query: &[f64],
+        k: usize,
+        filter: Option<&[F]>,
+        should_trickle: bool,
+    ) -> Result<Vec<HVector>, VectorError>
+    where
+        F: Fn(&HVector) -> bool;
 
     /// Insert a new vector into the index
     ///
@@ -27,7 +36,14 @@ pub trait HNSW {
     /// # Returns
     ///
     /// An HVector of the data inserted
-    fn insert(&self, txn: &mut RwTxn, data: &[f64], nid: Option<u128>) -> Result<HVector, VectorError>;
+    fn insert<F>(
+        &self,
+        txn: &mut RwTxn,
+        data: &[f64],
+        nid: Option<u128>,
+    ) -> Result<HVector, VectorError>
+    where
+        F: Fn(&HVector) -> bool;
 
     /// Load a full hnsw index with all vectors at once
     ///
@@ -40,7 +56,9 @@ pub trait HNSW {
     /// # Returns
     ///
     /// An emtpy tuple
-    fn load(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>;
+    fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
+    where
+        F: Fn(&HVector) -> bool;
 
     /// Get all vectors from the index
     ///
@@ -63,7 +81,11 @@ pub trait HNSW {
     /// # Returns
     ///
     /// A `Result` containing a `Vec` of `HVector` if successful
-    fn get_all_vectors_at_level(&self, txn: &RoTxn, level: usize) -> Result<Vec<HVector>, VectorError>;
+    fn get_all_vectors_at_level(
+        &self,
+        txn: &RoTxn,
+        level: usize,
+    ) -> Result<Vec<HVector>, VectorError>;
 
     // Get the number of vectors in the hnsw index
     //
