@@ -2028,9 +2028,11 @@ dependencies = [
  "heed3",
  "inventory",
  "itertools 0.14.0",
+ "lazy_static",
  "native-tls",
  "pest",
  "pest_derive",
+ "pgvector",
  "polars",
  "postgres-native-tls",
  "rand 0.9.1",
@@ -3043,6 +3045,16 @@ dependencies = [
  "once_cell",
  "pest",
  "sha2",
+]
+
+[[package]]
+name = "pgvector"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0e8871b6d7ca78348c6cd29b911b94851f3429f0cd403130ca17f26c1fb91a6"
+dependencies = [
+ "bytes",
+ "postgres-types",
 ]
 
 [[package]]

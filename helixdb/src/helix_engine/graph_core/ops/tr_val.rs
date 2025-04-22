@@ -1,11 +1,12 @@
 use std::hash::Hash;
 
 use crate::{
-    helix_engine::vector_core::vector::HVector,
+    helix_engine::{types::GraphError, vector_core::vector::HVector},
     protocol::{
         count::Count,
         filterable::Filterable,
         items::{Edge, Node},
+        value::Value,
     },
 };
 
@@ -49,6 +50,7 @@ impl PartialEq for TraversalVal {
 pub trait Traversable {
     fn id(&self) -> u128;
     fn label(&self) -> String;
+    fn check_property(&self, prop: &str) -> Option<&Value>;
 }
 
 impl Traversable for TraversalVal {
@@ -66,6 +68,15 @@ impl Traversable for TraversalVal {
             TraversalVal::Node(node) => node.label.clone(),
             TraversalVal::Edge(edge) => edge.label.clone(),
             _ => panic!("Invalid traversal value"),
+        }
+    }
+
+    fn check_property(&self, prop: &str) -> Option<&Value> {
+        match self {
+            TraversalVal::Node(node) => node.check_property(prop),
+            TraversalVal::Edge(edge) => edge.check_property(prop),
+            TraversalVal::Vector(vector) => vector.check_property(prop),
+            _ => None,
         }
     }
 }

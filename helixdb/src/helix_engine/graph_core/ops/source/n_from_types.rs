@@ -45,7 +45,7 @@ pub trait NFromTypesAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError
     fn n_from_types(
         self,
         types: &'a [&'a str],
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypesAdapter<'a>
     for RoTraversalIterator<'a, I>
@@ -53,7 +53,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypesAdapter
     fn n_from_types(
         self,
         types: &'a [&'a str],
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let db = self.storage.clone();
         let txn: &RoTxn<'_> = self.txn;
         let iter = types.iter().flat_map(move |label| {
