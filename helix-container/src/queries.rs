@@ -29,36 +29,6 @@ use helixdb::{
 use sonic_rs::{Deserialize, Serialize};
 
 #[handler]
-pub fn search(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct searchData {
-        vec: Vec<f64>,
-        k: i32,
-    }
-
-    let data: searchData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let txn = db.graph_env.read_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
-    let tr = G::new(Arc::clone(&db), &txn);
-    let tr = G::new(Arc::clone(&db), &txn);
-    let tr = tr.search_v::<fn(&HVector) -> bool>(&data.vec, data.k as usize, None);
-    let res = tr.collect_to::<Vec<_>>();
-
-    return_vals.insert("res".to_string(), ReturnValue::from_traversal_value_array_with_mixin(res, remapping_vals.borrow_mut()));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    Ok(())
-}
-
-#[handler]
 pub fn kdkhn(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     #[derive(Serialize, Deserialize)]
     struct kdkhnData {
@@ -84,6 +54,35 @@ pub fn kdkhn(input: &HandlerInput, response: &mut Response) -> Result<(), GraphE
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
     txn.commit()?;
+    Ok(())
+}
+
+#[handler]
+pub fn search(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct searchData {
+        vec: Vec<f64>,
+        k: i32,
+    }
+
+    let data: searchData = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+
+    let tr = G::new(Arc::clone(&db), &txn);
+        let tr = tr.search_v::<fn(&HVector) -> bool>(&data.vec, data.k as usize, None);
+    let res = tr.collect_to::<Vec<_>>();
+
+    return_vals.insert("res".to_string(), ReturnValue::from_traversal_value_array_with_mixin(res, remapping_vals.borrow_mut()));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+
     Ok(())
 }
 

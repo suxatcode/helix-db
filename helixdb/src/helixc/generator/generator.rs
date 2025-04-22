@@ -354,7 +354,7 @@ impl CodeGenerator {
     fn generate_search_vector(&mut self, vec: &SearchVector) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
+        // output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
         let k = match &vec.k {
             Some(EvaluatesToNumber::Integer(k)) => k.to_string(),
             Some(EvaluatesToNumber::Float(k)) => k.to_string(),
