@@ -1,11 +1,19 @@
 use crate::ingestion_engine::postgres_ingestion::{to_camel_case, PostgresIngestor};
 use rust_decimal::Decimal;
 use serde_json::Value as JsonValue;
-use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
-use std::str::FromStr;
-use tokio_postgres::{Config, NoTls};
+use pgvector::Vector as PGVector;
+use lazy_static::lazy_static;
+use tokio_postgres::{
+    Config,
+    NoTls,
+    config::Host,
+};
+use std::{
+    fs,
+    collections::HashSet,
+    path::Path,
+    str::{FromStr, from_utf8},
+};
 
 async fn cleanup_database(client: &mut tokio_postgres::Client) -> Result<(), Box<dyn std::error::Error>> {
     // Drop existing tables if they exist
@@ -87,6 +95,19 @@ static USERS_DATA: &[(&str, i32, &str, i32)] = &[
     ("Carolyn Gonzalez", 19, "Los Angeles", 13),
 ];
 
+lazy_static! {
+    static ref EMBEDDING_DATA: Vec<(i32, PGVector)> = {
+        vec![
+            (1, PGVector::from(vec![0.1, 0.2, 0.3])),
+            (2, PGVector::from(vec![0.4, 0.5, 0.6])),
+            (3, PGVector::from(vec![0.7, 0.8, 0.9])),
+            (4, PGVector::from(vec![0.2, 0.9, 0.1])),
+            (5, PGVector::from(vec![0.4, 0.3, 0.5])),
+            (6, PGVector::from(vec![0.1, 0.7, 0.8])),
+        ]
+    };
+}
+
 pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_postgres::Config), tokio_postgres::Error> {
     let mut config = Config::new();
     config
@@ -108,12 +129,16 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
 
     let parents_table = format!("parents");
     let users_table = format!("users");
+    let embeddings_table = format!("embeddings");
 
     client
         .batch_execute(&format!(
             r#"
+            CREATE EXTENSION IF NOT EXISTS vector;
+
             CREATE SEQUENCE {parents}_id_seq;
             CREATE SEQUENCE {users}_id_seq;
+            CREATE SEQUENCE {embeddings}_id_seq;
 
             CREATE TABLE {parents} (
                 id INTEGER PRIMARY KEY DEFAULT nextval('{parents}_id_seq'),
@@ -129,9 +154,16 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
                 city TEXT NOT NULL,
                 parent_id INTEGER REFERENCES {parents}(id)
             );
+
+            CREATE TABLE {embeddings} (
+                id INTEGER PRIMARY KEY DEFAULT nextval('{embeddings}_id_seq'),
+                parent_id INTEGER REFERENCES {parents}(id),
+                embedding VECTOR(3) NOT NULL
+            );
             "#,
             parents = parents_table,
-            users = users_table
+            users = users_table,
+            embeddings = embeddings_table
         ))
         .await?;
 
@@ -159,6 +191,18 @@ pub async fn create_mock_postgres_db() -> Result<(tokio_postgres::Client, tokio_
             .await?;
     }
 
+    for (parent_id, embedding) in EMBEDDING_DATA.iter() {
+        client
+            .execute(
+                &format!(
+                    "INSERT INTO {} (parent_id, embedding) VALUES ($1, $2)",
+                    embeddings_table
+                ),
+                &[&parent_id, &embedding],
+            )
+            .await?;
+        }
+
     Ok((client, config))
 }
 
@@ -169,45 +213,9 @@ fn create_temp_dir() -> tempfile::TempDir {
         .expect("Failed to create temp directory")
 }
 
-#[test]
-fn test_to_camel_case() {
-    assert_eq!(to_camel_case("hello_world"), "HelloWorld");
-    assert_eq!(to_camel_case("hello-world"), "HelloWorld");
-    assert_eq!(to_camel_case("hello world"), "HelloWorld");
-    assert_eq!(to_camel_case("helloWorld"), "HelloWorld");
-    assert_eq!(to_camel_case("HelloWorld"), "HelloWorld");
-    assert_eq!(to_camel_case(""), "");
-    assert_eq!(to_camel_case("hello"), "Hello");
-    assert_eq!(to_camel_case("HELLO"), "Hello");
-    assert_eq!(to_camel_case("hello_world_test"), "HelloWorldTest");
-}
-
-#[test]
-fn test_map_sql_type_to_helix_type() {
-    use super::postgres_ingestion::map_sql_type_to_helix_type;
-
-    assert_eq!(map_sql_type_to_helix_type("integer"), "Integer");
-    assert_eq!(map_sql_type_to_helix_type("bigint"), "Integer");
-    assert_eq!(map_sql_type_to_helix_type("smallint"), "Integer");
-    assert_eq!(map_sql_type_to_helix_type("numeric"), "Float");
-    assert_eq!(map_sql_type_to_helix_type("decimal"), "Float");
-    assert_eq!(map_sql_type_to_helix_type("real"), "Float");
-    assert_eq!(map_sql_type_to_helix_type("double precision"), "Float");
-    assert_eq!(map_sql_type_to_helix_type("character varying"), "String");
-    assert_eq!(map_sql_type_to_helix_type("character"), "String");
-    assert_eq!(map_sql_type_to_helix_type("text"), "String");
-    assert_eq!(map_sql_type_to_helix_type("boolean"), "Boolean");
-    assert_eq!(map_sql_type_to_helix_type("date"), "String");
-    assert_eq!(map_sql_type_to_helix_type("time"), "String");
-    assert_eq!(map_sql_type_to_helix_type("timestamp"), "String");
-    assert_eq!(map_sql_type_to_helix_type("uuid"), "String");
-    assert_eq!(map_sql_type_to_helix_type("json"), "String");
-    assert_eq!(map_sql_type_to_helix_type("jsonb"), "String");
-    assert_eq!(map_sql_type_to_helix_type("bytea"), "String");
-}
-
 #[tokio::test]
 async fn test_postgres_custom_ingestion() {
+    // just to make sure insertion into db actually works
     match create_mock_postgres_db().await {
         Ok((mut client, _config)) => {
             let row = client
@@ -286,7 +294,236 @@ async fn test_postgres_custom_ingestion() {
     }
 }
 
-// Test the full ingestion process
+#[tokio::test]
+async fn test_vector_ingestion() {
+    let mut config = Config::new();
+    config
+        .host("localhost")
+        .port(5432)
+        .user("postgres")
+        .password("postgres")
+        .dbname("postgres");
+
+    let (mut client, connection) = config
+        .connect(NoTls)
+        .await
+        .expect("Failed to connect to database");
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    cleanup_database(&mut client)
+        .await
+        .expect("Failed to clean up database");
+
+    // Create schema with unique table names
+    let parents_table = "parents".to_string();
+    let embeddings_table = "embeddings".to_string();
+
+    // Create the tables and enable vector extension
+    client
+        .batch_execute(&format!(
+                r#"
+            CREATE EXTENSION IF NOT EXISTS vector;
+
+            CREATE TABLE {parents} (
+                id INTEGER PRIMARY KEY
+            );
+
+            CREATE TABLE {embeddings} (
+                parent_id INTEGER REFERENCES {parents_ref}(id),
+                embedding VECTOR(3) NOT NULL
+            );
+            "#,
+            parents = parents_table,
+            embeddings = embeddings_table,
+            parents_ref = parents_table
+        ))
+        .await
+        .expect("Failed to create vector schema");
+
+    // Insert sample data
+    for (parent_id, _) in EMBEDDING_DATA.iter() {
+        client
+            .execute(
+                &format!("INSERT INTO {} (id) VALUES ($1)", parents_table),
+                &[parent_id],
+            )
+            .await
+            .expect("Failed to insert parent");
+            }
+
+    for (parent_id, embedding) in EMBEDDING_DATA.iter() {
+        client
+            .execute(
+                &format!("INSERT INTO {} (parent_id, embedding) VALUES ($1, $2)", embeddings_table),
+                &[parent_id, embedding],
+            )
+            .await
+            .expect("Failed to insert embedding");
+            }
+
+    // Create a temporary directory for test outputs
+    let temp_dir = create_temp_dir();
+    let output_dir = temp_dir.path().to_str().unwrap();
+
+    // Create a PostgreSQL ingestor
+    let mut ingestor = PostgresIngestor::new(
+        "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+        Some("test_instance".to_string()),
+        1000,
+        true,
+    )
+        .await
+        .expect("Failed to create PostgreSQL ingestor");
+
+    // Run the ingestion process
+    ingestor
+        .ingest(output_dir)
+        .await
+        .expect("Failed to run ingestion process");
+
+    // Verify that the output files were created
+    let path = Path::new(output_dir).join("ingestion.jsonl");
+    let schema_path = Path::new(output_dir).join("schema.hx");
+
+    assert!(path.exists(), "ingestion.jsonl file missing");
+    assert!(schema_path.exists(), "schema.hx file missing");
+
+    // Read and verify the nodes file
+    let content = fs::read_to_string(&path).expect("Failed to read nodes file");
+    let mut found_node_types: HashSet<String> = HashSet::new();
+    let mut embedding_nodes: Vec<JsonValue> = Vec::new();
+
+    content.lines().for_each(|line| {
+        let value: JsonValue = serde_json::from_str(line).expect("Failed to parse JSONL line");
+        if value["payload_type"] == "node" {
+            found_node_types.insert(value["label"].as_str().unwrap().to_string());
+            if value["label"] == "embeddings" {
+                embedding_nodes.push(value);
+            }
+        }
+    });
+
+    // Verify node types (expecting parents and embeddings)
+    assert_eq!(
+        found_node_types.len(),
+        2,
+        "Expected 2 node types (parents, embeddings), found: {:?}", found_node_types
+    );
+    assert!(
+        found_node_types.contains("parents"),
+        "Parents node type missing"
+    );
+    assert!(
+        found_node_types.contains("embeddings"),
+        "Embeddings node type missing"
+    );
+
+    // Verify embedding nodes
+    assert_eq!(
+        embedding_nodes.len(),
+        EMBEDDING_DATA.len(),
+        "Expected {} embedding nodes, found {}",
+        EMBEDDING_DATA.len(),
+        embedding_nodes.len()
+    );
+
+    for node in &embedding_nodes {
+        let properties = node["properties"].as_object().expect("Properties should be an object");
+        assert!(properties.contains_key("embedding"), "Embedding property missing");
+
+        let embedding = properties["embedding"].as_object().expect("Embedding should be an object");
+        assert!(embedding.contains_key("data"), "HVector data missing");
+        let data = embedding["data"].as_array().expect("HVector data should be an array");
+        assert_eq!(data.len(), 3, "HVector data should have 3 dimensions");
+
+        // Verify vector values match EMBEDDING_DATA
+        let parent_id = properties["parent_id"].as_i64().expect("parent_id should be a number") as i32;
+        if let Some(expected) = EMBEDDING_DATA.iter().find(|(id, _)| *id == parent_id) {
+            let expected_data = expected.1.to_vec();
+            let expected_data: Vec<f64> = expected_data.into_iter().map(|x| x as f64).collect();
+            let actual_data: Vec<f64> = data
+                .iter()
+                .map(|v| v.as_f64().expect("Vector value should be a float"))
+                .collect();
+            for (i, (actual, expected)) in actual_data.iter().zip(expected_data.iter()).enumerate() {
+                assert!(
+                    (actual - expected).abs() < 1e-6,
+                    "Vector value mismatch for parent_id {} at index {}: {} vs {}",
+                    parent_id,
+                    i,
+                    actual,
+                    expected
+                );
+            }
+        } else {
+            panic!("No matching parent_id {} in EMBEDDING_DATA", parent_id);
+        }
+    }
+
+    // Read and verify the schema file
+    let schema_content = fs::read_to_string(&schema_path).expect("Failed to read schema file");
+    assert!(
+        schema_content.contains("N::Parents"),
+        "Parents node schema missing"
+    );
+    assert!(
+        schema_content.contains("N::Embeddings"),
+        "Embeddings node schema missing"
+    );
+    assert!(
+        schema_content.contains("embedding: Vector"),
+        "Embedding vector type missing"
+    );
+
+    // Clean up
+    cleanup_database(&mut client)
+        .await
+        .expect("Failed to clean up database");
+    temp_dir.close().expect("Failed to clean up temp directory");
+}
+
+#[test]
+fn test_to_camel_case() {
+    assert_eq!(to_camel_case("hello_world"), "HelloWorld");
+    assert_eq!(to_camel_case("hello-world"), "HelloWorld");
+    assert_eq!(to_camel_case("hello world"), "HelloWorld");
+    assert_eq!(to_camel_case("helloWorld"), "HelloWorld");
+    assert_eq!(to_camel_case("HelloWorld"), "HelloWorld");
+    assert_eq!(to_camel_case(""), "");
+    assert_eq!(to_camel_case("hello"), "Hello");
+    assert_eq!(to_camel_case("HELLO"), "Hello");
+    assert_eq!(to_camel_case("hello_world_test"), "HelloWorldTest");
+}
+
+#[test]
+fn test_map_sql_type_to_helix_type() {
+    use super::postgres_ingestion::map_sql_type_to_helix_type;
+
+    assert_eq!(map_sql_type_to_helix_type("integer"), "Integer");
+    assert_eq!(map_sql_type_to_helix_type("bigint"), "Integer");
+    assert_eq!(map_sql_type_to_helix_type("smallint"), "Integer");
+    assert_eq!(map_sql_type_to_helix_type("numeric"), "Float");
+    assert_eq!(map_sql_type_to_helix_type("decimal"), "Float");
+    assert_eq!(map_sql_type_to_helix_type("real"), "Float");
+    assert_eq!(map_sql_type_to_helix_type("double precision"), "Float");
+    assert_eq!(map_sql_type_to_helix_type("character varying"), "String");
+    assert_eq!(map_sql_type_to_helix_type("character"), "String");
+    assert_eq!(map_sql_type_to_helix_type("text"), "String");
+    assert_eq!(map_sql_type_to_helix_type("boolean"), "Boolean");
+    assert_eq!(map_sql_type_to_helix_type("date"), "String");
+    assert_eq!(map_sql_type_to_helix_type("time"), "String");
+    assert_eq!(map_sql_type_to_helix_type("timestamp"), "String");
+    assert_eq!(map_sql_type_to_helix_type("uuid"), "String");
+    assert_eq!(map_sql_type_to_helix_type("json"), "String");
+    assert_eq!(map_sql_type_to_helix_type("jsonb"), "String");
+    assert_eq!(map_sql_type_to_helix_type("bytea"), "String");
+}
+
 #[tokio::test]
 async fn test_postgres_full_ingestion() {
     // Create a configuration for the PostgreSQL connection
@@ -765,7 +1002,7 @@ async fn test_postgres_complex_schema() -> Result<(), Box<dyn std::error::Error>
 
     // Create a PostgreSQL ingestor
     let mut ingestor = PostgresIngestor::new(
-        &format!("postgres://postgres:postgres@localhost:5432/postgres"),
+        &format!("postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
         Some("test_instance".to_string()),
         1000,
         true,
