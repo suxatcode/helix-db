@@ -1,12 +1,14 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
+use std::io::{self, BufRead, BufReader, Seek};
+use std::sync::{Arc, Mutex};
+use std::collections::{HashSet, VecDeque};
+use std::thread;
 
 use get_routes::handler;
+use helixdb::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use helixdb::helix_engine::storage_core::storage_methods::BasicStorageMethods;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
@@ -44,64 +46,137 @@ pub fn bulk_loader(input: &HandlerInput, response: &mut Response) -> Result<(), 
     // line by line from ~/com-friendster.ungraph.txt
     let file_path = "/home/ec2-user/com-friendster.ungraph.txt";
     let file = File::open(file_path).unwrap();
-    let reader = BufReader::new(file);
-
+    let file_size = file.metadata()?.len();
+    let num_threads = 16;
+    let chunk_size = file_size / num_threads as u64;
     let db = Arc::clone(&input.graph.storage);
+    
+    // Shared data structures
+    let nodes = Arc::new(Mutex::new(HashSet::with_capacity(65_000_000)));
+    let edges = Arc::new(Mutex::new(Vec::with_capacity(1_600_000_000)));
+    
+    // Create thread handles
+    let mut handles = Vec::with_capacity(num_threads);
 
-    let mut line_count = 0;
-
-    let mut nodes = HashSet::with_capacity(65_000_000);
-    let mut edges = HashSet::with_capacity(1_600_000_000);
-    for line in reader.lines() {
-        if line_count % 1_000_000 == 0 {
-            println!("Processed {} lines", line_count);
-        }
-        line_count += 1;
-
-        let line = line.unwrap();
-        // Skip comments and empty lines
-        if line.starts_with('#') || line.trim().is_empty() {
-            continue;
-        }
-
-        // Split line into from_id and to_id
-        let ids: Vec<&str> = line.split_whitespace().collect();
-        if ids.len() != 2 {
-            continue;
-        }
-
-        let from_id = ids[0].parse::<u128>().unwrap();
-        let to_id = ids[1].parse::<u128>().unwrap();
-
-        nodes.insert(from_id);
-        nodes.insert(to_id);
-        edges.insert((from_id, to_id));
+    let line_count = Arc::new(AtomicU64::new(0));
+    
+    for i in 0..num_threads {
+        let start_pos = i as u64 * chunk_size;
+        let end_pos = if i == num_threads - 1 {
+            file_size
+        } else {
+            (i as u64 + 1) * chunk_size
+        };
+        
+        let file_path = file_path.to_string();
+        let nodes_clone = Arc::clone(&nodes);
+        let edges_clone = Arc::clone(&edges);
+        let db_clone = Arc::clone(&db);
+        let line_count = Arc::clone(&line_count);
+        
+        let handle = thread::spawn(move || {
+            let mut file = File::open(&file_path).unwrap();
+            file.seek(std::io::SeekFrom::Start(start_pos)).unwrap();
+            
+            let reader = BufReader::new(file);
+            let mut local_nodes = HashSet::new();
+            let mut local_edges = Vec::new();
+            
+            let mut bytes_read = 0;
+            
+            for line in reader.lines() {
+                let line = line.unwrap();
+                bytes_read += line.len() as u64 + 1; // +1 for newline
+                
+                // Skip the first line if it's not the first thread (might be partial)
+                if i > 0 && line_count.load(Ordering::Relaxed) == 0 {
+                    line_count.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+                
+                // Process line
+                if line.starts_with('#') || line.trim().is_empty() {
+                    continue;
+                }
+                
+                // Split line into from_id and to_id
+                let ids: Vec<&str> = line.split_whitespace().collect();
+                if ids.len() != 2 {
+                    continue;
+                }
+                
+                let from_id = ids[0].parse::<u128>().unwrap();
+                let to_id = ids[1].parse::<u128>().unwrap();
+                
+                local_nodes.insert(from_id);
+                if from_id != to_id {
+                    local_nodes.insert(to_id);
+                }
+                local_edges.push((from_id, to_id));
+                
+                line_count.fetch_add(1, Ordering::Relaxed);
+                
+                // Stop if we've exceeded our chunk size (unless it's the last thread)
+                if i < num_threads - 1 && bytes_read >= chunk_size {
+                    break;
+                }
+                if line_count.load(Ordering::Relaxed) % 1_000_000 == 0 {
+                    println!("Thread {} processed {} lines", i, line_count.load(Ordering::Relaxed));
+                }
+            }
+            
+            // Merge local results into shared data structures
+            let mut nodes = nodes_clone.lock().unwrap();
+            nodes.extend(local_nodes);
+            
+            let mut edges = edges_clone.lock().unwrap();
+            edges.extend(local_edges);
+            
+            println!("Thread {} processed {} lines", i, line_count.load(Ordering::Relaxed));
+        });
+        
+        handles.push(handle);
     }
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    // Now process all the collected data
+    let nodes = Arc::try_unwrap(nodes).unwrap().into_inner().unwrap();
+    let edges = Arc::try_unwrap(edges).unwrap().into_inner().unwrap();
 
     let mut txn = db.graph_env.write_txn().unwrap();
     let len = nodes.len();
     // if ids dont exist, create them
+    let mut counter = 0;
     for node in nodes {
-        if node % 1_000_000 == 0 {
+        if counter % 1_000_000 == 0 {
             println!("Added {} nodes", node);
         }
 
-        db.create_node_(&mut txn, "", props! {}, None, Some(node))
-            .unwrap();
+        let tr = G::new_mut(Arc::clone(&db), &mut txn);
+        tr.add_n("user", props! {}, None, Some(node)).count();
+        counter += 1;
     }
     println!("Added {} nodes", len);
     txn.commit().unwrap();
 
+    let mut counter = 0;
     for i in 1..=1000 {
         let start = edges.len() / 1000 * (i - 1);
         let end = edges.len() / 1000 * i;
         let mut txn = db.graph_env.write_txn().unwrap();
         for (from_id, to_id) in edges.iter().skip(start).take(end - start) {
-            db.create_edge_(&mut txn, "knows", *from_id, *to_id, props! {})
-                .unwrap();
+                let tr = G::new_mut(Arc::clone(&db), &mut txn);
+                tr.add_e("knows", props! {}, Some(counter), *from_id, *to_id).count();
+                if counter % 1_000_000 == 0 {
+                    println!("Added {} edges", counter);
+                }
+            counter += 1;
         }
         txn.commit().unwrap();
-        println!("Added {} edges", end - start);
     }
     Ok(())
 }
@@ -186,3 +261,4 @@ pub fn six_hop_friends(input: &HandlerInput, response: &mut Response) -> Result<
     response.body = serde_json::to_vec(&friends_count).unwrap();
     Ok(())
 }
+
