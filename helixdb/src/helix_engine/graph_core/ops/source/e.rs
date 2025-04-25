@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use heed3::{
     types::{Bytes, Lazy},
@@ -7,13 +7,13 @@ use heed3::{
 
 use crate::{
     helix_engine::{
-        graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
+        storage_core::{storage_core::{HelixGraphStorage, EDGE_PREFIX}, storage_methods::StorageMethods},
         types::GraphError,
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
+        items::{Edge, Node, SerializedEdge},
     },
 };
 
@@ -29,10 +29,13 @@ impl<'a> Iterator for E<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|value| {
-            let (_, value) = value.unwrap();
+            let (key, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                match bincode::deserialize(&value) {
+                match SerializedEdge::decode_edge(
+                    &value,
+                    HelixGraphStorage::get_u128_from_bytes(&key[EDGE_PREFIX.len()..]).unwrap(),
+                ) {
                     Ok(edge) => Ok(TraversalVal::Edge(edge)),
                     Err(e) => Err(GraphError::ConversionError(format!(
                         "Error deserializing edge: {}",
@@ -55,7 +58,7 @@ pub trait EAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Size
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> EAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    fn e(self) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    fn e(self) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal  , GraphError>>> {
         let iter = self
             .storage
             .edges_db
@@ -65,6 +68,50 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> EAdapter<'a>
         let e_iter = E { iter };
         RoTraversalIterator {
             inner: e_iter,
+            storage: self.storage,
+            txn: self.txn,
+        }
+    }
+}
+
+pub trait RwEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+    fn e(
+        self,
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+}
+
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> RwEAdapter<'a, 'b>
+    for RwTraversalIterator<'a, 'b, I>
+{
+    fn e(
+        self,
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+        let txn = self.txn.deref().deref();
+        let iter = self
+            .storage
+            .edges_db
+            .lazily_decode_data()
+            .iter(txn)
+            .unwrap()
+            .filter_map(|result| {
+                let (key, value) = result.unwrap();
+                let value: Edge = match SerializedEdge::decode_edge(
+                    &value.decode().unwrap(),
+                    HelixGraphStorage::get_u128_from_bytes(&key).unwrap(),
+                ) {
+                    Ok(edge) => edge,
+                    Err(e) => {
+                        eprintln!("Error decoding edge: {:?}", e);
+                        return None;
+                    }
+                };
+                Some(Ok(TraversalVal::Edge(value)))
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+
+        RwTraversalIterator {
+            inner: iter,
             storage: self.storage,
             txn: self.txn,
         }

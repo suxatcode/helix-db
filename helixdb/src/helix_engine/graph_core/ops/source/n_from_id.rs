@@ -7,7 +7,7 @@ use heed3::{
 
 use crate::{
     helix_engine::{
-        graph_core::traversal_iter::{RoTraversalIterator},
+        graph_core::traversal_iter::RoTraversalIterator,
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },

@@ -310,37 +310,54 @@ fn test_out() {
     assert_eq!(nodes[0].id(), person2.id);
 }
 
-// #[test]
-// fn test_out_e() {
-//     let (storage, _temp_dir) = setup_test_db();
-//     let mut txn = storage.graph_env.write_txn().unwrap();
+#[test]
+fn test_out_e() {
+    let (storage, _temp_dir) = setup_test_db();
 
-//     // Create graph: (person1)-[knows]->(person2)
-//     let person1 = storage
-//         .create_node(&mut txn, "person", props!(), None, None)
-//         .unwrap();
-//     let person2 = storage
-//         .create_node(&mut txn, "person", props!(), None, None)
-//         .unwrap();
+    // Create graph: (person1)-[knows]->(person2)
 
-//     let edge = storage
-//         .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-//         .unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! {}, None, Some(1))
+        .filter_map(|node| node.ok())
+        .collect::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    txn.commit().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! {}, None, Some(2))
+        .filter_map(|node| node.ok())
+        .collect::<Vec<_>>();
+    let person2 = person2.first().unwrap();
+    txn.commit().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props! {},
+            None,
+            person1.id().clone(),
+            person2.id().clone(),
+        )
+        .filter_map(|edge| edge.ok())
+        .collect::<Vec<_>>();
+    let edge = edge.first().unwrap();
+    // println!("traversal edge: {:?}", edge);
 
-//     txn.commit().unwrap();
-//     let mut txn = storage.graph_env.write_txn().unwrap();
-//     let mut txn = txn.deref();
-//     let edges = G::new(Arc::clone(&storage), &mut txn)
-//         .n_from_id(person1.id.as_str())
-//         .out_edges("knows")
-//         .filter_map(|edge| edge.ok())
-//         .collect::<Vec<_>>();
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    println!("processing");
+    let edges = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&person1.id())
+        .out_e("knows")
+        .collect_to::<Vec<_>>();
+    println!("edges: {}", edges.len());
 
-//     // Check that current step is at the edge between person1 and person2
-//     assert_eq!(edges.len(), 1);
-//     assert_eq!(edges[0].id(), edge.id);
-//     assert_eq!(edges[0].label(), "knows");
-// }
+    // Check that current step is at the edge between person1 and person2
+    assert_eq!(edges.len(), 1);
+    assert_eq!(edges[0].id(), edge.id());
+    assert_eq!(edges[0].label(), "knows");
+}
 
 #[test]
 fn test_in() {
@@ -395,14 +412,8 @@ fn test_in_e() {
     let txn = storage.graph_env.read_txn().unwrap();
     let edges = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id)
-        .out_e("knows")
+        .in_e("knows")
         .collect_to::<Vec<_>>();
-    println!("edges: {:?}", edges);
-
-    let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person2.id)
-        .collect_to::<Vec<_>>();
-    println!("nodes: {:?}", nodes);
 
     // Check that current step is at the edge between person1 and person2
     assert_eq!(edges.len(), 1);
@@ -829,7 +840,6 @@ fn test_filter_nodes() {
     let traversal = G::new(Arc::clone(&storage), &txn)
         .n()
         .filter_ref(|val, _| {
-            println!("val: {:?}", val);
             if let Ok(TraversalVal::Node(node)) = val {
                 if let Some(value) = node.check_property("age") {
                     match value {
@@ -1129,7 +1139,6 @@ fn test_out_n() {
         .e_from_id(&edge.id)
         .from_n()
         .collect_to::<Vec<_>>();
-    println!("traversal: {:?}", traversal);
     assert_eq!(traversal.len(), 1);
     assert_eq!(traversal[0].id(), person1.id);
 }
@@ -1254,7 +1263,10 @@ fn huge_traversal() {
         .collect_to::<Vec<_>>();
     println!("optimized version time: {:?}", now.elapsed());
     println!("traversal: {:?}", traversal.len());
-    println!("size of mdb file on disk: {:?}", storage.graph_env.real_disk_size());
+    println!(
+        "size of mdb file on disk: {:?}",
+        storage.graph_env.real_disk_size()
+    );
     txn.commit().unwrap();
 
     let txn = storage.graph_env.read_txn().unwrap();
@@ -1297,5 +1309,8 @@ fn huge_traversal() {
         }
     );
     // print size of mdb file on disk
-    println!("size of mdb file on disk: {:?}", storage.graph_env.real_disk_size());
+    println!(
+        "size of mdb file on disk: {:?}",
+        storage.graph_env.real_disk_size()
+    );
 }

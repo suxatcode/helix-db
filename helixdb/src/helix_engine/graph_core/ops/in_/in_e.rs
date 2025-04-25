@@ -108,7 +108,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
             let db = Arc::clone(&self.storage);
             let storage = Arc::clone(&self.storage);
             let txn = self.txn;
-            let iter = self
+            let iter = self.inner
                 .map(move |item| {
                     let prefix =
                         HelixGraphStorage::in_edge_key(&item.unwrap().id(), edge_label, None);

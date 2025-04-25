@@ -99,9 +99,11 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
             let storage = Arc::clone(&self.storage);
             let txn = self.txn;
             let iter = self
+                .inner
                 .map(move |item| {
+                    let item = item.unwrap();
                     let prefix =
-                        HelixGraphStorage::out_edge_key(&item.unwrap().id(), edge_label, None);
+                        HelixGraphStorage::out_edge_key(&item.id(), edge_label, None);
                     let iter = db
                         .out_edges_db
                         .lazily_decode_data()
@@ -116,7 +118,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
                 })
                 .flatten();
             RoTraversalIterator {
-                inner: OutEdges { iter },
+                inner: iter,
                 storage,
                 txn,
             }

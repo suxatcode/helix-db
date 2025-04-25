@@ -26,7 +26,12 @@ pub trait Filterable {
     fn label(&self) -> &str;
 
     fn from_node(&self) -> u128;
+
+    fn from_node_uuid(&self) -> String;
+
     fn to_node(&self) -> u128;
+
+    fn to_node_uuid(&self) -> String;
 
     fn properties(self) -> HashMap<String, Value>;
 
@@ -71,7 +76,17 @@ impl Filterable for Node {
     }
 
     #[inline(always)]
+    fn from_node_uuid(&self) -> String {
+        unreachable!()
+    }
+
+    #[inline(always)]
     fn to_node(&self) -> u128 {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn to_node_uuid(&self) -> String {
         unreachable!()
     }
 
@@ -139,8 +154,18 @@ impl Filterable for Edge {
     }
 
     #[inline(always)]
+    fn from_node_uuid(&self) -> String {
+        uuid::Uuid::from_u128(self.from_node).to_string()
+    }
+
+    #[inline(always)]
     fn to_node(&self) -> u128 {
         self.to_node
+    }   
+
+    #[inline(always)]
+    fn to_node_uuid(&self) -> String {
+        uuid::Uuid::from_u128(self.to_node).to_string()
     }
 
     #[inline(always)]

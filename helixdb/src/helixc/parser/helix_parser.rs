@@ -64,8 +64,17 @@ pub struct Field {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldType {
     String,
-    Integer,
-    Float,
+    F32,
+    F64,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
     Boolean,
     Array(Box<FieldType>),
     Identifier(String),
@@ -411,10 +420,19 @@ impl HelixParser {
     ) -> Result<FieldType, ParserError> {
         match type_str {
             "String" => Ok(FieldType::String),
-            "Integer" => Ok(FieldType::Integer),
-            "Float" => Ok(FieldType::Float),
             "Boolean" => Ok(FieldType::Boolean),
-            _ if type_str.starts_with("[") && type_str.ends_with("]") => {
+            "F32" => Ok(FieldType::F32),
+            "F64" => Ok(FieldType::F64),
+            "I8" => Ok(FieldType::I8),
+            "I16" => Ok(FieldType::I16),
+            "I32" => Ok(FieldType::I32),
+            "I64" => Ok(FieldType::I64),
+            "U8" => Ok(FieldType::U8),
+            "U16" => Ok(FieldType::U16),
+            "U32" => Ok(FieldType::U32),
+            "U64" => Ok(FieldType::U64),
+            "U128" => Ok(FieldType::U128),
+            "Array" => {
                 return Ok(FieldType::Array(Box::new(
                     self.parse_field_type(&type_str[1..type_str.len() - 1], schema)?,
                 )));
@@ -1270,7 +1288,7 @@ mod tests {
         let input = r#"
         N::User {
             Name: String,
-            Age: Integer
+            Age: I32
         }
         "#;
 
@@ -1289,7 +1307,7 @@ mod tests {
             From: User,
             To: User,
             Properties: {
-                Since: Float
+                Since: F64
             }
         }
         "#;
@@ -1304,7 +1322,7 @@ mod tests {
         let properties = schema.properties.as_ref().unwrap();
         assert_eq!(properties.len(), 1);
         assert_eq!(properties[0].name, "Since");
-        matches!(properties[0].field_type, FieldType::Float);
+        matches!(properties[0].field_type, FieldType::F64);
     }
 
     #[test]
@@ -1351,7 +1369,7 @@ mod tests {
     #[test]
     fn test_query_with_parameters() {
         let input = r#"
-        QUERY fetchUsers(name: String, age: Integer) =>
+        QUERY fetchUsers(name: String, age: I32) =>
             user <- N<USER>("123")
             nameField <- user::{Name}
             ageField <- user::{Age}
@@ -1365,7 +1383,7 @@ mod tests {
         assert_eq!(query.parameters[0].name, "name");
         assert_eq!(query.parameters[0].param_type, FieldType::String);
         assert_eq!(query.parameters[1].name, "age");
-        assert_eq!(query.parameters[1].param_type, FieldType::Integer);
+        assert_eq!(query.parameters[1].param_type, FieldType::I32);
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
     }
@@ -1376,7 +1394,7 @@ mod tests {
         N::USER {
             ID: String,
             Name: String,
-            Age: Integer
+            Age: I32
         }
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1394,7 +1412,7 @@ mod tests {
             To: USER,
             Properties: {
                 Since: String,
-                Strength: Integer
+                Strength: I32
             }
         }
         "#;
@@ -1765,8 +1783,8 @@ mod tests {
         N::ComplexUser {
             ID: String,
             Name: String,
-            Age: Integer,
-            Score: Float,
+            Age: I32,
+            Score: F64,
             Active: Boolean
         }
         E::ComplexRelation {
@@ -1775,9 +1793,9 @@ mod tests {
             Properties: {
                 StartDate: String,
                 EndDate: String,
-                Weight: Float,
+                Weight: F64,
                 Valid: Boolean,
-                Count: Integer
+                Count: I32
             }
         }
         "#;
@@ -1823,7 +1841,7 @@ mod tests {
     #[test]
     fn test_property_assignments() {
         let input = r#"
-        QUERY testProperties(age: Integer) =>
+        QUERY testProperties(age: I32) =>
             user <- AddN<User>({
                 name: "Alice",
                 age: age
@@ -2039,7 +2057,7 @@ mod tests {
         }));
         assert!(query.parameters.iter().any(|param| match param.param_type {
             FieldType::Array(ref field) => match &**field {
-                FieldType::Integer =>
+                FieldType::I32 =>
                     if param.name == "ages" {
                         true
                     } else {

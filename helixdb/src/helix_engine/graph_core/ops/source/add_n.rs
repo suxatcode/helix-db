@@ -29,7 +29,7 @@ pub trait AddNAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
     fn add_n(
         self,
         label: &'a str,
-        properties: impl IntoIterator<Item = (String, Value)>,
+        properties: Vec<(String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<u128>,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
@@ -41,7 +41,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
     fn add_n(
         self,
         label: &'a str,
-        properties: impl IntoIterator<Item = (String, Value)>,
+        properties: Vec<(String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<u128>,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
@@ -57,7 +57,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                 if let Err(e) = self.storage.nodes_db.put(
                     self.txn,
                     &HelixGraphStorage::node_key(&node.id),
-                    &bytes.clone(),
+                    &bytes,
                 ) {
                     result = Err(GraphError::from(e));
                 }

@@ -1,4 +1,6 @@
-use std::hash::Hash;
+use std::{collections::HashMap, hash::Hash};
+
+use heed3::types::{Bytes, Lazy};
 
 use crate::{
     helix_engine::{types::GraphError, vector_core::vector::HVector},
@@ -10,14 +12,21 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum TraversalVal {
     Node(Node),
     Edge(Edge),
     Vector(HVector),
     Count(Count),
     Path((Vec<Node>, Vec<Edge>)),
+    // Lazy(Lazy<'a, Bytes>),
     Empty,
+}
+
+impl std::fmt::Debug for TraversalVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl Hash for TraversalVal {
@@ -25,7 +34,7 @@ impl Hash for TraversalVal {
         match self {
             TraversalVal::Node(node) => node.id.hash(state),
             TraversalVal::Edge(edge) => edge.id.hash(state),
-            TraversalVal::Vector(vector) => vector.id().hash(state),
+            TraversalVal::Vector(vector) => vector.id.hash(state),
             TraversalVal::Empty => state.write_u8(0),
             _ => state.write_u8(0),
         }
@@ -58,7 +67,7 @@ impl Traversable for TraversalVal {
         match self {
             TraversalVal::Node(node) => node.id,
             TraversalVal::Edge(edge) => edge.id,
-            TraversalVal::Vector(vector) => *vector.id(),
+            TraversalVal::Vector(vector) => vector.id,
             _ => panic!("Invalid traversal value"),
         }
     }
@@ -79,4 +88,5 @@ impl Traversable for TraversalVal {
             _ => None,
         }
     }
+
 }

@@ -1,3 +1,5 @@
+use crate::helix_engine::types::GraphError;
+
 use super::count::Count;
 use super::traversal_value::TraversalValue;
 use super::value::{properties_format, Value};
@@ -12,6 +14,7 @@ use std::{collections::HashMap, fmt, hash::Hash};
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Node {
+    #[serde(skip)]
     pub id: u128,
     pub label: String,
     #[serde(with = "properties_format")]
@@ -36,12 +39,39 @@ impl Node {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct SerializedNode {
+    pub label: String,
+    #[serde(with = "properties_format")]
+    pub properties: HashMap<String, Value>,
+}
+
+impl SerializedNode {
+    pub fn decode_node(bytes: &[u8], id: u128) -> Result<Node, GraphError> {
+        match bincode::deserialize::<SerializedNode>(bytes) {
+            Ok(node) => {
+                let node = Node {
+                    id,
+                    label: node.label,
+                    properties: node.properties,
+                };
+                Ok(node)
+            }
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing node: {}",
+                e
+            ))),
+        }
+    }
+}
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{{ id: {}, label: {}, properties: {:?} }}",
-            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(),
+            self.label,
+            self.properties
         )
     }
 }
@@ -51,7 +81,9 @@ impl std::fmt::Debug for Node {
         write!(
             f,
             "{{ id: {}, label: {}, properties: {:?} }}",
-            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(),
+            self.label,
+            self.properties
         )
     }
 }
@@ -60,6 +92,7 @@ impl std::fmt::Debug for Node {
 /// Properties are serialised without enum variant names in JSON format.
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct Edge {
+    #[serde(skip)]
     pub id: u128, // TODO: change to uuid::Uuid and implement SERDE manually
     pub label: String,
     pub from_node: u128,
@@ -71,11 +104,23 @@ pub struct Edge {
 impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
     pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self { id: uuid::Uuid::new_v4().as_u128(), label: label.to_string(), from_node: 0, to_node: 0, properties: HashMap::from_iter(properties) }
+        Self {
+            id: uuid::Uuid::new_v4().as_u128(),
+            label: label.to_string(),
+            from_node: 0,
+            to_node: 0,
+            properties: HashMap::from_iter(properties),
+        }
     }
 
     pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self { id: uuid::Uuid::new_v4().as_u128(), label: label.to_string(), from_node: 0, to_node: 0, properties: HashMap::from_iter(properties) }
+        Self {
+            id: uuid::Uuid::new_v4().as_u128(),
+            label: label.to_string(),
+            from_node: 0,
+            to_node: 0,
+            properties: HashMap::from_iter(properties),
+        }
     }
 }
 
@@ -84,7 +129,11 @@ impl std::fmt::Display for Edge {
         write!(
             f,
             "{{ id: {}, label: {}, from_node: {}, to_node: {}, properties: {:?} }}",
-            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.from_node, self.to_node, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(),
+            self.label,
+            uuid::Uuid::from_u128(self.from_node).to_string(),
+            uuid::Uuid::from_u128(self.to_node).to_string(),
+            self.properties
         )
     }
 }
@@ -94,7 +143,41 @@ impl std::fmt::Debug for Edge {
         write!(
             f,
             "{{ id: {}, label: {}, from_node: {}, to_node: {}, properties: {:?} }}",
-            uuid::Uuid::from_u128(self.id).to_string(), self.label, self.from_node, self.to_node, self.properties
+            uuid::Uuid::from_u128(self.id).to_string(),
+            self.label,
+            uuid::Uuid::from_u128(self.from_node).to_string(),
+            uuid::Uuid::from_u128(self.to_node).to_string(),
+            self.properties
         )
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+pub struct SerializedEdge {
+    pub label: String,
+    pub from_node: u128,
+    pub to_node: u128,
+    #[serde(with = "properties_format")]
+    pub properties: HashMap<String, Value>,
+}
+
+impl SerializedEdge {
+    pub fn decode_edge(bytes: &[u8], id: u128) -> Result<Edge, GraphError> {
+        match bincode::deserialize::<SerializedEdge>(bytes) {
+            Ok(edge) => {
+                let edge = Edge {
+                    id,
+                    label: edge.label,
+                    from_node: edge.from_node,
+                    to_node: edge.to_node,
+                    properties: edge.properties,
+                };
+                Ok(edge)
+            }
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing edge: {}",
+                e
+            ))),
+        }
     }
 }

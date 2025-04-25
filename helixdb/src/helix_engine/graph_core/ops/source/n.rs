@@ -8,12 +8,12 @@ use heed3::{
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        storage_core::{storage_core::{HelixGraphStorage, NODE_PREFIX}, storage_methods::StorageMethods},
         types::GraphError,
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
+        items::{Edge, Node, SerializedNode},
     },
 };
 
@@ -29,10 +29,13 @@ impl<'a> Iterator for N<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|value| {
-            let (_, value) = value.unwrap();
+            let (key, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                match bincode::deserialize(&value) {
+                match SerializedNode::decode_node(
+                    &value,
+                    HelixGraphStorage::get_u128_from_bytes(&key[NODE_PREFIX.len()..]).unwrap(),
+                ) {
                     Ok(node) => Ok(TraversalVal::Node(node)),
                     Err(e) => Err(GraphError::ConversionError(format!(
                         "Error deserializing node: {}",

@@ -27,7 +27,7 @@ pub trait AddEAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
     fn add_e(
         self,
         label: &'a str,
-        properties: impl IntoIterator<Item = (String, Value)>,
+        properties: Vec<(String, Value)>,
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
@@ -40,15 +40,16 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
     fn add_e(
         self,
         label: &'a str,
-        properties: impl IntoIterator<Item = (String, Value)>,
+        properties: Vec<(String, Value)>,
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
     ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
+
         let edge = Edge {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),
             label: label.to_string(),
-            properties: HashMap::from_iter(properties),
+            properties: properties.into_iter().collect(),
             from_node,
             to_node,
         };
@@ -56,18 +57,12 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         if self
             .storage
             .nodes_db
-            .get(
-                self.txn,
-                &HelixGraphStorage::node_key(&edge.from_node),
-            )
+            .get(self.txn, &HelixGraphStorage::node_key(&edge.from_node))
             .map_or(false, |node| node.is_none())
             || self
                 .storage
                 .nodes_db
-                .get(
-                    self.txn,
-                    &HelixGraphStorage::node_key(&edge.to_node),
-                )
+                .get(self.txn, &HelixGraphStorage::node_key(&edge.to_node))
                 .map_or(false, |node| node.is_none())
         {
             result = Err(GraphError::NodeNotFound);
@@ -78,7 +73,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 if let Err(e) = self.storage.edges_db.put(
                     self.txn,
                     &HelixGraphStorage::edge_key(&edge.id),
-                    &bytes.clone(),
+                    &bytes,
                 ) {
                     result = Err(GraphError::from(e));
                 }

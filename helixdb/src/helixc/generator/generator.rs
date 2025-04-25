@@ -155,12 +155,20 @@ impl CodeGenerator {
     fn field_type_to_rust(&self, field_type: &FieldType) -> String {
         match field_type {
             FieldType::String => "String".to_string(),
-            FieldType::Integer => "i32".to_string(),
-            FieldType::Float => "f64".to_string(),
+            FieldType::F32 => "f32".to_string(),
+            FieldType::F64 => "f64".to_string(),
+            FieldType::I8 => "i8".to_string(),
+            FieldType::I16 => "i16".to_string(),
+            FieldType::I32 => "i32".to_string(),
+            FieldType::I64 => "i64".to_string(),
+            FieldType::U8 => "u8".to_string(),
+            FieldType::U16 => "u16".to_string(),
+            FieldType::U32 => "u32".to_string(),
+            FieldType::U64 => "u64".to_string(),
+            FieldType::U128 => "u128".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field)),
             FieldType::Identifier(id) => format!("{}", id),
-            _ => "".to_string(),
         }
     }
 

@@ -6,6 +6,8 @@ use serde_json::Value as JsonValue;
 use sonic_rs::{Deserialize, Serialize};
 use std::{collections::HashMap, env::consts::OS, fmt};
 
+use crate::helix_engine::types::GraphError;
+
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
 #[derive(Clone, PartialEq, Debug)]
@@ -320,7 +322,10 @@ impl<'de> Deserialize<'de> for Value {
             // For binary, use enum variant indices
             deserializer.deserialize_enum(
                 "Value",
-                &["String", "F32", "F64", "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64", "U128", "Boolean", "Array", "Object", "Empty"],
+                &[
+                    "String", "F32", "F64", "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64",
+                    "U128", "Boolean", "Array", "Object", "Empty",
+                ],
                 ValueVisitor,
             )
         }
@@ -501,6 +506,33 @@ impl From<JsonValue> for Value {
                 Value::Object(o.into_iter().map(|(k, v)| (k, v.into())).collect())
             }
             JsonValue::Null => Value::Empty,
+        }
+    }
+}
+
+pub trait Encodings {
+    fn decode_properties(bytes: &[u8]) -> Result<HashMap<String, Value>, GraphError>;
+    fn encode_properties(&self) -> Result<Vec<u8>, GraphError>;
+}
+
+impl Encodings for HashMap<String, Value> {
+    fn decode_properties(bytes: &[u8]) -> Result<HashMap<String, Value>, GraphError> {
+        match bincode::deserialize(bytes) {
+            Ok(properties) => Ok(properties),
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing properties: {}",
+                e
+            ))),
+        }
+    }
+
+    fn encode_properties(&self) -> Result<Vec<u8>, GraphError> {
+        match bincode::serialize(self) {
+            Ok(bytes) => Ok(bytes),
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error serializing properties: {}",
+                e
+            ))),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    helix_engine::types::VectorError,
+    helix_engine::types::{GraphError, VectorError},
     protocol::{
         filterable::{Filterable, FilterableType},
         return_values::ReturnValue,
@@ -12,7 +12,7 @@ use std::{cmp::Ordering, collections::HashMap};
 #[repr(C, align(16))]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
-    id: u128,
+    pub id: u128,
     pub is_deleted: bool,
     pub level: usize,
     pub distance: Option<f64>,
@@ -325,6 +325,26 @@ impl HVector {
         // Extract the low 64 bits as a scalar
         _mm_cvtsd_f64(sum)
     }
+
+    fn decode_vector(&self, bytes: &[u8]) -> Result<HVector, GraphError> {
+        match bincode::deserialize(bytes) {
+            Ok(vector) => Ok(vector),
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing vector: {}",
+                e
+            ))),
+        }
+    }
+
+    fn encode_vector(&self, vector: &HVector) -> Result<Vec<u8>, GraphError> {
+        match bincode::serialize(vector) {
+            Ok(bytes) => Ok(bytes),
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error serializing vector: {}",
+                e
+            ))),
+        }
+    }
 }
 
 // #[cfg(test)]
@@ -444,11 +464,19 @@ impl Filterable for HVector {
     }
 
     fn from_node(&self) -> u128 {
-        "vector".to_string().parse::<u128>().unwrap()
+        unreachable!()
+    }
+
+    fn from_node_uuid(&self) -> String {
+        unreachable!()
     }
 
     fn to_node(&self) -> u128 {
-        "vector".to_string().parse::<u128>().unwrap()
+        unreachable!()
+    }
+
+    fn to_node_uuid(&self) -> String {
+        unreachable!()
     }
 
     fn properties(self) -> HashMap<String, Value> {

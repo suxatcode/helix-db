@@ -12,7 +12,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::Edge,
+        items::{Edge, SerializedEdge},
     },
 };
 
@@ -32,7 +32,7 @@ impl<'a> Iterator for EFromTypes<'a> {
         self.iter.next().map(|value| {
             let (key, _) = value.unwrap();
             let edge_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..])?;
-            let edge: Edge = match self.storage.get_edge(self.txn, &edge_id) {
+            let edge = match self.storage.get_edge(self.txn, &edge_id) {
                 Ok(edge) => edge,
                 Err(e) => return Err(e),
             };

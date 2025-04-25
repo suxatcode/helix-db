@@ -105,8 +105,8 @@ where
             FilterableType::Edge => {
                 let mut properties =
                     HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
-                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
-                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
+                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node_uuid()));
+                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node_uuid()));
                 properties
             }
             FilterableType::Vector => {

@@ -82,7 +82,7 @@ impl TraversalBuilder {
         secondary_indices: Option<&[String]>,
     ) -> Result<(), GraphError> {
         self.storage
-            .create_node_(txn, node_label, props, secondary_indices)?;
+            .create_node_(txn, node_label, props, secondary_indices, None)?;
         Ok(())
     }
 
