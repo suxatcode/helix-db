@@ -61,7 +61,7 @@ pub struct Field {
     pub field_type: FieldType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum FieldType {
     String,
     F32,
@@ -78,6 +78,7 @@ pub enum FieldType {
     Boolean,
     Array(Box<FieldType>),
     Identifier(String),
+    Object(HashMap<String, FieldType>),
 }
 
 #[derive(Debug, Clone)]
@@ -217,6 +218,7 @@ pub enum BooleanOp {
 pub struct AddVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -383,12 +385,6 @@ impl HelixParser {
         Ok(parser.source)
     }
 
-    fn parse_field_defs(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
-        pair.into_inner()
-            .map(|p| self.parse_field_def(p))
-            .collect::<Result<Vec<_>, _>>()
-    }
-
     fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
@@ -415,29 +411,65 @@ impl HelixParser {
 
     fn parse_field_type(
         &self,
-        type_str: &str,
+        field: Pair<Rule>,
         schema: Option<&Source>,
     ) -> Result<FieldType, ParserError> {
-        match type_str {
-            "String" => Ok(FieldType::String),
-            "Boolean" => Ok(FieldType::Boolean),
-            "F32" => Ok(FieldType::F32),
-            "F64" => Ok(FieldType::F64),
-            "I8" => Ok(FieldType::I8),
-            "I16" => Ok(FieldType::I16),
-            "I32" => Ok(FieldType::I32),
-            "I64" => Ok(FieldType::I64),
-            "U8" => Ok(FieldType::U8),
-            "U16" => Ok(FieldType::U16),
-            "U32" => Ok(FieldType::U32),
-            "U64" => Ok(FieldType::U64),
-            "U128" => Ok(FieldType::U128),
-            "Array" => {
+        println!("\nFieldType: {:?}\n", field);
+        match field.as_rule() {
+            Rule::named_type => {
+                let type_str = field.as_str();
+                match type_str {
+                    "String" => Ok(FieldType::String),
+                    "Boolean" => Ok(FieldType::Boolean),
+                    "F32" => Ok(FieldType::F32),
+                    "F64" => Ok(FieldType::F64),
+                    "I8" => Ok(FieldType::I8),
+                    "I16" => Ok(FieldType::I16),
+                    "I32" => Ok(FieldType::I32),
+                    "I64" => Ok(FieldType::I64),
+                    "U8" => Ok(FieldType::U8),
+                    "U16" => Ok(FieldType::U16),
+                    "U32" => Ok(FieldType::U32),
+                    "U64" => Ok(FieldType::U64),
+                    "U128" => Ok(FieldType::U128),
+                    _ => unreachable!(),
+                }
+            }
+            Rule::array => {
                 return Ok(FieldType::Array(Box::new(
-                    self.parse_field_type(&type_str[1..type_str.len() - 1], schema)?,
+                    self.parse_field_type(
+                        // unwraps the array type because grammar type is
+                        // { array { param_type { array | object | named_type } } }
+                        field
+                            .into_inner()
+                            .next()
+                            .unwrap()
+                            .into_inner()
+                            .next()
+                            .unwrap(),
+                        schema,
+                    )?,
                 )));
             }
-            _ if type_str.starts_with(
+            Rule::object => {
+                let mut fields = HashMap::new();
+                for field in field.into_inner().next().unwrap().into_inner() {
+                    println!("\nField: {:?}\n", field);
+                    let (field_name, field_type) = {
+                        let mut field_pair = field.clone().into_inner();
+                        (
+                            field_pair.next().unwrap().as_str().to_string(),
+                            field_pair.next().unwrap().into_inner().next().unwrap(),
+                        )
+                    };
+                    println!("\nField Name: {:?}\n", field_name);
+                    println!("\nField Type: {:?}\n", field_type);
+                    let field_type = self.parse_field_type(field_type, Some(&self.source))?;
+                    fields.insert(field_name, field_type);
+                }
+                Ok(FieldType::Object(fields))
+            }
+            _ if field.as_str().starts_with(
                 |c: char| {
                     if c.is_ascii_uppercase() {
                         true
@@ -449,24 +481,29 @@ impl HelixParser {
             {
                 // println!("{:?}", self.source);
                 if self.source.edge_schemas.iter().any(|e| {
-                    if e.name == type_str {
+                    if e.name == field.as_str() {
                         true
                     } else {
                         false
                     }
                 }) || self.source.node_schemas.iter().any(|n| {
-                    if n.name == type_str {
+                    if n.name == field.as_str() {
                         true
                     } else {
                         false
                     }
                 }) {
-                    Ok(FieldType::Identifier(type_str.to_string()))
+                    Ok(FieldType::Identifier(field.as_str().to_string()))
                 } else {
-                    return Err(ParserError::ParamDoesNotMatchSchema(type_str.to_string()));
+                    return Err(ParserError::ParamDoesNotMatchSchema(
+                        field.as_str().to_string(),
+                    ));
                 }
             }
-            _ => unreachable!(),
+            _ => {
+                println!("\nERROR: {:?}\n", field);
+                unreachable!()
+            }
         }
     }
 
@@ -474,8 +511,7 @@ impl HelixParser {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
 
-        let field_type =
-            self.parse_field_type(pairs.next().unwrap().as_str(), Some(&self.source))?;
+        let field_type = self.parse_field_type(pairs.next().unwrap(), Some(&self.source))?;
 
         Ok(Field { name, field_type })
     }
@@ -533,8 +569,23 @@ impl HelixParser {
             .map(|p: Pair<'_, Rule>| -> Result<Parameter, ParserError> {
                 let mut inner = p.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
-                let param_type =
-                    self.parse_field_type(inner.next().unwrap().as_str(), Some(&self.source))?;
+
+                // gets param type
+                let mut param_type = self.parse_field_type(
+                    // unwraps the param type to get the rule (array, object, named_type, etc)
+                    inner
+                        .clone()
+                        .next()
+                        .unwrap()
+                        .clone()
+                        .into_inner()
+                        .next()
+                        .unwrap(),
+                    Some(&self.source),
+                )?;
+
+                println!("\nParamType: {:?}\n", param_type);
+
                 if seen.insert(name.clone()) {
                     Ok(Parameter { name, param_type })
                 } else {
@@ -575,7 +626,7 @@ impl HelixParser {
     fn parse_batch_add_vector(&self, pair: Pair<Rule>) -> Result<BatchAddVector, ParserError> {
         let mut vector_type = None;
         let mut vec_identifier = None;
-        
+
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -594,12 +645,16 @@ impl HelixParser {
             }
         }
 
-        Ok(BatchAddVector { vector_type, vec_identifier })
+        Ok(BatchAddVector {
+            vector_type,
+            vec_identifier,
+        })
     }
 
     fn parse_add_vector(&self, pair: Pair<Rule>) -> Result<AddVector, ParserError> {
         let mut vector_type = None;
         let mut data = None;
+        let mut fields = None;
 
         for p in pair.into_inner() {
             match p.as_rule() {
@@ -615,6 +670,9 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
+                Rule::create_field => {
+                    fields = Some(self.parse_property_assignments(p)?);
+                }
                 _ => {
                     return Err(ParserError::from(format!(
                         "Unexpected rule in AddV: {:?} => {:?}",
@@ -625,7 +683,11 @@ impl HelixParser {
             }
         }
 
-        Ok(AddVector { vector_type, data })
+        Ok(AddVector {
+            vector_type,
+            data,
+            fields,
+        })
     }
 
     fn parse_search_vector(&self, pair: Pair<Rule>) -> Result<SearchVector, ParserError> {
@@ -646,12 +708,23 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
-                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule() {
+                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule()
+                {
                     Rule::integer => {
-                        k = Some(EvaluatesToNumber::Integer(p.as_str().to_string().parse::<usize>().map_err(|_| ParserError::from("Invalid integer value"))?));
+                        k = Some(EvaluatesToNumber::Integer(
+                            p.as_str()
+                                .to_string()
+                                .parse::<usize>()
+                                .map_err(|_| ParserError::from("Invalid integer value"))?,
+                        ));
                     }
                     Rule::float => {
-                        k = Some(EvaluatesToNumber::Float(p.as_str().to_string().parse::<f64>().map_err(|_| ParserError::from("Invalid float value"))?));
+                        k = Some(EvaluatesToNumber::Float(
+                            p.as_str()
+                                .to_string()
+                                .parse::<f64>()
+                                .map_err(|_| ParserError::from("Invalid float value"))?,
+                        ));
                     }
                     Rule::identifier => {
                         k = Some(EvaluatesToNumber::Identifier(p.as_str().to_string()));
@@ -668,7 +741,11 @@ impl HelixParser {
             }
         }
 
-        Ok(SearchVector { vector_type, data, k})
+        Ok(SearchVector {
+            vector_type,
+            data,
+            k,
+        })
     }
 
     fn parse_vec_literal(&self, pair: Pair<Rule>) -> Result<Vec<f64>, ParserError> {
@@ -934,7 +1011,9 @@ impl HelixParser {
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
             Rule::AddN => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
             Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
-            Rule::BatchAddV => Ok(Expression::BatchAddVector(self.parse_batch_add_vector(pair)?)),
+            Rule::BatchAddV => Ok(Expression::BatchAddVector(
+                self.parse_batch_add_vector(pair)?,
+            )),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::search_vector => Ok(Expression::SearchVector(self.parse_search_vector(pair)?)),
             Rule::none => Ok(Expression::None),
@@ -1381,9 +1460,9 @@ mod tests {
         assert_eq!(query.name, "fetchUsers");
         assert_eq!(query.parameters.len(), 2);
         assert_eq!(query.parameters[0].name, "name");
-        assert_eq!(query.parameters[0].param_type, FieldType::String);
+        assert!(matches!(query.parameters[0].param_type, FieldType::String));
         assert_eq!(query.parameters[1].name, "age");
-        assert_eq!(query.parameters[1].param_type, FieldType::I32);
+        assert!(matches!(query.parameters[1].param_type, FieldType::I32));
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
     }

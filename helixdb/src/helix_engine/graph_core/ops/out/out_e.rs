@@ -93,35 +93,32 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
         self,
         edge_label: &'a str,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        {
-            // iterate through the iterator and create a new iterator on the out edges
-            let db = Arc::clone(&self.storage);
-            let storage = Arc::clone(&self.storage);
-            let txn = self.txn;
-            let iter = self
-                .inner
-                .map(move |item| {
-                    let item = item.unwrap();
-                    let prefix =
-                        HelixGraphStorage::out_edge_key(&item.id(), edge_label, None);
-                    let iter = db
-                        .out_edges_db
-                        .lazily_decode_data()
-                        .prefix_iter(txn, &prefix)
-                        .unwrap();
+        // iterate through the iterator and create a new iterator on the out edges
+        let db = Arc::clone(&self.storage);
+        let storage = Arc::clone(&self.storage);
+        let txn = self.txn;
+        let iter = self
+            .inner
+            .map(move |item| {
+                let item = item.unwrap();
+                let prefix = HelixGraphStorage::out_edge_key(&item.id(), edge_label, None);
+                let iter = db
+                    .out_edges_db
+                    .lazily_decode_data()
+                    .prefix_iter(txn, &prefix)
+                    .unwrap();
 
-                    OutEdgesIterator {
-                        iter,
-                        storage: Arc::clone(&db),
-                        txn,
-                    }
-                })
-                .flatten();
-            RoTraversalIterator {
-                inner: iter,
-                storage,
-                txn,
-            }
+                OutEdgesIterator {
+                    iter,
+                    storage: Arc::clone(&db),
+                    txn,
+                }
+            })
+            .flatten();
+        RoTraversalIterator {
+            inner: OutEdges { iter },
+            storage,
+            txn,
         }
     }
 }

@@ -1208,30 +1208,39 @@ fn huge_traversal() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let mut nodes = Vec::with_capacity(1_000_000);
-
-    for i in 0..40_000 {
+    let start = Instant::now();
+    for i in 0..6_00 {
         let node = storage
             .create_node(&mut txn, "person", props! { "name" => i}, None, None)
             .unwrap();
         nodes.push(node);
 
-        for _ in 0..3 {
-            let random_node = &nodes[rand::rng().random_range(0..nodes.len())];
-            storage
-                .create_edge(
-                    &mut txn,
-                    "knows",
-                    &nodes[i as usize].id,
-                    &random_node.id,
-                    props!(),
-                )
-                .unwrap();
-        }
         if i % 1000 == 0 {
             println!("created {} nodes", i);
         }
     }
+
+    for i in 0..600 {
+        for j in 0..2000 {
+            let random_node = &nodes[rand::rng().random_range(0..nodes.len())];
+
+            G::new_mut(Arc::clone(&storage), &mut txn)
+                .add_e(
+                    "knows",
+                    props! {},
+                    None,
+                    nodes[i as usize].id,
+                    random_node.id,
+                )
+                .count();
+            if i * j % 1000 == 0 {
+                println!("created {} edges", i * j);
+            }
+        }
+    }
+
     txn.commit().unwrap();
+    println!("time taken to create nodes: {:?}", start.elapsed());
 
     let txn = storage.graph_env.read_txn().unwrap();
     let now = Instant::now();
@@ -1260,57 +1269,57 @@ fn huge_traversal() {
         .out("knows")
         .dedup()
         .range(0, 100)
-        .collect_to::<Vec<_>>();
+        .count();
     println!("optimized version time: {:?}", now.elapsed());
-    println!("traversal: {:?}", traversal.len());
+    println!("traversal: {:?}", traversal);
     println!(
         "size of mdb file on disk: {:?}",
         storage.graph_env.real_disk_size()
     );
     txn.commit().unwrap();
 
-    let txn = storage.graph_env.read_txn().unwrap();
-    let now = Instant::now();
-    let mut tr = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    tr.v(&txn)
-        .out_e(&txn, "knows")
-        .in_v(&txn)
-        .out(&txn, "knows")
-        .filter_nodes(&txn, |val| {
-            if let Some(value) = val.check_property("name") {
-                match value {
-                    Value::I32(name) => return Ok(*name < 1000),
-                    _ => return Err(GraphError::Default),
-                }
-            } else {
-                return Err(GraphError::Default);
-            }
-        })
-        .out(&txn, "knows")
-        .out(&txn, "knows")
-        .out(&txn, "knows")
-        .out(&txn, "knows")
-        .range(0, 100);
+    // let txn = storage.graph_env.read_txn().unwrap();
+    // let now = Instant::now();
+    // let mut tr = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+    // tr.v(&txn)
+    //     .out_e(&txn, "knows")
+    //     .in_v(&txn)
+    //     .out(&txn, "knows")
+    //     .filter_nodes(&txn, |val| {
+    //         if let Some(value) = val.check_property("name") {
+    //             match value {
+    //                 Value::I32(name) => return Ok(*name < 1000),
+    //                 _ => return Err(GraphError::Default),
+    //             }
+    //         } else {
+    //             return Err(GraphError::Default);
+    //         }
+    //     })
+    //     .out(&txn, "knows")
+    //     .out(&txn, "knows")
+    //     .out(&txn, "knows")
+    //     .out(&txn, "knows")
+    //     .range(0, 100);
 
-    let result = tr.finish();
-    println!("original version time: {:?}", now.elapsed());
-    println!(
-        "traversal: {:?}",
-        match result {
-            Ok(TraversalValue::NodeArray(nodes)) => nodes.len(),
-            Err(e) => {
-                println!("error: {:?}", e);
-                0
-            }
-            _ => {
-                println!("error: {:?}", result);
-                0
-            }
-        }
-    );
-    // print size of mdb file on disk
-    println!(
-        "size of mdb file on disk: {:?}",
-        storage.graph_env.real_disk_size()
-    );
+    // let result = tr.finish();
+    // println!("original version time: {:?}", now.elapsed());
+    // println!(
+    //     "traversal: {:?}",
+    //     match result {
+    //         Ok(TraversalValue::NodeArray(nodes)) => nodes.len(),
+    //         Err(e) => {
+    //             println!("error: {:?}", e);
+    //             0
+    //         }
+    //         _ => {
+    //             println!("error: {:?}", result);
+    //             0
+    //         }
+    //     }
+    // );
+    // // print size of mdb file on disk
+    // println!(
+    //     "size of mdb file on disk: {:?}",
+    //     storage.graph_env.real_disk_size()
+    // );
 }

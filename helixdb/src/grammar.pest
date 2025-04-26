@@ -4,7 +4,7 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 // Query definitions
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
-param_def    = { identifier ~ ":" ~ type_name }
+param_def    = { identifier ~ ":" ~ param_type }
 query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop )* }
 
 // Assignments and traversals
@@ -124,16 +124,18 @@ edge_def   = { "E::" ~ identifier_upper ~ edge_body }
 
 node_body  = { "{" ~ field_defs ~ "}" }
 edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
-field_def  = { (identifier ~ ":" ~ type_name) }
+field_def  = { (identifier ~ ":" ~ param_type) }
 field_defs = { field_def ~ ("," ~ field_def)* }
 properties = { "Properties" ~ ":" ~ "{" ~ field_defs? ~ "}" }
 
 // Values and literals
-array            = @{ "[" ~ type_name ~ "]" }
+array            = { "[" ~ param_type ~ "]" }
+object           = { "{" ~ field_defs ~ "}" }
 string_literal   = ${ "\"" ~ inner_string ~ "\"" }
 inner_string     = @{ (!("\"" | "\\") ~ ANY)* }
 boolean          =  { "true" | "false" }
-type_name        = @{ "String" | "Boolean" | "F32" | "F64" | "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64" | "U128" | array | identifier_upper }
+named_type       = { "String" | "Boolean" | "F32" | "F64" | "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64" | "U128" }
+param_type       = { named_type | array | object }
 identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 integer          = @{ ASCII_DIGIT+ }

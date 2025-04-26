@@ -1058,11 +1058,21 @@ impl TraversalBuilderMethods for TraversalBuilder {
 }
 
 impl VectorTraversalSteps for TraversalBuilder {
-    fn vector_search<F>(&mut self, txn: &RoTxn, query_vector: &[f64], k: usize, filter: Option<&[F]>) -> &mut Self
+    fn vector_search<F>(
+        &mut self,
+        txn: &RoTxn,
+        query_vector: &[f64],
+        k: usize,
+        filter: Option<&[F]>,
+    ) -> &mut Self
     where
         F: Fn(&HVector) -> bool,
     {
-        let result = match self.storage.vectors.search(txn, query_vector, k, filter, false) {
+        let result = match self
+            .storage
+            .vectors
+            .search(txn, query_vector, k, filter, false)
+        {
             Ok(result) => result,
             Err(err) => {
                 self.store_error(GraphError::from(err));
@@ -1073,11 +1083,18 @@ impl VectorTraversalSteps for TraversalBuilder {
         self
     }
 
-    fn insert_vector<F>(&mut self, txn: &mut RwTxn, vector: &[f64], filter: Option<&[F]>) -> &mut Self
+    fn insert_vector<F>(
+        &mut self,
+        txn: &mut RwTxn,
+        vector: &[f64],
+    ) -> &mut Self
     where
         F: Fn(&HVector) -> bool,
     {
-        self.storage.vectors.insert::<F>(txn, vector, None).unwrap();
+        self.storage
+            .vectors
+            .insert::<F>(txn, vector, None, None)
+            .unwrap();
         self
     }
 

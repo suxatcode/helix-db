@@ -6,7 +6,9 @@ use uuid::Uuid;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::{hnsw::HNSW, vector::HVector},
+        storage_core::storage_core::HelixGraphStorage,
+        types::GraphError,
+        vector_core::{hnsw::HNSW, vector::HVector},
     },
     protocol::{filterable::Filterable, items::Node, value::Value},
 };
@@ -26,7 +28,11 @@ impl Iterator for InsertVIterator {
 }
 
 pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
-    fn insert_v<F>(self, query: &Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    fn insert_v<F>(
+        self,
+        query: &Vec<f64>,
+        fields: Option<HashMap<String, Value>>,
+    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
     where
         F: Fn(&HVector) -> bool;
 }
@@ -34,11 +40,18 @@ pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a>
     for RwTraversalIterator<'a, 'b, I>
 {
-    fn insert_v<F>(self, query: &Vec<f64>) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    fn insert_v<F>(
+        self,
+        query: &Vec<f64>,
+        fields: Option<HashMap<String, Value>>,
+    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
     where
         F: Fn(&HVector) -> bool,
     {
-        let vector = self.storage.vectors.insert::<F>(self.txn, &query, None);
+        let vector = self
+            .storage
+            .vectors
+            .insert::<F>(self.txn, &query, None, fields);
 
         let result = match vector {
             Ok(vector) => Ok(TraversalVal::Vector(vector)),

@@ -1,4 +1,6 @@
-use crate::helix_engine::types::VectorError;
+use std::collections::HashMap;
+
+use crate::{helix_engine::types::VectorError, protocol::value::Value};
 use crate::helix_engine::vector_core::vector::HVector;
 use heed3::{RoTxn, RwTxn};
 
@@ -41,6 +43,7 @@ pub trait HNSW {
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<u128>,
+        fields: Option<HashMap<String, Value>>,
     ) -> Result<HVector, VectorError>
     where
         F: Fn(&HVector) -> bool;

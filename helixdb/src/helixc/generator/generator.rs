@@ -124,7 +124,7 @@ impl CodeGenerator {
             output.push_str(&format!(
                 "    {}: {},\n",
                 to_snake_case(&field.name),
-                self.field_type_to_rust(&field.field_type)
+                self.field_type_to_rust(&field.field_type, &field.name)
             ));
         }
 
@@ -144,7 +144,7 @@ impl CodeGenerator {
             output.push_str(&format!(
                 "    {}: {},\n",
                 to_snake_case(&field.name),
-                self.field_type_to_rust(&field.field_type)
+                self.field_type_to_rust(&field.field_type, &field.name)
             ));
         }
 
@@ -152,7 +152,7 @@ impl CodeGenerator {
         output
     }
 
-    fn field_type_to_rust(&self, field_type: &FieldType) -> String {
+    fn field_type_to_rust(&mut self, field_type: &FieldType, param_name: &str) -> String {
         match field_type {
             FieldType::String => "String".to_string(),
             FieldType::F32 => "f32".to_string(),
@@ -167,9 +167,66 @@ impl CodeGenerator {
             FieldType::U64 => "u64".to_string(),
             FieldType::U128 => "u128".to_string(),
             FieldType::Boolean => "bool".to_string(),
-            FieldType::Array(field) => format!("Vec<{}>", &Self::field_type_to_rust(&self, field)),
+            FieldType::Array(field) => {
+                format!("Vec<{}>", self.field_type_to_rust(&field, &param_name))
+            }
             FieldType::Identifier(id) => format!("{}", id),
+            FieldType::Object(_) => format!("{}Data", to_snake_case(&param_name)),
         }
+    }
+
+    fn object_field_to_rust(&mut self, name: &str) -> String {
+        let mut output = String::new();
+        output.push_str(&format!(
+            "{}: {}Data,\n",
+            to_snake_case(&name),
+            to_snake_case(&name)
+        ));
+        output
+    }
+
+    fn array_field_to_rust(&mut self, name: &str, inner: &FieldType) -> String {
+        let mut output = String::new();
+        output.push_str(&format!(
+            "{}: {},\n",
+            to_snake_case(&name),
+            match &inner {
+                FieldType::Object(_) => self.object_field_to_rust(name),
+                _ => self.field_type_to_rust(inner, name),
+            }
+        ));
+        output
+    }
+
+    fn object_type_to_rust(
+        &mut self,
+        param_name: &str,
+        fields: &HashMap<String, FieldType>,
+    ) -> String {
+        let mut output = String::new();
+        output.push_str(&mut self.indent());
+        output.push_str("#[derive(Serialize, Deserialize)]\n");
+        output.push_str(&mut self.indent());
+        output.push_str(&format!("struct {}Data {{\n", to_snake_case(&param_name)));
+        let _ = fields
+            .iter()
+            .map(|(name, type_name)| {
+                output.push_str(&mut self.indent());
+                output.push_str(&mut self.indent());
+                output.push_str(&format!(
+                    "{}: {},\n",
+                    to_snake_case(&name),
+                    match type_name {
+                        // TODO: Have separate internal string for type defs
+                        FieldType::Object(_) => self.object_field_to_rust(name),
+                        _ => self.field_type_to_rust(type_name, &param_name),
+                    }
+                ));
+            })
+            .collect::<Vec<_>>();
+        output.push_str(&mut self.indent());
+        output.push_str("}\n\n");
+        output
     }
 
     pub fn generate_query(&mut self, query: &Query) -> String {
@@ -191,16 +248,40 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
-                output.push_str(&format!(
-                    "{}: {},\n",
-                    to_snake_case(&param.name),
-                    self.field_type_to_rust(&param.param_type)
-                ));
+                match &param.param_type {
+                    FieldType::Object(_) => {
+                        output.push_str(&self.object_field_to_rust(&param.name))
+                    }
+                    FieldType::Array(_) => {
+                        output.push_str(&self.array_field_to_rust(&param.name, &param.param_type))
+                    }
+                    _ => output.push_str(&format!(
+                        "{}: {},\n",
+                        to_snake_case(&param.name),
+                        self.field_type_to_rust(&param.param_type, &param.name)
+                    )),
+                }
             }
 
             self.indent_level -= 1;
             output.push_str(&mut self.indent());
             output.push_str("}\n\n");
+
+            for param in &query.parameters {
+                println!("param: {:?}", param);
+                match &param.param_type {
+                    FieldType::Object(fields) => {
+                        output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                    }
+                    FieldType::Array(fields) => match fields.as_ref() {
+                        FieldType::Object(fields) => {
+                            output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
 
             // Deserialize input data
             output.push_str(&mut self.indent());
@@ -317,19 +398,33 @@ impl CodeGenerator {
         let mut output = String::new();
         output.push_str(&mut self.indent());
         output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+
+        // possible id for hvector nid
+        let (props, _) = if let Some(fields) = &add_vector.fields {
+            let possible_id = match fields.get("id") {
+                Some(ValueType::Literal(Value::String(s))) => Some(s.clone()),
+                Some(ValueType::Identifier(identifier)) => {
+                    Some(format!("data.{}.clone()", identifier))
+                }
+                _ => None,
+            };
+            (self.generate_props_macro(&fields), possible_id)
+        } else {
+            ("props!{}".to_string(), None)
+        };
         match &add_vector.data {
             Some(VectorData::Vector(vec)) => {
                 output.push_str(&mut self.indent());
                 output.push_str(&format!(
-                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?});\n",
-                    vec
+                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, Hashmap::from({}));\n",
+                    vec, props
                 ));
             }
             Some(VectorData::Identifier(id)) => {
                 output.push_str(&mut self.indent());
                 output.push_str(&format!(
-                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{});\n",
-                    id
+                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, Hashmap::from({}));\n",
+                    id, props
                 ));
             }
             None => (),

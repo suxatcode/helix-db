@@ -1,38 +1,30 @@
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
+    node_matches,
+    props,
+    helix_engine::graph_core::traversal::TraversalBuilder,
     helix_engine::graph_core::ops::{
         g::G,
         in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},
         out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},
-        source::{
-            add_e::AddEAdapter, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId,
-            e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId,
-            n_from_types::NFromTypesAdapter,
-        },
-        tr_val::{Traversable, TraversalVal},
-        util::{
-            dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
-            filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update,
-        },
-        vectors::{insert::InsertVAdapter, search::SearchVAdapter},
+        vectors::{ insert::InsertVAdapter, search::SearchVAdapter},
+        source::{add_e::AddEAdapter, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},
+        tr_val::{TraversalVal, Traversable},
+        util::{dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut, filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update},
     },
-    helix_engine::graph_core::traversal::TraversalBuilder,
     helix_engine::types::GraphError,
     helix_gateway::router::router::HandlerInput,
-    node_matches, props,
     protocol::count::Count,
-    protocol::remapping::ResponseRemapping,
     protocol::response::Response,
     protocol::traversal_value::TraversalValue,
-    protocol::{
-        filterable::Filterable, remapping::Remapping, return_values::ReturnValue, value::Value,
-    },
+    protocol::remapping::ResponseRemapping,
+    protocol::{filterable::Filterable, value::Value, return_values::ReturnValue, remapping::Remapping},
 };
 use sonic_rs::{Deserialize, Serialize};
 
@@ -40,13 +32,7 @@ use sonic_rs::{Deserialize, Serialize};
 pub fn ragload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     #[derive(Serialize, Deserialize)]
     struct ragloadData {
-        docs: Vec<docsData>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct docsData {
-        doc: String,
-        vecs: Vec<Vec<f64>>,
+        docs: Vec<doc: String, vecs: Vec<Vec<f64>>>,
     }
 
     let data: ragloadData = match sonic_rs::from_slice(&input.request.body) {
@@ -54,8 +40,7 @@ pub fn ragload(input: &HandlerInput, response: &mut Response) -> Result<(), Grap
         Err(err) => return Err(GraphError::from(err)),
     };
 
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
-        RefCell::new(HashMap::new());
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
     let db = Arc::clone(&input.graph.storage);
     let txn = db.graph_env.read_txn().unwrap();
 
@@ -66,3 +51,4 @@ pub fn ragload(input: &HandlerInput, response: &mut Response) -> Result<(), Grap
 
     Ok(())
 }
+

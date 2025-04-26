@@ -103,34 +103,32 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
         self,
         edge_label: &'a str,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        {
-            // iterate through the iterator and create a new iterator on the out edges
-            let db = Arc::clone(&self.storage);
-            let storage = Arc::clone(&self.storage);
-            let txn = self.txn;
-            let iter = self.inner
-                .map(move |item| {
-                    let prefix =
-                        HelixGraphStorage::in_edge_key(&item.unwrap().id(), edge_label, None);
-                    let iter = db
-                        .in_edges_db
-                        .lazily_decode_data()
-                        .prefix_iter(txn, &prefix)
-                        .unwrap();
+        // iterate through the iterator and create a new iterator on the out edges
+        let db = Arc::clone(&self.storage);
+        let storage = Arc::clone(&self.storage);
+        let txn = self.txn;
+        let iter = self
+            .inner
+            .map(move |item| {
+                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), edge_label, None);
+                let iter = db
+                    .in_edges_db
+                    .lazily_decode_data()
+                    .prefix_iter(txn, &prefix)
+                    .unwrap();
 
-                    InEdgesIterator {
-                        iter,
-                        storage: Arc::clone(&db),
-                        txn,
-                    }
-                })
-                .flatten();
+                InEdgesIterator {
+                    iter,
+                    storage: Arc::clone(&db),
+                    txn,
+                }
+            })
+            .flatten();
 
-            RoTraversalIterator {
-                inner: InEdges { iter },
-                storage,
-                txn,
-            }
+        RoTraversalIterator {
+            inner: InEdges { iter },
+            storage,
+            txn,
         }
     }
 }

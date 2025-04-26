@@ -95,36 +95,33 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
         self,
         edge_label: &'a str,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        {
-            // iterate through the iterator and create a new iterator on the out edges
-            let db = Arc::clone(&self.storage);
-            let storage = Arc::clone(&self.storage);
-            let txn = self.txn;
-            let iter = self
-                .inner
-                .map(move |item| {
-                    let prefix =
-                        HelixGraphStorage::out_edge_key(&item.unwrap().id(), edge_label, None);
-                    let iter = db
-                        .out_edges_db
-                        .lazily_decode_data()
-                        .prefix_iter(txn, &prefix)
-                        .unwrap();
+        // iterate through the iterator and create a new iterator on the out edges
+        let db = Arc::clone(&self.storage);
+        let storage = Arc::clone(&self.storage);
+        let txn = self.txn;
+        let iter = self
+            .inner
+            .map(move |item| {
+                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), edge_label, None);
+                let iter = db
+                    .out_edges_db
+                    .lazily_decode_data()
+                    .prefix_iter(txn, &prefix)
+                    .unwrap();
 
-                    OutNodesIterator {
-                        iter,
-                        storage: Arc::clone(&db),
-                        txn,
-                        length: prefix.len(),
-                    }
-                })
-                .flatten();
+                OutNodesIterator {
+                    iter,
+                    storage: Arc::clone(&db),
+                    txn,
+                    length: prefix.len(),
+                }
+            })
+            .flatten();
 
-            RoTraversalIterator {
-                inner: OutNodes { iter },
-                storage,
-                txn,
-            }
+        RoTraversalIterator {
+            inner: OutNodes { iter },
+            storage,
+            txn,
         }
     }
 }

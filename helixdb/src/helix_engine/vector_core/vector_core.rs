@@ -1,12 +1,14 @@
 use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::vector_core::hnsw::HNSW;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
+use crate::protocol::value::Value;
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
 };
 use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
@@ -520,6 +522,7 @@ impl HNSW for VectorCore {
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<u128>,
+        fields: Option<HashMap<String, Value>>,
     ) -> Result<HVector, VectorError>
     where
         F: Fn(&HVector) -> bool,
@@ -590,6 +593,13 @@ impl HNSW for VectorCore {
             self.set_entry_point(txn, &query)?;
         }
 
+        if let Some(fields) = fields {
+            self.vector_data_db.put(
+                txn,
+                &query.get_id().to_le_bytes(),
+                &bincode::serialize(&fields)?,
+            )?;
+        }
         Ok(query)
     }
 
@@ -629,7 +639,7 @@ impl HNSW for VectorCore {
     {
         //self.num_of_vecs += data.len();
         for v in data.iter() {
-            let _ = self.insert::<F>(txn, v, None);
+            let _ = self.insert::<F>(txn, v, None, None);
         }
 
         // NOTE: need to txn.commit() outside of call
