@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
-
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
+use std::collections::{HashMap, HashSet};
+use pest_derive::Parser;
 use pest::{
     iterators::{Pair, Pairs},
     Parser as PestParser,
 };
-use pest_derive::Parser;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -274,6 +273,7 @@ pub enum ValueType {
     Identifier(String),
     Object(Object),
 }
+
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
         match value {
@@ -376,6 +376,7 @@ impl HelixParser {
                 _ => return Err(ParserError::from("Unexpected rule encountered")),
             }
         }
+
         for pair in remaining {
             // println!("{:?}", parser.source);
             parser.source.queries.push(parser.parse_query_def(pair)?);
@@ -392,11 +393,13 @@ impl HelixParser {
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(NodeSchema { name, fields })
     }
+
     fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         Ok(VectorSchema { name })
     }
+
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
         let field_defs = pair
             .into_inner()
@@ -572,7 +575,7 @@ impl HelixParser {
                 let name = inner.next().unwrap().as_str().to_string();
 
                 // gets param type
-                let mut param_type = self.parse_field_type(
+                let param_type = self.parse_field_type(
                     // unwraps the param type to get the rule (array, object, named_type, etc)
                     inner
                         .clone()
@@ -755,7 +758,7 @@ impl HelixParser {
     }
 
     fn parse_vec_literal(&self, pair: Pair<Rule>) -> Result<Vec<f64>, ParserError> {
-        let mut pairs = pair.into_inner();
+        let pairs = pair.into_inner();
         let mut vec = Vec::new();
         for p in pairs {
             vec.push(
@@ -901,7 +904,7 @@ impl HelixParser {
     }
 
     fn parse_to_from(&self, pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
-        let mut pairs = pair.into_inner();
+        let pairs = pair.into_inner();
         let mut from_id = None;
         let mut to_id = None;
         // println!("pairs: {:?}", pairs);
