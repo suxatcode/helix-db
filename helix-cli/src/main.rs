@@ -534,9 +534,9 @@ fn main() {
             let source = match compile_hql_to_source(&files) {
                 Ok(source) => source,
                 Err(e) => {
-                    println!("\n\t❌ Failed to parse source");
-                    println!("\t|");
-                    println!("\t└─ {}", e);
+                    println!("\n❌ Failed to parse source");
+                    println!("|");
+                    println!("└─── {}", e);
                     return;
                 }
             };

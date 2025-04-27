@@ -40,8 +40,13 @@ use sonic_rs::{Deserialize, Serialize};
 pub fn ragloaddoc(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     #[derive(Serialize, Deserialize)]
     struct ragloaddocData {
-        doc: String,
+        docs: Vec<docsData>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct docsData {
         vecs: Vec<Vec<f64>>,
+        doc: String,
     }
 
     let data: ragloaddocData = match sonic_rs::from_slice(&input.request.body) {
@@ -56,27 +61,30 @@ pub fn ragloaddoc(input: &HandlerInput, response: &mut Response) -> Result<(), G
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-    let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
-        "Type",
-        props! { "content".to_string() => data.doc },
-        None,
-        None,
-    );
-    let doc_node = tr.collect_to::<Vec<_>>();
+    for data in data.docs {
+        let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
+            "Type",
+            props! { "content".to_string() => data.doc },
+            None,
+            None,
+        );
+        let doc_node = tr.collect_to::<Vec<_>>();
 
-    let tr =
-        G::new_mut(Arc::clone(&db), &mut txn).insert_vs::<fn(&HVector) -> bool>(&data.vecs, None);
-    let vectors = tr.collect_to::<Vec<_>>();
+        let tr = G::new_mut(Arc::clone(&db), &mut txn)
+            .insert_vs::<fn(&HVector) -> bool>(&data.vecs, None);
+        let vectors = tr.collect_to::<Vec<_>>();
 
-    let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
-        "Contains",
-        props! {},
-        None,
-        doc_node.id(),
-        vectors.id(),
-    );
-    let edges = tr.collect_to::<Vec<_>>();
-
+        for data in vectors {
+            let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
+                "Contains",
+                props! {},
+                None,
+                doc_node.id(),
+                data.id(),
+            );
+            let _ = tr.collect_to::<Vec<_>>();
+        }
+    }
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 

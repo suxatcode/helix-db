@@ -5,7 +5,7 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ param_type }
-query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop )* }
+query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop | for_loop)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
@@ -14,6 +14,10 @@ id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
 step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step | AddE) }
 last_step           = { "::" ~ (bool_operations | update) }
+// change this for loop to be able to take traversals etc in the future. 
+for_loop            = { "FOR" ~ for_argument ~ "IN" ~ identifier ~ "{" ~ query_body ~ "}" }
+for_argument        = { identifier | object_destructuring }
+object_destructuring = { "{" ~ identifier ~ ("," ~ identifier)* ~ "}" }
 
 // Evaluation rules for different types
 evaluates_to_anything = {

@@ -1,17 +1,21 @@
-use crate::helixc::parser::helix_parser::{
-    AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection, EdgeSchema,
-    EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue, GraphStep, IdType,
-    NodeSchema, Parameter, Query, SearchVector, Source,
-    StartNode::{Anonymous, Edge, Node, Variable},
-    Statement, Step, Traversal, ValueType, VectorData,
-};
 use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
 use crate::protocol::value::Value;
+use crate::{
+    helix_engine::graph_core::ops::out,
+    helixc::parser::helix_parser::{
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection,
+        EdgeSchema, EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue,
+        ForLoop, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source,
+        StartNode::{Anonymous, Edge, Node, Variable},
+        Statement, Step, Traversal, ValueType, VectorData,
+    },
+};
 use std::{collections::HashMap, vec};
 
 pub struct CodeGenerator {
     indent_level: usize,
     current_variables: HashMap<String, String>,
+    params: Vec<String>,
 }
 
 impl CodeGenerator {
@@ -19,6 +23,7 @@ impl CodeGenerator {
         Self {
             indent_level: 0,
             current_variables: HashMap::new(),
+            params: Vec::new(),
         }
     }
     /**
@@ -248,6 +253,7 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
+                self.params.push(param.name.clone());
                 match &param.param_type {
                     FieldType::Object(_) => {
                         output.push_str(&self.object_field_to_rust(&param.name))
@@ -305,30 +311,8 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         output.push_str("let db = Arc::clone(&input.graph.storage);\n");
         output.push_str(&mut self.indent());
-        if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddNode(_))
-                || matches!(s, Statement::AddEdge(_))
-                || matches!(s, Statement::Drop(_))
-                || matches!(s, Statement::AddVector(_))
-                || matches!(s, Statement::BatchAddVector(_))
-                || {
-                    if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddNode(_))
-                            || matches!(assignment.value, Expression::AddEdge(_))
-                            || matches!(assignment.value, Expression::AddVector(_))
-                            || matches!(assignment.value, Expression::BatchAddVector(_))
-                            || {
-                                let steps = match &assignment.value {
-                                    Expression::Traversal(traversal) => &traversal.steps,
-                                    _ => return false,
-                                };
-                                steps.iter().any(|step| matches!(step, Step::Update(_)))
-                            }
-                    } else {
-                        false
-                    }
-                }
-        }) {
+
+        if query.statements.iter().any(|s| self.should_be_mut(s)) {
             output.push_str("let mut txn = db.graph_env.write_txn().unwrap();\n\n");
         } else {
             output.push_str("let txn = db.graph_env.read_txn().unwrap();\n\n");
@@ -350,23 +334,7 @@ impl CodeGenerator {
             output.push_str(&mut self.generate_return_values(&query.return_values, &query));
         }
 
-        if query.statements.iter().any(|s| {
-            matches!(s, Statement::AddNode(_))
-                || matches!(s, Statement::AddEdge(_))
-                || matches!(s, Statement::Drop(_))
-                || matches!(s, Statement::AddVector(_))
-                || matches!(s, Statement::BatchAddVector(_))
-                || {
-                    if let Statement::Assignment(assignment) = s {
-                        matches!(assignment.value, Expression::AddNode(_))
-                            || matches!(assignment.value, Expression::AddEdge(_))
-                            || matches!(assignment.value, Expression::AddVector(_))
-                            || matches!(assignment.value, Expression::BatchAddVector(_))
-                    } else {
-                        false
-                    }
-                }
-        }) {
+        if query.statements.iter().any(|s| self.should_be_mut(s)) {
             output.push_str(&mut self.indent());
             output.push_str("txn.commit()?;\n");
         }
@@ -380,18 +348,85 @@ impl CodeGenerator {
         output
     }
 
+    fn should_be_mut(&mut self, statement: &Statement) -> bool {
+        matches!(statement, Statement::AddNode(_))
+            || matches!(statement, Statement::AddEdge(_))
+            || matches!(statement, Statement::Drop(_))
+            || matches!(statement, Statement::AddVector(_))
+            || matches!(statement, Statement::BatchAddVector(_))
+            || {
+                match statement {
+                    Statement::Assignment(assignment) => {
+                        matches!(assignment.value, Expression::AddNode(_))
+                            || matches!(assignment.value, Expression::AddEdge(_))
+                            || matches!(assignment.value, Expression::AddVector(_))
+                            || matches!(assignment.value, Expression::BatchAddVector(_))
+                            || {
+                                let steps = match &assignment.value {
+                                    Expression::Traversal(traversal) => &traversal.steps,
+                                    _ => return false,
+                                };
+                                steps.iter().any(|step| matches!(step, Step::Update(_)))
+                            }
+                    }
+                    Statement::ForLoop(for_loop) => {
+                        for_loop.statements.iter().any(|s| self.should_be_mut(s))
+                    }
+                    _ => false,
+                }
+            }
+    }
+
     fn generate_statement(&mut self, statement: &Statement, query: &Query) -> String {
-        match statement {
+        let mut output = match statement {
             Statement::Assignment(assignment) => self.generate_assignment(assignment, query),
             Statement::AddNode(add_node) => self.generate_add_node(add_node, None),
-            Statement::AddEdge(add_edge) => self.generate_add_edge(add_edge),
+            Statement::AddEdge(add_edge) => self.generate_add_edge(add_edge, None),
             Statement::Drop(expr) => self.generate_drop(expr, query),
             Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
             Statement::SearchVector(search_vector) => self.generate_search_vector(search_vector),
             Statement::BatchAddVector(batch_add_vector) => {
                 self.generate_batch_add_vector(batch_add_vector)
             }
+            Statement::ForLoop(for_loop) => self.generate_for_loop(for_loop, query),
+        };
+        match statement {
+            Statement::Assignment(_) | Statement::ForLoop(_) => {}
+            _ => output.push_str(";\nlet _ = tr.collect_to::<Vec<_>>();\n\n"),
         }
+        output
+    }
+
+    fn generate_for_loop(&mut self, for_loop: &ForLoop, query: &Query) -> String {
+        let mut output = String::new();
+        // if the in_variable is in params, then use data.in_variable else use in_variable
+        if self.params.contains(&for_loop.in_variable) {
+            // arguments
+            let arguments = for_loop
+                .variables
+                .iter()
+                .map(|v| v.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            // output.push_str(&format!(
+            //     "for {}Data {{ {} }} in data.{} {{\n",
+            //     for_loop.in_variable, arguments, for_loop.in_variable
+            // ));
+            output.push_str(&format!("for data in data.{} {{\n", for_loop.in_variable));
+        } else {
+            // TODO handle error if variables is more than 1
+            output.push_str(&format!("for data in {} {{\n", for_loop.in_variable));
+        }
+
+        for statement in &for_loop.statements {
+            output.push_str(&mut self.generate_statement(statement, query));
+        }
+
+        output.push_str(&mut self.indent());
+        output.push_str("}\n");
+
+        output
     }
 
     fn generate_add_vector(&mut self, add_vector: &AddVector) -> String {
@@ -567,7 +602,7 @@ impl CodeGenerator {
                 output.push_str(&mut self.generate_add_node(add_node, None));
             }
             Expression::AddEdge(add_edge) => {
-                output.push_str(&mut self.generate_add_edge(add_edge));
+                output.push_str(&mut self.generate_add_edge(add_edge, None));
             }
             Expression::BatchAddVector(batch_add_vector) => {
                 output.push_str(&mut self.generate_batch_add_vector(batch_add_vector));
@@ -633,7 +668,15 @@ impl CodeGenerator {
                     }
                 } else if let Some(types) = types {
                     output.push_str(&mut self.indent());
-                    output.push_str(".e()\n");
+                    output.push_str(&mut self.indent());
+                    output.push_str(&format!(
+                        ".e_from_types(&[{}])\n",
+                        types
+                            .iter()
+                            .map(|t| format!("\"{}\"", t))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
                 } else {
                     output.push_str(&mut self.indent());
                     output.push_str(".e()\n");
@@ -1445,7 +1488,7 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_add_edge(&mut self, add_edge: &AddEdge) -> String {
+    fn generate_add_edge(&mut self, add_edge: &AddEdge, var_name: Option<&str>) -> String {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
@@ -1477,7 +1520,7 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(var) {
                     format!("{}.id()", to_snake_case(var_name))
                 } else {
-                    format!("\"{}\"", var)
+                    format!("data.id()") // TODO handle properly
                 }
             }
         };
@@ -1488,7 +1531,7 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(var) {
                     format!("{}.id()", to_snake_case(var_name))
                 } else {
-                    format!("\"{}\"", var)
+                    format!("data.id()") // TODO handle properly
                 }
             }
         };
@@ -1499,6 +1542,16 @@ impl CodeGenerator {
             edge_type, props, possible_id, from_id, to_id,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
+
+        if let Some(name) = var_name {
+            output.push_str(&mut self.indent());
+            output.push_str(&format!(
+                "let {} = tr.collect_to::<Vec<_>>();\n", // TODO: change to return single value
+                name
+            ));
+            self.current_variables
+                .insert(name.to_string(), name.to_string());
+        }
 
         // TODO: collect to vec or single value?
 
@@ -1978,10 +2031,7 @@ impl CodeGenerator {
                     output.push_str(&format!("ReturnValue::Empty\n"));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!(
-                        "ReturnValue::from({}.id())\n",
-                        to_snake_case(key)
-                    ));
+                    output.push_str(&format!("ReturnValue::from({}.id())\n", to_snake_case(key)));
                 }
                 _ => {
                     output.push_str(&format!(

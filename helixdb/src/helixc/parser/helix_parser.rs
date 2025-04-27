@@ -1,11 +1,11 @@
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
-use std::collections::{HashMap, HashSet};
-use pest_derive::Parser;
 use pest::{
     iterators::{Pair, Pairs},
     Parser as PestParser,
 };
+use pest_derive::Parser;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -104,12 +104,20 @@ pub enum Statement {
     Drop(Expression),
     SearchVector(SearchVector),
     BatchAddVector(BatchAddVector),
+    ForLoop(ForLoop),
 }
 
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub variable: String,
     pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForLoop {
+    pub variables: Vec<String>,
+    pub in_variable: String,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]
@@ -619,12 +627,63 @@ impl HelixParser {
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
                 Rule::BatchAddV => Ok(Statement::BatchAddVector(self.parse_batch_add_vector(p)?)),
                 Rule::search_vector => Ok(Statement::SearchVector(self.parse_search_vector(p)?)),
+                Rule::for_loop => Ok(Statement::ForLoop(self.parse_for_loop(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
                     p.as_rule()
                 ))),
             })
             .collect()
+    }
+
+    fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
+        println!("\nForLoop: {:?}\n", pair);
+        let mut pairs = pair.into_inner();
+        let mut variables = Vec::new();
+        let mut in_variable = String::new();
+        // parse the arguments
+
+        let argument = pairs.next().unwrap().clone().into_inner().next().unwrap();
+        match argument.as_rule() {
+            Rule::object_destructuring => {
+                for p in argument.into_inner() {
+                    variables.push(p.as_str().to_string());
+                }
+            }
+            Rule::identifier => {
+                variables.push(argument.as_str().to_string());
+            }
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected rule in ForLoop: {:?}",
+                    argument.as_rule()
+                )));
+            }
+        }
+
+        // parse the in
+        let in_ = pairs.next().unwrap().clone();
+        match in_.as_rule() {
+            Rule::identifier => {
+                in_variable.push_str(in_.as_str());
+            }
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected rule in ForLoop: {:?}",
+                    in_.as_rule()
+                )));
+            }
+        }
+        // parse the body
+        let statements =
+            self.parse_query_body(pairs.next().unwrap())?;
+
+        
+        Ok(ForLoop {
+            variables,
+            in_variable,
+            statements,
+        })
     }
 
     fn parse_batch_add_vector(&self, pair: Pair<Rule>) -> Result<BatchAddVector, ParserError> {
@@ -792,10 +851,7 @@ impl HelixParser {
             }
         }
 
-        Ok(AddNode {
-            node_type,
-            fields,
-        })
+        Ok(AddNode { node_type, fields })
     }
 
     fn parse_property_assignments(
