@@ -90,3 +90,18 @@ impl Traversable for TraversalVal {
     }
 
 }
+
+
+impl Traversable for Vec<TraversalVal> {
+    fn id(&self) -> u128 {
+        self[0].id()
+    }
+
+    fn label(&self) -> String {
+        self[0].label()
+    }
+
+    fn check_property(&self, prop: &str) -> Option<&Value> {
+        self[0].check_property(prop)
+    }
+}

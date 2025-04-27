@@ -11,46 +11,24 @@ use crate::{
     protocol::filterable::{Filterable, FilterableType},
 };
 
-pub struct Drop<'a, I> {
+pub struct Drop<I> {
     iter: I,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a mut RwTxn<'a>,
 }
 
 // implementing iterator for Drop
-impl<'a, I> Iterator for Drop<'a, I>
+impl<I> Iterator for Drop<I>
 where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    I: Iterator<Item = Result<(), GraphError>>,
 {
-    type Item = ();
+    type Item = Result<(), GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            Some(Ok(item)) => {
-                match item {
-                    TraversalVal::Node(node) => {
-                        self.storage.drop_node(&mut self.txn, &node.id).unwrap();
-                    }
-                    TraversalVal::Edge(edge) => {
-                        self.storage.drop_edge(&mut self.txn, &edge.id).unwrap();
-                    }
-                    // FilterableType::Vector => self.storage.drop_vector(&self.txn, &item.id());
-                    _ => {
-                        return None;
-                    }
-                }
-                Some(())
-            }
-            Some(Err(e)) => {
-                None
-            }
-            None => None,
-        }
+        self.iter.next()
     }
 }
 
 pub trait DropAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
-    fn drop(self) -> Drop<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    fn drop(self) -> Result<(), GraphError>;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> DropAdapter<'a, 'b>
@@ -59,11 +37,36 @@ where
     'b: 'a,
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
-    fn drop(self) -> Drop<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        Drop {
-            iter: self.inner,
-            storage: self.storage,
-            txn: self.txn,
-        }
+    fn drop(mut self) -> Result<(), GraphError> {
+        // TODO: make sure this isnt stupid as running full loop here will
+        // immediately consume drop everything instead of iterating
+
+        let txn = self.txn;
+        let storage = Arc::clone(&self.storage);
+
+        self.inner.try_for_each(|item| -> Result<(), GraphError> {
+            match item {
+                Ok(item) => {
+                    match item {
+                        TraversalVal::Node(node) => match storage.drop_node(txn, &node.id) {
+                            Ok(_) => Ok(()),
+                            Err(e) => return Err(e),
+                        },
+                        TraversalVal::Edge(edge) => match storage.drop_edge(txn, &edge.id) {
+                            Ok(_) => Ok(()),
+                            Err(e) => return Err(e),
+                        },
+                        // FilterableType::Vector => self.storage.drop_vector(&self.txn, &item.id());
+                        _ => {
+                            return Err(GraphError::ConversionError(format!(
+                                "Incorrect Type: {:?}",
+                                item
+                            )));
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        })
     }
 }

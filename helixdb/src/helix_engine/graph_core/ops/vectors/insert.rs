@@ -27,24 +27,34 @@ impl Iterator for InsertVIterator {
     }
 }
 
-pub trait InsertVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait InsertVAdapter<'a, 'b>:
+    Iterator<Item = Result<TraversalVal, GraphError>> + Sized
+{
     fn insert_v<F>(
         self,
-        query: &Vec<f64>,
+        vec: &Vec<f64>,
         fields: Option<HashMap<String, Value>>,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&HVector) -> bool;
+
+    fn insert_vs<F>(
+        self,
+        vecs: &Vec<Vec<f64>>,
+        fields: Option<HashMap<String, Value>>,
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector) -> bool;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a>
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a, 'b>
     for RwTraversalIterator<'a, 'b, I>
 {
     fn insert_v<F>(
         self,
         query: &Vec<f64>,
         fields: Option<HashMap<String, Value>>,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector) -> bool,
     {
@@ -62,6 +72,34 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
             inner: std::iter::once(result),
             storage: self.storage,
             txn: self.txn,
+        }
+    }
+
+    fn insert_vs<F>(
+        self,
+        vecs: &Vec<Vec<f64>>,
+        fields: Option<HashMap<String, Value>>,
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    where
+        F: Fn(&HVector) -> bool,
+    {
+        let txn = self.txn;
+        let storage = Arc::clone(&self.storage);
+        let iter = vecs
+            .iter()
+            .map(|vec| {
+                let vector = storage.vectors.insert::<F>(txn, &vec, None, fields.clone()); // TODO: remove clone
+                match vector {
+                    Ok(vector) => Ok(TraversalVal::Vector(vector)),
+                    Err(e) => Err(GraphError::from(e)),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        RwTraversalIterator {
+            inner: iter.into_iter(),
+            storage: self.storage,
+            txn,
         }
     }
 }

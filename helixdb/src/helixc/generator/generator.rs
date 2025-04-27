@@ -383,7 +383,7 @@ impl CodeGenerator {
     fn generate_statement(&mut self, statement: &Statement, query: &Query) -> String {
         match statement {
             Statement::Assignment(assignment) => self.generate_assignment(assignment, query),
-            Statement::AddNode(add_vertex) => self.generate_add_vertex(add_vertex, None),
+            Statement::AddNode(add_node) => self.generate_add_node(add_node, None),
             Statement::AddEdge(add_edge) => self.generate_add_edge(add_edge),
             Statement::Drop(expr) => self.generate_drop(expr, query),
             Statement::AddVector(add_vector) => self.generate_add_vector(add_vector),
@@ -397,7 +397,7 @@ impl CodeGenerator {
     fn generate_add_vector(&mut self, add_vector: &AddVector) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
 
         // possible id for hvector nid
         let (props, _) = if let Some(fields) = &add_vector.fields {
@@ -417,12 +417,12 @@ impl CodeGenerator {
                 output.push_str(&mut self.indent());
                 match &add_vector.fields {
                     Some(fields) => output.push_str(&format!(
-                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, Hashmap::from({}));\n",
+                        ".insert_v::<fn(&HVector) -> bool>(&{:?}, Hashmap::from({}))\n",
                         vec,
                         self.generate_props_macro(&fields)
                     )),
                     None => output.push_str(&format!(
-                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, None);\n",
+                        ".insert_v::<fn(&HVector) -> bool>(&{:?}, None)\n",
                         vec
                     )),
                 };
@@ -431,11 +431,12 @@ impl CodeGenerator {
                 output.push_str(&mut self.indent());
                 match &add_vector.fields {
                     Some(fields) => output.push_str(&format!(
-                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, Hashmap::from({}));\n",
-                        id, self.generate_props_macro(&fields)
+                        ".insert_v::<fn(&HVector) -> bool>(&data.{}, Hashmap::from({}))\n",
+                        id,
+                        self.generate_props_macro(&fields)
                     )),
                     None => output.push_str(&format!(
-                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, None);\n",
+                        ".insert_v::<fn(&HVector) -> bool>(&data.{}, None)\n",
                         id
                     )),
                 };
@@ -451,27 +452,26 @@ impl CodeGenerator {
 
         //iterate over the vectors and insert them
         output.push_str(&mut self.indent());
-        match &batch_add_vector.vec_identifier {
-            Some(id) => output.push_str(&format!("for vec in data.{} {{\n", id)),
-            None => (),
+        let vec_id = match &batch_add_vector.vec_identifier {
+            Some(id) => id,
+            None => "vecs",
         };
         output.push_str(&mut self.indent());
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
 
         output.push_str(&mut self.indent());
         output.push_str(&mut self.indent());
         match &batch_add_vector.fields {
             Some(fields) => output.push_str(&format!(
-                "let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec, Hashmap::from({}));\n",
+                ".insert_vs::<fn(&HVector) -> bool>(&data.{vec_id}, Hashmap::from({}));",
                 self.generate_props_macro(&fields)
             )),
             None => output.push_str(&format!(
-                "let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec, None);\n"
+                ".insert_vs::<fn(&HVector) -> bool>(&data.{vec_id}, None);"
             )),
         };
         output.push_str(&mut self.indent());
-        output.push_str("}\n");
         output
     }
 
@@ -489,14 +489,14 @@ impl CodeGenerator {
             Some(VectorData::Vector(v)) => {
                 output.push_str(&mut self.indent());
                 output.push_str(&format!(
-                    "let tr = tr.search_v::<fn(&HVector) -> bool>(&{:?}, {}, None);\n",
+                    ".search_v::<fn(&HVector) -> bool>(&{:?}, {}, None)\n",
                     v, k
                 ));
             }
             Some(VectorData::Identifier(id)) => {
                 output.push_str(&mut self.indent());
                 output.push_str(&format!(
-                    "let tr = tr.search_v::<fn(&HVector) -> bool>(&data.{}, {}, None);\n",
+                    ".search_v::<fn(&HVector) -> bool>(&data.{}, {}, None)\n",
                     id, k
                 ));
             }
@@ -510,9 +510,12 @@ impl CodeGenerator {
         let var_name = &assignment.variable;
 
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
+        // output.push_str("let tr = G::new(Arc::clone(&db), &txn)\n"); // TODO might not be needed
 
-        output.push_str(&mut self.generate_expression(&assignment.value, query));
+        output.push_str(&format!(
+            "{};",
+            &mut self.generate_expression(&assignment.value, query)
+        ));
 
         // Store variable for later use
         self.current_variables
@@ -521,10 +524,8 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
 
         match assignment.value {
-            _ => output.push_str(&format!(
-                "let {} = tr.collect_to::<Vec<_>>();\n\n",
-                to_snake_case(var_name)
-            )),
+            _ => output
+                .push_str(format!("let {} = tr.collect_to::<Vec<_>>();\n\n", var_name).as_str()),
         }
 
         output
@@ -541,7 +542,7 @@ impl CodeGenerator {
                 if let Some(var_name) = self.current_variables.get(id) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone());",
+                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone())", // TODO: remove clone
                         to_snake_case(var_name)
                     ));
                 }
@@ -562,8 +563,8 @@ impl CodeGenerator {
                 output.push_str(&mut self.indent());
                 output.push_str(&b.to_string());
             }
-            Expression::AddNode(add_vertex) => {
-                output.push_str(&mut self.generate_add_vertex(add_vertex, None));
+            Expression::AddNode(add_node) => {
+                output.push_str(&mut self.generate_add_node(add_node, None));
             }
             Expression::AddEdge(add_edge) => {
                 output.push_str(&mut self.generate_add_edge(add_edge));
@@ -575,9 +576,13 @@ impl CodeGenerator {
                 output.push_str(&mut self.generate_add_vector(add_vector));
             }
             Expression::SearchVector(search_vector) => {
+                output.push_str(&mut self.indent());
+                output.push_str("let tr = G::new(Arc::clone(&db), &txn)\n");
                 output.push_str(&mut self.generate_search_vector(search_vector));
             }
             Expression::Exists(traversal) => {
+                output.push_str(&mut self.indent());
+                output.push_str("let tr = G::new(Arc::clone(&db), &txn)\n");
                 output.push_str(&mut self.generate_exists_check(traversal, query));
             }
             _ => {}
@@ -592,20 +597,19 @@ impl CodeGenerator {
         // Generate start node
         match &traversal.start {
             Node { types, ids } => {
+                output.push_str(&mut self.indent());
+                output.push_str("let tr = G::new(Arc::clone(&db), &txn)\n");
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
-                        output.push_str(&format!("let tr = tr.n_from_id({});\n", var_name));
+                        output.push_str(&format!(".n_from_id({})\n", var_name));
                     } else {
-                        output.push_str(&format!(
-                            "let tr = tr.n_from_id(&data.{});\n",
-                            to_snake_case(&ids[0])
-                        ));
+                        output.push_str(&format!(".n_from_id(&data.{})\n", to_snake_case(&ids[0])));
                     }
                 } else if let Some(types) = types {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "let tr = tr.n_from_types(&[{}]);\n",
+                        ".n_from_types(&[{}])\n",
                         types
                             .iter()
                             .map(|t| format!("\"{}\"", t))
@@ -614,33 +618,32 @@ impl CodeGenerator {
                     ));
                 } else {
                     output.push_str(&mut self.indent());
-                    output.push_str("let tr = tr.n();\n");
+                    output.push_str(".n()\n");
                 }
             }
             Edge { types, ids } => {
+                output.push_str(&mut self.indent());
+                output.push_str("let tr = G::new(Arc::clone(&db), &txn)\n");
                 if let Some(ids) = ids {
                     output.push_str(&mut self.indent());
                     if let Some(var_name) = self.current_variables.get(&ids[0]) {
-                        output.push_str(&format!("let tr = tr.e_from_id({});\n", var_name));
+                        output.push_str(&format!(".e_from_id({})\n", var_name));
                     } else {
-                        output.push_str(&format!(
-                            "let tr = tr.e_from_id(&data.{});\n",
-                            to_snake_case(&ids[0])
-                        ));
+                        output.push_str(&format!(".e_from_id(&data.{})\n", to_snake_case(&ids[0])));
                     }
                 } else if let Some(types) = types {
                     output.push_str(&mut self.indent());
-                    output.push_str("let tr = tr.e();\n");
+                    output.push_str(".e()\n");
                 } else {
                     output.push_str(&mut self.indent());
-                    output.push_str("let tr = tr.e();\n");
+                    output.push_str(".e()\n");
                 }
             }
             Variable(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
                     output.push_str(&mut self.indent());
                     output.push_str(&format!(
-                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone());\n",
+                        "let tr = G::new_from(Arc::clone(&db), &txn, {}.clone())\n",
                         to_snake_case(var_name)
                     ));
                 }
@@ -680,30 +683,30 @@ impl CodeGenerator {
                 Step::Node(graph_step) => match graph_step {
                     GraphStep::Out(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("let tr = tr.out(\"{}\");\n", types[0]));
+                            output.push_str(&format!(".out(\"{}\")\n", types[0]));
                         } else {
-                            output.push_str("let tr = tr.out(\"\");\n");
+                            output.push_str(".out(\"\");\n");
                         }
                     }
                     GraphStep::In(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("let tr = tr.in_(\"{}\");\n", types[0]));
+                            output.push_str(&format!(".in_(\"{}\")\n", types[0]));
                         } else {
-                            output.push_str("let tr = tr.in_(\"\");\n");
+                            output.push_str(".in_(\"\");\n");
                         }
                     }
                     GraphStep::OutE(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("let tr = tr.out_e(\"{}\");\n", types[0]));
+                            output.push_str(&format!(".out_e(\"{}\")\n", types[0]));
                         } else {
-                            output.push_str("let tr = tr.out_e(\"\");\n");
+                            output.push_str(".out_e(\"\");\n");
                         }
                     }
                     GraphStep::InE(types) => {
                         if let Some(types) = types {
-                            output.push_str(&format!("let tr = tr.in_e(\"{}\");\n", types[0]));
+                            output.push_str(&format!(".in_e(\"{}\")\n", types[0]));
                         } else {
-                            output.push_str("let tr = tr.in_e(\"\");\n");
+                            output.push_str(".in_e(\"\");\n");
                         }
                     }
                     GraphStep::BothE(_) => unreachable!(),
@@ -711,8 +714,8 @@ impl CodeGenerator {
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InN => output.push_str("let tr = tr.in_v();\n"),
-                    GraphStep::OutN => output.push_str("let tr = tr.out_v();\n"),
+                    GraphStep::InN => output.push_str(".in_v()\n"),
+                    GraphStep::OutN => output.push_str(".out_v()\n"),
                     GraphStep::BothN => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
@@ -725,7 +728,7 @@ impl CodeGenerator {
     fn generate_boolean_operation(&mut self, bool_op: &BooleanOp) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
+        output.push_str(".filter_ref(|val, _| {\n");
         output.push_str(&mut self.indent());
         output.push_str("if let Ok(val) = val {\n");
         output.push_str(&mut self.indent());
@@ -821,7 +824,7 @@ impl CodeGenerator {
             _ => output.push_str(&format!("// Unhandled boolean operation {:?}\n", bool_op)),
         }
         output.push_str("} else { false }\n");
-        output.push_str("});\n");
+        output.push_str("})\n");
         output
     }
 
@@ -857,49 +860,37 @@ impl CodeGenerator {
             Step::Node(graph_step) => match graph_step {
                 GraphStep::Out(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("let tr = tr.out(\"{}\");\n", types[0]));
+                        output.push_str(&format!(".out(\"{}\")\n", types[0]));
                     } else {
-                        output.push_str("let tr = tr.out(\"\");\n");
+                        output.push_str(".out(\"\")\n");
                     }
                 }
                 GraphStep::In(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("let tr = tr.in_(\"{}\");\n", types[0]));
+                        output.push_str(&format!(".in_(\"{}\")\n", types[0]));
                     } else {
-                        output.push_str("let tr = tr.in_(\"\");\n");
+                        output.push_str(".in_(\"\")\n");
                     }
                 }
                 GraphStep::OutE(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("let tr = tr.out_e(\"{}\");\n", types[0]));
+                        output.push_str(&format!(".out_e(\"{}\")\n", types[0]));
                     } else {
-                        output.push_str("let tr = tr.out_e(\"\");\n");
+                        output.push_str(".out_e(\"\")\n");
                     }
                 }
                 GraphStep::InE(types) => {
                     if let Some(types) = types {
-                        output.push_str(&format!("let tr = tr.in_e(&txn, \"{}\");\n", types[0]));
+                        output.push_str(&format!(".in_e(\"{}\")\n", types[0]));
                     } else {
-                        output.push_str("let tr = tr.in_e(\"\");\n");
+                        output.push_str(".in_e(\"\")\n");
                     }
                 }
-                GraphStep::OutN => output.push_str("let tr = tr.out_v();\n"),
-                GraphStep::InN => output.push_str("let tr = tr.in_v();\n"),
+                GraphStep::OutN => output.push_str(".out_v()\n"),
+                GraphStep::InN => output.push_str(".in_v()\n"),
                 GraphStep::BothN => unreachable!(),
-                GraphStep::BothE(types) => {
-                    if let Some(types) = types {
-                        output.push_str(&format!("tr.both_e(\"{}\");\n", types[0]));
-                    } else {
-                        output.push_str("tr.both_e(\"\");\n");
-                    }
-                }
-                GraphStep::Both(types) => {
-                    if let Some(types) = types {
-                        output.push_str(&format!("tr.both(\"{}\");\n", types[0]));
-                    } else {
-                        output.push_str("tr.both(\"\");\n");
-                    }
-                }
+                GraphStep::BothE(types) => unreachable!(),
+                GraphStep::Both(types) => unreachable!(),
             },
             Step::Range((start, end)) => {
                 let start = match start {
@@ -913,21 +904,21 @@ impl CodeGenerator {
                     _ => unreachable!(),
                 };
 
-                output.push_str(&format!("let tr = tr.range({}, {});\n", start, end));
+                output.push_str(&format!(".range({}, {})\n", start, end));
             }
             Step::Where(expr) => {
                 match &**expr {
                     Expression::BooleanLiteral(b) => {
-                        output.push_str("let tr = tr.filter_ref(|_, _| {\n");
+                        output.push_str("filter_ref(|_, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str(&format!("{}", b));
-                        output.push_str("});\n");
+                        output.push_str("})\n");
                     }
                     Expression::Exists(traversal) => {
                         output.push_str(&mut self.generate_exists_check(traversal, query));
                     }
                     Expression::And(exprs) => {
-                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
+                        output.push_str("filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -939,10 +930,10 @@ impl CodeGenerator {
                         }
                         output.push_str(&mut self.indent());
                         output.push_str("} else { false }\n");
-                        output.push_str("});\n");
+                        output.push_str("})\n");
                     }
                     Expression::Or(exprs) => {
-                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
+                        output.push_str("filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -954,18 +945,18 @@ impl CodeGenerator {
                         }
                         output.push_str(&mut self.indent());
                         output.push_str("} else { false }\n");
-                        output.push_str("});\n");
+                        output.push_str("})\n");
                     }
                     Expression::Traversal(_) => {
                         // For traversal-based conditions
-                        output.push_str("let tr = tr.filter_ref(|val, _| {\n");
+                        output.push_str("filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
                         output.push_str(&mut self.generate_filter_condition(expr, query));
                         output.push_str(&mut self.indent());
                         output.push_str("} else { false }\n");
-                        output.push_str("});\n");
+                        output.push_str("})\n");
                         // output.push_str("    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from(node.clone()));\n");
                         // output.push_str(&mut self.generate_traversal(traversal));
                         // output.push_str(&mut self.indent());
@@ -983,7 +974,7 @@ impl CodeGenerator {
                 }
             }
             Step::Count => {
-                output.push_str("let count = tr.count();\n");
+                output.push_str(".count();\n");
             }
             // Step::ID => {
             //     // output.push_str("let tr = tr.id();\n");
@@ -1001,7 +992,7 @@ impl CodeGenerator {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                output.push_str(&format!("tr.update(props!{{ {} }});\n", props));
+                output.push_str(&format!(".update(props!{{ {} }})\n", props));
             }
             Step::Object(obj) => {
                 // Assume the current variable (e.g. from an earlier assignment) is named "current_var"
@@ -1030,9 +1021,7 @@ impl CodeGenerator {
             Expression::Exists(traversal) => {
                 format!(
                     "{{ 
-                let inner_tr = G::new(Arc::clone(&db), val.clone()); 
-                let inner_tr = {};
-                let count = inner_tr.count(); 
+                let count = G::new(Arc::clone(&db), val.clone()){}.count(); 
                 count > 0 }}",
                     self.generate_traversal(traversal, query)
                 )
@@ -1337,7 +1326,7 @@ impl CodeGenerator {
                             inner_traversal = true;
                             if i == 0 {
                                 output.push_str("{");
-                                output.push_str("let tr = G::new(Arc::clone(&db), val.clone());");
+                                output.push_str("let tr = G::new(Arc::clone(&db), val.clone())");
                                 output.push_str(&mut self.generate_step(step, query));
                             } else {
                                 output.push_str(&mut self.generate_step(step, query));
@@ -1405,19 +1394,19 @@ impl CodeGenerator {
         output
     }
 
-    fn generate_add_vertex(&mut self, add_vertex: &AddNode, var_name: Option<&str>) -> String {
+    fn generate_add_node(&mut self, add_node: &AddNode, var_name: Option<&str>) -> String {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
         // todo conditionally do new_mut_from
 
-        let vertex_type = add_vertex
-            .vertex_type
+        let node_type = add_node
+            .node_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
 
-        let (props, possible_id) = if let Some(fields) = &add_vertex.fields {
+        let (props, possible_id) = if let Some(fields) = &add_node.fields {
             let possible_id = match fields.get("id") {
                 Some(ValueType::Literal(Value::String(s))) => Some(s.clone()),
                 Some(ValueType::Identifier(identifier)) => {
@@ -1434,22 +1423,19 @@ impl CodeGenerator {
         match possible_id {
             Some(id) => {
                 output.push_str(&format!(
-                    "let tr =tr.add_n(\"{}\", {}, None, Some({}));\n",
-                    vertex_type, props, id
+                    ".add_n(\"{}\", {}, None, Some({}))",
+                    node_type, props, id
                 ));
             }
             None => {
-                output.push_str(&format!(
-                    "let tr = tr.add_n(\"{}\", {}, None, None);\n",
-                    vertex_type, props
-                ));
+                output.push_str(&format!(".add_n(\"{}\", {}, None, None)", node_type, props));
             }
         }
 
         if let Some(name) = var_name {
             output.push_str(&mut self.indent());
             output.push_str(&format!(
-                "let {} = tr.filter_map(|i| i.ok()).collect::<Vec<_>>()?;\n",
+                "let {} = tr.collect_to::<Vec<_>>();\n", // TODO: change to return single value
                 name
             ));
             self.current_variables
@@ -1463,7 +1449,7 @@ impl CodeGenerator {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
         // todo conditionally do new_mut_from
 
         let edge_type = add_edge
@@ -1489,7 +1475,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.id()?", to_snake_case(var_name))
+                    format!("{}.id()", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1500,7 +1486,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.id()?", to_snake_case(var_name))
+                    format!("{}.id()", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1509,10 +1495,12 @@ impl CodeGenerator {
 
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            "tr.add_e(\"{}\", {}, {}, {}, {});\n",
+            ".add_e(\"{}\", {}, {}, {}, {})",
             edge_type, props, possible_id, from_id, to_id,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
+
+        // TODO: collect to vec or single value?
 
         output
     }
@@ -1520,18 +1508,16 @@ impl CodeGenerator {
     fn generate_drop(&mut self, expr: &Expression, query: &Query) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
         // todo conditionally do new_mut_from
         match expr {
             Expression::Traversal(traversal) => {
                 output.push_str(&mut self.generate_traversal(traversal, query));
             }
-            _ => {
-                output.push_str("tr.drop();\n");
-            }
+            _ => {}
         }
         output.push_str(&mut self.indent());
-        output.push_str("tr.drop();\n");
+        output.push_str(".drop();\n");
         output
     }
 
@@ -1541,7 +1527,7 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         output.push_str("if let Ok(val) = val {\n");
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new(Arc::clone(&db), &txn, val.clone());\n");
+        output.push_str("let tr = G::new(Arc::clone(&db), &txn, val.clone())\n");
         output.push_str(&mut self.indent());
         output.push_str(&mut self.generate_traversal(traversal, query));
         output.push_str(&mut self.indent());
@@ -1583,7 +1569,7 @@ impl CodeGenerator {
                 Expression::Traversal(traversal) => {
                     output.push_str(&mut self.generate_traversal(traversal, query));
                     output.push_str(&mut self.indent());
-                    output.push_str("let return_val = tr.collect::<Vec<_>>()?;\n");
+                    output.push_str("let return_val = tr.collect::<Vec<_>>();\n");
                     output.push_str(&mut self.indent());
                     if let Variable(var_name) = &traversal.start {
                         output.push_str(&format!(
@@ -1652,10 +1638,13 @@ impl CodeGenerator {
 
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str(&format!(
-            "let tr = tr.for_each_{}(&txn, |{}, txn| {{\n",
-            item_type, var_name
-        ));
+        output.push_str(";");
+        output.push_str(&format!("let tr = tr.map(|{}| {{\n", var_name));
+        output.push_str(&mut self.indent());
+        output.push_str(&format!("match {} {{\n", var_name));
+        output.push_str(&mut self.indent());
+        output.push_str(&format!("Ok(ref item) => {{\n",));
+
         for field in exclude.fields.iter() {
             output.push_str(&format!(
                 "let {}_remapping = Remapping::new(true, Some(\"{}\".to_string()), None);\n",
@@ -1688,8 +1677,20 @@ impl CodeGenerator {
         output.push_str(&self.indent());
         output.push_str(");");
         output.push_str(&self.indent());
-        output.push_str("Ok(())");
-        output.push_str("});\n");
+        // handle error
+        output.push_str("}");
+        output.push_str(&self.indent());
+        output.push_str("Err(e) => {\n");
+        output.push_str(&self.indent());
+        output.push_str("println!(\"Error: {:?}\", e);\n");
+        output.push_str(&self.indent());
+        output.push_str("return Err(GraphError::ConversionError(\"Error: {:?}\".to_string()))");
+        output.push_str(&self.indent());
+        output.push_str("}};");
+        output.push_str(&self.indent());
+        output.push_str("item");
+
+        output.push_str("}).filter_map(|item| item.ok());\n");
         output
     }
 
@@ -1723,18 +1724,22 @@ impl CodeGenerator {
             false => "edge",
         };
         output.push_str(&mut self.indent());
-        // output 
-        output.push_str(&format!("let tr = tr.map(|item| {{\n",));
+        // output
+        output.push_str(";");
+        output.push_str(&format!("let tr = tr.map(|{}| {{\n", var_name));
         output.push_str(&mut self.indent());
+        output.push_str(&format!("match {} {{\n", var_name));
+        output.push_str(&mut self.indent());
+        output.push_str(&format!("Ok(ref item) => {{\n",));
         for (key, field) in object.fields.iter() {
             output.push_str(&mut self.indent());
             match field {
+                // TODO: handle traversal with multiple steps
                 FieldValue::Traversal(traversal) => {
                     output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", to_snake_case(var_name)));
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_traversal(traversal, query));
                     output.push_str(&mut self.indent());
-                    println!("traversal: {:?}", traversal);
                     match traversal.steps.last() {
                         Some(Step::Object(obj)) => {
                             if let Some((field_name, _)) = obj.fields.first() {
@@ -1754,8 +1759,8 @@ impl CodeGenerator {
                         }
                     }
                 }
+                // TODO: handle expression with multiple steps
                 FieldValue::Expression(expr) => {
-                    output.push_str(&format!("let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::from({}.clone()));\n", to_snake_case(var_name)));
                     output.push_str(&mut self.indent());
                     output.push_str(&mut self.generate_expression(expr, query));
                     output.push_str(&mut self.indent());
@@ -1830,9 +1835,22 @@ impl CodeGenerator {
         output.push_str(&self.indent());
         output.push_str(");");
         output.push_str(&self.indent());
-        output.push_str("Ok(())");
-        output.push_str("});\n");
-        output.push_str("tr.filter_map(|item| item.ok()).collect::<Vec<_>>();\n");
+        output.push_str(&self.indent());
+
+        // handle error
+        output.push_str("}");
+        output.push_str(&self.indent());
+        output.push_str("Err(e) => {\n");
+        output.push_str(&self.indent());
+        output.push_str("println!(\"Error: {:?}\", e);\n");
+        output.push_str(&self.indent());
+        output.push_str("return Err(GraphError::ConversionError(\"Error: {:?}\".to_string()))");
+        output.push_str(&self.indent());
+        output.push_str("}};");
+        output.push_str(&self.indent());
+        output.push_str("item");
+
+        output.push_str("}).filter_map(|item| item.ok());\n");
         output
     }
 
@@ -1927,7 +1945,7 @@ impl CodeGenerator {
                         if let Some((field_name, _)) = obj.fields.first() {
                             if field_name.as_str() == "id" {
                                 output.push_str(&format!(
-                                    "ReturnValue::from({}.id()?)\n",
+                                    "ReturnValue::from({}.id())\n",
                                     to_snake_case(key)
                                 ));
                             } else {
@@ -1961,7 +1979,7 @@ impl CodeGenerator {
                 }
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
-                        "ReturnValue::from({}.id()?)\n",
+                        "ReturnValue::from({}.id())\n",
                         to_snake_case(key)
                     ));
                 }
@@ -1991,7 +2009,7 @@ impl CodeGenerator {
 /// - insert at the end of the function before the return
 ///
 
-fn to_snake_case(s: &str) -> String {
+pub fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     let mut prev_is_upper = false;
@@ -2025,238 +2043,5 @@ fn tr_is_object_remapping(tr: &Traversal) -> bool {
     match tr.steps.last() {
         Some(Step::Object(_)) => true,
         _ => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::helixc::parser::helix_parser::HelixParser;
-    use pest::Parser;
-
-    #[test]
-    fn test_basic_query_generation() {
-        let input = r#"
-        QUERY GetUser(id: String) =>
-            user <- V("id")
-            RETURN user
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let output = generator.generate_source(&source);
-        println!("{}", output);
-        assert!(output.contains("pub fn get_user"));
-        assert!(output.contains("struct GetUserData"));
-        assert!(output.contains("id: String"));
-    }
-
-    #[test]
-    fn test_add_vertex_generation() {
-        let input = r#"
-        QUERY CreateUser(name: String, age: Integer) =>
-            user <- AddV<User>({Name: "name", Age: "age"})
-            RETURN user
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let output = generator.generate_source(&source);
-
-        assert!(output.contains("tr.insert_v"));
-        assert!(output.contains("props!"));
-        assert!(output.contains("Name"));
-        assert!(output.contains("Age"));
-    }
-
-    #[test]
-    fn test_where_simple_condition() {
-        let input = r#"
-        QUERY FindActiveUsers() =>
-            users <- V<User>::WHERE(_::Props(is_enabled)::EQ(true))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("is_enabled"));
-        assert!(generated.contains("=="));
-    }
-
-    #[test]
-    fn test_where_exists_condition() {
-        let input = r#"
-        QUERY FindUsersWithPosts() =>
-            users <- V<User>::WHERE(EXISTS(_::OutE<Authored>))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        println!("Source:\n{:?}", source);
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("out_e"));
-        assert!(generated.contains("count"));
-        assert!(generated.contains("count > 0"));
-    }
-
-    #[test]
-    fn test_where_and_condition() {
-        let input = r#"
-        QUERY FindVerifiedActiveUsers() =>
-            users <- V<User>::WHERE(AND(
-                _::Props(verified)::EQ(true),
-                _::Props(is_enabled)::EQ(true)
-            ))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        println!("Source:\n{:?}", source);
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("&&"));
-        assert!(generated.contains("verified"));
-        assert!(generated.contains("is_enabled"));
-    }
-
-    #[test]
-    fn test_where_or_condition() {
-        let input = r#"
-        QUERY FindSpecialUsers() =>
-            users <- V<User>::WHERE(OR(
-                _::Props(verified)::EQ(true),
-                _::Props(followers_count)::GT(1000)
-            ))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("||"));
-        assert!(generated.contains("verified"));
-        assert!(generated.contains("followers_count"));
-    }
-
-    #[test]
-    fn test_where_complex_traversal() {
-        let input = r#"
-        QUERY FindInfluentialUsers() =>
-            users <- V<User>::WHERE(
-                _::Out<Follows>::COUNT::GT(100)
-            )::WHERE(
-                _::In<Follows>::COUNT::GT(1000)
-            )
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("out"));
-        assert!(generated.contains("in_"));
-        assert!(generated.contains("count"));
-        assert!(generated.contains(">"));
-    }
-
-    #[test]
-    fn test_where_with_nested_conditions() {
-        let input = r#"
-        QUERY FindComplexUsers() =>
-            users <- V<User>::WHERE(AND(
-                OR(
-                    _::Props(verified)::EQ(true),
-                    _::Props(followers_count)::GT(5000)
-                ),
-                _::Out<Authored>::COUNT::GT(10)
-            ))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        println!("Source:\n{:?}", source);
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("&&"));
-        assert!(generated.contains("||"));
-        assert!(generated.contains("verified"));
-        assert!(generated.contains("followers_count"));
-        assert!(generated.contains("out"));
-        assert!(generated.contains("count"));
-    }
-
-    #[test]
-    fn test_boolean_operations() {
-        let input = r#"
-        QUERY FindUsersWithSpecificProperty(property_name: String, value: String) =>
-            users <- V<User>::WHERE(_::Props(property_name)::EQ(value))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("property_name"));
-        assert!(generated.contains("=="));
-        assert!(generated.contains("value"));
-        assert!(generated.contains("node.check_property"));
-    }
-
-    #[test]
-    fn test_boolean_operations_with_multiple_properties() {
-        let input = r#"
-        QUERY FindUsersWithSpecificProperties(property1: String, value1: String, property2: String, value2: String, property3: String, value3: String) =>
-            users <- V<User>::WHERE(AND(
-                _::Props(property1)::EQ(value1),
-                _::Props(property2)::EQ(value2),
-                _::Props(property3)::EQ(value3)
-            ))
-            RETURN users
-        "#;
-
-        let source = HelixParser::parse_source(input).unwrap();
-        let mut generator = CodeGenerator::new();
-        let generated = generator.generate_source(&source);
-        println!("Generated code:\n{}", generated);
-
-        assert!(generated.contains("let tr = tr.filter_nodes"));
-        assert!(generated.contains("&&"));
-        assert!(generated.contains("property1"));
-        assert!(generated.contains("property2"));
-        assert!(generated.contains("property3"));
-        assert!(generated.contains("value1"));
-        assert!(generated.contains("value2"));
-        assert!(generated.contains("value3"));
-    }
-
-    #[test]
-    fn test_to_snake_case() {
-        assert_eq!(to_snake_case("camelCase"), "camel_case");
-        assert_eq!(to_snake_case("UserIDs"), "user_ids");
-        assert_eq!(to_snake_case("SimpleXMLParser"), "simple_xml_parser");
-        assert_eq!(to_snake_case("type"), "type_");
-        assert_eq!(to_snake_case("ID"), "id");
-        assert_eq!(to_snake_case("UserID"), "user_id");
-        assert_eq!(to_snake_case("XMLHttpRequest"), "xml_http_request");
-        assert_eq!(to_snake_case("iOS"), "i_os");
     }
 }

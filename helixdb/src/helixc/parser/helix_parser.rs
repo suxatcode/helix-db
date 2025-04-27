@@ -244,7 +244,7 @@ pub enum EvaluatesToNumber {
 
 #[derive(Debug, Clone)]
 pub struct AddNode {
-    pub vertex_type: Option<String>,
+    pub node_type: Option<String>,
     pub fields: Option<HashMap<String, ValueType>>,
 }
 
@@ -610,7 +610,7 @@ impl HelixParser {
         pair.into_inner()
             .map(|p| match p.as_rule() {
                 Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
-                Rule::AddN => Ok(Statement::AddNode(self.parse_add_vertex(p)?)),
+                Rule::AddN => Ok(Statement::AddNode(self.parse_add_node(p)?)),
                 Rule::AddV => Ok(Statement::AddVector(self.parse_add_vector(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
@@ -767,14 +767,14 @@ impl HelixParser {
         Ok(vec)
     }
 
-    fn parse_add_vertex(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
-        let mut vertex_type = None;
+    fn parse_add_node(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
+        let mut node_type = None;
         let mut fields = None;
 
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
-                    vertex_type = Some(p.as_str().to_string());
+                    node_type = Some(p.as_str().to_string());
                 }
                 Rule::create_field => {
                     fields = Some(self.parse_property_assignments(p)?);
@@ -790,7 +790,7 @@ impl HelixParser {
         }
 
         Ok(AddNode {
-            vertex_type,
+            node_type,
             fields,
         })
     }
@@ -1015,7 +1015,7 @@ impl HelixParser {
                 .map_err(|_| ParserError::from("Invalid float literal")),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
-            Rule::AddN => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
+            Rule::AddN => Ok(Expression::AddNode(self.parse_add_node(pair)?)),
             Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
             Rule::BatchAddV => Ok(Expression::BatchAddVector(
                 self.parse_batch_add_vector(pair)?,
@@ -1063,7 +1063,7 @@ impl HelixParser {
 
     fn parse_start_node(&self, pair: Pair<Rule>) -> Result<StartNode, ParserError> {
         match pair.as_rule() {
-            Rule::start_vertex => {
+            Rule::start_node => {
                 let pairs = pair.into_inner();
                 let mut types = None;
                 let mut ids = None;
@@ -1644,7 +1644,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_vertex_query() {
+    fn test_add_node_query() {
         let input = r#"
     QUERY analyzeNetwork() =>
         user <- AddN<User>({Name: "Alice"})

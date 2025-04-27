@@ -56,7 +56,7 @@ where
         self.inner.next()
     }
 }
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> RwTraversalIterator<'a, 'b, I> {
+impl<'a, 'b, I: Iterator> RwTraversalIterator<'a, 'b, I> {
     pub fn new(storage: Arc<HelixGraphStorage>, txn: &'b mut RwTxn<'a>, inner: I) -> Self {
         Self {
             inner,
@@ -65,7 +65,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> RwTraversalIt
         }
     }
 
-    pub fn collect_to<B: FromIterator<TraversalVal>>(self) -> B {
+    pub fn collect_to<B: FromIterator<TraversalVal>>(self) -> B
+    where
+        I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    {
         self.inner.filter_map(|item| item.ok()).collect::<B>()
     }
 }
