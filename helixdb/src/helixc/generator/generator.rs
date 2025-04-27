@@ -415,17 +415,30 @@ impl CodeGenerator {
         match &add_vector.data {
             Some(VectorData::Vector(vec)) => {
                 output.push_str(&mut self.indent());
-                output.push_str(&format!(
-                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, Hashmap::from({}));\n",
-                    vec, props
-                ));
+                match &add_vector.fields {
+                    Some(fields) => output.push_str(&format!(
+                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, Hashmap::from({}));\n",
+                        vec,
+                        self.generate_props_macro(&fields)
+                    )),
+                    None => output.push_str(&format!(
+                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&{:?}, None);\n",
+                        vec
+                    )),
+                };
             }
             Some(VectorData::Identifier(id)) => {
                 output.push_str(&mut self.indent());
-                output.push_str(&format!(
-                    "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, Hashmap::from({}));\n",
-                    id, props
-                ));
+                match &add_vector.fields {
+                    Some(fields) => output.push_str(&format!(
+                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, Hashmap::from({}));\n",
+                        id, self.generate_props_macro(&fields)
+                    )),
+                    None => output.push_str(&format!(
+                        "let tr = tr.insert_v::<fn(&HVector) -> bool>(&data.{}, None);\n",
+                        id
+                    )),
+                };
             }
             None => (),
         };
@@ -448,7 +461,15 @@ impl CodeGenerator {
 
         output.push_str(&mut self.indent());
         output.push_str(&mut self.indent());
-        output.push_str("let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec);\n");
+        match &batch_add_vector.fields {
+            Some(fields) => output.push_str(&format!(
+                "let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec, Hashmap::from({}));\n",
+                self.generate_props_macro(&fields)
+            )),
+            None => output.push_str(&format!(
+                "let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec, None);\n"
+            )),
+        };
         output.push_str(&mut self.indent());
         output.push_str("}\n");
         output
@@ -1388,7 +1409,8 @@ impl CodeGenerator {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        // todo conditionally do new_mut_from
 
         let vertex_type = add_vertex
             .vertex_type
@@ -1412,13 +1434,13 @@ impl CodeGenerator {
         match possible_id {
             Some(id) => {
                 output.push_str(&format!(
-                    "let tr =tr.add_v(&mut txn, \"{}\", {}, None, Some({}));\n",
+                    "let tr =tr.add_n(\"{}\", {}, None, Some({}));\n",
                     vertex_type, props, id
                 ));
             }
             None => {
                 output.push_str(&format!(
-                    "let tr = tr.add_v(&mut txn, \"{}\", {}, None, None);\n",
+                    "let tr = tr.add_n(\"{}\", {}, None, None);\n",
                     vertex_type, props
                 ));
             }
@@ -1441,16 +1463,25 @@ impl CodeGenerator {
         let mut output = String::new();
 
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        // todo conditionally do new_mut_from
 
         let edge_type = add_edge
             .edge_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
-        let props = if let Some(fields) = &add_edge.fields {
-            self.generate_props_macro(fields)
+
+        let (props, possible_id) = if let Some(fields) = &add_edge.fields {
+            let possible_id = match fields.get("id") {
+                Some(ValueType::Literal(Value::String(s))) => s.clone(),
+                Some(ValueType::Identifier(identifier)) => {
+                    format!("data.{}.clone()", format!("{}", identifier))
+                }
+                _ => "None".to_string(),
+            };
+            (self.generate_props_macro(&fields), possible_id)
         } else {
-            "props!{}".to_string()
+            ("props!{}".to_string(), "None".to_string())
         };
 
         // TODO: change
@@ -1458,7 +1489,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.get_id()?", to_snake_case(var_name))
+                    format!("&{}.id()?", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1469,7 +1500,7 @@ impl CodeGenerator {
             IdType::Literal(id) => format!("\"{}\"", id),
             IdType::Identifier(var) => {
                 if let Some(var_name) = self.current_variables.get(var) {
-                    format!("&{}.get_id()?", to_snake_case(var_name))
+                    format!("&{}.id()?", to_snake_case(var_name))
                 } else {
                     format!("\"{}\"", var)
                 }
@@ -1478,8 +1509,8 @@ impl CodeGenerator {
 
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            "tr.add_e(\"{}\", {}, {}, {});\n",
-            edge_type, from_id, to_id, props
+            "tr.add_e(\"{}\", {}, {}, {}, {});\n",
+            edge_type, props, possible_id, from_id, to_id,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
 
@@ -1489,7 +1520,8 @@ impl CodeGenerator {
     fn generate_drop(&mut self, expr: &Expression, query: &Query) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
-        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn, val.clone());\n");
+        output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn);\n");
+        // todo conditionally do new_mut_from
         match expr {
             Expression::Traversal(traversal) => {
                 output.push_str(&mut self.generate_traversal(traversal, query));
@@ -1635,7 +1667,7 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         output.push_str("remapping_vals.borrow_mut().insert(\n");
         output.push_str(&self.indent());
-        output.push_str(&format!("{}.id.clone(),\n", var_name));
+        output.push_str(&format!("{}.id().clone(),\n", var_name));
         output.push_str(&self.indent());
         output.push_str("ResponseRemapping::new(\n");
         output.push_str(&self.indent());
@@ -1691,10 +1723,8 @@ impl CodeGenerator {
             false => "edge",
         };
         output.push_str(&mut self.indent());
-        output.push_str(&format!(
-            "let tr = tr.for_each_{}(&txn, |{}, txn| {{\n",
-            item_type, var_name
-        ));
+        // output 
+        output.push_str(&format!("let tr = tr.map(|item| {{\n",));
         output.push_str(&mut self.indent());
         for (key, field) in object.fields.iter() {
             output.push_str(&mut self.indent());
@@ -1778,7 +1808,7 @@ impl CodeGenerator {
         }
         output.push_str("remapping_vals.borrow_mut().insert(\n");
         output.push_str(&self.indent());
-        output.push_str(&format!("{}.id.clone(),\n", var_name));
+        output.push_str(&format!("{}.id().clone(),\n", var_name));
         output.push_str(&self.indent());
         output.push_str("ResponseRemapping::new(\n");
         output.push_str(&self.indent());
@@ -1802,6 +1832,7 @@ impl CodeGenerator {
         output.push_str(&self.indent());
         output.push_str("Ok(())");
         output.push_str("});\n");
+        output.push_str("tr.filter_map(|item| item.ok()).collect::<Vec<_>>();\n");
         output
     }
 
@@ -1896,7 +1927,7 @@ impl CodeGenerator {
                         if let Some((field_name, _)) = obj.fields.first() {
                             if field_name.as_str() == "id" {
                                 output.push_str(&format!(
-                                    "ReturnValue::from({}.get_id()?)\n",
+                                    "ReturnValue::from({}.id()?)\n",
                                     to_snake_case(key)
                                 ));
                             } else {
@@ -1930,7 +1961,7 @@ impl CodeGenerator {
                 }
                 Expression::Identifier(id) => {
                     output.push_str(&format!(
-                        "ReturnValue::from({}.get_id()?)\n",
+                        "ReturnValue::from({}.id()?)\n",
                         to_snake_case(key)
                     ));
                 }
@@ -2032,7 +2063,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
 
-        assert!(output.contains("tr.add_v"));
+        assert!(output.contains("tr.insert_v"));
         assert!(output.contains("props!"));
         assert!(output.contains("Name"));
         assert!(output.contains("Age"));

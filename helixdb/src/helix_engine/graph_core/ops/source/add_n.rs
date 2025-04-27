@@ -25,17 +25,17 @@ impl Iterator for AddNIterator {
     }
 }
 
-pub trait AddNAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait AddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     fn add_n(
         self,
         label: &'a str,
         properties: Vec<(String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<u128>,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
+    ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'a>
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'a, 'b>
     for RwTraversalIterator<'a, 'b, I>
 {
     fn add_n(
@@ -44,7 +44,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         properties: Vec<(String, Value)>,
         secondary_indices: Option<&'a [String]>,
         id: Option<u128>,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
+    ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
         let node = Node {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),
             label: label.to_string(),

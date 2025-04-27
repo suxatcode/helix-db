@@ -23,7 +23,7 @@ impl Iterator for AddE {
     }
 }
 
-pub trait AddEAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     fn add_e(
         self,
         label: &'a str,
@@ -31,10 +31,10 @@ pub trait AddEAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + S
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>>;
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a>
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
     for RwTraversalIterator<'a, 'b, I>
 {
     fn add_e(
@@ -44,7 +44,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
-    ) -> impl Iterator<Item = Result<TraversalVal, GraphError>> {
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
 
         let edge = Edge {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),

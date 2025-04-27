@@ -56,21 +56,16 @@ where
         self.inner.next()
     }
 }
-impl<'a, 'b> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
-    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'b mut RwTxn<'a>) -> Self {
+impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> RwTraversalIterator<'a, 'b, I> {
+    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'b mut RwTxn<'a>, inner: I) -> Self {
         Self {
-            inner: std::iter::once(Ok(TraversalVal::Empty)),
+            inner,
             storage,
             txn,
         }
     }
 
-    pub fn collect_to<
-        I: Iterator<Item = Result<TraversalVal, GraphError>>,
-        B: FromIterator<TraversalVal>,
-    >(
-        self,
-    ) -> B {
+    pub fn collect_to<B: FromIterator<TraversalVal>>(self) -> B {
         self.inner.filter_map(|item| item.ok()).collect::<B>()
     }
 }

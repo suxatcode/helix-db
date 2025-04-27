@@ -142,6 +142,7 @@ pub struct Traversal {
 pub struct BatchAddVector {
     pub vector_type: Option<String>,
     pub vec_identifier: Option<String>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -626,6 +627,7 @@ impl HelixParser {
     fn parse_batch_add_vector(&self, pair: Pair<Rule>) -> Result<BatchAddVector, ParserError> {
         let mut vector_type = None;
         let mut vec_identifier = None;
+        let mut fields = None;
 
         for p in pair.into_inner() {
             match p.as_rule() {
@@ -634,6 +636,9 @@ impl HelixParser {
                 }
                 Rule::identifier => {
                     vec_identifier = Some(p.as_str().to_string());
+                }
+                Rule::create_field => {
+                    fields = Some(self.parse_property_assignments(p)?);
                 }
                 _ => {
                     return Err(ParserError::from(format!(
@@ -648,6 +653,7 @@ impl HelixParser {
         Ok(BatchAddVector {
             vector_type,
             vec_identifier,
+            fields,
         })
     }
 

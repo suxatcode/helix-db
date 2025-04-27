@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
+use helixdb::helix_engine::graph_core::ops::util::map::MapAdapter;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
     helix_engine::graph_core::ops::{
@@ -37,19 +38,13 @@ use helixdb::{
 use sonic_rs::{Deserialize, Serialize};
 
 #[handler]
-pub fn ragload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     #[derive(Serialize, Deserialize)]
-    struct ragloadData {
-        docs: Vec<docsData>,
+    struct ragsearchdocData {
+        query: Vec<f64>,
     }
 
-    #[derive(Serialize, Deserialize)]
-    struct docsData {
-        doc: String,
-        vecs: Vec<Vec<f64>>,
-    }
-
-    let data: ragloadData = match sonic_rs::from_slice(&input.request.body) {
+    let data: ragsearchdocData = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
@@ -61,8 +56,102 @@ pub fn ragload(input: &HandlerInput, response: &mut Response) -> Result<(), Grap
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-    return_vals.insert("message".to_string(), ReturnValue::Empty);
+    let tr = G::new(Arc::clone(&db), &txn);
+    let tr = tr.search_v::<fn(&HVector) -> bool>(&data.query, 1, None);
+    let vec = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new(Arc::clone(&db), &txn);
+    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone());
+    let tr = tr.in_("Contains");
+    let doc_node = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone())
+        .map_traversal(|item, txn| {
+            if let Ok(ref result) = item {
+                let content = result.check_property("content");
+                let content_remapping = Remapping::new(
+                    false,
+                    None,
+                    Some(match content {
+                        Some(value) => ReturnValue::from(value.clone()),
+                        None => {
+                            return Err(GraphError::ConversionError(
+                                "Property not found on content".to_string(),
+                            ));
+                        }
+                    }),
+                );
+                remapping_vals.borrow_mut().insert(
+                    result.id().clone(),
+                    ResponseRemapping::new(
+                        HashMap::from([("content".to_string(), content_remapping)]),
+                        false,
+                    ),
+                );
+            }
+            item
+        })
+        .collect_to::<Vec<_>>();
+    let return_val = tr;
+    return_vals.insert(
+        "doc_node".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()),
+    );
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
+    Ok(())
+}
+
+#[handler]
+pub fn ragloaddoc(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct ragloaddocData {
+        doc: String,
+        vecs: Vec<Vec<f64>>,
+    }
+
+    let data: ragloaddocData = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
+        RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+
+    let tr = G::new(Arc::clone(&db), &txn);
+    let tr = G::new_mut(Arc::clone(&db), &mut txn);
+    let tr = tr.add_n(
+        "Type",
+        props! { "content".to_string() => data.doc },
+        None,
+        None,
+    );
+    let doc_node = tr.collect_to::<Vec<_>>();
+
+
+    for vec in data.vecs {
+        let tr = G::new_mut(Arc::clone(&db), &mut txn);
+        let tr = tr.insert_v::<fn(&HVector) -> bool>(&vec, None);
+    }
+    let vectors = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new(Arc::clone(&db), &txn);
+    let tr = G::new_mut(Arc::clone(&db), &mut txn);
+    tr.add_e(
+        "Contains",
+        props! {},
+        None,
+        doc_node[0].id(),
+        vectors[0].id(),
+    ).collect_to::<Vec<_>>();
+
+    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+
+    txn.commit()?;
     Ok(())
 }
