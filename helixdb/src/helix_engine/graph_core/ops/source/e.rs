@@ -8,7 +8,7 @@ use heed3::{
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
-        storage_core::{storage_core::{HelixGraphStorage, EDGE_PREFIX}, storage_methods::StorageMethods},
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
     protocol::{
@@ -34,7 +34,7 @@ impl<'a> Iterator for E<'a> {
             if !value.is_empty() {
                 match SerializedEdge::decode_edge(
                     &value,
-                    HelixGraphStorage::get_u128_from_bytes(&key[EDGE_PREFIX.len()..]).unwrap(),
+                    HelixGraphStorage::get_u128_from_bytes(key).unwrap(),
                 ) {
                     Ok(edge) => Ok(TraversalVal::Edge(edge)),
                     Err(e) => Err(GraphError::ConversionError(format!(
@@ -58,7 +58,7 @@ pub trait EAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Size
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> EAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    fn e(self) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal  , GraphError>>> {
+    fn e(self) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let iter = self
             .storage
             .edges_db

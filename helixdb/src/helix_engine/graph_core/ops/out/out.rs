@@ -23,8 +23,9 @@ impl<'a> Iterator for OutNodesIterator<'a, RoTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((key, _))) = self.iter.next() {
-            let node_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..]).unwrap();
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (node_id, _) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
             if let Ok(node) = self.storage.get_node(self.txn, &node_id) {
                 return Some(Ok(TraversalVal::Node(node)));
             }
@@ -37,44 +38,14 @@ impl<'a> Iterator for OutNodesIterator<'a, RwTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((key, _))) = self.iter.next() {
-            let node_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..]).unwrap();
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (node_id, _) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
             if let Ok(node) = self.storage.get_node(self.txn, &node_id) {
                 return Some(Ok(TraversalVal::Node(node)));
             }
         }
         None
-    }
-}
-
-pub struct OutNodes<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, F, T>
-where
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, T>,
-    OutNodesIterator<'a, T>: std::iter::Iterator,
-    T: 'a,
-{
-    iter: std::iter::Flatten<std::iter::Map<I, F>>,
-}
-
-impl<'a, I, F> Iterator for OutNodes<'a, I, F, RoTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, RoTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl<'a, I, F> Iterator for OutNodes<'a, I, F, RwTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutNodesIterator<'a, RwTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
     }
 }
 
@@ -99,27 +70,24 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutAdapter<'
         let db = Arc::clone(&self.storage);
         let storage = Arc::clone(&self.storage);
         let txn = self.txn;
-        let iter = self
-            .inner
-            .map(move |item| {
-                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), edge_label, None);
-                let iter = db
-                    .out_edges_db
-                    .lazily_decode_data()
-                    .prefix_iter(txn, &prefix)
-                    .unwrap();
+        let iter = self.inner.flat_map(move |item| {
+            let edge_label_hash = HelixGraphStorage::hash_label(edge_label);
+            let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
+            let iter = db
+                .out_edges_db
+                .lazily_decode_data()
+                .prefix_iter(txn, &prefix)
+                .unwrap();
 
-                OutNodesIterator {
-                    iter,
-                    storage: Arc::clone(&db),
-                    txn,
-                    length: prefix.len(),
-                }
-            })
-            .flatten();
-
+            OutNodesIterator {
+                iter,
+                storage: Arc::clone(&db),
+                txn,
+                length: prefix.len(),
+            }
+        });
         RoTraversalIterator {
-            inner: OutNodes { iter },
+            inner: iter,
             storage,
             txn,
         }

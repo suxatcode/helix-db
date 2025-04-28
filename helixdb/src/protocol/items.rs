@@ -8,6 +8,7 @@ use serde::{
     Deserializer, Serializer,
 };
 use sonic_rs::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::{collections::HashMap, fmt, hash::Hash};
 
 /// A node in the graph containing an ID, label, and property map.
@@ -19,6 +20,20 @@ pub struct Node {
     pub label: String,
     #[serde(with = "properties_format")]
     pub properties: HashMap<String, Value>,
+}
+
+impl Eq for Node {}
+
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Node {
@@ -99,6 +114,20 @@ pub struct Edge {
     pub to_node: u128,
     #[serde(with = "properties_format")]
     pub properties: HashMap<String, Value>,
+}
+
+impl Eq for Edge {}
+
+impl Ord for Edge {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
+impl PartialOrd for Edge {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Edge {

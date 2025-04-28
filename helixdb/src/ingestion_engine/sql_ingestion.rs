@@ -1,4 +1,3 @@
-use crate::helix_engine::graph_core::traversal_steps::SourceTraversalSteps;
 use crate::helix_engine::types::GraphError;
 use crate::helix_gateway::router::router::HandlerInput;
 use crate::protocol::items::{Edge, Node};

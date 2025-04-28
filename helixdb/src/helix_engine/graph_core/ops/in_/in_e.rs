@@ -22,16 +22,11 @@ impl<'a> Iterator for InEdgesIterator<'a, RoTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((_, value))) = self.iter.next() {
-            if let Ok(data) = value.decode() {
-                let edge_id = HelixGraphStorage::get_u128_from_bytes(data).unwrap();
-                if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
-                    return Some(Ok(TraversalVal::Edge(edge)));
-                }
-            } else {
-                return Some(Err(GraphError::ConversionError(
-                    "Error decoding edge".to_string(),
-                )));
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (_, edge_id) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
+            if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
+                return Some(Ok(TraversalVal::Edge(edge)));
             }
         }
         None
@@ -42,16 +37,11 @@ impl<'a> Iterator for InEdgesIterator<'a, RwTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((_, value))) = self.iter.next() {
-            if let Ok(data) = value.decode() {
-                let edge_id = HelixGraphStorage::get_u128_from_bytes(data).unwrap();
-                if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
-                    return Some(Ok(TraversalVal::Edge(edge)));
-                }
-            } else {
-                return Some(Err(GraphError::ConversionError(
-                    "Error decoding edge".to_string(),
-                )));
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (_, edge_id) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
+            if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
+                return Some(Ok(TraversalVal::Edge(edge)));
             }
         }
         None
@@ -110,7 +100,8 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
         let iter = self
             .inner
             .map(move |item| {
-                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), edge_label, None);
+                let label_hash = HelixGraphStorage::hash_label(edge_label);
+                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), &label_hash);
                 let iter = db
                     .in_edges_db
                     .lazily_decode_data()

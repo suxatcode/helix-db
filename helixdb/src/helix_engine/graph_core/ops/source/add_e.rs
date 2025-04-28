@@ -1,3 +1,4 @@
+use heed3::PutFlags;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -45,7 +46,6 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         from_node: u128,
         to_node: u128,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-
         let edge = Edge {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),
             label: label.to_string(),
@@ -81,31 +81,40 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             Err(e) => result = Err(GraphError::from(e)),
         }
 
+        let label_hash = HelixGraphStorage::hash_label(edge.label.as_str());
         match self.storage.edge_labels_db.put(
             self.txn,
-            &HelixGraphStorage::edge_label_key(&edge.label, Some(&edge.id)),
+            &HelixGraphStorage::edge_label_key(&label_hash, Some(&edge.id)),
             &(),
         ) {
             Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),
         }
 
-        match self.storage.out_edges_db.put(
+        match self.storage.out_edges_db.put_with_flags(
             self.txn,
-            &HelixGraphStorage::out_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
-            &edge.id.to_le_bytes(),
+            PutFlags::APPEND,
+            &HelixGraphStorage::out_edge_key(&from_node, &label_hash),
+            &HelixGraphStorage::pack_edge_data(&to_node, &edge.id),
         ) {
             Ok(_) => {}
-            Err(e) => result = Err(GraphError::from(e)),
+            Err(e) => {
+                println!("error adding out edge: {:?}", e);
+                result = Err(GraphError::from(e));
+            }
         }
 
-        match self.storage.in_edges_db.put(
+        match self.storage.in_edges_db.put_with_flags(
             self.txn,
-            &HelixGraphStorage::in_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
-            &edge.id.to_le_bytes(),
+            PutFlags::APPEND,
+            &HelixGraphStorage::in_edge_key(&to_node, &label_hash),
+            &HelixGraphStorage::pack_edge_data(&from_node, &edge.id),
         ) {
             Ok(_) => {}
-            Err(e) => result = Err(GraphError::from(e)),
+            Err(e) => {
+                println!("error adding in edge: {:?}", e);
+                result = Err(GraphError::from(e));
+            }
         }
         if result.is_ok() {
             result = Ok(TraversalVal::Edge(edge));

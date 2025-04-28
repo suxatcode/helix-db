@@ -107,7 +107,7 @@ impl HVector {
         let size = self.data.len() * std::mem::size_of::<f64>();
         let mut bytes = Vec::with_capacity(size);
         for &value in &self.data {
-            bytes.extend_from_slice(&value.to_le_bytes());
+            bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
     }

@@ -3,9 +3,13 @@ use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
 use crate::protocol::items::{SerializedEdge, SerializedNode};
 
-use heed3::{types::*, Database, Env, EnvOpenOptions, RoTxn, RwTxn, WithTls};
+use heed3::{
+    types::*, Database, DatabaseFlags, Env, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
+    WithTls,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -29,12 +33,6 @@ const DB_OUT_EDGES: &str = "out_edges"; // For outgoing edge indices (o:)
 const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
 // Key prefixes for different types of data
-pub const NODE_PREFIX: &[u8] = b"n:";
-pub const EDGE_PREFIX: &[u8] = b"e";
-const NODE_LABEL_PREFIX: &[u8] = b"nl";
-const EDGE_LABEL_PREFIX: &[u8] = b"el";
-pub const OUT_EDGES_PREFIX: &[u8] = b"o";
-pub const IN_EDGES_PREFIX: &[u8] = b"i";
 
 pub struct HelixGraphStorage {
     pub graph_env: Env<WithTls>,
@@ -55,9 +53,12 @@ impl HelixGraphStorage {
         // Configure and open LMDB environment
         let graph_env = unsafe {
             EnvOpenOptions::new()
-                .map_size(config.vector_config.db_max_size.unwrap_or(30) * 1024 * 1024 * 1024) // 10GB max
+                .map_size(config.vector_config.db_max_size.unwrap_or(100) * 1024 * 1024 * 1024) // 10GB max
                 .max_dbs(20)
                 .max_readers(200)
+                // .flags(EnvFlags::NO_META_SYNC)
+                // .flags(EnvFlags::MAP_ASYNC)
+                // .flags(EnvFlags::NO_SYNC)
                 .open(Path::new(path))?
         };
 
@@ -68,8 +69,18 @@ impl HelixGraphStorage {
         let edges_db = graph_env.create_database(&mut wtxn, Some(DB_EDGES))?;
         let node_labels_db = graph_env.create_database(&mut wtxn, Some(DB_NODE_LABELS))?;
         let edge_labels_db = graph_env.create_database(&mut wtxn, Some(DB_EDGE_LABELS))?;
-        let out_edges_db = graph_env.create_database(&mut wtxn, Some(DB_OUT_EDGES))?;
-        let in_edges_db = graph_env.create_database(&mut wtxn, Some(DB_IN_EDGES))?;
+        let out_edges_db: Database<Bytes, Bytes> = graph_env
+            .database_options()
+            .types::<Bytes, Bytes>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            .name(DB_OUT_EDGES)
+            .create(&mut wtxn)?;
+        let in_edges_db: Database<Bytes, Bytes> = graph_env
+            .database_options()
+            .types::<Bytes, Bytes>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            .name(DB_IN_EDGES)
+            .create(&mut wtxn)?;
         // Create secondary indices
         let mut secondary_indices = HashMap::new();
         if let Some(indexes) = config.graph_config.secondary_indices {
@@ -106,13 +117,6 @@ impl HelixGraphStorage {
         })
     }
 
-    pub fn get_u128_from_bytes(bytes: &[u8]) -> Result<u128, GraphError> {
-        let mut arr = [0u8; 16];
-        arr.copy_from_slice(bytes);
-        let res = u128::from_le_bytes(arr);
-        Ok(res)
-    }
-
     #[inline(always)]
     pub fn new_node(label: &str, properties: impl IntoIterator<Item = (String, Value)>) -> Node {
         Node {
@@ -145,169 +149,89 @@ impl HelixGraphStorage {
         }
     }
 
+    // todo look into using a shorter hash for space efficiency
+    #[inline(always)]
+    pub fn hash_label(label: &str) -> [u8; 4] {
+        let mut hash = twox_hash::XxHash32::with_seed(0);
+        hash.write(label.as_bytes());
+        hash.finish_32().to_le_bytes()
+    }
+
     #[inline(always)]
     pub fn node_key(id: &u128) -> Vec<u8> {
-        [NODE_PREFIX, &id.to_le_bytes()].concat()
+        id.to_be_bytes().to_vec()
     }
 
     #[inline(always)]
     pub fn edge_key(id: &u128) -> Vec<u8> {
-        [EDGE_PREFIX, &id.to_le_bytes()].concat()
+        id.to_be_bytes().to_vec()
     }
 
     #[inline(always)]
     pub fn node_label_key(label: &str, id: Option<&u128>) -> Vec<u8> {
+        let label_hash = Self::hash_label(label);
         match id {
-            Some(id) => [NODE_LABEL_PREFIX, label.as_bytes(), &id.to_le_bytes()].concat(),
-            None => [NODE_LABEL_PREFIX, label.as_bytes()].concat(),
+            Some(id) => [label_hash.as_slice(), id.to_be_bytes().as_slice()].concat(),
+            None => label_hash.to_vec(),
         }
     }
 
     #[inline(always)]
-    pub fn edge_label_key(label: &str, id: Option<&u128>) -> Vec<u8> {
+    pub fn edge_label_key(label: &[u8; 4], id: Option<&u128>) -> Vec<u8> {
         match id {
-            Some(id) => [EDGE_LABEL_PREFIX, label.as_bytes(), &id.to_le_bytes()].concat(),
-            None => [EDGE_LABEL_PREFIX, label.as_bytes()].concat(),
+            Some(id) => [label, id.to_be_bytes().as_slice()].concat(),
+            None => label.to_vec(),
         }
+    }
+
+    // key = from-node(16) | label-id(4) | chunk-no(2)   ← 22 B
+    // val = to-node(16)  | edge-id(16)                  ← 32 B (DUPFIXED)
+    #[inline(always)]
+    pub fn out_edge_key(from_node_id: &u128, label: &[u8; 4]) -> [u8; 22] {
+        // 2 end bytes for chunk number
+        let mut key = [0u8; 22];
+        key[0..16].copy_from_slice(&from_node_id.to_be_bytes());
+        key[16..20].copy_from_slice(label);
+        key
     }
 
     #[inline(always)]
-    pub fn out_edge_key(from_node_id: &u128, label: &str, to_node_id: Option<&u128>) -> Vec<u8> {
-        match to_node_id {
-            Some(to_node_id) => [
-                OUT_EDGES_PREFIX,
-                &from_node_id.to_le_bytes(),
-                label.as_bytes(),
-                &to_node_id.to_le_bytes(),
-            ]
-            .concat(),
-            None => [
-                OUT_EDGES_PREFIX,
-                &from_node_id.to_le_bytes(),
-                label.as_bytes(),
-            ]
-            .concat(),
-        }
+    pub fn in_edge_key(to_node_id: &u128, label: &[u8; 4]) -> [u8; 22] {
+        // 2 end bytes for chunk number
+        let mut key = [0u8; 22];
+        key[0..16].copy_from_slice(&to_node_id.to_be_bytes());
+        key[16..20].copy_from_slice(label);
+        key
     }
 
     #[inline(always)]
-    pub fn in_edge_key(to_node_id: &u128, label: &str, from_node_id: Option<&u128>) -> Vec<u8> {
-        match from_node_id {
-            Some(from_node_id) => [
-                IN_EDGES_PREFIX,
-                &to_node_id.to_le_bytes(),
-                label.as_bytes(),
-                &from_node_id.to_le_bytes(),
-            ]
-            .concat(),
-            None => [IN_EDGES_PREFIX, &to_node_id.to_le_bytes(), label.as_bytes()].concat(),
-        }
+    pub fn pack_edge_data(node_id: &u128, edge_id: &u128) -> [u8; 32] {
+        let mut key = [0u8; 32];
+        key[0..16].copy_from_slice(&node_id.to_be_bytes());
+        key[16..32].copy_from_slice(&edge_id.to_be_bytes());
+        key
     }
 
-    pub fn create_node_(
-        &self,
-        txn: &mut RwTxn,
-        label: &str,
-        properties: impl IntoIterator<Item = (String, Value)>,
-        secondary_indices: Option<&[String]>,
-        id: Option<u128>,
-    ) -> Result<(), GraphError> {
-        let node = Node {
-            id: id.unwrap_or(Uuid::new_v4().as_u128()),
-            label: label.to_string(),
-            properties: HashMap::from_iter(properties),
-        };
-
-        // Store node data
-        self.nodes_db
-            .put(txn, &Self::node_key(&node.id), &bincode::serialize(&node)?)?;
-
-        // Store node label index
-        self.node_labels_db
-            .put(txn, &Self::node_label_key(&node.label, Some(&node.id)), &())?;
-
-        for index in secondary_indices.unwrap_or(&[]) {
-            match self.secondary_indices.get(index) {
-                Some(db) => {
-                    let key = match node.check_property(index) {
-                        Some(value) => value,
-                        None => {
-                            return Err(GraphError::New(format!(
-                                "Secondary Index {} not found",
-                                index
-                            )))
-                        }
-                    };
-                    db.put(txn, &bincode::serialize(&key)?, &node.id.to_le_bytes())?;
-                }
-                None => {
-                    return Err(GraphError::New(format!(
-                        "Secondary Index {} not found",
-                        index
-                    )))
-                }
-            }
-        }
-        Ok(())
+    #[inline(always)]
+    pub fn unpack_adj_edge_data(data: &[u8]) -> Result<(u128, u128), GraphError> {
+        let node_id = u128::from_be_bytes(
+            data[0..16]
+                .try_into()
+                .map_err(|_| GraphError::SliceLengthError)?,
+        );
+        let edge_id = u128::from_be_bytes(
+            data[16..32]
+                .try_into()
+                .map_err(|_| GraphError::SliceLengthError)?,
+        );
+        Ok((node_id, edge_id))
     }
 
-    pub fn create_edge_(
-        &self,
-        txn: &mut RwTxn,
-        label: &str,
-        from_node: u128,
-        to_node: u128,
-        properties: impl IntoIterator<Item = (String, Value)>,
-    ) -> Result<(), GraphError> {
-        // Check if nodes exist
-
-        // if self.check_exists(from_node)? || self.check_exists(to_node)? {
-        //     return Err(GraphError::New(
-        //         "One or both nodes do not exist".to_string(),
-        //     ));
-        // }
-        if self
-            .nodes_db
-            .get(txn, Self::node_key(&from_node).as_slice())?
-            .is_none()
-            || self
-                .nodes_db
-                .get(txn, Self::node_key(&to_node).as_slice())?
-                .is_none()
-        {
-            return Err(GraphError::NodeNotFound);
-        }
-
-        let edge = Edge {
-            id: Uuid::new_v4().as_u128(),
-            label: label.to_string(),
-            from_node: from_node,
-            to_node: to_node,
-            properties: HashMap::from_iter(properties),
-        };
-
-        // Store edge data
-        self.edges_db
-            .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
-
-        // Store edge label index
-        self.edge_labels_db
-            .put(txn, &Self::edge_label_key(label, Some(&edge.id)), &())?;
-
-        // Store edge - node maps
-        self.out_edges_db.put(
-            txn,
-            &Self::out_edge_key(&from_node, label, Some(&to_node)),
-            &edge.id.to_le_bytes(),
-        )?;
-
-        self.in_edges_db.put(
-            txn,
-            &Self::in_edge_key(&to_node, label, Some(&from_node)),
-            &edge.id.to_le_bytes(),
-        )?;
-
-        Ok(())
+    pub fn get_u128_from_bytes(bytes: &[u8]) -> Result<u128, GraphError> {
+        let mut arr = [0u8; 16];
+        arr.copy_from_slice(bytes);
+        let res = u128::from_be_bytes(arr);
+        Ok(res)
     }
 }
 
@@ -367,10 +291,7 @@ impl StorageMethods for HelixGraphStorage {
 
     #[inline(always)]
     fn get_node(&self, txn: &RoTxn, id: &u128) -> Result<Node, GraphError> {
-        let node = match self
-            .nodes_db
-            .get(txn, Self::node_key(id).as_slice())?
-        {
+        let node = match self.nodes_db.get(txn, Self::node_key(id).as_slice())? {
             Some(data) => data,
             None => return Err(GraphError::NodeNotFound),
         };
@@ -383,10 +304,7 @@ impl StorageMethods for HelixGraphStorage {
 
     #[inline(always)]
     fn get_edge(&self, txn: &RoTxn, id: &u128) -> Result<Edge, GraphError> {
-        let edge = match self
-            .edges_db
-            .get(txn, Self::edge_key(id).as_slice())?
-        {
+        let edge = match self.edges_db.get(txn, Self::edge_key(id).as_slice())? {
             Some(data) => data,
             None => return Err(GraphError::EdgeNotFound),
         };
@@ -417,182 +335,99 @@ impl StorageMethods for HelixGraphStorage {
         self.get_node(txn, &node_id)
     }
 
-    fn get_out_edges(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Edge>, GraphError> {
-        let mut edges = Vec::with_capacity(512);
+    fn drop_node(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError> {
+        // Get node to get its label
+        let node = self.get_node(txn, id)?;
 
-        let prefix = Self::out_edge_key(node_id, edge_label, None);
-        let iter = self
-            .out_edges_db
-            .lazily_decode_data()
-            .prefix_iter(&txn, &prefix)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            let edge_id = decode_u128!(value);
-
-            let edge = self.get_edge(&txn, &edge_id)?;
-            if edge_label.is_empty() || edge.label == edge_label {
-                edges.push(edge);
-            }
-        }
-
-        Ok(edges)
-    }
-
-    fn get_in_edges(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Edge>, GraphError> {
-        let mut edges = Vec::with_capacity(512);
-
-        let prefix = Self::in_edge_key(node_id, edge_label, None);
-        let iter = self
-            .in_edges_db
-            .lazily_decode_data()
-            .prefix_iter(&txn, &prefix)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            let edge_id = decode_u128!(value);
-
-            let edge = self.get_edge(&txn, &edge_id)?;
-            if edge_label.is_empty() || edge.label == edge_label {
-                edges.push(edge);
-            }
-        }
-
-        Ok(edges)
-    }
-
-    fn get_out_nodes(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Node>, GraphError> {
-        let mut nodes = Vec::with_capacity(512);
-        let prefix = Self::out_edge_key(node_id, edge_label, None);
-        let iter = self
-            .out_edges_db
-            .lazily_decode_data()
-            .prefix_iter(txn, &prefix)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            let edge_id = decode_u128!(value);
-
-            match self.get_edge(txn, &edge_id) {
-                Ok(edge) => {
-                    if let Ok(node) = self.get_node(txn, &edge.to_node) {
-                        nodes.push(node);
-                    }
-                }
-                Err(e) => {
-                    println!("error: {:?}", e);
-                }
-            }
-        }
-        // println!("nodes: {:?}", nodes.len());
-
-        Ok(nodes)
-    }
-
-    fn get_in_nodes(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Node>, GraphError> {
-        let mut nodes = Vec::with_capacity(512);
-        let prefix = Self::in_edge_key(node_id, edge_label, None);
-        let iter = self
-            .in_edges_db
-            .lazily_decode_data()
-            .prefix_iter(txn, &prefix)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            let edge_id = decode_u128!(value);
-            match self.get_edge(txn, &edge_id) {
-                Ok(edge) => {
-                    if let Ok(node) = self.get_node(txn, &edge.from_node) {
-                        nodes.push(node);
-                    }
-                }
-                Err(e) => {
-                    println!("error: {:?}", e);
-                }
-            }
-        }
-
-        Ok(nodes)
-    }
-
-    fn get_all_nodes(&self, txn: &RoTxn) -> Result<Vec<Node>, GraphError> {
-        let mut nodes = Vec::with_capacity(self.nodes_db.len(txn)? as usize);
-
-        let iter = self.nodes_db.iter(&txn)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            if !value.is_empty() {
-                let node: Node = bincode::deserialize(value)?;
-                nodes.push(node);
-            }
-        }
-
-        Ok(nodes)
-    }
-
-    fn get_nodes_by_types(&self, txn: &RoTxn, types: &[&str]) -> Result<Vec<Node>, GraphError> {
-        let mut nodes = Vec::new();
-
-        for label in types {
-            let prefix = [NODE_LABEL_PREFIX, label.as_bytes()].concat();
+        // Delete outgoing edges
+        let out_edges = {
             let iter = self
-                .node_labels_db
+                .out_edges_db
                 .lazily_decode_data()
-                .prefix_iter(&txn, &prefix)?;
+                .prefix_iter(&txn, &id.to_be_bytes())?;
+
+            let capacity = match iter.size_hint() {
+                (_, Some(upper)) => upper,
+                (lower, None) => lower,
+            };
+            let mut out_edges = Vec::with_capacity(capacity);
 
             for result in iter {
-                let (key, _) = result?;
-                let node_id = Self::get_u128_from_bytes(&key[prefix.len()..])?;
+                let (_, value) = result?;
+                let edge_id = decode_u128!(value);
 
-                let n: Result<Node, GraphError> =
-                    match self.nodes_db.get(&txn, &Self::node_key(&node_id))? {
-                        Some(data) => Ok(bincode::deserialize(data)?),
-                        None => Err(GraphError::NodeNotFound),
-                    };
-                if let Ok(node) = n {
-                    nodes.push(node);
+                if let Some(edge_data) = &self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
+                    let edge: Edge = bincode::deserialize(edge_data)?;
+                    out_edges.push(edge);
                 }
             }
+            out_edges
+        };
+
+        // Delete incoming edges
+
+        let in_edges = {
+            let iter = self
+                .in_edges_db
+                .lazily_decode_data()
+                .prefix_iter(&txn, &id.to_be_bytes())?;
+            let capacity = match iter.size_hint() {
+                (_, Some(c)) => c,
+                (c, None) => c,
+            };
+            let mut in_edges = Vec::with_capacity(capacity);
+
+            for result in iter {
+                let (_, value) = result?;
+                let edge_id = decode_u128!(value);
+
+                if let Some(edge_data) = self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
+                    let edge: Edge = bincode::deserialize(edge_data)?;
+                    in_edges.push(edge);
+                }
+            }
+            in_edges
+        };
+
+        // Delete all related data
+        for edge in out_edges.iter().chain(in_edges.iter()) {
+            // Delete edge data
+            self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
+            let label_hash = Self::hash_label(&edge.label);
+            self.edge_labels_db
+                .delete(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)))?;
+            self.out_edges_db
+                .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
+            self.in_edges_db
+                .delete(txn, &Self::in_edge_key(&edge.to_node, &label_hash))?;
         }
 
-        Ok(nodes)
+        // Delete node data and label
+        self.nodes_db.delete(txn, Self::node_key(id).as_slice())?;
+        self.node_labels_db
+            .delete(txn, &Self::node_label_key(&node.label, Some(&node.id)))?;
+
+        Ok(())
     }
 
-    fn get_all_edges(&self, txn: &RoTxn) -> Result<Vec<Edge>, GraphError> {
-        let mut edges = Vec::with_capacity(self.edges_db.len(txn)? as usize);
+    fn drop_edge(&self, txn: &mut RwTxn, edge_id: &u128) -> Result<(), GraphError> {
+        // Get edge data first
+        let edge_data = match self.edges_db.get(&txn, &Self::edge_key(edge_id))? {
+            Some(data) => data,
+            None => return Err(GraphError::EdgeNotFound),
+        };
+        let edge: Edge = bincode::deserialize(edge_data)?;
+        let label_hash = Self::hash_label(&edge.label);
+        // Delete all edge-related data
+        self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
+        self.edge_labels_db
+            .delete(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)))?;
+        self.out_edges_db
+            .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
+        self.in_edges_db
+            .delete(txn, &Self::in_edge_key(&edge.to_node, &label_hash))?;
 
-        let iter = self.edges_db.iter(&txn)?;
-
-        for result in iter {
-            let (_, value) = result?;
-            if !value.is_empty() {
-                let edge: Edge = bincode::deserialize(value)?;
-                edges.push(edge);
-            }
-        }
-
-        Ok(edges)
+        Ok(())
     }
 
     fn create_node(
@@ -682,307 +517,167 @@ impl StorageMethods for HelixGraphStorage {
         self.edges_db
             .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
 
+        let label_hash = Self::hash_label(label);
         // Store edge label index
         self.edge_labels_db
-            .put(txn, &Self::edge_label_key(label, Some(&edge.id)), &())?;
+            .put(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)), &())?;
 
         // Store edge - node maps
         self.out_edges_db.put(
             txn,
-            &Self::out_edge_key(from_node, label, Some(to_node)),
-            &edge.id.to_le_bytes(),
+            &Self::out_edge_key(from_node, &label_hash),
+            &Self::pack_edge_data(to_node, &edge.id),
         )?;
 
         self.in_edges_db.put(
             txn,
-            &Self::in_edge_key(to_node, label, Some(from_node)),
-            &edge.id.to_le_bytes(),
+            &Self::in_edge_key(to_node, &label_hash),
+            &Self::pack_edge_data(from_node, &edge.id),
         )?;
 
         Ok(edge)
     }
-
-    fn drop_node(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError> {
-        // Get node to get its label
-        let node = self.get_node(txn, id)?;
-
-        // Delete outgoing edges
-        let out_prefix = Self::out_edge_key(id, "", None);
-        let out_edges = {
-            let iter = self
-                .out_edges_db
-                .lazily_decode_data()
-                .prefix_iter(&txn, &out_prefix)?;
-
-            let capacity = match iter.size_hint() {
-                (_, Some(upper)) => upper,
-                (lower, None) => lower,
-            };
-            let mut out_edges = Vec::with_capacity(capacity);
-
-            for result in iter {
-                let (_, value) = result?;
-                let edge_id = decode_u128!(value);
-
-                if let Some(edge_data) = &self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
-                    let edge: Edge = bincode::deserialize(edge_data)?;
-                    out_edges.push(edge);
-                }
-            }
-            out_edges
-        };
-
-        // Delete incoming edges
-        let in_prefix = Self::in_edge_key(id, "", None);
-        let in_edges = {
-            let iter = self
-                .in_edges_db
-                .lazily_decode_data()
-                .prefix_iter(&txn, &in_prefix)?;
-            let capacity = match iter.size_hint() {
-                (_, Some(c)) => c,
-                (c, None) => c,
-            };
-            let mut in_edges = Vec::with_capacity(capacity);
-
-            for result in iter {
-                let (_, value) = result?;
-                let edge_id = decode_u128!(value);
-
-                if let Some(edge_data) = self.edges_db.get(&txn, &Self::edge_key(&edge_id))? {
-                    let edge: Edge = bincode::deserialize(edge_data)?;
-                    in_edges.push(edge);
-                }
-            }
-            in_edges
-        };
-
-        // Delete all related data
-        for edge in out_edges.iter().chain(in_edges.iter()) {
-            // Delete edge data
-            self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
-
-            self.edge_labels_db
-                .delete(txn, &Self::edge_label_key(&edge.label, Some(&edge.id)))?;
-            self.out_edges_db.delete(
-                txn,
-                &Self::out_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
-            )?;
-            self.in_edges_db.delete(
-                txn,
-                &Self::in_edge_key(&edge.to_node, &edge.label, Some(&edge.from_node)),
-            )?;
-        }
-
-        // Delete node data and label
-        self.nodes_db.delete(txn, Self::node_key(id).as_slice())?;
-        self.node_labels_db
-            .delete(txn, &Self::node_label_key(&node.label, Some(&node.id)))?;
-
-        Ok(())
-    }
-
-    fn drop_edge(&self, txn: &mut RwTxn, edge_id: &u128) -> Result<(), GraphError> {
-        // Get edge data first
-        let edge_data = match self.edges_db.get(&txn, &Self::edge_key(edge_id))? {
-            Some(data) => data,
-            None => return Err(GraphError::EdgeNotFound),
-        };
-        let edge: Edge = bincode::deserialize(edge_data)?;
-
-        // Delete all edge-related data
-        self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
-        self.edge_labels_db
-            .delete(txn, &Self::edge_label_key(&edge.label, Some(&edge.id)))?;
-        self.out_edges_db.delete(
-            txn,
-            &Self::out_edge_key(&edge.from_node, &edge.label, Some(&edge.to_node)),
-        )?;
-        self.in_edges_db.delete(
-            txn,
-            &Self::in_edge_key(&edge.to_node, &edge.label, Some(&edge.from_node)),
-        )?;
-
-        Ok(())
-    }
-
-    fn update_node(
-        &self,
-        txn: &mut RwTxn,
-        id: &u128,
-        properties: impl IntoIterator<Item = (String, Value)>,
-    ) -> Result<Node, GraphError> {
-        let mut node = self.get_node(txn, id)?;
-        properties.into_iter().for_each(|(k, v)| {
-            node.properties.insert(k, v);
-        });
-        for (key, v) in node.properties.iter() {
-            if let Some(db) = self.secondary_indices.get(key) {
-                // println!("Updating secondary index: {}, {}", key, v);
-                db.put(txn, &bincode::serialize(v)?, &node.id.to_le_bytes())?;
-            }
-        }
-        self.nodes_db
-            .put(txn, &Self::node_key(id), &bincode::serialize(&node)?)?;
-
-        Ok(node)
-    }
-
-    fn update_edge(
-        &self,
-        txn: &mut RwTxn,
-        id: &u128,
-        properties: impl IntoIterator<Item = (String, Value)>,
-    ) -> Result<Edge, GraphError> {
-        let mut edge = self.get_edge(txn, id)?;
-        properties.into_iter().for_each(|(k, v)| {
-            edge.properties.insert(k, v);
-        });
-        self.edges_db
-            .put(txn, &Self::edge_key(id), &bincode::serialize(&edge)?)?;
-        Ok(edge)
-    }
 }
 
-impl SearchMethods for HelixGraphStorage {
-    fn shortest_path(
-        &self,
-        txn: &RoTxn,
-        edge_label: &str,
-        from_id: &u128,
-        to_id: &u128,
-    ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-        let mut queue = VecDeque::with_capacity(32);
-        let mut visited = HashSet::with_capacity(64);
-        let mut parent: HashMap<u128, (u128, Edge)> = HashMap::with_capacity(32);
-        queue.push_back(*from_id);
-        visited.insert(*from_id);
+// impl SearchMethods for HelixGraphStorage {
+//     fn shortest_path(
+//         &self,
+//         txn: &RoTxn,
+//         edge_label: &str,
+//         from_id: &u128,
+//         to_id: &u128,
+//     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+//         let mut queue = VecDeque::with_capacity(32);
+//         let mut visited = HashSet::with_capacity(64);
+//         let mut parent: HashMap<u128, (u128, Edge)> = HashMap::with_capacity(32);
+//         queue.push_back(*from_id);
+//         visited.insert(*from_id);
 
-        let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
-                                start_id: &u128,
-                                end_id: &u128|
-         -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-            let mut nodes = Vec::with_capacity(parent.len());
-            let mut edges = Vec::with_capacity(parent.len() - 1);
+//         let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
+//                                 start_id: &u128,
+//                                 end_id: &u128|
+//          -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+//             let mut nodes = Vec::with_capacity(parent.len());
+//             let mut edges = Vec::with_capacity(parent.len() - 1);
 
-            let mut current = end_id;
+//             let mut current = end_id;
 
-            while current != start_id {
-                nodes.push(self.get_node(txn, current)?);
+//             while current != start_id {
+//                 nodes.push(self.get_node(txn, current)?);
 
-                let (prev_node, edge) = &parent[current];
-                edges.push(edge.clone());
-                current = prev_node;
-            }
+//                 let (prev_node, edge) = &parent[current];
+//                 edges.push(edge.clone());
+//                 current = prev_node;
+//             }
 
-            nodes.push(self.get_node(txn, start_id)?);
+//             nodes.push(self.get_node(txn, start_id)?);
 
-            Ok((nodes, edges))
-        };
+//             Ok((nodes, edges))
+//         };
 
-        while let Some(current_id) = queue.pop_front() {
-            let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
-            let iter = self
-                .out_edges_db
-                .lazily_decode_data()
-                .prefix_iter(&txn, &out_prefix)?;
+//         while let Some(current_id) = queue.pop_front() {
+//             let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
+//             let iter = self
+//                 .out_edges_db
+//                 .lazily_decode_data()
+//                 .prefix_iter(&txn, &out_prefix)?;
 
-            for result in iter {
-                let (key, value) = result?;
-                let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
+//             for result in iter {
+//                 let (key, value) = result?;
+//                 let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
 
-                if !visited.contains(&to_node) {
-                    visited.insert(to_node);
-                    let edge_id = decode_u128!(value);
-                    let edge = self.get_edge(&txn, &edge_id)?;
-                    parent.insert(to_node, (current_id, edge));
+//                 if !visited.contains(&to_node) {
+//                     visited.insert(to_node);
+//                     let edge_id = decode_u128!(value);
+//                     let edge = self.get_edge(&txn, &edge_id)?;
+//                     parent.insert(to_node, (current_id, edge));
 
-                    if to_node == *to_id {
-                        return reconstruct_path(&parent, from_id, to_id);
-                    }
+//                     if to_node == *to_id {
+//                         return reconstruct_path(&parent, from_id, to_id);
+//                     }
 
-                    queue.push_back(to_node);
-                }
-            }
-        }
+//                     queue.push_back(to_node);
+//                 }
+//             }
+//         }
 
-        Err(GraphError::from(format!(
-            "No path found between {} and {}",
-            from_id, to_id
-        )))
-    }
+//         Err(GraphError::from(format!(
+//             "No path found between {} and {}",
+//             from_id, to_id
+//         )))
+//     }
 
-    fn shortest_mutual_path(
-        &self,
-        txn: &RoTxn,
-        edge_label: &str,
-        from_id: &u128,
-        to_id: &u128,
-    ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-        let mut queue = VecDeque::with_capacity(32);
-        let mut visited = HashSet::with_capacity(64);
-        let mut parent = HashMap::with_capacity(32);
+//     fn shortest_mutual_path(
+//         &self,
+//         txn: &RoTxn,
+//         edge_label: &str,
+//         from_id: &u128,
+//         to_id: &u128,
+//     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+//         let mut queue = VecDeque::with_capacity(32);
+//         let mut visited = HashSet::with_capacity(64);
+//         let mut parent = HashMap::with_capacity(32);
 
-        queue.push_back(*from_id);
-        visited.insert(*from_id);
+//         queue.push_back(*from_id);
+//         visited.insert(*from_id);
 
-        let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
-                                start_id: &u128,
-                                end_id: &u128|
-         -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-            let mut nodes = Vec::with_capacity(parent.len());
-            let mut edges = Vec::with_capacity(parent.len() - 1);
+//         let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
+//                                 start_id: &u128,
+//                                 end_id: &u128|
+//          -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+//             let mut nodes = Vec::with_capacity(parent.len());
+//             let mut edges = Vec::with_capacity(parent.len() - 1);
 
-            let mut current = end_id;
+//             let mut current = end_id;
 
-            while current != start_id {
-                nodes.push(self.get_node(txn, current)?);
+//             while current != start_id {
+//                 nodes.push(self.get_node(txn, current)?);
 
-                let (prev_node, edge) = &parent[current];
-                edges.push(edge.clone());
-                current = prev_node;
-            }
-            nodes.push(self.get_node(txn, start_id)?);
-            Ok((nodes, edges))
-        };
+//                 let (prev_node, edge) = &parent[current];
+//                 edges.push(edge.clone());
+//                 current = prev_node;
+//             }
+//             nodes.push(self.get_node(txn, start_id)?);
+//             Ok((nodes, edges))
+//         };
 
-        while let Some(current_id) = queue.pop_front() {
-            let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
-            let iter = self
-                .out_edges_db
-                .lazily_decode_data()
-                .prefix_iter(&txn, &out_prefix)?;
+//         while let Some(current_id) = queue.pop_front() {
+//             let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
+//             let iter = self
+//                 .out_edges_db
+//                 .lazily_decode_data()
+//                 .prefix_iter(&txn, &out_prefix)?;
 
-            for result in iter {
-                let (key, value) = result?;
-                let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
+//             for result in iter {
+//                 let (key, value) = result?;
+//                 let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
 
-                println!("To Node: {}", to_node);
-                println!("Current: {}", current_id);
-                // Check if there's a reverse edge
-                let reverse_edge_key = Self::out_edge_key(&to_node, edge_label, Some(&current_id));
+//                 println!("To Node: {}", to_node);
+//                 println!("Current: {}", current_id);
+//                 // Check if there's a reverse edge
+//                 let reverse_edge_key = Self::out_edge_key(&to_node, edge_label, Some(&current_id));
 
-                let has_reverse_edge = self.out_edges_db.get(&txn, &reverse_edge_key)?.is_some();
+//                 let has_reverse_edge = self.out_edges_db.get(&txn, &reverse_edge_key)?.is_some();
 
-                // Only proceed if there's a mutual connection
-                if has_reverse_edge && !visited.contains(&to_node) {
-                    visited.insert(to_node);
-                    let edge_id = decode_u128!(value);
-                    let edge = self.get_edge(&txn, &edge_id)?;
-                    parent.insert(to_node, (current_id, edge));
+//                 // Only proceed if there's a mutual connection
+//                 if has_reverse_edge && !visited.contains(&to_node) {
+//                     visited.insert(to_node);
+//                     let edge_id = decode_u128!(value);
+//                     let edge = self.get_edge(&txn, &edge_id)?;
+//                     parent.insert(to_node, (current_id, edge));
 
-                    if to_node == *to_id {
-                        return reconstruct_path(&parent, from_id, to_id);
-                    }
+//                     if to_node == *to_id {
+//                         return reconstruct_path(&parent, from_id, to_id);
+//                     }
 
-                    queue.push_back(to_node);
-                }
-            }
-        }
+//                     queue.push_back(to_node);
+//                 }
+//             }
+//         }
 
-        Err(GraphError::from(format!(
-            "No mutual path found between {} and {}",
-            from_id, to_id
-        )))
-    }
-}
+//         Err(GraphError::from(format!(
+//             "No mutual path found between {} and {}",
+//             from_id, to_id
+//         )))
+//     }
+// }

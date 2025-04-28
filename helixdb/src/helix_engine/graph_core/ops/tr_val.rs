@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TraversalVal {
     Node(Node),
     Edge(Edge),
@@ -21,12 +21,6 @@ pub enum TraversalVal {
     Path((Vec<Node>, Vec<Edge>)),
     // Lazy(Lazy<'a, Bytes>),
     Empty,
-}
-
-impl std::fmt::Debug for TraversalVal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 impl Hash for TraversalVal {

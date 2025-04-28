@@ -8,7 +8,7 @@ use heed3::{
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::{HelixGraphStorage, NODE_PREFIX}, storage_methods::StorageMethods},
+        storage_core::{storage_core::{HelixGraphStorage}, storage_methods::StorageMethods},
         types::GraphError,
     },
     protocol::{
@@ -34,7 +34,7 @@ impl<'a> Iterator for N<'a> {
             if !value.is_empty() {
                 match SerializedNode::decode_node(
                     &value,
-                    HelixGraphStorage::get_u128_from_bytes(&key[NODE_PREFIX.len()..]).unwrap(),
+                    HelixGraphStorage::get_u128_from_bytes(key).unwrap(),
                 ) {
                     Ok(node) => Ok(TraversalVal::Node(node)),
                     Err(e) => Err(GraphError::ConversionError(format!(

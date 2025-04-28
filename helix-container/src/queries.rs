@@ -22,7 +22,6 @@ use helixdb::{
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
     },
-    helix_engine::graph_core::traversal::TraversalBuilder,
     helix_engine::types::GraphError,
     helix_gateway::router::router::HandlerInput,
     node_matches, props,

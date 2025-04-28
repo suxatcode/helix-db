@@ -1,4 +1,3 @@
-use crate::helix_engine::storage_core::storage_core::OUT_EDGES_PREFIX;
 use crate::helix_engine::vector_core::hnsw::HNSW;
 use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
 use crate::protocol::value::Value;
@@ -189,25 +188,25 @@ impl VectorCore {
 
     #[inline(always)]
     fn vector_key(id: u128, level: usize) -> Vec<u8> {
-        [VECTOR_PREFIX, &id.to_le_bytes(), &level.to_le_bytes()].concat()
+        [VECTOR_PREFIX, &id.to_be_bytes(), &level.to_be_bytes()].concat()
     }
 
     #[inline(always)]
     fn out_edges_key(source_id: u128, level: usize, sink_id: Option<u128>) -> Vec<u8> {
         match sink_id {
             Some(sink_id) => [
-                OUT_EDGES_PREFIX,
-                &source_id.to_le_bytes(),
-                &level.to_le_bytes(),
-                &sink_id.to_le_bytes(),
+                source_id.to_be_bytes().as_slice(),
+                level.to_be_bytes().as_slice(),
+                sink_id.to_be_bytes().as_slice(),
             ]
-            .concat(),
+            .concat()
+            .to_vec(),
             None => [
-                OUT_EDGES_PREFIX,
-                &source_id.to_le_bytes(),
-                &level.to_le_bytes(),
+                source_id.to_be_bytes().as_slice(),
+                level.to_be_bytes().as_slice(),
             ]
-            .concat(),
+            .concat()
+            .to_vec(),
         }
     }
 
@@ -243,7 +242,7 @@ impl VectorCore {
     fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db
-            .put(txn, &entry_key, &entry.get_id().to_le_bytes())
+            .put(txn, &entry_key, &entry.get_id().to_be_bytes())
             .map_err(VectorError::from)?;
 
         Ok(())
@@ -596,7 +595,7 @@ impl HNSW for VectorCore {
         if let Some(fields) = fields {
             self.vector_data_db.put(
                 txn,
-                &query.get_id().to_le_bytes(),
+                &query.get_id().to_be_bytes(),
                 &bincode::serialize(&fields)?,
             )?;
         }

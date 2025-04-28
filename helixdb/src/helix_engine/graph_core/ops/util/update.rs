@@ -66,7 +66,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter
                                 match bincode::serialize(v) {
                                     Ok(serialized) => {
                                         if let Err(e) =
-                                            db.put(self.txn, &serialized, &node.id.to_le_bytes())
+                                            db.put(self.txn, &serialized, &node.id.to_be_bytes())
                                         {
                                             vec.push(Err(GraphError::from(e)));
                                         }

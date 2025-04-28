@@ -22,8 +22,9 @@ impl<'a> Iterator for OutEdgesIterator<'a, RoTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = HelixGraphStorage::get_u128_from_bytes(value.decode().unwrap()).unwrap();
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (_, edge_id) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
                 return Some(Ok(TraversalVal::Edge(edge)));
             }
@@ -36,8 +37,9 @@ impl<'a> Iterator for OutEdgesIterator<'a, RwTxn<'a>> {
 
     /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((_, value))) = self.iter.next() {
-            let edge_id = HelixGraphStorage::get_u128_from_bytes(value.decode().unwrap()).unwrap();
+        while let Some(Ok((_, data))) = self.iter.next() {
+            let (_, edge_id) =
+                HelixGraphStorage::unpack_adj_edge_data(&data.decode().unwrap()).unwrap();
             if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
                 return Some(Ok(TraversalVal::Edge(edge)));
             }
@@ -45,38 +47,6 @@ impl<'a> Iterator for OutEdgesIterator<'a, RwTxn<'a>> {
         None
     }
 }
-
-pub struct OutEdges<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, F, T>
-where
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutEdgesIterator<'a, T>,
-    OutEdgesIterator<'a, T>: std::iter::Iterator,
-    T: 'a,
-{
-    iter: std::iter::Flatten<std::iter::Map<I, F>>,
-}
-
-impl<'a, I, F> Iterator for OutEdges<'a, I, F, RoTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutEdgesIterator<'a, RoTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl<'a, I, F> Iterator for OutEdges<'a, I, F, RwTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> OutEdgesIterator<'a, RwTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 pub trait OutEdgesAdapter<'a, T>:
     Iterator<Item = Result<TraversalVal, GraphError>> + Sized
 {
@@ -100,8 +70,9 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
         let iter = self
             .inner
             .map(move |item| {
+                let label_hash = HelixGraphStorage::hash_label(edge_label);
                 let item = item.unwrap();
-                let prefix = HelixGraphStorage::out_edge_key(&item.id(), edge_label, None);
+                let prefix = HelixGraphStorage::out_edge_key(&item.id(), &label_hash);
                 let iter = db
                     .out_edges_db
                     .lazily_decode_data()
@@ -116,7 +87,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
             })
             .flatten();
         RoTraversalIterator {
-            inner: OutEdges { iter },
+            inner: iter,
             storage,
             txn,
         }

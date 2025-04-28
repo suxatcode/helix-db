@@ -52,6 +52,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         };
         let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
+        // insert node
         match bincode::serialize(&node) {
             Ok(bytes) => {
                 if let Err(e) = self.storage.nodes_db.put(
@@ -62,6 +63,15 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                     result = Err(GraphError::from(e));
                 }
             }
+            Err(e) => result = Err(GraphError::from(e)),
+        }
+        // insert label
+        match self.storage.node_labels_db.put(
+            self.txn,
+            &HelixGraphStorage::node_label_key(&label, Some(&node.id)),
+            &(),
+        ) {
+            Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),
         }
 
@@ -80,7 +90,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                     };
                     match bincode::serialize(&key) {
                         Ok(serialized) => {
-                            if let Err(e) = db.put(self.txn, &serialized, &node.id.to_le_bytes()) {
+                            if let Err(e) = db.put(self.txn, &serialized, &node.id.to_be_bytes()) {
                                 result = Err(GraphError::from(e));
                             }
                         }

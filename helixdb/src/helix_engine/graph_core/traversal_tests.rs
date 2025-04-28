@@ -1,23 +1,21 @@
 use std::{
+    collections::HashMap,
     ops::{Deref, DerefMut},
     sync::Arc,
     time::Instant,
 };
 
 use crate::helix_engine::{
-    graph_core::{
-        ops::{
-            g::G,
-            in_::{in_e::InEdgesAdapter, to_n::ToNAdapter},
-            out::{from_n::FromNAdapter, out::OutAdapter},
-            source::{
-                add_e::AddE, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromIdAdapter,
-                n::NAdapter, n_from_id::NFromIdAdapter,
-            },
-            tr_val::{Traversable, TraversalVal},
-            util::{dedup::DedupAdapter, range::RangeAdapter},
+    graph_core::ops::{
+        g::G,
+        in_::{in_e::InEdgesAdapter, to_n::ToNAdapter},
+        out::{from_n::FromNAdapter, out::OutAdapter},
+        source::{
+            add_e::AddE, add_n::AddNAdapter, bulk_add_n::BulkAddNAdapter, e::EAdapter,
+            e_from_id::EFromIdAdapter, n::NAdapter, n_from_id::NFromIdAdapter,
         },
-        traversal_steps::{SourceTraversalSteps, TraversalBuilderMethods, TraversalSearchMethods},
+        tr_val::{Traversable, TraversalVal},
+        util::{dedup::DedupAdapter, range::RangeAdapter},
     },
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
@@ -33,15 +31,11 @@ use heed3::RoTxn;
 use rand::Rng;
 use tempfile::TempDir;
 
-use super::{
-    ops::{
-        in_::in_::InAdapter,
-        out::out_e::OutEdgesAdapter,
-        source::{add_e::AddEAdapter, e::E, n::N, n_from_id::NFromId},
-        util::filter_ref::FilterRefAdapter,
-    },
-    traversal::TraversalBuilder,
-    traversal_steps::{TraversalMethods, TraversalSteps},
+use super::ops::{
+    in_::in_::InAdapter,
+    out::out_e::OutEdgesAdapter,
+    source::{add_e::AddEAdapter, e::E, n::N, n_from_id::NFromId},
+    util::filter_ref::FilterRefAdapter,
 };
 
 fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
@@ -1207,40 +1201,57 @@ fn huge_traversal() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let mut nodes = Vec::with_capacity(1_000_000);
-    let start = Instant::now();
-    for i in 0..6_00 {
-        let node = storage
-            .create_node(&mut txn, "person", props! { "name" => i}, None, None)
-            .unwrap();
-        nodes.push(node);
+    let mut nodes = Vec::with_capacity(65_000_000);
+    let mut start = Instant::now();
 
-        if i % 1000 == 0 {
-            println!("created {} nodes", i);
-        }
+    for i in 0..1_000_000 {
+        nodes.push(Node::new("person", props! { "name" => i}));
     }
-
-    for i in 0..600 {
-        for j in 0..2000 {
-            let random_node = &nodes[rand::rng().random_range(0..nodes.len())];
-
-            G::new_mut(Arc::clone(&storage), &mut txn)
-                .add_e(
-                    "knows",
-                    props! {},
-                    None,
-                    nodes[i as usize].id,
-                    random_node.id,
-                )
-                .count();
-            if i * j % 1000 == 0 {
-                println!("created {} edges", i * j);
-            }
-        }
+    println!("time taken to initialise nodes: {:?}", start.elapsed());
+    start = Instant::now();
+    nodes.sort();
+    println!("time taken to sort nodes: {:?}", start.elapsed());
+    start = Instant::now();
+    let chunks = nodes.chunks_mut(1000000);
+    for chunk in chunks {
+        let res = G::new_mut(Arc::clone(&storage), &mut txn)
+            .bulk_add_n(chunk, None)
+            .map(|res| res.unwrap())
+            .collect::<Vec<_>>();
+        txn.commit().unwrap();
+        println!("time taken to add nodes: {:?}", start.elapsed());
+        start = Instant::now();
+        txn = storage.graph_env.write_txn().unwrap();
     }
-
+    println!("time taken to add nodes: {:?}", start.elapsed());
     txn.commit().unwrap();
-    println!("time taken to create nodes: {:?}", start.elapsed());
+    let start = Instant::now();
+    let mut edges = Vec::with_capacity(6000 * 2000);
+    for i in 0..1_000_000 {
+        let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
+        let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
+        edges.push(Edge {
+            id: uuid::Uuid::new_v4().as_u128(),
+            label: "knows".to_string(),
+            properties: HashMap::new(),
+            from_node: random_node1.id,
+            to_node: random_node2.id,
+        });
+    }
+    println!(
+        "time taken to create {} edges: {:?}",
+        edges.len(),
+        start.elapsed()
+    );
+    let mut start = Instant::now();
+
+    println!("sorting edges");
+    println!("sorting edges done");
+    let res = G::bulk_add_e(Arc::clone(&storage), &mut edges, false, 1000000);
+    match res {
+        Ok(_) => println!("edges added"),
+        Err(e) => println!("error adding edges: {:?}", e),
+    }
 
     let txn = storage.graph_env.read_txn().unwrap();
     let now = Instant::now();

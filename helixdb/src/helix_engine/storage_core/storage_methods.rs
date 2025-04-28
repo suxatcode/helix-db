@@ -43,54 +43,8 @@ pub trait StorageMethods {
         value: &Value,
     ) -> Result<Node, GraphError>;
 
-    /// Returns a list of edge objects of the outgoing edges from a given node
-    fn get_out_edges(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Edge>, GraphError>;
-    /// Returns a list of edge objects of the incoming edges from a given node
-    fn get_in_edges(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Edge>, GraphError>;
-
-    /// Returns a list of node objects of the outgoing nodes from a given node
-    fn get_out_nodes(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Node>, GraphError>;
-    /// Returns a list of node objects of the incoming nodes from a given node
-    fn get_in_nodes(
-        &self,
-        txn: &RoTxn,
-        node_id: &u128,
-        edge_label: &str,
-    ) -> Result<Vec<Node>, GraphError>;
-
-    /// Returns all nodes in the graph
-    fn get_all_nodes(&self, txn: &RoTxn) -> Result<Vec<Node>, GraphError>;
-    /// Returns all edges in the graph
-    fn get_all_edges(&self, txn: &RoTxn) -> Result<Vec<Edge>, GraphError>;
-
-    fn get_nodes_by_types(&self, txn: &RoTxn, labels: &[&str]) -> Result<Vec<Node>, GraphError>;
-
-    /// Creates a node entry
-    fn create_node(
-        &self,
-        txn: &mut RwTxn,
-        label: &str,
-        properties: impl IntoIterator<Item = (String, Value)>,
-        secondary_indices: Option<&[String]>,
-        id: Option<u128>,
-    ) -> Result<Node, GraphError>;
-
-    /// Creates an edge entry between two nodes
+    fn drop_node(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError>;
+    fn drop_edge(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError>;
     fn create_edge(
         &self,
         txn: &mut RwTxn,
@@ -99,32 +53,14 @@ pub trait StorageMethods {
         to_node: &u128,
         properties: impl IntoIterator<Item = (String, Value)>,
     ) -> Result<Edge, GraphError>;
-
-    /// Deletes a node entry along with all of its connected edges
-    fn drop_node(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError>;
-
-    /// Deletes an edge entry
-    fn drop_edge(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError>;
-
-    /// Updates a node entry
-    /// If a property does not exist, it will be created
-    /// If a property exists, it will be updated
-    fn update_node(
+    fn create_node(
         &self,
         txn: &mut RwTxn,
-        id: &u128,
+        label: &str,
         properties: impl IntoIterator<Item = (String, Value)>,
+        secondary_indices: Option<&[String]>,
+        id: Option<u128>,
     ) -> Result<Node, GraphError>;
-
-    /// Updates an edge entry
-    /// If a property does not exist, it will be created
-    /// If a property exists, it will be updated
-    fn update_edge(
-        &self,
-        txn: &mut RwTxn,
-        id: &u128,
-        properties: impl IntoIterator<Item = (String, Value)>,
-    ) -> Result<Edge, GraphError>;
 }
 
 pub trait SearchMethods {
