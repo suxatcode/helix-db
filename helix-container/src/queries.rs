@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
+use helixdb::helix_engine::graph_core::ops::util::range;
+use helixdb::helix_engine::vector_core::hnsw::HNSW;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
     node_matches,
@@ -291,5 +293,16 @@ pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
     txn.commit()?;
+
+    let mut count = 0;
+
+    let mut txn = db.graph_env.read_txn().unwrap();
+
+    let count = db.vectors.vectors_db.iter(&txn).unwrap().count();
+    println!("count: {:?}", count);
+
+    //for i in db.vectors.get_all_vectors(&txn, Some(0)) {
+    //}
+
     Ok(())
 }
