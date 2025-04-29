@@ -1,18 +1,25 @@
 use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
-
-use super::count::Count;
-use super::filterable::{Filterable, FilterableType};
-use super::items::{Edge, Node};
-use super::remapping::{Remapping, ResponseRemapping};
-use super::traversal_value::TraversalValue;
-use super::value::{properties_format, Value};
-use serde::{
-    de::{DeserializeSeed, VariantAccess, Visitor},
-    Deserializer, Serializer,
+use super::{
+    count::Count,
+    filterable::{
+        Filterable,
+        FilterableType,
+    },
+    items::{
+        Edge,
+        Node,
+    },
+    remapping::{
+        Remapping,
+        ResponseRemapping,
+    },
+    value::Value,
 };
 use sonic_rs::{Deserialize, Serialize};
-use std::cell::RefMut;
-use std::{collections::HashMap, fmt};
+use std::{
+    cell::RefMut,
+    collections::HashMap,
+};
 
 /// A return value enum that represents different possible outputs from graph operations.
 /// Can contain traversal results, counts, boolean flags, or empty values.

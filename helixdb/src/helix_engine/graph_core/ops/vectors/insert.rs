@@ -1,19 +1,13 @@
-use std::{collections::HashMap, iter::Once, sync::Arc};
-
-use heed3::{RoTxn, RwTxn};
-use uuid::Uuid;
-
+use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage,
         types::GraphError,
         vector_core::{hnsw::HNSW, vector::HVector},
     },
-    protocol::{filterable::Filterable, items::Node, value::Value},
+    protocol::value::Value,
 };
-
-use super::super::tr_val::TraversalVal;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct InsertVIterator {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,

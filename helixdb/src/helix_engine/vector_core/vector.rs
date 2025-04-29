@@ -122,7 +122,7 @@ impl HVector {
         let chunks = bytes.chunks_exact(std::mem::size_of::<f64>());
 
         for chunk in chunks {
-            let value = f64::from_le_bytes(chunk.try_into().unwrap());
+            let value = f64::from_be_bytes(chunk.try_into().unwrap());
             data.push(value);
         }
 

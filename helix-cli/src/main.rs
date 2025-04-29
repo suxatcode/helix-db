@@ -1,25 +1,32 @@
-use args::{CliError, HelixCLI};
-use clap::Parser;
 use helixdb::{
     helix_engine::graph_core::config::Config,
     helixc::{
         generator::generator::CodeGenerator,
         parser::helix_parser::{HelixParser, Source},
-    }, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
+    },
+    ingestion_engine::{
+        postgres_ingestion::PostgresIngestor,
+        sql_ingestion::SqliteIngestor,
+    },
 };
+use args::{CliError, HelixCLI};
+use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use instance_manager::InstanceManager;
 use std::path::PathBuf;
 use std::{
     collections::HashMap,
     fs::{self, DirEntry},
-    io::{ErrorKind, Write},
+    io::ErrorKind,
     net::{SocketAddr, TcpListener},
     path::Path,
     process::{Command, Stdio},
-    thread::sleep,
     time::Duration,
 };
+
+/* TODO:
+    - make sure every edge case for every single command is handled
+*/
 
 pub mod args;
 mod instance_manager;
@@ -809,23 +816,25 @@ QUERY hnswload(vectors: [[Float]]) =>
 QUERY hnswsearch(query: [Float], k: Integer) =>
     res <- SearchV<Type>(query, k)
     RETURN res
-
-QUERY size() =>
-	size <- V::COUNT
-	RETURN size
 "#,
+/*
+QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
+    FOR {doc, vec} IN docs {
+        doc_node <- AddN<Type>({ content: doc })
+        vectors <- BatchAddV<Doc>(vecs)
+        FOR vec IN vectors {
+            AddE<Contains>::From(doc_node)::To(vec)
+        }
+    }
+    RETURN "Success"
+
+QUERY ragsearchdoc(query: [F64]) =>
+    vec <- SearchV<Vector>(query, 1)
+    doc_node <- vec::In<Contains>
+    RETURN doc_node::{content}
+ */
             )
             .unwrap();
-            /*
-            QUERY ingestnodes() =>
-                AddN<Type>({ field: val })
-                return "Success"
-
-            QUERY ingestedges() =>
-                AddE<Type>({ field: val })::To(node1)::From(node2)
-                return "Sucess"
-            */
-
             let config_path = path.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
 
@@ -889,7 +898,7 @@ QUERY size() =>
                 }
                 "pg" | "postgres" => {
                     let spinner = create_spinner("Connecting to PostgreSQL database...");
-                    
+
                     // Create output directory if specified
                     let output_dir = command.output_dir.as_deref().unwrap_or("./");
                     if !Path::new(output_dir).exists() {
@@ -898,30 +907,30 @@ QUERY size() =>
                             std::process::exit(1);
                         });
                     }
-                    
+
                     // Run the PostgreSQL ingestion
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     let result = rt.block_on(async {
                         let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size, command.use_ssl).await;
-                        
+
                         match ingestor {
                             Ok(mut ingestor) => {
                                 finish_spinner_with_message(&spinner, true, "Connected to PostgreSQL database");
-                                
+
                                 let dump_spinner = create_spinner("Dumping data to JSONL files...");
                                 match ingestor.dump_to_json(output_dir).await {
                                     Ok(_) => {
                                         finish_spinner_with_message(&dump_spinner, true, "Successfully dumped data to JSONL files");
-                                        
+
                                         // Create schema file
                                         let schema_path = Path::new(output_dir).join("schema.hx");
                                         println!("Schema file created at: {}", schema_path.display());
-                                        
+
                                         println!("PostgreSQL ingestion completed successfully!");
                                         println!("Press ENTER to open the Helix dashboard in your browser...");
                                         let mut input = String::new();
                                         std::io::stdin().read_line(&mut input).unwrap();
-                                        
+
                                         #[cfg(target_os = "macos")]
                                         {
                                             if let Err(e) = std::process::Command::new("open")
@@ -932,7 +941,7 @@ QUERY size() =>
                                                 println!("Please visit https://helix-db.com/dashboard");
                                             }
                                         }
-                                        
+
                                         #[cfg(not(target_os = "macos"))]
                                         {
                                             if let Err(e) = open::that("https://helix-db.com/dashboard") {
@@ -1059,6 +1068,7 @@ fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
     Ok(source)
 }
 
+/*
 fn generate_rust_from_source(source: &Source, output_path: &String, numb_of_files: usize) {
     let mut generator = CodeGenerator::new();
     let mut code = String::new();
@@ -1078,6 +1088,7 @@ fn generate_rust_from_source(source: &Source, output_path: &String, numb_of_file
         ),
     };
 }
+*/
 
 fn get_cfg_deploy_path(cmd_path: Option<String>) -> Result<String, CliError> {
     if let Some(path) = cmd_path {
@@ -1099,8 +1110,10 @@ fn get_cfg_deploy_path(cmd_path: Option<String>) -> Result<String, CliError> {
     Ok(DB_DIR.to_string())
 }
 
+/*
 struct Query {
     name: String,
     query: String,
     inputs: Vec<String>,
 }
+*/

@@ -1,12 +1,11 @@
+use crate::helix_engine::types::GraphError;
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,
 };
 use serde_json::Value as JsonValue;
 use sonic_rs::{Deserialize, Serialize};
-use std::{collections::HashMap, env::consts::OS, fmt};
-
-use crate::helix_engine::types::GraphError;
+use std::{collections::HashMap, fmt};
 
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.

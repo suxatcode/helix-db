@@ -166,7 +166,7 @@ pub mod macros {
                 Ok(v) => {
                     let mut arr = [0u8; 16];
                     arr.copy_from_slice(v);
-                    u128::from_le_bytes(arr)
+                    u128::from_le_bytes(arr) // TODO: from_be_bytes??
                 }
                 Err(e) => {
                     return Err(GraphError::ConversionError(format!(

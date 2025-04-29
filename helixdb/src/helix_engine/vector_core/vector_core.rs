@@ -9,13 +9,6 @@ use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
 };
-use rand::prelude::Rng;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
-};
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_VECTOR_DATA: &str = "vector_data"; // for vector data (v:)
@@ -173,7 +166,6 @@ pub struct VectorCore {
     edges_db: Database<Bytes, U128<BigEndian>>,
     ep_db: Database<Bytes, Bytes>,
     pub config: HNSWConfig,
-    num_of_vecs: usize,
 }
 
 impl VectorCore {
@@ -188,7 +180,6 @@ impl VectorCore {
             edges_db,
             ep_db,
             config,
-            num_of_vecs: 0,
         })
     }
 
@@ -229,7 +220,7 @@ impl VectorCore {
             arr[..len].copy_from_slice(&ep_id[..len]);
 
             let ep = self
-                .get_vector(txn, u128::from_le_bytes(arr), 0, true)
+                .get_vector(txn, u128::from_be_bytes(arr), 0, true)
                 .map_err(|_| VectorError::EntryPointNotFound)?;
             Ok(ep)
         } else {
@@ -245,28 +236,6 @@ impl VectorCore {
             .map_err(VectorError::from)?;
 
         Ok(())
-    }
-
-    #[inline(always)]
-    fn get_vector(
-        &self,
-        txn: &RoTxn,
-        id: u128,
-        level: usize,
-        with_data: bool,
-    ) -> Result<HVector, VectorError> {
-        let key = Self::vector_key(id, level);
-        match self.vectors_db.get(txn, key.as_ref())? {
-            Some(bytes) => {
-                let vector = match with_data {
-                    true => HVector::from_bytes(id, level, &bytes),
-                    false => Ok(HVector::from_slice(id, level, vec![])),
-                }?;
-                Ok(vector)
-            }
-            None if level > 0 => self.get_vector(txn, id, 0, with_data),
-            None => Err(VectorError::VectorNotFound(id.to_string())),
-        }
     }
 
     // #[inline(always)]
@@ -463,6 +432,28 @@ impl VectorCore {
 }
 
 impl HNSW for VectorCore {
+    #[inline(always)]
+    fn get_vector(
+        &self,
+        txn: &RoTxn,
+        id: u128,
+        level: usize,
+        with_data: bool,
+    ) -> Result<HVector, VectorError> {
+        let key = Self::vector_key(id, level);
+        match self.vectors_db.get(txn, key.as_ref())? {
+            Some(bytes) => {
+                let vector = match with_data {
+                    true => HVector::from_bytes(id, level, &bytes),
+                    false => Ok(HVector::from_slice(id, level, vec![])),
+                }?;
+                Ok(vector)
+            }
+            None if level > 0 => self.get_vector(txn, id, 0, with_data),
+            None => Err(VectorError::VectorNotFound(id.to_string())),
+        }
+    }
+
     fn search<F>(
         &self,
         txn: &RoTxn,
@@ -527,9 +518,8 @@ impl HNSW for VectorCore {
         let new_level = self.get_new_level();
 
         let mut query = HVector::from_slice(id, 0, data.to_vec());
-        //self.num_of_vecs += 1;
-
         self.put_vector(txn, &query)?;
+
         query.level = new_level;
         if new_level > 0 {
             self.put_vector(txn, &query)?;
@@ -538,6 +528,7 @@ impl HNSW for VectorCore {
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
+                println!("entry point not found!");
                 self.set_entry_point(txn, &query)?;
                 query.set_distance(0.0);
                 return Ok(query);
@@ -633,7 +624,6 @@ impl HNSW for VectorCore {
     where
         F: Fn(&HVector) -> bool,
     {
-        //self.num_of_vecs += data.len();
         for v in data.iter() {
             let _ = self.insert::<F>(txn, v, None, None);
         }
@@ -642,12 +632,4 @@ impl HNSW for VectorCore {
 
         Ok(())
     }
-
-    /*
-    fn get_num_of_vecs(&self) -> usize {
-        self.num_of_vecs
-    }
-    */
-
-    // TODO: delete a node from the index
 }

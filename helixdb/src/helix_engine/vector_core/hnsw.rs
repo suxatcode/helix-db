@@ -63,17 +63,6 @@ pub trait HNSW {
     where
         F: Fn(&HVector) -> bool;
 
-    /// Get all vectors from the index
-    ///
-    /// # Arguments
-    ///
-    /// * `txn` - The read-only transaction to use for retrieving vectors
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a `Vec` of `HVector` if successful
-    fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError>;
-
     /// Get all vectors from the index at a specific level
     ///
     /// # Arguments
@@ -84,16 +73,26 @@ pub trait HNSW {
     /// # Returns
     ///
     /// A `Result` containing a `Vec` of `HVector` if successful
-    fn get_all_vectors_at_level(
+    fn get_all_vectors(&self, txn: &RoTxn, level: Option<usize>) -> Result<Vec<HVector>, VectorError>;
+
+
+    /// Get specific vector based on id and level
+    ///
+    /// # Arguments
+    ///
+    /// * `txn` - The transaction to use
+    /// * `id` - The id of the vector
+    /// * `level` - Which level to get the vector from
+    /// * `with_data` - Whether or not to fetch the vector with data
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a `Vec` of `HVector` if successful
+    fn get_vector(
         &self,
         txn: &RoTxn,
+        id: u128,
         level: usize,
-    ) -> Result<Vec<HVector>, VectorError>;
-
-    // Get the number of vectors in the hnsw index
-    //
-    // # Returns
-    //
-    // A `usize` of the number of vecs
-    //fn get_num_of_vecs(&self) -> usize;
+        with_data: bool,
+    ) -> Result<HVector, VectorError>;
 }

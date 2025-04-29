@@ -260,18 +260,32 @@ pub fn six_hop_friends(input: &HandlerInput, response: &mut Response) -> Result<
         Err(err) => return Err(GraphError::from(err)),
     };
 
-    let tr = G::new(Arc::clone(&db), &txn);
-    let friends_count = tr
-        .n_from_id(&data.start_id)
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .dedup()
-        .count();
+    println!("--------------");
 
-    response.body = serde_json::to_vec(&friends_count).unwrap();
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);
+    let doc_node = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
+    let vector = tr.collect_to::<Vec<_>>();
+
+    println!("doc_node id: {:?}, vector id: {:?}", doc_node.id().to_be_bytes(), vector.id().to_be_bytes());
+    println!("doc_node id: {:?}, vector id: {:?}", doc_node.id(), vector.id());
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), false, true);
+    let _ = tr.collect_to::<Vec<_>>();
+
+    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+
+    txn.commit()?;
     Ok(())
 }

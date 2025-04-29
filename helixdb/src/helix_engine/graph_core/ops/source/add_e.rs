@@ -1,16 +1,18 @@
-use heed3::PutFlags;
-use std::collections::HashMap;
-use uuid::Uuid;
-
+use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage, types::GraphError,
+        storage_core::storage_core::HelixGraphStorage,
+        vector_core::hnsw::HNSW,
+        types::GraphError,
     },
-    protocol::{items::Edge, value::Value},
+    protocol::{
+        items::Edge,
+        value::Value
+    },
 };
-
-use super::super::tr_val::TraversalVal;
+use heed3::PutFlags;
+use uuid::Uuid;
 
 pub struct AddE {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -32,7 +34,11 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
+        from_is_vec: bool,
+        to_is_vec: bool,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+
+    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError>;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
@@ -45,6 +51,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
+        from_is_vec: bool,
+        to_is_vec: bool,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let edge = Edge {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),
@@ -53,19 +61,25 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             from_node,
             to_node,
         };
+
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
-        if self
-            .storage
-            .nodes_db
-            .get(self.txn, &HelixGraphStorage::node_key(&edge.from_node))
-            .map_or(false, |node| node.is_none())
-            || self
-                .storage
-                .nodes_db
-                .get(self.txn, &HelixGraphStorage::node_key(&edge.to_node))
-                .map_or(false, |node| node.is_none())
-        {
-            result = Err(GraphError::NodeNotFound);
+
+        if let Err(err) = self.node_vec_exists(&edge.from_node, from_is_vec) {
+            result = Err(err);
+            println!(
+                "could not find from-{}: {:?}",
+                if from_is_vec { "vector" } else { "node" },
+                &edge.from_node,
+            );
+        }
+
+        if let Err(err) = self.node_vec_exists(&edge.to_node, to_is_vec) {
+            result = Err(err);
+            println!(
+                "could not find to-{}: {:?}",
+                if to_is_vec { "vector" } else { "node" },
+                &edge.to_node,
+            );
         }
 
         match bincode::serialize(&edge) {
@@ -116,15 +130,35 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 result = Err(GraphError::from(e));
             }
         }
-        if result.is_ok() {
-            result = Ok(TraversalVal::Edge(edge));
-        } else {
-            result = Err(GraphError::EdgeNotFound)
-        }
+
+        let result = match result {
+            Ok(_) => Ok(TraversalVal::Edge(edge)),
+            Err(_) => Err(GraphError::EdgeNotFound),
+        };
+
         RwTraversalIterator {
             inner: std::iter::once(result), // TODO: change to support adding multiple edges
             storage: self.storage,
             txn: self.txn,
         }
+    }
+
+    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError> {
+        if !is_vec {
+            if self
+                .storage
+                .nodes_db
+                .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))
+                .map_or(false, |node| node.is_none())
+            {
+                return Err(GraphError::NodeNotFound);
+            }
+        } else {
+            if !self.storage.vectors.get_vector(self.txn, *node_vec_id, 0, false).is_ok() {
+                return Err(GraphError::VectorError(node_vec_id.to_string()));
+            }
+        }
+
+        Ok(())
     }
 }
