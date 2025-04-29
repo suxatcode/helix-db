@@ -73,8 +73,11 @@ pub trait HNSW {
     /// # Returns
     ///
     /// A `Result` containing a `Vec` of `HVector` if successful
-    fn get_all_vectors(&self, txn: &RoTxn, level: Option<usize>) -> Result<Vec<HVector>, VectorError>;
-
+    fn get_all_vectors(
+        &self,
+        txn: &RoTxn,
+        level: Option<usize>,
+    ) -> Result<Vec<HVector>, VectorError>;
 
     /// Get specific vector based on id and level
     ///

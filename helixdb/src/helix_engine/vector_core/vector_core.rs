@@ -1,10 +1,22 @@
-use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
-use crate::helix_engine::vector_core::hnsw::HNSW;
-use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
+use crate::helix_engine::{
+    types::VectorError,
+    vector_core::{
+        vector::HVector,
+        hnsw::HNSW,
+    },
+};
 use crate::protocol::value::Value;
-use heed3::byteorder::BigEndian;
-use heed3::types::U128;
-use heed3::PutFlags;
+use itertools::Itertools;
+use rand::prelude::Rng;
+use serde::{Deserialize, Serialize};
+use std::{
+    cmp::Ordering,
+    collections::{
+        BinaryHeap,
+        HashSet,
+        HashMap,
+    },
+};
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
@@ -13,8 +25,8 @@ use heed3::{
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_VECTOR_DATA: &str = "vector_data"; // for vector data (v:)
 
-const DB_HNSW_EDGES: &str = "hnsw_edges"; // for hnsw out node data
-const DB_ENTRY_POINT: &str = "entry_point"; // for entry point
+const DB_HNSW_OUT_EDGES: &str = "hnsw_out_nodes"; // for hnsw out node data
+const VECTOR_PREFIX: &[u8] = b"v:";
 const ENTRY_POINT_KEY: &str = "entry_point";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,43 +173,48 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
 }
 
 pub struct VectorCore {
-    vectors_db: Database<Bytes, Bytes>,
-    vector_data_db: Database<Bytes, Bytes>,
-    edges_db: Database<Bytes, U128<BigEndian>>,
-    ep_db: Database<Bytes, Bytes>,
+    pub vectors_db: Database<Bytes, Bytes>,
+    pub vector_data_db: Database<Bytes, Bytes>,
+    pub out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
 }
 
 impl VectorCore {
     pub fn new(env: &Env, txn: &mut RwTxn, config: HNSWConfig) -> Result<Self, VectorError> {
-        let ep_db = env.create_database(txn, Some(DB_ENTRY_POINT))?;
         let vectors_db = env.create_database(txn, Some(DB_VECTORS))?;
         let vector_data_db = env.create_database(txn, Some(DB_VECTOR_DATA))?;
-        let edges_db = env.create_database(txn, Some(DB_HNSW_EDGES))?;
+        let out_edges_db = env.create_database(txn, Some(DB_HNSW_OUT_EDGES))?;
+
         Ok(Self {
             vectors_db,
             vector_data_db,
-            edges_db,
-            ep_db,
+            out_edges_db,
             config,
         })
     }
 
     #[inline(always)]
-    fn vector_key(id: u128, level: usize) -> [u8; 17] {
-        let mut key = [0u8; 17];
-        key[..16].copy_from_slice(&id.to_be_bytes());
-        key[16] = level as u8;
-        key
+    fn vector_key(id: u128, level: usize) -> Vec<u8> {
+        [VECTOR_PREFIX, &id.to_be_bytes(), &level.to_be_bytes()].concat()
     }
 
     #[inline(always)]
-    pub fn vec_edge_key(vec_id: &u128, level: usize) -> [u8; 17] {
-        // 2 end bytes for chunk number
-        let mut key = [0u8; 17];
-        key[0..16].copy_from_slice(&vec_id.to_be_bytes());
-        key[16] = level as u8;
-        key
+    fn out_edges_key(source_id: u128, level: usize, sink_id: Option<u128>) -> Vec<u8> {
+        match sink_id {
+            Some(sink_id) => [
+                source_id.to_be_bytes().as_slice(),
+                level.to_be_bytes().as_slice(),
+                sink_id.to_be_bytes().as_slice(),
+            ]
+            .concat()
+            .to_vec(),
+            None => [
+                source_id.to_be_bytes().as_slice(),
+                level.to_be_bytes().as_slice(),
+            ]
+            .concat()
+            .to_vec(),
+        }
     }
 
     #[inline]
@@ -213,7 +230,7 @@ impl VectorCore {
 
     #[inline]
     fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
-        let ep_id = self.ep_db.get(txn, ENTRY_POINT_KEY.as_bytes())?;
+        let ep_id = self.vectors_db.get(txn, ENTRY_POINT_KEY.as_bytes())?;
         if let Some(ep_id) = ep_id {
             let mut arr = [0u8; 16];
             let len = std::cmp::min(ep_id.len(), 16);
@@ -231,7 +248,7 @@ impl VectorCore {
     #[inline]
     fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
-        self.ep_db
+        self.vectors_db
             .put(txn, &entry_key, &entry.get_id().to_be_bytes())
             .map_err(VectorError::from)?;
 
@@ -263,19 +280,23 @@ impl VectorCore {
     where
         F: Fn(&HVector) -> bool,
     {
-        let out_key = Self::vec_edge_key(&id, level);
+        let out_key = Self::out_edges_key(id, level, None);
         let mut neighbors = Vec::with_capacity(self.config.m_max_0.min(512)); // TODO: why 512?
 
         let iter = self
-            .edges_db
+            .out_edges_db
             .lazily_decode_data()
             .prefix_iter(txn, &out_key)?;
 
         let prefix_len = out_key.len();
 
         for result in iter {
-            if let Ok((_, data)) = result {
-                let neighbor_id = data.decode().unwrap();
+            if let Ok((key, _)) = result { // TODO: fix here because not working at all
+                let mut arr = [0u8; 16];
+                let len = std::cmp::min(key.len(), 16);
+                arr[..len].copy_from_slice(&key[prefix_len..(prefix_len+len)]);
+                let neighbor_id = u128::from_be_bytes(arr);
+
                 if neighbor_id != id {
                     if let Ok(vector) = self.get_vector(txn, neighbor_id, level, true) {
                         // TODO: look at implementing a macro that actually just runs each function rather than iterating through
@@ -299,10 +320,10 @@ impl VectorCore {
         neighbors: &'a BinaryHeap<HVector>,
         level: usize,
     ) -> Result<(), VectorError> {
-        let prefix = Self::vec_edge_key(&id, level);
+        let prefix = Self::out_edges_key(id, level, None);
 
         let mut keys_to_delete: HashSet<Vec<u8>> = self
-            .edges_db
+            .out_edges_db
             .prefix_iter(txn, prefix.as_ref())?
             .filter_map(|result| result.ok().map(|(key, _)| key.to_vec()))
             .collect();
@@ -314,21 +335,19 @@ impl VectorCore {
                 if neighbor_id == id {
                     return Ok(());
                 }
-                let out_key = Self::vec_edge_key(&id, level);
-                keys_to_delete.remove(&out_key.to_vec());
-                self.edges_db
-                    .put_with_flags(txn, PutFlags::APPEND_DUP, &out_key, &neighbor_id)?;
+                let out_key = Self::out_edges_key(id, level, Some(neighbor_id));
+                keys_to_delete.remove(&out_key);
+                self.out_edges_db.put(txn, &out_key, &())?;
 
-                let in_key = Self::vec_edge_key(&neighbor_id, level);
-                keys_to_delete.remove(&in_key.to_vec());
-                self.edges_db
-                    .put_with_flags(txn, PutFlags::APPEND_DUP, &in_key, &id)?;
+                let in_key = Self::out_edges_key(neighbor_id, level, Some(id));
+                keys_to_delete.remove(&in_key);
+                self.out_edges_db.put(txn, &in_key, &())?;
 
                 Ok(())
             })?;
 
         for key in keys_to_delete {
-            self.edges_db.delete(txn, &key)?;
+            self.out_edges_db.delete(txn, &key)?;
         }
 
         Ok(())
@@ -590,34 +609,18 @@ impl HNSW for VectorCore {
         Ok(query)
     }
 
-    fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
-        let mut vectors = Vec::new();
-
-        let prefix_iter = self.vectors_db.iter(txn)?;
-        for result in prefix_iter {
-            let (_, value) = result?;
-            let vector: HVector = bincode::deserialize(&value)?;
-            vectors.push(vector);
-        }
-        Ok(vectors)
-    }
-
-    fn get_all_vectors_at_level(
-        &self,
-        txn: &RoTxn,
-        level: usize,
-    ) -> Result<Vec<HVector>, VectorError> {
-        let mut vectors = Vec::new();
-
-        let prefix_iter = self.vectors_db.iter(txn)?;
-        for result in prefix_iter {
-            let (_, value) = result?;
-            let vector: HVector = bincode::deserialize(&value)?;
-            if vector.level == level {
-                vectors.push(vector);
-            }
-        }
-        Ok(vectors)
+    fn get_all_vectors(&self, txn: &RoTxn, level: Option<usize>) -> Result<Vec<HVector>, VectorError> {
+        self.vectors_db
+            .prefix_iter(txn, VECTOR_PREFIX)?
+            .map(|result| {
+                result.map_err(VectorError::from)
+                    .and_then(|(_, value)| {
+                        bincode::deserialize(&value)
+                            .map_err(VectorError::from)
+                    })
+            })
+            .filter_ok(|vector: &HVector| level.map_or(true, |l| vector.level == l))
+            .collect()
     }
 
     fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
