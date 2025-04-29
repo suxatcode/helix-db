@@ -66,6 +66,10 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
             .into_iter()
             .map(|vector| Ok::<TraversalVal, GraphError>(TraversalVal::Vector(vector)));
 
+        for i in iter.clone() {
+            println!("{:?}", i.unwrap());
+        }
+
         let iter = SearchV { iter };
         // Wrap it with the RoTraversalIterator adapter
         RoTraversalIterator {

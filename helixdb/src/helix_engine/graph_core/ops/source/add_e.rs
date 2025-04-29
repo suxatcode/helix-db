@@ -113,7 +113,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         ) {
             Ok(_) => {}
             Err(e) => {
-                println!("error adding out edge: {:?}", e);
+                println!("add_e => error adding out edge: {:?}", e);
                 result = Err(GraphError::from(e));
             }
         }
@@ -126,7 +126,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         ) {
             Ok(_) => {}
             Err(e) => {
-                println!("error adding in edge: {:?}", e);
+                println!("add_e => error adding in edge: {:?}", e);
                 result = Err(GraphError::from(e));
             }
         }

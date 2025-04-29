@@ -62,6 +62,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
             Err(e) => Err(GraphError::from(e)),
         };
 
+        println!("vector inserted: {:?}", result.is_ok());
+
         RwTraversalIterator {
             inner: std::iter::once(result),
             storage: self.storage,

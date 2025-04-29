@@ -123,34 +123,43 @@ pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(),
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-        let tr = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector) -> bool>(&data.query, 1, None)
-;    let vec = tr.collect_to::<Vec<_>>();
+    let tr = G::new(Arc::clone(&db), &txn)
+        .search_v::<fn(&HVector) -> bool>(&data.query, 1, None);
+    let vec = tr.collect_to::<Vec<_>>();
 
-        let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
-.in_("Contains")
-;    let doc_node = tr.collect_to::<Vec<_>>();
+    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
+        .in_("Contains");
+    let doc_node = tr.collect_to::<Vec<_>>();
 
-        let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone())
-        ;let tr = tr.map(|item| {
-    match item {
-    Ok(ref item) => {
-    let content = item.check_property("content");
-        let content_remapping = Remapping::new(false, None, Some(
-                        match content {
-                            Some(value) => ReturnValue::from(value.clone()),
-                            None => return Err(GraphError::ConversionError(
-                                "Property not found on content".to_string(),
-                            )),
-                        }
-                    ));remapping_vals.borrow_mut().insert(
-    item.id().clone(),
-    ResponseRemapping::new(
-    HashMap::from([
-("content".to_string(), content_remapping),
-    ]),    false    ),    );        }    Err(e) => {
-    println!("Error: {:?}", e);
-    return Err(GraphError::ConversionError("Error: {:?}".to_string()))    }};    item}).filter_map(|item| item.ok());
+    let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone());
+    let tr = tr.map(|item| {
+        match item {
+        Ok(ref item) => {
+            let content = item.check_property("content");
+                let content_remapping = Remapping::new(false, None, Some(
+                                match content {
+                                    Some(value) => ReturnValue::from(value.clone()),
+                                    None => return Err(GraphError::ConversionError(
+                                        "Property not found on content".to_string(),
+                                    )),
+                                }
+                ));
+                remapping_vals.borrow_mut().insert(
+                    item.id().clone(),
+                    ResponseRemapping::new(
+                        HashMap::from([
+                            ("content".to_string(), content_remapping),
+                        ]),
+                        false
+                    ),
+                );
+        }
+        Err(e) => {
+            println!("Error: {:?}", e);
+            return Err(GraphError::ConversionError("Error: {:?}".to_string()))
+        }};
+        item
+    }).filter_map(|item| item.ok());
     let return_val = tr.collect::<Vec<_>>();
     return_vals.insert("doc_node".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
@@ -238,7 +247,7 @@ pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), 
     let vector = tr.collect_to::<Vec<_>>();
 
     println!("doc_node id: {:?}, vector id: {:?}", doc_node.id().to_be_bytes(), vector.id().to_be_bytes());
-    println!("vector id: {:?}", vector.id());
+    println!("doc_node id: {:?}, vector id: {:?}", doc_node.id(), vector.id());
 
     let tr = G::new_mut(Arc::clone(&db), &mut txn)
         .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), false, true); // TODO: ql needs to include this for vec not vec
