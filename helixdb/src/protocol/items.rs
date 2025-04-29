@@ -1,15 +1,10 @@
 use crate::helix_engine::types::GraphError;
-
-use super::count::Count;
-use super::traversal_value::TraversalValue;
 use super::value::{properties_format, Value};
-use serde::{
-    de::{DeserializeSeed, VariantAccess, Visitor},
-    Deserializer, Serializer,
-};
 use sonic_rs::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::{collections::HashMap, fmt, hash::Hash};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+};
 
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.

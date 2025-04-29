@@ -236,10 +236,10 @@ pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), 
     let vector = tr.collect_to::<Vec<_>>();
 
     println!("doc_node id: {:?}, vector id: {:?}", doc_node.id().to_be_bytes(), vector.id().to_be_bytes());
-    println!("vector id: {:?}", vector.id());
+    println!("doc_node id: {:?}, vector id: {:?}", doc_node.id(), vector.id());
 
     let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .add_e("Contains", props!{}, None, doc_node.id(), vector.id());
+        .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), false, true);
     let _ = tr.collect_to::<Vec<_>>();
 
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));

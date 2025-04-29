@@ -1,16 +1,25 @@
-use crate::helix_engine::vector_core::hnsw::HNSW;
-use crate::helix_engine::{types::VectorError, vector_core::vector::HVector};
+use crate::helix_engine::{
+    types::VectorError,
+    vector_core::{
+        vector::HVector,
+        hnsw::HNSW,
+    },
+};
 use crate::protocol::value::Value;
+use itertools::Itertools;
+use rand::prelude::Rng;
+use serde::{Deserialize, Serialize};
+use std::{
+    cmp::Ordering,
+    collections::{
+        BinaryHeap,
+        HashSet,
+        HashMap,
+    },
+};
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
-};
-use rand::prelude::Rng;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
 };
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
@@ -164,11 +173,10 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
 }
 
 pub struct VectorCore {
-    vectors_db: Database<Bytes, Bytes>,
-    vector_data_db: Database<Bytes, Bytes>,
-    out_edges_db: Database<Bytes, Unit>,
+    pub vectors_db: Database<Bytes, Bytes>,
+    pub vector_data_db: Database<Bytes, Bytes>,
+    pub out_edges_db: Database<Bytes, Unit>,
     pub config: HNSWConfig,
-    num_of_vecs: usize,
 }
 
 impl VectorCore {
@@ -182,7 +190,6 @@ impl VectorCore {
             vector_data_db,
             out_edges_db,
             config,
-            num_of_vecs: 0,
         })
     }
 
@@ -246,28 +253,6 @@ impl VectorCore {
             .map_err(VectorError::from)?;
 
         Ok(())
-    }
-
-    #[inline(always)]
-    fn get_vector(
-        &self,
-        txn: &RoTxn,
-        id: u128,
-        level: usize,
-        with_data: bool,
-    ) -> Result<HVector, VectorError> {
-        let key = Self::vector_key(id, level);
-        match self.vectors_db.get(txn, key.as_ref())? {
-            Some(bytes) => {
-                let vector = match with_data {
-                    true => HVector::from_bytes(id, level, &bytes),
-                    false => Ok(HVector::from_slice(id, level, vec![])),
-                }?;
-                Ok(vector)
-            }
-            None if level > 0 => self.get_vector(txn, id, 0, with_data),
-            None => Err(VectorError::VectorNotFound(id.to_string())),
-        }
     }
 
     // #[inline(always)]
@@ -466,6 +451,28 @@ impl VectorCore {
 }
 
 impl HNSW for VectorCore {
+    #[inline(always)]
+    fn get_vector(
+        &self,
+        txn: &RoTxn,
+        id: u128,
+        level: usize,
+        with_data: bool,
+    ) -> Result<HVector, VectorError> {
+        let key = Self::vector_key(id, level);
+        match self.vectors_db.get(txn, key.as_ref())? {
+            Some(bytes) => {
+                let vector = match with_data {
+                    true => HVector::from_bytes(id, level, &bytes),
+                    false => Ok(HVector::from_slice(id, level, vec![])),
+                }?;
+                Ok(vector)
+            }
+            None if level > 0 => self.get_vector(txn, id, 0, with_data),
+            None => Err(VectorError::VectorNotFound(id.to_string())),
+        }
+    }
+
     fn search<F>(
         &self,
         txn: &RoTxn,
@@ -530,9 +537,8 @@ impl HNSW for VectorCore {
         let new_level = self.get_new_level();
 
         let mut query = HVector::from_slice(id, 0, data.to_vec());
-        //self.num_of_vecs += 1;
-
         self.put_vector(txn, &query)?;
+
         query.level = new_level;
         if new_level > 0 {
             self.put_vector(txn, &query)?;
@@ -602,41 +608,24 @@ impl HNSW for VectorCore {
         Ok(query)
     }
 
-    fn get_all_vectors(&self, txn: &RoTxn) -> Result<Vec<HVector>, VectorError> {
-        let mut vectors = Vec::new();
-
-        let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
-        for result in prefix_iter {
-            let (_, value) = result?;
-            let vector: HVector = bincode::deserialize(&value)?;
-            vectors.push(vector);
-        }
-        Ok(vectors)
-    }
-
-    fn get_all_vectors_at_level(
-        &self,
-        txn: &RoTxn,
-        level: usize,
-    ) -> Result<Vec<HVector>, VectorError> {
-        let mut vectors = Vec::new();
-
-        let prefix_iter = self.vectors_db.prefix_iter(txn, VECTOR_PREFIX)?;
-        for result in prefix_iter {
-            let (_, value) = result?;
-            let vector: HVector = bincode::deserialize(&value)?;
-            if vector.level == level {
-                vectors.push(vector);
-            }
-        }
-        Ok(vectors)
+    fn get_all_vectors(&self, txn: &RoTxn, level: Option<usize>) -> Result<Vec<HVector>, VectorError> {
+        self.vectors_db
+            .prefix_iter(txn, VECTOR_PREFIX)?
+            .map(|result| {
+                result.map_err(VectorError::from)
+                    .and_then(|(_, value)| {
+                        bincode::deserialize(&value)
+                            .map_err(VectorError::from)
+                    })
+            })
+            .filter_ok(|vector: &HVector| level.map_or(true, |l| vector.level == l))
+            .collect()
     }
 
     fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
     where
         F: Fn(&HVector) -> bool,
     {
-        //self.num_of_vecs += data.len();
         for v in data.iter() {
             let _ = self.insert::<F>(txn, v, None, None);
         }
@@ -645,12 +634,4 @@ impl HNSW for VectorCore {
 
         Ok(())
     }
-
-    /*
-    fn get_num_of_vecs(&self) -> usize {
-        self.num_of_vecs
-    }
-    */
-
-    // TODO: delete a node from the index
 }

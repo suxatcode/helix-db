@@ -1,22 +1,20 @@
 use crate::helix_engine::types::GraphError;
-use crate::helix_gateway::router::router::HandlerInput;
-use crate::protocol::items::{Edge, Node};
-use crate::protocol::response::Response;
-use crate::protocol::traversal_value::TraversalValue;
-use crate::protocol::value::Value as ProtocolValue;
-use get_routes::local_handler;
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use rusqlite::{
     params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::fmt;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
-use std::sync::Arc;
+use std::{
+    error::Error,
+    fmt,
+    fs::File,
+    io::Write,
+    path::Path,
+    collections::{
+        HashMap,
+        HashSet
+    },
+};
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -998,7 +996,7 @@ pub struct IngestSqlRequest {
 // / - The ingest function above does the conversion to helix format
 // / - The CLI will do the uploading to s3
 // / - The admin server or cli will handle the downloading from s3
-// /// 
+// ///
 // #[local_handler]
 // pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
 //     let data: IngestSqlRequest = match sonic_rs::from_slice(&input.request.body) {

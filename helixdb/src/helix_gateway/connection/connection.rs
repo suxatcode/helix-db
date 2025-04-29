@@ -1,20 +1,16 @@
 use crate::helix_engine::graph_core::graph_core::HelixGraphEngine;
 use crate::helix_engine::types::GraphError;
-use crate::protocol::response::Response;
 use chrono::{DateTime, Utc};
-use futures::future::lazy;
-use socket2::{Domain, Socket, Type};
-use tokio::io::{stdout, AsyncWriteExt};
-use std::future::Future;
-use std::net::SocketAddr;
-use std::time::Duration;
+use uuid::Uuid;
 use std::{
+    net::SocketAddr,
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use tokio::net::{TcpListener, TcpStream};
-use tokio::task::JoinHandle;
-use uuid::Uuid;
+use tokio::{
+    net::TcpListener,
+    task::JoinHandle,
+};
 
 use crate::helix_gateway::{router::router::HelixRouter, thread_pool::thread_pool::ThreadPool};
 
@@ -50,25 +46,25 @@ impl ConnectionHandler {
             eprintln!("Failed to bind to address {}: {}", self.address, e);
             GraphError::GraphConnectionError("Failed to bind to address".to_string(), e)
         })?;
-        
+
         // Log binding success to stderr since stdout might be buffered
-        
+
         let active_connections = Arc::clone(&self.active_connections);
         let thread_pool_sender = self.thread_pool.sender.clone();
         let address = self.address.clone();
-        
-        
+
+
         let handle = tokio::spawn(async move {
 
             loop {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
-                    
+
                         // Configure TCP stream
                         if let Err(e) = stream.set_nodelay(true) {
                             eprintln!("Failed to set TCP_NODELAY: {}", e);
                         }
-                        
+
                         // Create a client connection record
                         let client_id = Uuid::new_v4().to_string();
                         let client = ClientConnection {
@@ -76,13 +72,13 @@ impl ConnectionHandler {
                             last_active: Utc::now(),
                             addr,
                         };
-                        
+
                         // Add to active connections
                         active_connections
                             .lock()
                             .unwrap()
                             .insert(client_id.clone(), client);
-                        
+
                         // Send to thread pool
                         match thread_pool_sender.send_async(stream).await {
                             Ok(_) => (),

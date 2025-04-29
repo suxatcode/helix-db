@@ -1,10 +1,15 @@
+use crate::{
+    helixc::parser::parser_methods::ParserError,
+    protocol::traversal_value::TraversalValueError,
+};
 use core::fmt;
-use std::{fmt::format, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
-
 use heed3::Error as HeedError;
 use sonic_rs::Error as SonicError;
-use crate::helixc::parser::parser_methods::ParserError;
-use crate::protocol::traversal_value::TraversalValueError;
+use std::{
+    net::AddrParseError,
+    str::Utf8Error,
+    string::FromUtf8Error
+};
 
 #[derive(Debug)]
 pub enum GraphError {
@@ -128,7 +133,7 @@ impl From<uuid::Error> for GraphError {
     fn from(error: uuid::Error) -> Self {
         GraphError::ConversionError(format!("uuid error: {}", error.to_string()))
     }
-}   
+}
 
 
 impl From<TraversalValueError> for GraphError {
@@ -203,6 +208,3 @@ impl From<bincode::Error> for VectorError {
         VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
-
-
-

@@ -1,16 +1,21 @@
-use heed3::PutFlags;
-use std::collections::HashMap;
-use uuid::Uuid;
-
+use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage, types::GraphError,
+        storage_core::storage_core::HelixGraphStorage,
+        vector_core::hnsw::HNSW,
+        types::{
+            GraphError,
+            VectorError
+        },
     },
-    protocol::{items::Edge, value::Value},
+    protocol::{
+        items::Edge,
+        value::Value
+    },
 };
-
-use super::super::tr_val::TraversalVal;
+use heed3::PutFlags;
+use uuid::Uuid;
 
 pub struct AddE {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -32,6 +37,8 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
+        from_is_vec: bool,
+        to_is_vec: bool,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
@@ -45,6 +52,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
+        from_is_vec: bool,
+        to_is_vec: bool,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let edge = Edge {
             id: id.unwrap_or(Uuid::new_v4().as_u128()),
@@ -53,19 +62,43 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             from_node,
             to_node,
         };
+
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
-        if self
-            .storage
-            .nodes_db
-            .get(self.txn, &HelixGraphStorage::node_key(&edge.from_node))
-            .map_or(false, |node| node.is_none())
-            || self
+
+        // TODO: custom method
+        if !from_is_vec {
+            if self
+                .storage
+                .nodes_db
+                .get(self.txn, &HelixGraphStorage::node_key(&edge.from_node))
+                .map_or(false, |node| node.is_none())
+            {
+                result = Err(GraphError::NodeNotFound);
+                println!("Error: could not find from node: {:?}", &edge.from_node);
+            }
+        } else {
+            if self.storage.vectors.get_vector(self.txn, edge.from_node, 0, false).is_ok() {
+                result = Err(GraphError::VectorError(format!("{:?}", &edge.from_node)));
+                println!("Error: could not find from vector: {:?}", &edge.from_node);
+            }
+        }
+
+        // TODO: custom method
+        if !to_is_vec {
+            if self
                 .storage
                 .nodes_db
                 .get(self.txn, &HelixGraphStorage::node_key(&edge.to_node))
                 .map_or(false, |node| node.is_none())
-        {
-            result = Err(GraphError::NodeNotFound);
+            {
+                result = Err(GraphError::NodeNotFound);
+                println!("Error: could not find from node: {:?}", &edge.to_node);
+            }
+        } else {
+            if self.storage.vectors.get_vector(self.txn, edge.to_node, 0, false).is_ok() {
+                result = Err(GraphError::VectorError(format!("{:?}", &edge.to_node)));
+                println!("Error: could not find from vector: {:?}", &edge.to_node);
+            }
         }
 
         match bincode::serialize(&edge) {
@@ -116,11 +149,12 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 result = Err(GraphError::from(e));
             }
         }
-        if result.is_ok() {
-            result = Ok(TraversalVal::Edge(edge));
-        } else {
-            result = Err(GraphError::EdgeNotFound)
-        }
+
+        match result {
+            Ok(_) => Ok(TraversalVal::Edge(edge)),
+            Err(_) => Err(GraphError::EdgeNotFound),
+        };
+
         RwTraversalIterator {
             inner: std::iter::once(result), // TODO: change to support adding multiple edges
             storage: self.storage,

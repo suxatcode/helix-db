@@ -6,13 +6,12 @@ use lazy_static::lazy_static;
 use tokio_postgres::{
     Config,
     NoTls,
-    config::Host,
 };
 use std::{
     fs,
     collections::HashSet,
     path::Path,
-    str::{FromStr, from_utf8},
+    str::FromStr,
 };
 
 async fn cleanup_database(client: &mut tokio_postgres::Client) -> Result<(), Box<dyn std::error::Error>> {
