@@ -48,37 +48,6 @@ impl<'a> Iterator for InEdgesIterator<'a, RwTxn<'a>> {
     }
 }
 
-pub struct InEdges<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, F, T>
-where
-    F: FnMut(Result<TraversalVal, GraphError>) -> InEdgesIterator<'a, T>,
-    InEdgesIterator<'a, T>: std::iter::Iterator,
-    T: 'a,
-{
-    iter: std::iter::Flatten<std::iter::Map<I, F>>,
-}
-
-impl<'a, I, F> Iterator for InEdges<'a, I, F, RoTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> InEdgesIterator<'a, RoTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl<'a, I, F> Iterator for InEdges<'a, I, F, RwTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> InEdgesIterator<'a, RwTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 pub trait InEdgesAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     fn in_e(
         self,
@@ -117,7 +86,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
             .flatten();
 
         RoTraversalIterator {
-            inner: InEdges { iter },
+            inner: iter,
             storage,
             txn,
         }

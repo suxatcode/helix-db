@@ -404,8 +404,9 @@ fn test_in_e() {
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
+
     let edges = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person2.id)
         .in_e("knows")
         .collect_to::<Vec<_>>();
 
