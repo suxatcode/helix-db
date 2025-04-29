@@ -54,7 +54,6 @@ impl CodeGenerator {
         output.push_str("use helixdb::{\n");
         output.push_str("    node_matches,\n");
         output.push_str("    props,\n");
-        output.push_str("    helix_engine::graph_core::traversal::TraversalBuilder,\n");
         output.push_str("    helix_engine::graph_core::ops::{\n");
         output.push_str("        g::G,\n");
         output.push_str("        in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},\n");
@@ -1063,8 +1062,8 @@ impl CodeGenerator {
             Expression::BooleanLiteral(b) => b.to_string(),
             Expression::Exists(traversal) => {
                 format!(
-                    "{{ 
-                let count = G::new(Arc::clone(&db), val.clone()){}.count(); 
+                    "{{
+                let count = G::new(Arc::clone(&db), val.clone()){}.count();
                 count > 0 }}",
                     self.generate_traversal(traversal, query)
                 )
@@ -1626,7 +1625,7 @@ impl CodeGenerator {
                     output.push_str(&mut self.indent());
                     if let Variable(var_name) = &traversal.start {
                         output.push_str(&format!(
-                            "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n", 
+                            "return_vals.insert(\"{}\".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));\n",
                             var_name,
                         ));
                     } else {
