@@ -4,10 +4,7 @@ use crate::{
         graph_core::traversal_iter::RwTraversalIterator,
         storage_core::storage_core::HelixGraphStorage,
         vector_core::hnsw::HNSW,
-        types::{
-            GraphError,
-            VectorError
-        },
+        types::GraphError,
     },
     protocol::{
         items::Edge,
@@ -40,6 +37,8 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         from_is_vec: bool,
         to_is_vec: bool,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+
+    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError>;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
@@ -65,40 +64,22 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
 
-        // TODO: custom method
-        if !from_is_vec {
-            if self
-                .storage
-                .nodes_db
-                .get(self.txn, &HelixGraphStorage::node_key(&edge.from_node))
-                .map_or(false, |node| node.is_none())
-            {
-                result = Err(GraphError::NodeNotFound);
-                println!("Error: could not find from node: {:?}", &edge.from_node);
-            }
-        } else {
-            if self.storage.vectors.get_vector(self.txn, edge.from_node, 0, false).is_ok() {
-                result = Err(GraphError::VectorError(format!("{:?}", &edge.from_node)));
-                println!("Error: could not find from vector: {:?}", &edge.from_node);
-            }
+        if let Err(err) = self.node_vec_exists(&edge.from_node, from_is_vec) {
+            result = Err(err);
+            println!(
+                "could not find from-{}: {:?}",
+                if from_is_vec { "vector" } else { "node" },
+                &edge.from_node,
+            );
         }
 
-        // TODO: custom method
-        if !to_is_vec {
-            if self
-                .storage
-                .nodes_db
-                .get(self.txn, &HelixGraphStorage::node_key(&edge.to_node))
-                .map_or(false, |node| node.is_none())
-            {
-                result = Err(GraphError::NodeNotFound);
-                println!("Error: could not find from node: {:?}", &edge.to_node);
-            }
-        } else {
-            if self.storage.vectors.get_vector(self.txn, edge.to_node, 0, false).is_ok() {
-                result = Err(GraphError::VectorError(format!("{:?}", &edge.to_node)));
-                println!("Error: could not find from vector: {:?}", &edge.to_node);
-            }
+        if let Err(err) = self.node_vec_exists(&edge.to_node, to_is_vec) {
+            result = Err(err);
+            println!(
+                "could not find to-{}: {:?}",
+                if to_is_vec { "vector" } else { "node" },
+                &edge.to_node,
+            );
         }
 
         match bincode::serialize(&edge) {
@@ -150,7 +131,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             }
         }
 
-        match result {
+        let result = match result {
             Ok(_) => Ok(TraversalVal::Edge(edge)),
             Err(_) => Err(GraphError::EdgeNotFound),
         };
@@ -160,5 +141,24 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             storage: self.storage,
             txn: self.txn,
         }
+    }
+
+    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError> {
+        if !is_vec {
+            if self
+                .storage
+                .nodes_db
+                .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))
+                .map_or(false, |node| node.is_none())
+            {
+                return Err(GraphError::NodeNotFound);
+            }
+        } else {
+            if !self.storage.vectors.get_vector(self.txn, *node_vec_id, 0, false).is_ok() {
+                return Err(GraphError::VectorError(node_vec_id.to_string()));
+            }
+        }
+
+        Ok(())
     }
 }

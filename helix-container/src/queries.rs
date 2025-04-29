@@ -221,6 +221,8 @@ pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), 
         Err(err) => return Err(GraphError::from(err)),
     };
 
+    println!("--------------");
+
     let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
     let db = Arc::clone(&input.graph.storage);
     let mut txn = db.graph_env.write_txn().unwrap();

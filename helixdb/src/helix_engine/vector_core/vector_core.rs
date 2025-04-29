@@ -237,7 +237,7 @@ impl VectorCore {
             arr[..len].copy_from_slice(&ep_id[..len]);
 
             let ep = self
-                .get_vector(txn, u128::from_le_bytes(arr), 0, true)
+                .get_vector(txn, u128::from_be_bytes(arr), 0, true)
                 .map_err(|_| VectorError::EntryPointNotFound)?;
             Ok(ep)
         } else {
@@ -291,10 +291,10 @@ impl VectorCore {
         let prefix_len = out_key.len();
 
         for result in iter {
-            if let Ok((key, _)) = result {
+            if let Ok((key, _)) = result { // TODO: fix here because not working at all
                 let mut arr = [0u8; 16];
                 let len = std::cmp::min(key.len(), 16);
-                arr[..len].copy_from_slice(&key[prefix_len..len]);
+                arr[..len].copy_from_slice(&key[prefix_len..(prefix_len+len)]);
                 let neighbor_id = u128::from_le_bytes(arr);
 
                 if neighbor_id != id {
@@ -547,6 +547,7 @@ impl HNSW for VectorCore {
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
+                println!("entry point not found!");
                 self.set_entry_point(txn, &query)?;
                 query.set_distance(0.0);
                 return Ok(query);
