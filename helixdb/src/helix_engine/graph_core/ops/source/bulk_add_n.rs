@@ -55,7 +55,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                     if let Err(e) = self.storage.nodes_db.put_with_flags(
                         self.txn,
                         PutFlags::APPEND,
-                        &HelixGraphStorage::node_key(&node.id),
+                        &node.id.to_be_bytes(),
                         &bytes,
                     ) {
                         result = Err(GraphError::from(e));
@@ -65,9 +65,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
             }
 
             // insert label
-            match self.storage.node_labels_db.put_with_flags(
+            match self.storage.node_labels_db.put(
                 self.txn,
-                PutFlags::APPEND,
                 &HelixGraphStorage::node_label_key(&node.label, Some(&node.id)),
                 &(),
             ) {

@@ -1,7 +1,8 @@
 use crate::helix_engine::graph_core::config::Config;
 use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
 use crate::protocol::filterable::Filterable;
-use crate::protocol::items::{SerializedEdge, SerializedNode};
+use crate::protocol::items::{v6_uuid, SerializedEdge, SerializedNode};
+use crate::protocol::label_hash::hash_label;
 
 use heed3::{
     types::*, Database, DatabaseFlags, Env, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
@@ -32,7 +33,7 @@ const DB_EDGE_LABELS: &str = "edge_labels"; // For edge label indices (el:)
 const DB_OUT_EDGES: &str = "out_edges"; // For outgoing edge indices (o:)
 const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
-// Key prefixes for different types of data
+                                  // Key prefixes for different types of data
 
 pub struct HelixGraphStorage {
     pub graph_env: Env<WithTls>,
@@ -120,7 +121,7 @@ impl HelixGraphStorage {
     #[inline(always)]
     pub fn new_node(label: &str, properties: impl IntoIterator<Item = (String, Value)>) -> Node {
         Node {
-            id: Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         }
@@ -134,7 +135,7 @@ impl HelixGraphStorage {
         properties: impl IntoIterator<Item = (String, Value)>,
     ) -> Edge {
         Edge {
-            id: Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: label.to_string(),
             from_node,
             to_node,
@@ -150,12 +151,12 @@ impl HelixGraphStorage {
     }
 
     // todo look into using a shorter hash for space efficiency
-    #[inline(always)]
-    pub fn hash_label(label: &str) -> [u8; 4] {
-        let mut hash = twox_hash::XxHash32::with_seed(0);
-        hash.write(label.as_bytes());
-        hash.finish_32().to_le_bytes()
-    }
+    // #[inline(always)]
+    // pub fn hash_label(label: &str) -> [u8; 4] {
+    //     let mut hash = twox_hash::XxHash32::with_seed(0);
+    //     hash.write(label.as_bytes());
+    //     hash.finish_32().to_le_bytes()
+    // }
 
     #[inline(always)]
     pub fn node_key(id: &u128) -> Vec<u8> {
@@ -169,7 +170,7 @@ impl HelixGraphStorage {
 
     #[inline(always)]
     pub fn node_label_key(label: &str, id: Option<&u128>) -> Vec<u8> {
-        let label_hash = Self::hash_label(label);
+        let label_hash = hash_label(label, None);
         match id {
             Some(id) => [label_hash.as_slice(), id.to_be_bytes().as_slice()].concat(),
             None => label_hash.to_vec(),
@@ -187,18 +188,18 @@ impl HelixGraphStorage {
     // key = from-node(16) | label-id(4) | chunk-no(2)   ← 22 B
     // val = to-node(16)  | edge-id(16)                  ← 32 B (DUPFIXED)
     #[inline(always)]
-    pub fn out_edge_key(from_node_id: &u128, label: &[u8; 4]) -> [u8; 22] {
+    pub fn out_edge_key(from_node_id: &u128, label: &[u8; 4]) -> [u8; 20] {
         // 2 end bytes for chunk number
-        let mut key = [0u8; 22];
+        let mut key = [0u8; 20];
         key[0..16].copy_from_slice(&from_node_id.to_be_bytes());
         key[16..20].copy_from_slice(label);
         key
     }
 
     #[inline(always)]
-    pub fn in_edge_key(to_node_id: &u128, label: &[u8; 4]) -> [u8; 22] {
+    pub fn in_edge_key(to_node_id: &u128, label: &[u8; 4]) -> [u8; 20] {
         // 2 end bytes for chunk number
-        let mut key = [0u8; 22];
+        let mut key = [0u8; 20];
         key[0..16].copy_from_slice(&to_node_id.to_be_bytes());
         key[16..20].copy_from_slice(label);
         key
@@ -393,7 +394,7 @@ impl StorageMethods for HelixGraphStorage {
         for edge in out_edges.iter().chain(in_edges.iter()) {
             // Delete edge data
             self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
-            let label_hash = Self::hash_label(&edge.label);
+            let label_hash = hash_label(&edge.label, None);
             self.edge_labels_db
                 .delete(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)))?;
             self.out_edges_db
@@ -417,7 +418,7 @@ impl StorageMethods for HelixGraphStorage {
             None => return Err(GraphError::EdgeNotFound),
         };
         let edge: Edge = bincode::deserialize(edge_data)?;
-        let label_hash = Self::hash_label(&edge.label);
+        let label_hash = hash_label(&edge.label, None);
         // Delete all edge-related data
         self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
         self.edge_labels_db
@@ -439,7 +440,7 @@ impl StorageMethods for HelixGraphStorage {
         id: Option<u128>,
     ) -> Result<Node, GraphError> {
         let node = Node {
-            id: id.unwrap_or(Uuid::new_v4().as_u128()),
+            id: id.unwrap_or(v6_uuid()),
             label: label.to_string(),
             properties: HashMap::from_iter(properties),
         };
@@ -506,7 +507,7 @@ impl StorageMethods for HelixGraphStorage {
         }
 
         let edge = Edge {
-            id: Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: label.to_string(),
             from_node: *from_node,
             to_node: *to_node,
@@ -517,7 +518,7 @@ impl StorageMethods for HelixGraphStorage {
         self.edges_db
             .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
 
-        let label_hash = Self::hash_label(label);
+        let label_hash = hash_label(label, None);
         // Store edge label index
         self.edge_labels_db
             .put(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)), &())?;

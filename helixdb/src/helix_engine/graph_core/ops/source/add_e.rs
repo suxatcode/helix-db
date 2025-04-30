@@ -2,18 +2,21 @@ use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage,
-        vector_core::hnsw::HNSW,
-        types::GraphError,
+        storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::hnsw::HNSW,
     },
     protocol::{
-        items::Edge,
-        value::Value
+        items::{v6_uuid, Edge},
+        label_hash::hash_label,
+        value::Value,
     },
 };
 use heed3::PutFlags;
 use uuid::Uuid;
 
+pub enum EdgeType {
+    Vec,
+    Std,
+}
 pub struct AddE {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
 }
@@ -34,11 +37,11 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
-        from_is_vec: bool,
-        to_is_vec: bool,
+        should_check: bool,
+        edge_type: EdgeType,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 
-    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError>;
+    fn node_vec_exists(&self, node_vec_id: &u128, edge_type: EdgeType) -> bool;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
@@ -51,11 +54,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         id: Option<u128>,
         from_node: u128,
         to_node: u128,
-        from_is_vec: bool,
-        to_is_vec: bool,
+        should_check: bool,
+        edge_type: EdgeType,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let edge = Edge {
-            id: id.unwrap_or(Uuid::new_v4().as_u128()),
+            id: id.unwrap_or(v6_uuid()),
             label: label.to_string(),
             properties: properties.into_iter().collect(),
             from_node,
@@ -64,29 +67,21 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
 
-        if let Err(err) = self.node_vec_exists(&edge.from_node, from_is_vec) {
-            result = Err(err);
-            println!(
-                "could not find from-{}: {:?}",
-                if from_is_vec { "vector" } else { "node" },
-                &edge.from_node,
-            );
+        if let EdgeType::Std = edge_type {
+            if should_check {
+                if !(self.node_vec_exists(&from_node, EdgeType::Std)
+                    && self.node_vec_exists(&to_node, EdgeType::Std))
+                {
+                    result = Err(GraphError::NodeNotFound);
+                }
+            }
         }
-
-        if let Err(err) = self.node_vec_exists(&edge.to_node, to_is_vec) {
-            result = Err(err);
-            println!(
-                "could not find to-{}: {:?}",
-                if to_is_vec { "vector" } else { "node" },
-                &edge.to_node,
-            );
-        }
-
         match bincode::serialize(&edge) {
             Ok(bytes) => {
-                if let Err(e) = self.storage.edges_db.put(
+                if let Err(e) = self.storage.edges_db.put_with_flags(
                     self.txn,
-                    &HelixGraphStorage::edge_key(&edge.id),
+                    PutFlags::APPEND,
+                    &edge.id.to_be_bytes(),
                     &bytes,
                 ) {
                     result = Err(GraphError::from(e));
@@ -95,9 +90,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             Err(e) => result = Err(GraphError::from(e)),
         }
 
-        let label_hash = HelixGraphStorage::hash_label(edge.label.as_str());
-        match self.storage.edge_labels_db.put(
+        let label_hash = hash_label(edge.label.as_str(), None);
+        match self.storage.edge_labels_db.put_with_flags(
             self.txn,
+            PutFlags::APPEND,
             &HelixGraphStorage::edge_label_key(&label_hash, Some(&edge.id)),
             &(),
         ) {
@@ -141,22 +137,24 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         }
     }
 
-    fn node_vec_exists(&self, node_vec_id: &u128, is_vec: bool) -> Result<(), GraphError> {
-        if !is_vec {
-            if self
+    fn node_vec_exists(&self, node_vec_id: &u128, edge_type: EdgeType) -> bool {
+        let exists = match edge_type {
+            EdgeType::Std => self
                 .storage
                 .nodes_db
                 .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))
-                .map_or(false, |node| node.is_none())
-            {
-                return Err(GraphError::NodeNotFound);
-            }
-        } else {
-            if !self.storage.vectors.get_vector(self.txn, *node_vec_id, 0, false).is_ok() {
-                return Err(GraphError::VectorError(node_vec_id.to_string()));
-            }
+                .map_or(false, |node| node.is_none()),
+            EdgeType::Vec => self
+                .storage
+                .vectors
+                .get_vector(self.txn, *node_vec_id, 0, false)
+                .is_ok(),
+        };
+
+        if !exists {
+            return false;
         }
 
-        Ok(())
+        true
     }
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, iter::Once, sync::Arc};
 
-use heed3::{RoTxn, RwTxn};
+use heed3::{PutFlags, RoTxn, RwTxn};
 use uuid::Uuid;
 
 use crate::{
@@ -8,7 +8,11 @@ use crate::{
         graph_core::traversal_iter::RwTraversalIterator,
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
-    protocol::{filterable::Filterable, items::Node, value::Value},
+    protocol::{
+        filterable::Filterable,
+        items::{v6_uuid, Node},
+        value::Value,
+    },
 };
 
 use super::super::tr_val::TraversalVal;
@@ -46,7 +50,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         id: Option<u128>,
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
         let node = Node {
-            id: id.unwrap_or(Uuid::new_v4().as_u128()),
+            id: id.unwrap_or(v6_uuid()),
             label: label.to_string(),
             properties: properties.into_iter().collect(),
         };
@@ -55,9 +59,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         // insert node
         match bincode::serialize(&node) {
             Ok(bytes) => {
-                if let Err(e) = self.storage.nodes_db.put(
+                if let Err(e) = self.storage.nodes_db.put_with_flags(
                     self.txn,
-                    &HelixGraphStorage::node_key(&node.id),
+                    PutFlags::APPEND,
+                    &node.id.to_be_bytes(),
                     &bytes,
                 ) {
                     result = Err(GraphError::from(e));
@@ -66,8 +71,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             Err(e) => result = Err(GraphError::from(e)),
         }
         // insert label
-        match self.storage.node_labels_db.put(
+        match self.storage.node_labels_db.put_with_flags(
             self.txn,
+            PutFlags::APPEND,
             &HelixGraphStorage::node_label_key(&label, Some(&node.id)),
             &(),
         ) {

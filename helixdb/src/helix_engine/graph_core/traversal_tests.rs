@@ -5,27 +5,30 @@ use std::{
     time::Instant,
 };
 
-use crate::helix_engine::{
-    graph_core::ops::{
-        g::G,
-        in_::{in_e::InEdgesAdapter, to_n::ToNAdapter},
-        out::{from_n::FromNAdapter, out::OutAdapter},
-        source::{
-            add_e::AddE, add_n::AddNAdapter, bulk_add_n::BulkAddNAdapter, e::EAdapter,
-            e_from_id::EFromIdAdapter, n::NAdapter, n_from_id::NFromIdAdapter,
-        },
-        tr_val::{Traversable, TraversalVal},
-        util::{dedup::DedupAdapter, range::RangeAdapter},
-    },
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::GraphError,
-};
 use crate::props;
 use crate::protocol::{
     filterable::Filterable,
     items::{Edge, Node},
     traversal_value::TraversalValue,
     value::Value,
+};
+use crate::{
+    helix_engine::{
+        graph_core::ops::{
+            g::G,
+            in_::{in_e::InEdgesAdapter, to_n::ToNAdapter},
+            out::{from_n::FromNAdapter, out::OutAdapter},
+            source::{
+                add_e::AddE, add_n::AddNAdapter, bulk_add_n::BulkAddNAdapter, e::EAdapter,
+                e_from_id::EFromIdAdapter, n::NAdapter, n_from_id::NFromIdAdapter,
+            },
+            tr_val::{Traversable, TraversalVal},
+            util::{dedup::DedupAdapter, range::RangeAdapter},
+        },
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+    },
+    protocol::items::v6_uuid,
 };
 use heed3::RoTxn;
 use rand::Rng;
@@ -34,7 +37,12 @@ use tempfile::TempDir;
 use super::ops::{
     in_::in_::InAdapter,
     out::out_e::OutEdgesAdapter,
-    source::{add_e::AddEAdapter, e::E, n::N, n_from_id::NFromId},
+    source::{
+        add_e::{AddEAdapter, EdgeType},
+        e::E,
+        n::N,
+        n_from_id::NFromId,
+    },
     util::filter_ref::FilterRefAdapter,
 };
 
@@ -242,7 +250,15 @@ fn test_add_e() {
     txn.commit().unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
     let edges = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_e("knows", props! {}, None, node1.id.clone(), node2.id.clone())
+        .add_e(
+            "knows",
+            props! {},
+            None,
+            node1.id.clone(),
+            node2.id.clone(),
+            false,
+            EdgeType::Std,
+        )
         .filter_map(|edge| edge.ok())
         .collect::<Vec<_>>();
     txn.commit().unwrap();
@@ -332,6 +348,8 @@ fn test_out_e() {
             None,
             person1.id().clone(),
             person2.id().clone(),
+            false,
+            EdgeType::Std,
         )
         .filter_map(|edge| edge.ok())
         .collect::<Vec<_>>();
@@ -1232,7 +1250,7 @@ fn huge_traversal() {
         let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
         let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
         edges.push(Edge {
-            id: uuid::Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: "knows".to_string(),
             properties: HashMap::new(),
             from_node: random_node1.id,
@@ -1265,7 +1283,7 @@ fn huge_traversal() {
             if let Ok(TraversalVal::Node(node)) = val {
                 if let Some(value) = node.check_property("name") {
                     match value {
-                        Value::I32(name) => return *name < 1000,
+                        Value::I32(name) => return *name < 700000,
                         _ => return false,
                     }
                 } else {

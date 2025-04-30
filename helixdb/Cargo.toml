@@ -16,7 +16,7 @@ inventory = "0.3.16"
 sonic-rs = "0.5.0"
 bincode = "1.3.3"
 heed3 = "0.22.0"
-uuid = { version = "1.12.1", features = ["v4", "fast-rng"] }
+uuid = { version = "1.12.1", features = ["std", "v4", "v6", "fast-rng"] }
 rand = "0.9.0"
 dirs = "6.0.0"
 chrono = "0.4.39"
@@ -28,7 +28,10 @@ tokio = { version = "1.44.2", features = ["full"] }
 futures = "0.3.31"
 polars = { version = "0.46.0", optional = true, features = ["parquet", "lazy"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
-tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4"] }
+tokio-postgres = { version = "0.7", features = [
+    "with-uuid-1",
+    "with-chrono-0_4",
+] }
 reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde_json = "1.0.110"
 get_routes = { path = "../get_routes" }
@@ -51,13 +54,21 @@ lazy_static = "1.4.0"
 testing = ["polars"]
 euclidean = []
 cosine = []
-engine=[]
-compiler=[]
-protocol=[]
-gateway=[]
-ingestion=[]
-build=["protocol", "compiler"]
-full = ["build", "engine", "compiler", "protocol", "gateway", "ingestion", "cosine"]
+engine = []
+compiler = []
+protocol = []
+gateway = []
+ingestion = []
+build = ["protocol", "compiler"]
+full = [
+    "build",
+    "engine",
+    "compiler",
+    "protocol",
+    "gateway",
+    "ingestion",
+    "cosine",
+]
 default = ["full"]
 
 [[bench]]

@@ -12,7 +12,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
+        items::{Edge, Node}, label_hash::hash_label,
     },
 };
 
@@ -86,12 +86,12 @@ impl G {
 
         let mut out_edges_buffer = Vec::with_capacity(edges.len());
         let mut in_edges_buffer = Vec::with_capacity(edges.len());
-        let mut label_hashes = HashMap::new();
+        let mut label_hashes= HashMap::new();
         out_edges_buffer.extend(edges.iter().map(|edge| {
-            let label_hash: [u8; 4] = match label_hashes.get(&edge.label) {
+            let label_hash = match label_hashes.get(&edge.label) {
                 Some(hash) => *hash,
                 None => {
-                    let hash = HelixGraphStorage::hash_label(edge.label.as_str());
+                    let hash = hash_label(edge.label.as_str(), None);
                     label_hashes.insert(edge.label.clone(), hash);
                     hash
                 }
@@ -99,10 +99,10 @@ impl G {
             (edge.from_node, label_hash, edge.to_node, edge.id)
         }));
         in_edges_buffer.extend(edges.iter().map(|edge| {
-            let label_hash: [u8; 4] = match label_hashes.get(&edge.label) {
+            let label_hash = match label_hashes.get(&edge.label) {
                 Some(hash) => *hash,
                 None => {
-                    let hash = HelixGraphStorage::hash_label(edge.label.as_str());
+                    let hash = hash_label(edge.label.as_str(), None);
                     label_hashes.insert(edge.label.clone(), hash);
                     hash
                 }

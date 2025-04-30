@@ -1,10 +1,8 @@
-use crate::helix_engine::types::GraphError;
 use super::value::{properties_format, Value};
+use crate::helix_engine::types::GraphError;
 use sonic_rs::{Deserialize, Serialize};
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-};
+use uuid::Uuid;
+use std::{cmp::Ordering, collections::HashMap};
 
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
@@ -129,7 +127,7 @@ impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
     pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: label.to_string(),
             from_node: 0,
             to_node: 0,
@@ -139,7 +137,7 @@ impl Edge {
 
     pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().as_u128(),
+            id: v6_uuid(),
             label: label.to_string(),
             from_node: 0,
             to_node: 0,
@@ -204,4 +202,9 @@ impl SerializedEdge {
             ))),
         }
     }
+}
+
+#[inline(always)]
+pub fn v6_uuid() -> u128 {
+    Uuid::now_v6(&[1, 2, 3, 4, 5, 6]).as_u128()
 }

@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use heed3::{types::Bytes, RoTxn, RwTxn};
 
-use crate::helix_engine::{
+use crate::{helix_engine::{
     graph_core::traversal_iter::RoTraversalIterator,
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
-};
+}, protocol::label_hash::hash_label};
 
 use super::super::tr_val::{Traversable, TraversalVal};
 
@@ -69,7 +69,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
         let iter = self
             .inner
             .map(move |item| {
-                let label_hash = HelixGraphStorage::hash_label(edge_label);
+                let label_hash = hash_label(edge_label, None);
                 let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), &label_hash);
                 let iter = db
                     .in_edges_db

@@ -8,7 +8,7 @@ use crate::{
         graph_core::traversal_iter::RwTraversalIterator,
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
-    protocol::{items::Edge, value::Value},
+    protocol::{items::Edge, label_hash::hash_label, value::Value},
 };
 
 use super::super::tr_val::TraversalVal;
@@ -53,10 +53,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         let mut in_edges_buffer = Vec::with_capacity(edges.len());
         let mut label_hashes = HashMap::new();
         out_edges_buffer.extend(edges.iter().map(|edge| {
-            let label_hash: [u8; 4] = match label_hashes.get(&edge.label) {
+            let label_hash = match label_hashes.get(&edge.label) {
                 Some(hash) => *hash,
                 None => {
-                    let hash = HelixGraphStorage::hash_label(edge.label.as_str());
+                    let hash = hash_label(edge.label.as_str(), None);
                     label_hashes.insert(edge.label.clone(), hash);
                     hash
                 }

@@ -12,7 +12,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, SerializedEdge},
+        items::{Edge, SerializedEdge}, label_hash::hash_label,
     },
 };
 
@@ -43,7 +43,7 @@ impl<'a> Iterator for EFromTypes<'a> {
 
 impl<'a> EFromTypes<'a> {
     pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn, label: &str) -> Self {
-        let label_hash = HelixGraphStorage::hash_label(label);
+        let label_hash = hash_label(label, None);
         let prefix = HelixGraphStorage::edge_label_key(&label_hash, None);
         let iter = storage
             .edge_labels_db
