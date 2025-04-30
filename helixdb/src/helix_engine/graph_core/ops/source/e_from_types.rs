@@ -12,14 +12,15 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, SerializedEdge}, label_hash::hash_label,
+        items::{Edge, SerializedEdge},
+        label_hash::hash_label,
     },
 };
 
 use super::super::tr_val::TraversalVal;
 
 pub struct EFromTypes<'a> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Unit>>,
+    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
     storage: &'a Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     length: usize,
@@ -43,8 +44,7 @@ impl<'a> Iterator for EFromTypes<'a> {
 
 impl<'a> EFromTypes<'a> {
     pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn, label: &str) -> Self {
-        let label_hash = hash_label(label, None);
-        let prefix = HelixGraphStorage::edge_label_key(&label_hash, None);
+        let prefix = hash_label(label, None);
         let iter = storage
             .edge_labels_db
             .lazily_decode_data()

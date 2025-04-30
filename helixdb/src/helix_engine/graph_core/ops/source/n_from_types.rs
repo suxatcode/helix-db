@@ -14,13 +14,14 @@ use crate::{
     protocol::{
         filterable::{Filterable, FilterableType},
         items::{Edge, Node},
+        label_hash::hash_label,
     },
 };
 
 use super::super::tr_val::TraversalVal;
 
 pub struct NFromTypes<'a> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Unit>>,
+    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
     storage: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
     length: usize,
@@ -31,8 +32,8 @@ impl<'a> Iterator for NFromTypes<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|value| {
-            let (key, _) = value.unwrap();
-            let node_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..])?;
+            let (key_, value) = value.unwrap();
+            let node_id = HelixGraphStorage::get_u128_from_bytes(&value.decode().unwrap())?;
             let node: Node = match self.storage.get_node(self.txn, &node_id) {
                 Ok(node) => node,
                 Err(e) => return Err(e),
@@ -57,7 +58,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypesAdapter
         let db = self.storage.clone();
         let txn: &RoTxn<'_> = self.txn;
         let iter = types.iter().flat_map(move |label| {
-            let prefix = HelixGraphStorage::node_label_key(label, None);
+            let prefix = hash_label(label, None);
             let iter = db
                 .node_labels_db
                 .lazily_decode_data()

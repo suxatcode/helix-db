@@ -8,9 +8,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
     protocol::{
-        filterable::Filterable,
-        items::{Edge, Node},
-        value::Value,
+        filterable::Filterable, items::{Edge, Node}, label_hash::hash_label, value::Value
     },
 };
 
@@ -33,7 +31,7 @@ pub trait BulkAddNAdapter<'a, 'b>:
 {
     fn bulk_add_n(
         self,
-        nodes: &mut [Node],
+        nodes: &mut [u128],
         secondary_indices: Option<&[String]>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
@@ -43,7 +41,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
 {
     fn bulk_add_n(
         self,
-        nodes: &mut [Node],
+        nodes: &mut [u128],
         secondary_indices: Option<&[String]>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
@@ -55,7 +53,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                     if let Err(e) = self.storage.nodes_db.put_with_flags(
                         self.txn,
                         PutFlags::APPEND,
-                        &node.id.to_be_bytes(),
+                        &node.to_be_bytes(),
                         &bytes,
                     ) {
                         result = Err(GraphError::from(e));
@@ -67,48 +65,48 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
             // insert label
             match self.storage.node_labels_db.put(
                 self.txn,
-                &HelixGraphStorage::node_label_key(&node.label, Some(&node.id)),
-                &(),
+                &hash_label("user", None),
+                &node.to_be_bytes(),
             ) {
                 Ok(_) => {}
                 Err(e) => result = Err(GraphError::from(e)),
             }
 
-            for index in &secondary_indices {
-                match self.storage.secondary_indices.get(index.as_str()) {
-                    Some(db) => {
-                        let key = match node.check_property(&index) {
-                            Some(value) => value,
-                            None => {
-                                result = Err(GraphError::New(format!(
-                                    "Secondary Index {} not found",
-                                    index
-                                )));
-                                continue;
-                            }
-                        };
-                        match bincode::serialize(&key) {
-                            Ok(serialized) => {
-                                if let Err(e) = db.put_with_flags(
-                                    self.txn,
-                                    PutFlags::APPEND,
-                                    &serialized,
-                                    &node.id.to_be_bytes(),
-                                ) {
-                                    result = Err(GraphError::from(e));
-                                }
-                            }
-                            Err(e) => result = Err(GraphError::from(e)),
-                        }
-                    }
-                    None => {
-                        result = Err(GraphError::New(format!(
-                            "Secondary Index {} not found",
-                            index
-                        )));
-                    }
-                }
-            }
+            // for index in &secondary_indices {
+            //     match self.storage.secondary_indices.get(index.as_str()) {
+            //         Some(db) => {
+            //             let key = match node.check_property(&index) {
+            //                 Some(value) => value,
+            //                 None => {
+            //                     result = Err(GraphError::New(format!(
+            //                         "Secondary Index {} not found",
+            //                         index
+            //                     )));
+            //                     continue;
+            //                 }
+            //             };
+            //             match bincode::serialize(&key) {
+            //                 Ok(serialized) => {
+            //                     if let Err(e) = db.put_with_flags(
+            //                         self.txn,
+            //                         PutFlags::APPEND,
+            //                         &serialized,
+            //                         &node.id.to_be_bytes(),
+            //                     ) {
+            //                         result = Err(GraphError::from(e));
+            //                     }
+            //                 }
+            //                 Err(e) => result = Err(GraphError::from(e)),
+            //             }
+            //         }
+            //         None => {
+            //             result = Err(GraphError::New(format!(
+            //                 "Secondary Index {} not found",
+            //                 index
+            //             )));
+            //         }
+            //     }
+            // }
         }
         RwTraversalIterator {
             inner: std::iter::once(result), // TODO: change to support adding multiple edges

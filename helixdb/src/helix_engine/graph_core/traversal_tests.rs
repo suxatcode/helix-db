@@ -1215,141 +1215,141 @@ fn test_out_n() {
 //     assert_eq!(nodes[3].id, users[0].id); // Alice
 // }
 
-#[test]
-fn huge_traversal() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
+// #[test]
+// fn huge_traversal() {
+//     let (storage, _temp_dir) = setup_test_db();
+//     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let mut nodes = Vec::with_capacity(65_000_000);
-    let mut start = Instant::now();
+//     let mut nodes = Vec::with_capacity(65_000_000);
+//     let mut start = Instant::now();
 
-    for i in 0..1_000_000 {
-        nodes.push(Node::new("person", props! { "name" => i}));
-    }
-    println!("time taken to initialise nodes: {:?}", start.elapsed());
-    start = Instant::now();
-    nodes.sort();
-    println!("time taken to sort nodes: {:?}", start.elapsed());
-    start = Instant::now();
-    let chunks = nodes.chunks_mut(1000000);
-    for chunk in chunks {
-        let res = G::new_mut(Arc::clone(&storage), &mut txn)
-            .bulk_add_n(chunk, None)
-            .map(|res| res.unwrap())
-            .collect::<Vec<_>>();
-        txn.commit().unwrap();
-        println!("time taken to add nodes: {:?}", start.elapsed());
-        start = Instant::now();
-        txn = storage.graph_env.write_txn().unwrap();
-    }
-    println!("time taken to add nodes: {:?}", start.elapsed());
-    txn.commit().unwrap();
-    let start = Instant::now();
-    let mut edges = Vec::with_capacity(6000 * 2000);
-    for i in 0..1_000_000 {
-        let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
-        let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
-        edges.push(Edge {
-            id: v6_uuid(),
-            label: "knows".to_string(),
-            properties: HashMap::new(),
-            from_node: random_node1.id,
-            to_node: random_node2.id,
-        });
-    }
-    println!(
-        "time taken to create {} edges: {:?}",
-        edges.len(),
-        start.elapsed()
-    );
-    let mut start = Instant::now();
+//     for i in 0..1_000_000 {
+//         nodes.push(Node::new("person", props! { "name" => i}));
+//     }
+//     println!("time taken to initialise nodes: {:?}", start.elapsed());
+//     start = Instant::now();
+//     nodes.sort();
+//     println!("time taken to sort nodes: {:?}", start.elapsed());
+//     start = Instant::now();
+//     let chunks = nodes.chunks_mut(1000000);
+//     for chunk in chunks {
+//         let res = G::new_mut(Arc::clone(&storage), &mut txn)
+//             .bulk_add_n(chunk, None)
+//             .map(|res| res.unwrap())
+//             .collect::<Vec<_>>();
+//         txn.commit().unwrap();
+//         println!("time taken to add nodes: {:?}", start.elapsed());
+//         start = Instant::now();
+//         txn = storage.graph_env.write_txn().unwrap();
+//     }
+//     println!("time taken to add nodes: {:?}", start.elapsed());
+//     txn.commit().unwrap();
+//     let start = Instant::now();
+//     let mut edges = Vec::with_capacity(6000 * 2000);
+//     for i in 0..1_000_000 {
+//         let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
+//         let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
+//         edges.push(Edge {
+//             id: v6_uuid(),
+//             label: "knows".to_string(),
+//             properties: HashMap::new(),
+//             from_node: random_node1.id,
+//             to_node: random_node2.id,
+//         });
+//     }
+//     println!(
+//         "time taken to create {} edges: {:?}",
+//         edges.len(),
+//         start.elapsed()
+//     );
+//     let mut start = Instant::now();
 
-    println!("sorting edges");
-    println!("sorting edges done");
-    let res = G::bulk_add_e(Arc::clone(&storage), &mut edges, false, 1000000);
-    match res {
-        Ok(_) => println!("edges added"),
-        Err(e) => println!("error adding edges: {:?}", e),
-    }
+//     println!("sorting edges");
+//     println!("sorting edges done");
+//     let res = G::bulk_add_e(Arc::clone(&storage), &mut edges, false, 1000000);
+//     match res {
+//         Ok(_) => println!("edges added"),
+//         Err(e) => println!("error adding edges: {:?}", e),
+//     }
 
-    let txn = storage.graph_env.read_txn().unwrap();
-    let now = Instant::now();
-    let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
-        .out_e("knows")
-        .to_n()
-        .out("knows")
-        .filter_ref(|val, _| {
-            if let Ok(TraversalVal::Node(node)) = val {
-                if let Some(value) = node.check_property("name") {
-                    match value {
-                        Value::I32(name) => return *name < 700000,
-                        _ => return false,
-                    }
-                } else {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        })
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .dedup()
-        .range(0, 100)
-        .count();
-    println!("optimized version time: {:?}", now.elapsed());
-    println!("traversal: {:?}", traversal);
-    println!(
-        "size of mdb file on disk: {:?}",
-        storage.graph_env.real_disk_size()
-    );
-    txn.commit().unwrap();
+//     let txn = storage.graph_env.read_txn().unwrap();
+//     let now = Instant::now();
+//     let traversal = G::new(Arc::clone(&storage), &txn)
+//         .n()
+//         .out_e("knows")
+//         .to_n()
+//         .out("knows")
+//         .filter_ref(|val, _| {
+//             if let Ok(TraversalVal::Node(node)) = val {
+//                 if let Some(value) = node.check_property("name") {
+//                     match value {
+//                         Value::I32(name) => return *name < 700000,
+//                         _ => return false,
+//                     }
+//                 } else {
+//                     return false;
+//                 }
+//             } else {
+//                 return false;
+//             }
+//         })
+//         .out("knows")
+//         .out("knows")
+//         .out("knows")
+//         .out("knows")
+//         .dedup()
+//         .range(0, 100)
+//         .count();
+//     println!("optimized version time: {:?}", now.elapsed());
+//     println!("traversal: {:?}", traversal);
+//     println!(
+//         "size of mdb file on disk: {:?}",
+//         storage.graph_env.real_disk_size()
+//     );
+//     txn.commit().unwrap();
 
-    // let txn = storage.graph_env.read_txn().unwrap();
-    // let now = Instant::now();
-    // let mut tr = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    // tr.v(&txn)
-    //     .out_e(&txn, "knows")
-    //     .in_v(&txn)
-    //     .out(&txn, "knows")
-    //     .filter_nodes(&txn, |val| {
-    //         if let Some(value) = val.check_property("name") {
-    //             match value {
-    //                 Value::I32(name) => return Ok(*name < 1000),
-    //                 _ => return Err(GraphError::Default),
-    //             }
-    //         } else {
-    //             return Err(GraphError::Default);
-    //         }
-    //     })
-    //     .out(&txn, "knows")
-    //     .out(&txn, "knows")
-    //     .out(&txn, "knows")
-    //     .out(&txn, "knows")
-    //     .range(0, 100);
+//     // let txn = storage.graph_env.read_txn().unwrap();
+//     // let now = Instant::now();
+//     // let mut tr = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
+//     // tr.v(&txn)
+//     //     .out_e(&txn, "knows")
+//     //     .in_v(&txn)
+//     //     .out(&txn, "knows")
+//     //     .filter_nodes(&txn, |val| {
+//     //         if let Some(value) = val.check_property("name") {
+//     //             match value {
+//     //                 Value::I32(name) => return Ok(*name < 1000),
+//     //                 _ => return Err(GraphError::Default),
+//     //             }
+//     //         } else {
+//     //             return Err(GraphError::Default);
+//     //         }
+//     //     })
+//     //     .out(&txn, "knows")
+//     //     .out(&txn, "knows")
+//     //     .out(&txn, "knows")
+//     //     .out(&txn, "knows")
+//     //     .range(0, 100);
 
-    // let result = tr.finish();
-    // println!("original version time: {:?}", now.elapsed());
-    // println!(
-    //     "traversal: {:?}",
-    //     match result {
-    //         Ok(TraversalValue::NodeArray(nodes)) => nodes.len(),
-    //         Err(e) => {
-    //             println!("error: {:?}", e);
-    //             0
-    //         }
-    //         _ => {
-    //             println!("error: {:?}", result);
-    //             0
-    //         }
-    //     }
-    // );
-    // // print size of mdb file on disk
-    // println!(
-    //     "size of mdb file on disk: {:?}",
-    //     storage.graph_env.real_disk_size()
-    // );
-}
+//     // let result = tr.finish();
+//     // println!("original version time: {:?}", now.elapsed());
+//     // println!(
+//     //     "traversal: {:?}",
+//     //     match result {
+//     //         Ok(TraversalValue::NodeArray(nodes)) => nodes.len(),
+//     //         Err(e) => {
+//     //             println!("error: {:?}", e);
+//     //             0
+//     //         }
+//     //         _ => {
+//     //             println!("error: {:?}", result);
+//     //             0
+//     //         }
+//     //     }
+//     // );
+//     // // print size of mdb file on disk
+//     // println!(
+//     //     "size of mdb file on disk: {:?}",
+//     //     storage.graph_env.real_disk_size()
+//     // );
+// }

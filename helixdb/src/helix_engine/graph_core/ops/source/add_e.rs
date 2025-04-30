@@ -94,8 +94,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         match self.storage.edge_labels_db.put_with_flags(
             self.txn,
             PutFlags::APPEND,
-            &HelixGraphStorage::edge_label_key(&label_hash, Some(&edge.id)),
-            &(),
+            &label_hash,
+            &edge.id.to_be_bytes(),
         ) {
             Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),

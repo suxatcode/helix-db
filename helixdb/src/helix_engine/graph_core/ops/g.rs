@@ -163,11 +163,8 @@ impl G {
                 match storage.edge_labels_db.put_with_flags(
                     &mut txn,
                     PutFlags::APPEND,
-                    &HelixGraphStorage::edge_label_key(
-                        &label_hashes.get(&edge.label).unwrap(),
-                        Some(&edge.id),
-                    ),
-                    &(),
+                    label_hashes.get(&edge.label).unwrap(),
+                    &edge.id.to_be_bytes(),
                 ) {
                     Ok(_) => {}
                     Err(e) => {

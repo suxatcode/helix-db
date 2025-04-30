@@ -9,9 +9,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
     protocol::{
-        filterable::Filterable,
-        items::{v6_uuid, Node},
-        value::Value,
+        filterable::Filterable, items::{v6_uuid, Node}, label_hash::hash_label, value::Value
     },
 };
 
@@ -74,8 +72,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         match self.storage.node_labels_db.put_with_flags(
             self.txn,
             PutFlags::APPEND,
-            &HelixGraphStorage::node_label_key(&label, Some(&node.id)),
-            &(),
+            &hash_label(label, None),
+            &node.id.to_be_bytes(),
         ) {
             Ok(_) => {}
             Err(e) => result = Err(GraphError::from(e)),

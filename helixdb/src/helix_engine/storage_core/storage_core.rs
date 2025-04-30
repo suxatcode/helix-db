@@ -33,14 +33,14 @@ const DB_EDGE_LABELS: &str = "edge_labels"; // For edge label indices (el:)
 const DB_OUT_EDGES: &str = "out_edges"; // For outgoing edge indices (o:)
 const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
-                                  // Key prefixes for different types of data
+// Key prefixes for different types of data
 
 pub struct HelixGraphStorage {
     pub graph_env: Env<WithTls>,
     pub nodes_db: Database<Bytes, Bytes>,
     pub edges_db: Database<Bytes, Bytes>,
-    pub node_labels_db: Database<Bytes, Unit>,
-    pub edge_labels_db: Database<Bytes, Unit>,
+    pub node_labels_db: Database<Bytes, Bytes>,
+    pub edge_labels_db: Database<Bytes, Bytes>,
     pub out_edges_db: Database<Bytes, Bytes>,
     pub in_edges_db: Database<Bytes, Bytes>,
     pub secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
@@ -169,20 +169,13 @@ impl HelixGraphStorage {
     }
 
     #[inline(always)]
-    pub fn node_label_key(label: &str, id: Option<&u128>) -> Vec<u8> {
-        let label_hash = hash_label(label, None);
-        match id {
-            Some(id) => [label_hash.as_slice(), id.to_be_bytes().as_slice()].concat(),
-            None => label_hash.to_vec(),
-        }
+    pub fn node_label_key(label: &[u8; 4]) -> [u8; 4] {
+        *label
     }
 
     #[inline(always)]
-    pub fn edge_label_key(label: &[u8; 4], id: Option<&u128>) -> Vec<u8> {
-        match id {
-            Some(id) => [label, id.to_be_bytes().as_slice()].concat(),
-            None => label.to_vec(),
-        }
+    pub fn edge_label_key(label: &[u8; 4]) -> [u8; 4] {
+        *label
     }
 
     // key = from-node(16) | label-id(4) | chunk-no(2)   ← 22 B
@@ -393,10 +386,10 @@ impl StorageMethods for HelixGraphStorage {
         // Delete all related data
         for edge in out_edges.iter().chain(in_edges.iter()) {
             // Delete edge data
-            self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
             let label_hash = hash_label(&edge.label, None);
+            self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
             self.edge_labels_db
-                .delete(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)))?;
+                .delete(txn, &Self::edge_label_key(&label_hash))?;
             self.out_edges_db
                 .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
             self.in_edges_db
@@ -404,9 +397,10 @@ impl StorageMethods for HelixGraphStorage {
         }
 
         // Delete node data and label
+        let label_hash = hash_label(&node.label, None);
         self.nodes_db.delete(txn, Self::node_key(id).as_slice())?;
         self.node_labels_db
-            .delete(txn, &Self::node_label_key(&node.label, Some(&node.id)))?;
+            .delete(txn, &Self::node_label_key(&label_hash))?;
 
         Ok(())
     }
@@ -422,7 +416,7 @@ impl StorageMethods for HelixGraphStorage {
         // Delete all edge-related data
         self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
         self.edge_labels_db
-            .delete(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)))?;
+            .delete(txn, &Self::edge_label_key(&label_hash))?;
         self.out_edges_db
             .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
         self.in_edges_db
@@ -448,10 +442,10 @@ impl StorageMethods for HelixGraphStorage {
         // Store node data
         self.nodes_db
             .put(txn, &Self::node_key(&node.id), &bincode::serialize(&node)?)?;
-
+        let label_hash = hash_label(label, None);
         // Store node label index
         self.node_labels_db
-            .put(txn, &Self::node_label_key(&node.label, Some(&node.id)), &())?;
+            .put(txn, &label_hash, &node.id.to_be_bytes())?;
 
         for index in secondary_indices.unwrap_or(&[]) {
             match self.secondary_indices.get(index) {
@@ -465,7 +459,7 @@ impl StorageMethods for HelixGraphStorage {
                             )))
                         }
                     };
-                    db.put(txn, &bincode::serialize(&key)?, &node.id.to_le_bytes())?;
+                    db.put(txn, &bincode::serialize(&key)?, &node.id.to_be_bytes())?;
                 }
                 None => {
                     return Err(GraphError::New(format!(
@@ -521,7 +515,7 @@ impl StorageMethods for HelixGraphStorage {
         let label_hash = hash_label(label, None);
         // Store edge label index
         self.edge_labels_db
-            .put(txn, &Self::edge_label_key(&label_hash, Some(&edge.id)), &())?;
+            .put(txn, &label_hash, &edge.id.to_be_bytes())?;
 
         // Store edge - node maps
         self.out_edges_db.put(
