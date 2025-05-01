@@ -816,6 +816,21 @@ QUERY hnswload(vectors: [[Float]]) =>
 QUERY hnswsearch(query: [Float], k: Integer) =>
     res <- SearchV<Type>(query, k)
     RETURN res
+
+QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
+    FOR {doc, vec} IN docs {
+        doc_node <- AddN<Type>({ content: doc })
+        vectors <- BatchAddV<Doc>(vecs)
+        FOR vec IN vectors {
+            AddE<Contains>::From(doc_node)::To(vec)
+        }
+    }
+    RETURN "Success"
+
+QUERY ragsearchdoc(query: [F64]) =>
+    vec <- SearchV<Vector>(query, 1)
+    doc_node <- vec::In<Contains>
+    RETURN doc_node::{content}
 "#,
 /*
 QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>

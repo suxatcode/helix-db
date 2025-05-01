@@ -85,7 +85,6 @@ impl Traversable for TraversalVal {
 
 }
 
-
 impl Traversable for Vec<TraversalVal> {
     fn id(&self) -> u128 {
         self[0].id()

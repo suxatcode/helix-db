@@ -547,7 +547,6 @@ impl HNSW for VectorCore {
         let entry_point = match self.get_entry_point(txn) {
             Ok(ep) => ep,
             Err(_) => {
-                println!("entry point not found!");
                 self.set_entry_point(txn, &query)?;
                 query.set_distance(0.0);
                 return Ok(query);
