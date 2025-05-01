@@ -49,7 +49,7 @@ use sonic_rs::{Deserialize, Serialize};
 pub fn bulk_loader(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     // line by line from ~/com-friendster.ungraph.txt
     let start = Instant::now();
-    let file_path = "/home/ec2-user/com-friendster.ungraph.txt";
+    let file_path = "./com-friendster.ungraph.txt";
     let file = File::open(file_path).unwrap();
     let file_size = file.metadata()?.len();
     let num_threads = 16;
@@ -169,18 +169,16 @@ pub fn bulk_loader(input: &HandlerInput, response: &mut Response) -> Result<(), 
     println!("Finished sorting nodes");
     let mut txn = db.graph_env.write_txn().unwrap();
     let n = G::new_mut(Arc::clone(&db), &mut txn)
-        .bulk_add_n(nodes.as_mut_slice(), None)
+        .bulk_add_n(nodes.as_mut_slice(), None, 1_000_000)
         .count();
     drop(nodes);
     txn.commit().unwrap();
     let edges: Vec<(u128, u128, u128)> = Arc::try_unwrap(edges).unwrap().into_inner().unwrap();
-    let mut txn = db.graph_env.write_txn().unwrap();
+
     println!("Finished adding nodes");
     println!("Adding {} edges", edges.len());
-    let e = G::new_mut(Arc::clone(&db), &mut txn)
-        .bulk_add_e(edges, false, 1_000_000)
-        .count();
-    txn.commit().unwrap();
+    let e = G::bulk_add_e(Arc::clone(&db), edges, false, 1_000_000);
+
 
     println!("Finished adding edges");
 

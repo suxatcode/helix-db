@@ -12,7 +12,8 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node}, label_hash::hash_label,
+        items::{Edge, Node, SerializedEdge},
+        label_hash::hash_label,
     },
 };
 
@@ -75,157 +76,156 @@ impl G {
         }
     }
 
-    // pub fn bulk_add_e(
-    //     storage: Arc<HelixGraphStorage>,
-    //     edges: &mut [Edge],
-    //     should_check_nodes: bool,
-    //     chunk_size: usize,
-    // ) -> Result<(), GraphError> {
-    //     // sort by id
-    //     let mut txn = storage.graph_env.write_txn()?;
+    pub fn bulk_add_e(
+        storage: Arc<HelixGraphStorage>,
+        mut edges: Vec<(u128, u128, u128)>,
+        should_check_nodes: bool,
+        chunk_size: usize,
+    ) -> Result<(), GraphError> {
+        let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
+        // sort by id
+        edges.sort_unstable_by(|(_, _, id), (_, _, id_)| id.cmp(id_));
 
-    //     let mut out_edges_buffer = Vec::with_capacity(edges.len());
-    //     let mut in_edges_buffer = Vec::with_capacity(edges.len());
-    //     let mut label_hashes= HashMap::new();
-    //     out_edges_buffer.extend(edges.iter().map(|edge| {
-    //         let label_hash = match label_hashes.get(&edge.label) {
-    //             Some(hash) => *hash,
-    //             None => {
-    //                 let hash = hash_label(edge.label.as_str(), None);
-    //                 label_hashes.insert(edge.label.clone(), hash);
-    //                 hash
-    //             }
-    //         };
-    //         (edge.from_node, label_hash, edge.to_node, edge.id)
-    //     }));
-    //     in_edges_buffer.extend(edges.iter().map(|edge| {
-    //         let label_hash = match label_hashes.get(&edge.label) {
-    //             Some(hash) => *hash,
-    //             None => {
-    //                 let hash = hash_label(edge.label.as_str(), None);
-    //                 label_hashes.insert(edge.label.clone(), hash);
-    //                 hash
-    //             }
-    //         };
-    //         (edge.to_node, label_hash, edge.from_node, edge.id)
-    //     }));
-    //     println!("separated");
-    //     edges.sort_unstable();
-    //     out_edges_buffer.sort_unstable();
-    //     in_edges_buffer.sort_unstable();
-    //     println!(
-    //         "sorted edges: {:?}, out edges: {:?}, in edges: {:?}",
-    //         edges.len(),
-    //         out_edges_buffer.len(),
-    //         in_edges_buffer.len()
-    //     );
-    //     let zipped = edges
-    //         .iter()
-    //         .zip(out_edges_buffer.iter().zip(in_edges_buffer.iter()))
-    //         .chunks(chunk_size);
-    //     let mut prev_out = None;
-    //     let mut prev_in = None;
-    //     println!("zipped and chunked");
-    //     let mut start = Instant::now();
-    //     for chunk in &zipped {
-    //         for (edge, (out, in_)) in chunk {
-    //             // EDGES
-    //             if should_check_nodes
-    //                 && (storage
-    //                     .nodes_db
-    //                     .get(&mut txn, &HelixGraphStorage::node_key(&edge.from_node))
-    //                     .map_or(false, |node| node.is_none())
-    //                     || storage
-    //                         .nodes_db
-    //                         .get(&mut txn, &HelixGraphStorage::node_key(&edge.to_node))
-    //                         .map_or(false, |node| node.is_none()))
-    //             {
-    //                 return Err(GraphError::NodeNotFound);
-    //             }
-    //             match bincode::serialize(&edge) {
-    //                 Ok(bytes) => {
-    //                     if let Err(e) = storage.edges_db.put_with_flags(
-    //                         &mut txn,
-    //                         PutFlags::APPEND,
-    //                         &HelixGraphStorage::edge_key(&edge.id),
-    //                         &bytes,
-    //                     ) {
-    //                         println!("error adding edge: {:?}", e);
-    //                         return Err(GraphError::from(format!("error adding edge: {:?}", e)));
-    //                     }
-    //                 }
-    //                 Err(e) => {
-    //                     println!("error serializing edge: {:?}", e);
-    //                     return Err(GraphError::from(format!("error serializing edge: {:?}", e)));
-    //                 }
-    //             }
+        let mut count = 0;
+        println!("Adding edges");
+        // EDGES
+        let chunks = edges.chunks_mut(chunk_size);
+        for chunk in chunks {
+            let mut txn = storage.graph_env.write_txn().unwrap();
+            for (e_from, e_to, e_id) in chunk.iter() {
+                if should_check_nodes
+                    && (storage
+                        .nodes_db
+                        .get(&txn, &HelixGraphStorage::node_key(&e_from))
+                        .map_or(false, |node| node.is_none())
+                        || storage
+                            .nodes_db
+                            .get(&txn, &HelixGraphStorage::node_key(&e_to))
+                            .map_or(false, |node| node.is_none()))
+                {
+                    return Err(GraphError::NodeNotFound);
+                }
+                match SerializedEdge::encode_edge(&Edge {
+                    id: *e_id,
+                    label: "knows".to_string(),
+                    properties: HashMap::new(),
+                    from_node: *e_from,
+                    to_node: *e_to,
+                }) {
+                    Ok(bytes) => {
+                        if let Err(e) = storage.edges_db.put_with_flags(
+                            &mut txn,
+                            PutFlags::APPEND,
+                            &HelixGraphStorage::edge_key(&e_id),
+                            &bytes,
+                        ) {
+                            println!("error adding edge: {:?}", e);
+                            return Err(GraphError::from(e));
+                        }
+                    }
+                    Err(e) => {
+                        println!("error serializing edge: {:?}", e);
+                        return Err(GraphError::from(e));
+                    }
+                }
 
-    //             match storage.edge_labels_db.put_with_flags(
-    //                 &mut txn,
-    //                 PutFlags::APPEND,
-    //                 label_hashes.get(&edge.label).unwrap(),
-    //                 &edge.id.to_be_bytes(),
-    //             ) {
-    //                 Ok(_) => {}
-    //                 Err(e) => {
-    //                     println!("error adding edge label: {:?}", e);
-    //                     return Err(GraphError::from(format!(
-    //                         "error adding edge label: {:?}",
-    //                         e
-    //                     )));
-    //                 }
-    //             }
+                count += 1;
+                if count % 1000000 == 0 {
+                    println!("Processed {} chunks", count);
+                }
+            }
+            txn.commit()?;
+        }
 
-    //             // OUT EDGES
-    //             let (from_node, label, to_node, id) = out;
-    //             let out_flag = if Some((from_node, label)) == prev_out {
-    //                 PutFlags::APPEND_DUP
-    //             } else {
-    //                 prev_out = Some((from_node, label));
-    //                 PutFlags::APPEND
-    //             };
+        count = 0;
+        println!("Adding out edges");
+        // OUT EDGES
+        let mut prev_out = None;
 
-    //             match storage.out_edges_db.put_with_flags(
-    //                 &mut txn,
-    //                 out_flag,
-    //                 &HelixGraphStorage::out_edge_key(&from_node, &label),
-    //                 &HelixGraphStorage::pack_edge_data(&to_node, &id),
-    //             ) {
-    //                 Ok(_) => {}
-    //                 Err(e) => {
-    //                     println!("error adding out edge: {:?}", e);
-    //                     return Err(GraphError::from(format!("error adding out edge: {:?}", e)));
-    //                 }
-    //             }
+        edges.sort_unstable_by(|(from, to, id), (from_, to_, id_)| {
+            if from == from_ {
+                id.cmp(id_)
+            } else {
+                from.cmp(from_)
+            }
+        });
 
-    //             // IN EDGES
-    //             let (to_node, label, from_node, id) = in_;
-    //             let in_flag = if Some((to_node, label)) == prev_in {
-    //                 PutFlags::APPEND_DUP
-    //             } else {
-    //                 prev_in = Some((to_node, label));
-    //                 PutFlags::APPEND
-    //             };
+        let chunks = edges.chunks_mut(chunk_size);
+        for chunk in chunks {
+            let mut txn = storage.graph_env.write_txn().unwrap();
+            for (from_node, to_node, id) in chunk.iter() {
+                // OUT EDGES
+                let out_flag = if Some(from_node) == prev_out {
+                    PutFlags::APPEND_DUP
+                } else {
+                    prev_out = Some(from_node);
+                    PutFlags::APPEND
+                };
 
-    //             match storage.in_edges_db.put_with_flags(
-    //                 &mut txn,
-    //                 in_flag,
-    //                 &HelixGraphStorage::in_edge_key(&to_node, &label),
-    //                 &HelixGraphStorage::pack_edge_data(&from_node, &id),
-    //             ) {
-    //                 Ok(_) => {}
-    //                 Err(e) => {
-    //                     println!("error adding in edge: {:?}", e);
-    //                     return Err(GraphError::from(format!("error adding in edge: {:?}", e)));
-    //                 }
-    //             }
-    //         }
-    //         txn.commit()?;
-    //         println!("processed {} edges in {:?}", chunk_size, start.elapsed());
-    //         start = Instant::now();
-    //         txn = storage.graph_env.write_txn()?;
-    //     }
-    //     txn.commit()?;
-    //     Ok(())
-    // }
+                match storage.out_edges_db.put_with_flags(
+                    &mut txn,
+                    out_flag,
+                    &HelixGraphStorage::out_edge_key(&from_node, &hash_label("knows", None)),
+                    &HelixGraphStorage::pack_edge_data(&to_node, &id),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("error adding out edge: {:?}", e);
+                        return Err(GraphError::from(e));
+                    }
+                }
+                count += 1;
+                if count % 1000000 == 0 {
+                    println!("Processed {} chunks", count);
+                }
+            }
+            txn.commit()?;
+        }
+
+        count = 0;
+        println!("Adding in edges");
+        // IN EDGES
+        edges.sort_unstable_by(
+            |(from, to, id), (from_, to_, id_)| {
+                if to == to_ {
+                    id.cmp(id_)
+                } else {
+                    to.cmp(to_)
+                }
+            },
+        );
+        let mut prev_in = None;
+        let chunks = edges.chunks_mut(chunk_size);
+        for chunk in chunks {
+            let mut txn = storage.graph_env.write_txn().unwrap();
+            for (from_node, to_node, id) in chunk.iter() {
+                // IN EDGES
+                let in_flag = if Some(to_node) == prev_in {
+                    PutFlags::APPEND_DUP
+                } else {
+                    prev_in = Some(to_node);
+                    PutFlags::APPEND
+                };
+
+                match storage.in_edges_db.put_with_flags(
+                    &mut txn,
+                    in_flag,
+                    &HelixGraphStorage::in_edge_key(&to_node, &hash_label("knows", None)),
+                    &HelixGraphStorage::pack_edge_data(&from_node, &id),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("error adding in edge: {:?}", e);
+                        return Err(GraphError::from(e));
+                    }
+                }
+                count += 1;
+                if count % 1000000 == 0 {
+                    println!("Processed {} chunks", count);
+                }
+            }
+            txn.commit()?;
+        }
+        Ok(())
+    }
 }

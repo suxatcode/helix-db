@@ -8,7 +8,11 @@ use crate::{
         graph_core::traversal_iter::RwTraversalIterator,
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
-    protocol::{items::{Edge, SerializedEdge}, label_hash::hash_label, value::Value},
+    protocol::{
+        items::{Edge, SerializedEdge},
+        label_hash::hash_label,
+        value::Value,
+    },
 };
 
 use super::super::tr_val::TraversalVal;
@@ -47,7 +51,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
         // sort by id
-        edges.sort_unstable_by_key(|(_, _, id)| *id);
+        edges.sort_unstable_by(|(_, _, id), (_, _, id_)| id.cmp(id_));
 
         let mut count = 0;
         println!("Adding edges");
@@ -102,7 +106,14 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         // OUT EDGES
         let mut prev_out = None;
 
-        edges.sort_unstable_by_key(|(from, to, id)| (*from, *id, *to));
+        edges.sort_unstable_by(|(from, to, id), (from_, to_, id_)| {
+            if from == from_ {
+                id.cmp(id_)
+            } else {
+                from.cmp(from_)
+            }
+        });
+
         for out in edges.iter() {
             // OUT EDGES
             let (from_node, to_node, id) = out;
@@ -134,7 +145,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         count = 0;
         println!("Adding in edges");
         // IN EDGES
-        edges.sort_unstable_by_key(|(from, to, id)| (*to, *id, *from));
+        edges.sort_unstable_by(|(from, to, id), (from_, to_, id_)| {
+            if to == to_ {
+                id.cmp(id_)
+            } else {
+                to.cmp(to_)
+            }
+        });
         let mut prev_in = None;
         for in_ in edges.iter() {
             // IN EDGES
