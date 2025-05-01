@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use heed3::{
-    types::{Bytes, Lazy, Unit},
+    byteorder::BE,
+    types::{Bytes, Lazy, Unit, U128},
     RoTxn,
 };
 
@@ -13,7 +14,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
+        items::{Edge, Node, SerializedNode},
         label_hash::hash_label,
     },
 };
@@ -21,25 +22,30 @@ use crate::{
 use super::super::tr_val::TraversalVal;
 
 pub struct NFromTypes<'a> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
     storage: Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
-    length: usize,
+    label: &'a str,
 }
 // implementing iterator for OutIterator
 impl<'a> Iterator for NFromTypes<'a> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|value| {
+        while let Some(value) = self.iter.next() {
             let (key_, value) = value.unwrap();
-            let node_id = HelixGraphStorage::get_u128_from_bytes(&value.decode().unwrap())?;
-            let node: Node = match self.storage.get_node(self.txn, &node_id) {
-                Ok(node) => node,
-                Err(e) => return Err(e),
-            };
-            Ok(TraversalVal::Node(node))
-        })
+            match value.decode() {
+                Ok(value) => match SerializedNode::decode_node(&value, key_) {
+                    Ok(node) => match &node.label {
+                        label if label == self.label => return Some(Ok(TraversalVal::Node(node))),
+                        _ => continue,
+                    },
+                    Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+                },
+                Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+            }
+        }
+        None
     }
 }
 pub trait NFromTypesAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
@@ -58,17 +64,12 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypesAdapter
         let db = self.storage.clone();
         let txn: &RoTxn<'_> = self.txn;
         let iter = types.iter().flat_map(move |label| {
-            let prefix = hash_label(label, None);
-            let iter = db
-                .node_labels_db
-                .lazily_decode_data()
-                .prefix_iter(&self.txn, &prefix)
-                .unwrap();
+            let iter = db.nodes_db.lazily_decode_data().iter(txn).unwrap();
             NFromTypes {
                 iter,
                 storage: db.clone(),
                 txn,
-                length: prefix.len(),
+                label,
             }
         });
         RoTraversalIterator {

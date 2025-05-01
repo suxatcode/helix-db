@@ -8,7 +8,10 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
     protocol::{
-        filterable::Filterable, items::{Edge, Node}, label_hash::hash_label, value::Value
+        filterable::Filterable,
+        items::{Node, SerializedNode},
+        label_hash::hash_label,
+        value::Value,
     },
 };
 
@@ -33,6 +36,7 @@ pub trait BulkAddNAdapter<'a, 'b>:
         self,
         nodes: &mut [u128],
         secondary_indices: Option<&[String]>,
+        chunk_size: usize,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
@@ -43,70 +47,73 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
         self,
         nodes: &mut [u128],
         secondary_indices: Option<&[String]>,
+        chunk_size: usize,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
-        for node in nodes {
-            let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
-            // insert node
-            match bincode::serialize(&node) {
-                Ok(bytes) => {
-                    if let Err(e) = self.storage.nodes_db.put_with_flags(
-                        self.txn,
-                        PutFlags::APPEND,
-                        &node.to_be_bytes(),
-                        &bytes,
-                    ) {
-                        result = Err(GraphError::from(e));
+        nodes.sort_unstable_by_key(|node| *node);
+        let chunks = nodes.chunks_mut(chunk_size);
+        let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
+        for chunk in chunks {
+            for node in chunk {
+                let node = Node {
+                    id: *node,
+                    label: "user".to_string(),
+                    properties: HashMap::new(),
+                };
+
+                let id = node.id;
+                // insert node
+
+                match SerializedNode::encode_node(&node) {
+                    Ok(bytes) => {
+                        if let Err(e) = self.storage.nodes_db.put_with_flags(
+                            self.txn,
+                            PutFlags::APPEND,
+                            &id,
+                            &bytes,
+                        ) {
+                            result = Err(GraphError::from(e));
+                        }
                     }
+                    Err(e) => result = Err(GraphError::from(e)),
                 }
-                Err(e) => result = Err(GraphError::from(e)),
-            }
 
-            // insert label
-            match self.storage.node_labels_db.put(
-                self.txn,
-                &hash_label("user", None),
-                &node.to_be_bytes(),
-            ) {
-                Ok(_) => {}
-                Err(e) => result = Err(GraphError::from(e)),
+                // for index in &secondary_indices {
+                //     match self.storage.secondary_indices.get(index.as_str()) {
+                //         Some(db) => {
+                //             let key = match node.check_property(&index) {
+                //                 Some(value) => value,
+                //                 None => {
+                //                     result = Err(GraphError::New(format!(
+                //                         "Secondary Index {} not found",
+                //                         index
+                //                     )));
+                //                     continue;
+                //                 }
+                //             };
+                //             match bincode::serialize(&key) {
+                //                 Ok(serialized) => {
+                //                     if let Err(e) = db.put_with_flags(
+                //                         self.txn,
+                //                         PutFlags::APPEND,
+                //                         &serialized,
+                //                         &node.id.to_be_bytes(),
+                //                     ) {
+                //                         result = Err(GraphError::from(e));
+                //                     }
+                //                 }
+                //                 Err(e) => result = Err(GraphError::from(e)),
+                //             }
+                //         }
+                //         None => {
+                //             result = Err(GraphError::New(format!(
+                //                 "Secondary Index {} not found",
+                //                 index
+                //             )));
+                //         }
+                //     }
+                // }
             }
-
-            // for index in &secondary_indices {
-            //     match self.storage.secondary_indices.get(index.as_str()) {
-            //         Some(db) => {
-            //             let key = match node.check_property(&index) {
-            //                 Some(value) => value,
-            //                 None => {
-            //                     result = Err(GraphError::New(format!(
-            //                         "Secondary Index {} not found",
-            //                         index
-            //                     )));
-            //                     continue;
-            //                 }
-            //             };
-            //             match bincode::serialize(&key) {
-            //                 Ok(serialized) => {
-            //                     if let Err(e) = db.put_with_flags(
-            //                         self.txn,
-            //                         PutFlags::APPEND,
-            //                         &serialized,
-            //                         &node.id.to_be_bytes(),
-            //                     ) {
-            //                         result = Err(GraphError::from(e));
-            //                     }
-            //                 }
-            //                 Err(e) => result = Err(GraphError::from(e)),
-            //             }
-            //         }
-            //         None => {
-            //             result = Err(GraphError::New(format!(
-            //                 "Secondary Index {} not found",
-            //                 index
-            //             )));
-            //         }
-            //     }
-            // }
         }
         RwTraversalIterator {
             inner: std::iter::once(result), // TODO: change to support adding multiple edges

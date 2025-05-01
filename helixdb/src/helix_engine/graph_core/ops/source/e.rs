@@ -1,7 +1,8 @@
 use std::{ops::Deref, sync::Arc};
 
 use heed3::{
-    types::{Bytes, Lazy},
+    byteorder::BE,
+    types::{Bytes, Lazy, U128},
     RoTxn,
 };
 
@@ -20,7 +21,7 @@ use crate::{
 use super::super::tr_val::TraversalVal;
 
 pub struct E<'a> {
-    iter: heed3::RoIter<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
 }
 
 // implementing iterator for OutIterator
@@ -32,10 +33,7 @@ impl<'a> Iterator for E<'a> {
             let (key, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                match SerializedEdge::decode_edge(
-                    &value,
-                    HelixGraphStorage::get_u128_from_bytes(key).unwrap(),
-                ) {
+                match SerializedEdge::decode_edge(&value, key) {
                     Ok(edge) => Ok(TraversalVal::Edge(edge)),
                     Err(e) => Err(GraphError::ConversionError(format!(
                         "Error deserializing edge: {}",
@@ -95,10 +93,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> RwEAdapt
             .unwrap()
             .filter_map(|result| {
                 let (key, value) = result.unwrap();
-                let value: Edge = match SerializedEdge::decode_edge(
-                    &value.decode().unwrap(),
-                    HelixGraphStorage::get_u128_from_bytes(&key).unwrap(),
-                ) {
+                let value: Edge = match SerializedEdge::decode_edge(&value.decode().unwrap(), key) {
                     Ok(edge) => edge,
                     Err(e) => {
                         eprintln!("Error decoding edge: {:?}", e);

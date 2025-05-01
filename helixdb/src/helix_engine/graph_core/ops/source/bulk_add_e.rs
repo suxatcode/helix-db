@@ -8,11 +8,7 @@ use crate::{
         graph_core::traversal_iter::RwTraversalIterator,
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
-    protocol::{
-        items::{v6_uuid, Edge},
-        label_hash::hash_label,
-        value::Value,
-    },
+    protocol::{items::{Edge, SerializedEdge}, label_hash::hash_label, value::Value},
 };
 
 use super::super::tr_val::TraversalVal;
@@ -51,7 +47,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
         // sort by id
-        let hash = hash_label("knows", None);
+        edges.sort_unstable_by_key(|(_, _, id)| *id);
+
         let mut count = 0;
         println!("Adding edges");
         // EDGES
@@ -70,7 +67,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
             {
                 result = Err(GraphError::NodeNotFound);
             }
-            match bincode::serialize(&Edge {
+            match SerializedEdge::encode_edge(&Edge {
                 id: *e_id,
                 label: "knows".to_string(),
                 properties: HashMap::new(),
@@ -94,18 +91,6 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
                 }
             }
 
-            match self.storage.edge_labels_db.put_with_flags(
-                self.txn,
-                PutFlags::APPEND_DUP,
-                &hash,
-                &e_id.to_be_bytes(),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("error adding edge label: {:?}", e);
-                    result = Err(GraphError::from(e));
-                }
-            }
             count += 1;
             if count % 1000000 == 0 {
                 println!("Processed {} chunks", count);
@@ -114,27 +99,24 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
 
         count = 0;
         println!("Adding out edges");
-        let length = edges.len();
         // OUT EDGES
-        let mut out_edges_buffer = Vec::with_capacity(length);
         let mut prev_out = None;
-        out_edges_buffer.extend(edges.into_iter().map(|(from, to, id)| (from, to, id)));
 
-        out_edges_buffer.sort_unstable_by_key(|(from, to, _)| (*from, *to));
-        for out in out_edges_buffer.iter() {
+        edges.sort_unstable_by_key(|(from, to, id)| (*from, *id, *to));
+        for out in edges.iter() {
             // OUT EDGES
             let (from_node, to_node, id) = out;
-            let out_flag = if Some((from_node, to_node)) == prev_out {
+            let out_flag = if Some(from_node) == prev_out {
                 PutFlags::APPEND_DUP
             } else {
-                prev_out = Some((from_node, to_node));
+                prev_out = Some(from_node);
                 PutFlags::APPEND
             };
 
             match self.storage.out_edges_db.put_with_flags(
                 self.txn,
                 out_flag,
-                &HelixGraphStorage::out_edge_key(&from_node, &hash),
+                &HelixGraphStorage::out_edge_key(&from_node, &hash_label("knows", None)),
                 &HelixGraphStorage::pack_edge_data(&to_node, &id),
             ) {
                 Ok(_) => {}
@@ -152,22 +134,22 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         count = 0;
         println!("Adding in edges");
         // IN EDGES
-        out_edges_buffer.sort_unstable_by_key(|(_, to, _)| (*to));
+        edges.sort_unstable_by_key(|(from, to, id)| (*to, *id, *from));
         let mut prev_in = None;
-        for in_ in out_edges_buffer {
+        for in_ in edges.iter() {
             // IN EDGES
             let (from_node, to_node, id) = in_;
-            let in_flag = if Some((to_node, from_node)) == prev_in {
+            let in_flag = if Some(to_node) == prev_in {
                 PutFlags::APPEND_DUP
             } else {
-                prev_in = Some((to_node, from_node));
+                prev_in = Some(to_node);
                 PutFlags::APPEND
             };
 
             match self.storage.in_edges_db.put_with_flags(
                 self.txn,
                 in_flag,
-                &HelixGraphStorage::in_edge_key(&to_node, &hash),
+                &HelixGraphStorage::in_edge_key(&to_node, &hash_label("knows", None)),
                 &HelixGraphStorage::pack_edge_data(&from_node, &id),
             ) {
                 Ok(_) => {}

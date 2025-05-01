@@ -5,7 +5,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::hnsw::HNSW,
     },
     protocol::{
-        items::{v6_uuid, Edge},
+        items::{v6_uuid, Edge, SerializedEdge},
         label_hash::hash_label,
         value::Value,
     },
@@ -76,12 +76,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 }
             }
         }
-        match bincode::serialize(&edge) {
+        
+        match SerializedEdge::encode_edge(&edge) {
             Ok(bytes) => {
                 if let Err(e) = self.storage.edges_db.put_with_flags(
                     self.txn,
                     PutFlags::APPEND,
-                    &edge.id.to_be_bytes(),
+                    &HelixGraphStorage::edge_key(&edge.id),
                     &bytes,
                 ) {
                     result = Err(GraphError::from(e));
@@ -91,15 +92,6 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         }
 
         let label_hash = hash_label(edge.label.as_str(), None);
-        match self.storage.edge_labels_db.put_with_flags(
-            self.txn,
-            PutFlags::APPEND,
-            &label_hash,
-            &edge.id.to_be_bytes(),
-        ) {
-            Ok(_) => {}
-            Err(e) => result = Err(GraphError::from(e)),
-        }
 
         match self.storage.out_edges_db.put(
             self.txn,

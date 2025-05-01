@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use heed3::{
-    types::{Bytes, Lazy, Unit},
+    byteorder::BE,
+    types::{Bytes, Lazy, U128},
     RoTxn,
 };
 
@@ -20,41 +21,41 @@ use crate::{
 use super::super::tr_val::TraversalVal;
 
 pub struct EFromTypes<'a> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
     storage: &'a Arc<HelixGraphStorage>,
     txn: &'a RoTxn<'a>,
-    length: usize,
+    label: &'a str,
 }
 // implementing iterator for OutIterator
 impl<'a> Iterator for EFromTypes<'a> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|value| {
-            let (key, _) = value.unwrap();
-            let edge_id = HelixGraphStorage::get_u128_from_bytes(&key[self.length..])?;
-            let edge = match self.storage.get_edge(self.txn, &edge_id) {
-                Ok(edge) => edge,
-                Err(e) => return Err(e),
-            };
-            Ok(TraversalVal::Edge(edge))
-        })
+        while let Some(value) = self.iter.next() {
+            let (key, value) = value.unwrap();
+            match value.decode() {
+                Ok(value) => match SerializedEdge::decode_edge(&value, key) {
+                    Ok(edge) => match &edge.label {
+                        label if label == self.label => return Some(Ok(TraversalVal::Edge(edge))),
+                        _ => continue,
+                    },
+                    Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+                },
+                Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+            }
+        }
+        None
     }
 }
 
 impl<'a> EFromTypes<'a> {
-    pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn, label: &str) -> Self {
-        let prefix = hash_label(label, None);
-        let iter = storage
-            .edge_labels_db
-            .lazily_decode_data()
-            .prefix_iter(&txn, &prefix)
-            .unwrap();
+    pub fn new(storage: &'a Arc<HelixGraphStorage>, txn: &'a RoTxn, label: &'a str) -> Self {
+        let iter = storage.edges_db.lazily_decode_data().iter(txn).unwrap();
         EFromTypes {
             iter,
             storage: &storage,
             txn: &txn,
-            length: prefix.len(),
+            label,
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::protocol::filterable::Filterable;
 use crate::protocol::items::{v6_uuid, SerializedEdge, SerializedNode};
 use crate::protocol::label_hash::hash_label;
 
+use heed3::byteorder::BE;
 use heed3::{
     types::*, Database, DatabaseFlags, Env, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
     WithTls,
@@ -37,10 +38,8 @@ const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
 pub struct HelixGraphStorage {
     pub graph_env: Env<WithTls>,
-    pub nodes_db: Database<Bytes, Bytes>,
-    pub edges_db: Database<Bytes, Bytes>,
-    pub node_labels_db: Database<Bytes, Bytes>,
-    pub edge_labels_db: Database<Bytes, Bytes>,
+    pub nodes_db: Database<U128<BE>, Bytes>,
+    pub edges_db: Database<U128<BE>, Bytes>,
     pub out_edges_db: Database<Bytes, Bytes>,
     pub in_edges_db: Database<Bytes, Bytes>,
     pub secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
@@ -57,6 +56,7 @@ impl HelixGraphStorage {
                 .map_size(config.vector_config.db_max_size.unwrap_or(100) * 1024 * 1024 * 1024) // 10GB max
                 .max_dbs(20)
                 .max_readers(200)
+                
                 // .flags(EnvFlags::NO_META_SYNC)
                 // .flags(EnvFlags::MAP_ASYNC)
                 // .flags(EnvFlags::NO_SYNC)
@@ -66,10 +66,18 @@ impl HelixGraphStorage {
         let mut wtxn = graph_env.write_txn()?;
 
         // Create/open all necessary databases
-        let nodes_db = graph_env.create_database(&mut wtxn, Some(DB_NODES))?;
-        let edges_db = graph_env.create_database(&mut wtxn, Some(DB_EDGES))?;
-        let node_labels_db = graph_env.create_database(&mut wtxn, Some(DB_NODE_LABELS))?;
-        let edge_labels_db = graph_env.create_database(&mut wtxn, Some(DB_EDGE_LABELS))?;
+        let nodes_db = graph_env
+            .database_options()
+            .types::<U128<BE>, Bytes>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            .name(DB_NODES)
+            .create(&mut wtxn)?;
+        let edges_db = graph_env
+            .database_options()
+            .types::<U128<BE>, Bytes>()
+            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            .name(DB_EDGES)
+            .create(&mut wtxn)?;
         let out_edges_db: Database<Bytes, Bytes> = graph_env
             .database_options()
             .types::<Bytes, Bytes>()
@@ -109,8 +117,6 @@ impl HelixGraphStorage {
             graph_env,
             nodes_db,
             edges_db,
-            node_labels_db,
-            edge_labels_db,
             out_edges_db,
             in_edges_db,
             secondary_indices,
@@ -158,24 +164,40 @@ impl HelixGraphStorage {
     //     hash.finish_32().to_le_bytes()
     // }
 
+    // #[inline(always)]
+    // pub fn node_key(id: &u128) -> [u8; 16] {
+    //     id.to_be_bytes()
+    // }
+
+    // #[inline(always)]
+    // pub fn edge_key(id: &u128) -> [u8; 16] {
+    //     id.to_be_bytes()
+    // }
+
     #[inline(always)]
-    pub fn node_key(id: &u128) -> Vec<u8> {
-        id.to_be_bytes().to_vec()
+    pub fn node_key(id: &u128) -> &u128 {
+        id
     }
 
     #[inline(always)]
-    pub fn edge_key(id: &u128) -> Vec<u8> {
-        id.to_be_bytes().to_vec()
+    pub fn edge_key(id: &u128) -> &u128 {
+        id
     }
 
     #[inline(always)]
-    pub fn node_label_key(label: &[u8; 4]) -> [u8; 4] {
-        *label
+    pub fn node_label_key(label: &[u8; 4], id: &u128) -> [u8; 20] {
+        let mut key = [0u8; 20];
+        key[0..4].copy_from_slice(label);
+        key[4..20].copy_from_slice(&id.to_be_bytes());
+        key
     }
 
     #[inline(always)]
-    pub fn edge_label_key(label: &[u8; 4]) -> [u8; 4] {
-        *label
+    pub fn edge_label_key(label: &[u8; 4], id: &u128) -> [u8; 20] {
+        let mut key = [0u8; 20];
+        key[0..4].copy_from_slice(label);
+        key[4..20].copy_from_slice(&id.to_be_bytes());
+        key
     }
 
     // key = from-node(16) | label-id(4) | chunk-no(2)   ← 22 B
@@ -201,19 +223,19 @@ impl HelixGraphStorage {
     #[inline(always)]
     pub fn pack_edge_data(node_id: &u128, edge_id: &u128) -> [u8; 32] {
         let mut key = [0u8; 32];
-        key[0..16].copy_from_slice(&node_id.to_be_bytes());
-        key[16..32].copy_from_slice(&edge_id.to_be_bytes());
+        key[0..16].copy_from_slice(&edge_id.to_be_bytes());
+        key[16..32].copy_from_slice(&node_id.to_be_bytes());
         key
     }
 
     #[inline(always)]
     pub fn unpack_adj_edge_data(data: &[u8]) -> Result<(u128, u128), GraphError> {
-        let node_id = u128::from_be_bytes(
+        let edge_id = u128::from_be_bytes(
             data[0..16]
                 .try_into()
                 .map_err(|_| GraphError::SliceLengthError)?,
         );
-        let edge_id = u128::from_be_bytes(
+        let node_id = u128::from_be_bytes(
             data[16..32]
                 .try_into()
                 .map_err(|_| GraphError::SliceLengthError)?,
@@ -257,7 +279,7 @@ impl DBMethods for HelixGraphStorage {
 impl BasicStorageMethods for HelixGraphStorage {
     #[inline(always)]
     fn get_temp_node<'a>(&self, txn: &'a RoTxn, id: &u128) -> Result<&'a [u8], GraphError> {
-        match self.nodes_db.get(&txn, Self::node_key(id).as_slice())? {
+        match self.nodes_db.get(&txn, Self::node_key(id))? {
             Some(data) => Ok(data),
             None => Err(GraphError::NodeNotFound),
         }
@@ -265,7 +287,7 @@ impl BasicStorageMethods for HelixGraphStorage {
 
     #[inline(always)]
     fn get_temp_edge<'a>(&self, txn: &'a RoTxn, id: &u128) -> Result<&'a [u8], GraphError> {
-        match self.edges_db.get(&txn, Self::edge_key(id).as_slice())? {
+        match self.edges_db.get(&txn, Self::edge_key(id))? {
             Some(data) => Ok(data),
             None => Err(GraphError::EdgeNotFound),
         }
@@ -276,16 +298,13 @@ impl StorageMethods for HelixGraphStorage {
     #[inline(always)]
     fn check_exists(&self, txn: &RoTxn, id: &u128) -> Result<bool, GraphError> {
         // let txn = txn.read_txn();
-        let exists = self
-            .nodes_db
-            .get(txn, Self::node_key(id).as_slice())?
-            .is_some();
+        let exists = self.nodes_db.get(txn, Self::node_key(id))?.is_some();
         Ok(exists)
     }
 
     #[inline(always)]
     fn get_node(&self, txn: &RoTxn, id: &u128) -> Result<Node, GraphError> {
-        let node = match self.nodes_db.get(txn, Self::node_key(id).as_slice())? {
+        let node = match self.nodes_db.get(txn, Self::node_key(id))? {
             Some(data) => data,
             None => return Err(GraphError::NodeNotFound),
         };
@@ -298,7 +317,7 @@ impl StorageMethods for HelixGraphStorage {
 
     #[inline(always)]
     fn get_edge(&self, txn: &RoTxn, id: &u128) -> Result<Edge, GraphError> {
-        let edge = match self.edges_db.get(txn, Self::edge_key(id).as_slice())? {
+        let edge = match self.edges_db.get(txn, Self::edge_key(id))? {
             Some(data) => data,
             None => return Err(GraphError::EdgeNotFound),
         };
@@ -388,8 +407,6 @@ impl StorageMethods for HelixGraphStorage {
             // Delete edge data
             let label_hash = hash_label(&edge.label, None);
             self.edges_db.delete(txn, &Self::edge_key(&edge.id))?;
-            self.edge_labels_db
-                .delete(txn, &Self::edge_label_key(&label_hash))?;
             self.out_edges_db
                 .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
             self.in_edges_db
@@ -397,10 +414,7 @@ impl StorageMethods for HelixGraphStorage {
         }
 
         // Delete node data and label
-        let label_hash = hash_label(&node.label, None);
-        self.nodes_db.delete(txn, Self::node_key(id).as_slice())?;
-        self.node_labels_db
-            .delete(txn, &Self::node_label_key(&label_hash))?;
+        self.nodes_db.delete(txn, Self::node_key(id))?;
 
         Ok(())
     }
@@ -415,8 +429,6 @@ impl StorageMethods for HelixGraphStorage {
         let label_hash = hash_label(&edge.label, None);
         // Delete all edge-related data
         self.edges_db.delete(txn, &Self::edge_key(edge_id))?;
-        self.edge_labels_db
-            .delete(txn, &Self::edge_label_key(&label_hash))?;
         self.out_edges_db
             .delete(txn, &Self::out_edge_key(&edge.from_node, &label_hash))?;
         self.in_edges_db
@@ -441,11 +453,9 @@ impl StorageMethods for HelixGraphStorage {
 
         // Store node data
         self.nodes_db
-            .put(txn, &Self::node_key(&node.id), &bincode::serialize(&node)?)?;
+            .put(txn, &Self::node_key(&node.id), &SerializedNode::encode_node(&node)?)?;
         let label_hash = hash_label(label, None);
         // Store node label index
-        self.node_labels_db
-            .put(txn, &label_hash, &node.id.to_be_bytes())?;
 
         for index in secondary_indices.unwrap_or(&[]) {
             match self.secondary_indices.get(index) {
@@ -488,14 +498,8 @@ impl StorageMethods for HelixGraphStorage {
         //         "One or both nodes do not exist".to_string(),
         //     ));
         // }
-        if self
-            .nodes_db
-            .get(txn, Self::node_key(from_node).as_slice())?
-            .is_none()
-            || self
-                .nodes_db
-                .get(txn, Self::node_key(to_node).as_slice())?
-                .is_none()
+        if self.nodes_db.get(txn, Self::node_key(from_node))?.is_none()
+            || self.nodes_db.get(txn, Self::node_key(to_node))?.is_none()
         {
             return Err(GraphError::NodeNotFound);
         }
@@ -510,12 +514,10 @@ impl StorageMethods for HelixGraphStorage {
 
         // Store edge data
         self.edges_db
-            .put(txn, &Self::edge_key(&edge.id), &bincode::serialize(&edge)?)?;
+            .put(txn, &Self::edge_key(&edge.id), &SerializedEdge::encode_edge(&edge)?)?;
 
         let label_hash = hash_label(label, None);
         // Store edge label index
-        self.edge_labels_db
-            .put(txn, &label_hash, &edge.id.to_be_bytes())?;
 
         // Store edge - node maps
         self.out_edges_db.put(

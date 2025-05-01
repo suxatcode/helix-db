@@ -1,8 +1,9 @@
 use super::value::{properties_format, Value};
 use crate::helix_engine::types::GraphError;
+use bincode::Options;
 use sonic_rs::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::{cmp::Ordering, collections::HashMap};
+use uuid::Uuid;
 
 /// A node in the graph containing an ID, label, and property map.
 /// Properties are serialised without enum variant names in JSON format.
@@ -56,7 +57,11 @@ pub struct SerializedNode {
 
 impl SerializedNode {
     pub fn decode_node(bytes: &[u8], id: u128) -> Result<Node, GraphError> {
-        match bincode::deserialize::<SerializedNode>(bytes) {
+        let cfg = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_big_endian();
+
+        match cfg.deserialize::<SerializedNode>(bytes) {
             Ok(node) => {
                 let node = Node {
                     id,
@@ -70,6 +75,15 @@ impl SerializedNode {
                 e
             ))),
         }
+    }
+
+    pub fn encode_node(node: &Node) -> Result<Vec<u8>, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_big_endian();
+
+        cfg.serialize(node)
+            .map_err(|e| GraphError::ConversionError(format!("Error serializing node: {}", e)))
     }
 }
 impl std::fmt::Display for Node {
@@ -185,7 +199,11 @@ pub struct SerializedEdge {
 
 impl SerializedEdge {
     pub fn decode_edge(bytes: &[u8], id: u128) -> Result<Edge, GraphError> {
-        match bincode::deserialize::<SerializedEdge>(bytes) {
+        let cfg = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_big_endian();
+
+        match cfg.deserialize::<SerializedEdge>(bytes) {
             Ok(edge) => {
                 let edge = Edge {
                     id,
@@ -201,6 +219,15 @@ impl SerializedEdge {
                 e
             ))),
         }
+    }
+
+    pub fn encode_edge(edge: &Edge) -> Result<Vec<u8>, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_big_endian();
+
+        cfg.serialize(edge)
+            .map_err(|e| GraphError::ConversionError(format!("Error serializing edge: {}", e)))
     }
 }
 

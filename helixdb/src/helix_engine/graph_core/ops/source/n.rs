@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use heed3::{
-    types::{Bytes, Lazy},
+    byteorder::BE,
+    types::{Bytes, Lazy, U128},
     RoTxn,
 };
 
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::{HelixGraphStorage}, storage_methods::StorageMethods},
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
     protocol::{
@@ -20,7 +21,7 @@ use crate::{
 use super::super::tr_val::TraversalVal;
 
 pub struct N<'a> {
-    iter: heed3::RoIter<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
 }
 
 // implementing iterator for OutIterator
@@ -32,10 +33,7 @@ impl<'a> Iterator for N<'a> {
             let (key, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                match SerializedNode::decode_node(
-                    &value,
-                    HelixGraphStorage::get_u128_from_bytes(key).unwrap(),
-                ) {
+                match SerializedNode::decode_node(&value, key) {
                     Ok(node) => Ok(TraversalVal::Node(node)),
                     Err(e) => Err(GraphError::ConversionError(format!(
                         "Error deserializing node: {}",

@@ -9,7 +9,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
     protocol::{
-        filterable::Filterable, items::{v6_uuid, Node}, label_hash::hash_label, value::Value
+        filterable::Filterable, items::{v6_uuid, Node, SerializedNode}, label_hash::hash_label, value::Value
     },
 };
 
@@ -55,12 +55,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
         // insert node
-        match bincode::serialize(&node) {
+        
+        match SerializedNode::encode_node(&node) {
             Ok(bytes) => {
                 if let Err(e) = self.storage.nodes_db.put_with_flags(
                     self.txn,
                     PutFlags::APPEND,
-                    &node.id.to_be_bytes(),
+                    &node.id,
                     &bytes,
                 ) {
                     result = Err(GraphError::from(e));
@@ -68,16 +69,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             }
             Err(e) => result = Err(GraphError::from(e)),
         }
-        // insert label
-        match self.storage.node_labels_db.put_with_flags(
-            self.txn,
-            PutFlags::APPEND,
-            &hash_label(label, None),
-            &node.id.to_be_bytes(),
-        ) {
-            Ok(_) => {}
-            Err(e) => result = Err(GraphError::from(e)),
-        }
+        
 
         for index in &secondary_indices {
             match self.storage.secondary_indices.get(index.as_str()) {
