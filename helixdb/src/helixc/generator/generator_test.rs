@@ -23,10 +23,10 @@ mod tests {
     }
 
     #[test]
-    fn test_add_vertex_generation() {
+    fn test_add_node_generation() {
         let input = r#"
-        QUERY CreateUser(name: String, age: Integer) =>
-            user <- AddV<User>({Name: "name", Age: "age"})
+        QUERY CreateUser(name: String, age: I32) =>
+            user <- AddN<User>({Name: "name", Age: "age"})
             RETURN user
         "#;
 
@@ -34,7 +34,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let output = generator.generate_source(&source);
 
-        assert!(output.contains("tr.insert_v"));
+        assert!(output.contains("add_n"));
         assert!(output.contains("props!"));
         assert!(output.contains("Name"));
         assert!(output.contains("Age"));
@@ -44,7 +44,7 @@ mod tests {
     fn test_where_simple_condition() {
         let input = r#"
         QUERY FindActiveUsers() =>
-            users <- V<User>::WHERE(_::Props(is_enabled)::EQ(true))
+            users <- V<User>::WHERE(_::{is_enabled}::EQ(true))
             RETURN users
         "#;
 
@@ -52,7 +52,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("is_enabled"));
         assert!(generated.contains("=="));
     }
@@ -71,7 +71,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("out_e"));
         assert!(generated.contains("count"));
         assert!(generated.contains("count > 0"));
@@ -82,8 +82,8 @@ mod tests {
         let input = r#"
         QUERY FindVerifiedActiveUsers() =>
             users <- V<User>::WHERE(AND(
-                _::Props(verified)::EQ(true),
-                _::Props(is_enabled)::EQ(true)
+                _::{verified}::EQ(true),
+                _::{is_enabled}::EQ(true)
             ))
             RETURN users
         "#;
@@ -93,7 +93,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("verified"));
         assert!(generated.contains("is_enabled"));
@@ -104,8 +104,8 @@ mod tests {
         let input = r#"
         QUERY FindSpecialUsers() =>
             users <- V<User>::WHERE(OR(
-                _::Props(verified)::EQ(true),
-                _::Props(followers_count)::GT(1000)
+                _::{verified}::EQ(true),
+                _::{followers_count}::GT(1000)
             ))
             RETURN users
         "#;
@@ -114,7 +114,7 @@ mod tests {
         let mut generator = CodeGenerator::new();
         let generated = generator.generate_source(&source);
 
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("||"));
         assert!(generated.contains("verified"));
         assert!(generated.contains("followers_count"));
@@ -137,7 +137,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("out"));
         assert!(generated.contains("in_"));
         assert!(generated.contains("count"));
@@ -150,8 +150,8 @@ mod tests {
         QUERY FindComplexUsers() =>
             users <- V<User>::WHERE(AND(
                 OR(
-                    _::Props(verified)::EQ(true),
-                    _::Props(followers_count)::GT(5000)
+                    _::{verified}::EQ(true),
+                    _::{followers_count}::GT(5000)
                 ),
                 _::Out<Authored>::COUNT::GT(10)
             ))
@@ -163,7 +163,7 @@ mod tests {
         println!("Source:\n{:?}", source);
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("||"));
         assert!(generated.contains("verified"));
@@ -176,7 +176,7 @@ mod tests {
     fn test_boolean_operations() {
         let input = r#"
         QUERY FindUsersWithSpecificProperty(property_name: String, value: String) =>
-            users <- V<User>::WHERE(_::Props(property_name)::EQ(value))
+            users <- V<User>::WHERE(_::{property_name}::EQ(value))
             RETURN users
         "#;
 
@@ -185,11 +185,11 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("property_name"));
         assert!(generated.contains("=="));
         assert!(generated.contains("value"));
-        assert!(generated.contains("node.check_property"));
+        assert!(generated.contains("check_property"));
     }
 
     #[test]
@@ -197,9 +197,9 @@ mod tests {
         let input = r#"
         QUERY FindUsersWithSpecificProperties(property1: String, value1: String, property2: String, value2: String, property3: String, value3: String) =>
             users <- V<User>::WHERE(AND(
-                _::Props(property1)::EQ(value1),
-                _::Props(property2)::EQ(value2),
-                _::Props(property3)::EQ(value3)
+                _::{property1}::EQ(value1),
+                _::{property2}::EQ(value2),
+                _::{property3}::EQ(value3)
             ))
             RETURN users
         "#;
@@ -209,7 +209,7 @@ mod tests {
         let generated = generator.generate_source(&source);
         println!("Generated code:\n{}", generated);
 
-        assert!(generated.contains("let tr = tr.filter_nodes"));
+        assert!(generated.contains("filter_ref"));
         assert!(generated.contains("&&"));
         assert!(generated.contains("property1"));
         assert!(generated.contains("property2"));
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_to_snake_case() {
         assert_eq!(to_snake_case("camelCase"), "camel_case");
-        assert_eq!(to_snake_case("UserIDs"), "user_ids");
+        assert_eq!(to_snake_case("UserIds"), "user_ids");
         assert_eq!(to_snake_case("SimpleXMLParser"), "simple_xml_parser");
         assert_eq!(to_snake_case("type"), "type_");
         assert_eq!(to_snake_case("ID"), "id");

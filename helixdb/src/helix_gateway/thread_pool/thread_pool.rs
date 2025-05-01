@@ -7,7 +7,7 @@ use crate::helix_gateway::router::router::{HelixRouter, RouterError};
 use crate::protocol::request::Request;
 use crate::protocol::response::Response;
 
-extern crate futures;
+
 extern crate tokio;
 
 use tokio::net::TcpStream;

@@ -514,8 +514,17 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         // output.push_str("let tr = G::new(Arc::clone(&db), &txn);\n");
         let k = match &vec.k {
-            Some(EvaluatesToNumber::Integer(k)) => k.to_string(),
-            Some(EvaluatesToNumber::Float(k)) => k.to_string(),
+            Some(EvaluatesToNumber::I8(k)) => k.to_string(),
+            Some(EvaluatesToNumber::I16(k)) => k.to_string(),
+            Some(EvaluatesToNumber::I32(k)) => k.to_string(),
+            Some(EvaluatesToNumber::I64(k)) => k.to_string(),
+            Some(EvaluatesToNumber::U8(k)) => k.to_string(),
+            Some(EvaluatesToNumber::U16(k)) => k.to_string(),
+            Some(EvaluatesToNumber::U32(k)) => k.to_string(),
+            Some(EvaluatesToNumber::U64(k)) => k.to_string(),
+            Some(EvaluatesToNumber::U128(k)) => k.to_string(),
+            Some(EvaluatesToNumber::F32(k)) => k.to_string(),
+            Some(EvaluatesToNumber::F64(k)) => k.to_string(),
             Some(EvaluatesToNumber::Identifier(id)) => format!("data.{} as usize", id),
             None => "10".to_string(),
         };
@@ -2064,10 +2073,8 @@ pub fn to_snake_case(s: &str) -> String {
     let mut prev_is_upper = false;
 
     while let Some(c) = chars.next() {
+        println!("c: {}", c);
         if c.is_uppercase() {
-            // Add underscore if:
-            // 1. Not at start of string and previous char wasn't uppercase (camelCase -> camel_case)
-            // 2. Previous char was uppercase but next char is lowercase (UserIDs -> user_ids)
             if !result.is_empty()
                 && (!prev_is_upper || chars.peek().map_or(false, |next| next.is_lowercase()))
             {

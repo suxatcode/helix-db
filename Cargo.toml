@@ -3,3 +3,7 @@ members = ["helixdb", "helix-container", "get_routes", "helix-cli", "hbuild"]
 resolver="2"
 
 
+# [package]
+# name = "helix"
+# version = "0.1.0"
+# default-run = "helix-container"
