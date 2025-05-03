@@ -134,7 +134,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 .storage
                 .nodes_db
                 .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))
-                .map_or(false, |node| node.is_none()),
+                .map_or(false, |node| node.is_some()),
             EdgeType::Vec => self
                 .storage
                 .vectors
