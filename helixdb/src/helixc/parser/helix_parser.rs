@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use super::parser_methods::ParserError;
 use crate::protocol::value::Value;
 use pest::{
@@ -7,6 +5,7 @@ use pest::{
     Parser as PestParser,
 };
 use pest_derive::Parser;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -61,14 +60,24 @@ pub struct Field {
     pub field_type: FieldType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum FieldType {
     String,
-    Integer,
-    Float,
+    F32,
+    F64,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
     Boolean,
     Array(Box<FieldType>),
     Identifier(String),
+    Object(HashMap<String, FieldType>),
 }
 
 #[derive(Debug, Clone)]
@@ -95,12 +104,20 @@ pub enum Statement {
     Drop(Expression),
     SearchVector(SearchVector),
     BatchAddVector(BatchAddVector),
+    ForLoop(ForLoop),
 }
 
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub variable: String,
     pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForLoop {
+    pub variables: Vec<String>,
+    pub in_variable: String,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +149,7 @@ pub struct Traversal {
 pub struct BatchAddVector {
     pub vector_type: Option<String>,
     pub vec_identifier: Option<String>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -208,6 +226,7 @@ pub enum BooleanOp {
 pub struct AddVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -225,14 +244,23 @@ pub struct SearchVector {
 
 #[derive(Debug, Clone)]
 pub enum EvaluatesToNumber {
-    Integer(usize),
-    Float(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    F32(f32),
+    F64(f64),
     Identifier(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct AddNode {
-    pub vertex_type: Option<String>,
+    pub node_type: Option<String>,
     pub fields: Option<HashMap<String, ValueType>>,
 }
 
@@ -262,12 +290,13 @@ pub enum ValueType {
     Identifier(String),
     Object(Object),
 }
+
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
         match value {
             Value::String(s) => ValueType::Literal(Value::String(s)),
-            Value::Integer(i) => ValueType::Literal(Value::Integer(i)),
-            Value::Float(f) => ValueType::Literal(Value::Float(f)),
+            Value::I32(i) => ValueType::Literal(Value::I32(i)),
+            Value::F64(f) => ValueType::Literal(Value::F64(f)),
             Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
             Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
             Value::Empty => ValueType::Literal(Value::Empty),
@@ -364,6 +393,7 @@ impl HelixParser {
                 _ => return Err(ParserError::from("Unexpected rule encountered")),
             }
         }
+
         for pair in remaining {
             // println!("{:?}", parser.source);
             parser.source.queries.push(parser.parse_query_def(pair)?);
@@ -374,23 +404,19 @@ impl HelixParser {
         Ok(parser.source)
     }
 
-    fn parse_field_defs(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
-        pair.into_inner()
-            .map(|p| self.parse_field_def(p))
-            .collect::<Result<Vec<_>, _>>()
-    }
-
     fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(NodeSchema { name, fields })
     }
+
     fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         Ok(VectorSchema { name })
     }
+
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
         let field_defs = pair
             .into_inner()
@@ -400,55 +426,78 @@ impl HelixParser {
         // Now parse each individual field_def
         field_defs
             .into_inner()
-            .map(|p| self.parse_field_def(p))
+            .map(|p| {
+                println!("\nFieldDef: {:?}\n", p.clone());
+                self.parse_field_def(p)
+            })
             .collect::<Result<Vec<_>, _>>()
     }
 
     fn parse_field_type(
         &self,
-        type_str: &str,
+        field: Pair<Rule>,
         schema: Option<&Source>,
     ) -> Result<FieldType, ParserError> {
-        match type_str {
-            "String" => Ok(FieldType::String),
-            "Integer" => Ok(FieldType::Integer),
-            "Float" => Ok(FieldType::Float),
-            "Boolean" => Ok(FieldType::Boolean),
-            _ if type_str.starts_with("[") && type_str.ends_with("]") => {
-                return Ok(FieldType::Array(Box::new(
-                    self.parse_field_type(&type_str[1..type_str.len() - 1], schema)?,
-                )));
-            }
-            _ if type_str.starts_with(
-                |c: char| {
-                    if c.is_ascii_uppercase() {
-                        true
-                    } else {
-                        false
-                    }
-                },
-            ) =>
-            {
-                // println!("{:?}", self.source);
-                if self.source.edge_schemas.iter().any(|e| {
-                    if e.name == type_str {
-                        true
-                    } else {
-                        false
-                    }
-                }) || self.source.node_schemas.iter().any(|n| {
-                    if n.name == type_str {
-                        true
-                    } else {
-                        false
-                    }
-                }) {
-                    Ok(FieldType::Identifier(type_str.to_string()))
-                } else {
-                    return Err(ParserError::ParamDoesNotMatchSchema(type_str.to_string()));
+        println!("\nFieldType Top: {:?}\n", field);
+        match field.as_rule() {
+            Rule::named_type => {
+                let type_str = field.as_str();
+                match type_str {
+                    "String" => Ok(FieldType::String),
+                    "Boolean" => Ok(FieldType::Boolean),
+                    "F32" => Ok(FieldType::F32),
+                    "F64" => Ok(FieldType::F64),
+                    "I8" => Ok(FieldType::I8),
+                    "I16" => Ok(FieldType::I16),
+                    "I32" => Ok(FieldType::I32),
+                    "I64" => Ok(FieldType::I64),
+                    "U8" => Ok(FieldType::U8),
+                    "U16" => Ok(FieldType::U16),
+                    "U32" => Ok(FieldType::U32),
+                    "U64" => Ok(FieldType::U64),
+                    "U128" => Ok(FieldType::U128),
+                    _ => unreachable!(),
                 }
             }
-            _ => unreachable!(),
+            Rule::array => {
+                return Ok(FieldType::Array(Box::new(
+                    self.parse_field_type(
+                        // unwraps the array type because grammar type is
+                        // { array { param_type { array | object | named_type } } }
+                        field
+                            .into_inner()
+                            .next()
+                            .unwrap()
+                            .into_inner()
+                            .next()
+                            .unwrap(),
+                        schema,
+                    )?,
+                )));
+            }
+            Rule::object => {
+                let mut fields = HashMap::new();
+                for field in field.into_inner().next().unwrap().into_inner() {
+                    println!("\nField: {:?}\n", field);
+                    let (field_name, field_type) = {
+                        let mut field_pair = field.clone().into_inner();
+                        (
+                            field_pair.next().unwrap().as_str().to_string(),
+                            field_pair.next().unwrap().into_inner().next().unwrap(),
+                        )
+                    };
+                    println!("\nField Name: {:?}\n", field_name);
+                    println!("\nField Type: {:?}\n", field_type);
+                    let field_type = self.parse_field_type(field_type, Some(&self.source))?;
+                    fields.insert(field_name, field_type);
+                }
+                Ok(FieldType::Object(fields))
+            }
+            Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
+            _ => {
+                println!("\nERROR: {:?}\n", field);
+                unreachable!()
+            }
         }
     }
 
@@ -456,9 +505,11 @@ impl HelixParser {
         let mut pairs = pair.into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
 
-        let field_type =
-            self.parse_field_type(pairs.next().unwrap().as_str(), Some(&self.source))?;
 
+        let field_type = self.parse_field_type(
+            pairs.next().unwrap().into_inner().next().unwrap(),
+            Some(&self.source),
+        )?;
         Ok(Field { name, field_type })
     }
 
@@ -515,8 +566,23 @@ impl HelixParser {
             .map(|p: Pair<'_, Rule>| -> Result<Parameter, ParserError> {
                 let mut inner = p.into_inner();
                 let name = inner.next().unwrap().as_str().to_string();
-                let param_type =
-                    self.parse_field_type(inner.next().unwrap().as_str(), Some(&self.source))?;
+
+                // gets param type
+                let param_type = self.parse_field_type(
+                    // unwraps the param type to get the rule (array, object, named_type, etc)
+                    inner
+                        .clone()
+                        .next()
+                        .unwrap()
+                        .clone()
+                        .into_inner()
+                        .next()
+                        .unwrap(),
+                    Some(&self.source),
+                )?;
+
+                println!("\nParamType: {:?}\n", param_type);
+
                 if seen.insert(name.clone()) {
                     Ok(Parameter { name, param_type })
                 } else {
@@ -540,12 +606,13 @@ impl HelixParser {
         pair.into_inner()
             .map(|p| match p.as_rule() {
                 Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
-                Rule::AddN => Ok(Statement::AddNode(self.parse_add_vertex(p)?)),
+                Rule::AddN => Ok(Statement::AddNode(self.parse_add_node(p)?)),
                 Rule::AddV => Ok(Statement::AddVector(self.parse_add_vector(p)?)),
                 Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
                 Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
                 Rule::BatchAddV => Ok(Statement::BatchAddVector(self.parse_batch_add_vector(p)?)),
                 Rule::search_vector => Ok(Statement::SearchVector(self.parse_search_vector(p)?)),
+                Rule::for_loop => Ok(Statement::ForLoop(self.parse_for_loop(p)?)),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
                     p.as_rule()
@@ -554,10 +621,59 @@ impl HelixParser {
             .collect()
     }
 
+    fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
+        println!("\nForLoop: {:?}\n", pair);
+        let mut pairs = pair.into_inner();
+        let mut variables = Vec::new();
+        let mut in_variable = String::new();
+        // parse the arguments
+
+        let argument = pairs.next().unwrap().clone().into_inner().next().unwrap();
+        match argument.as_rule() {
+            Rule::object_destructuring => {
+                for p in argument.into_inner() {
+                    variables.push(p.as_str().to_string());
+                }
+            }
+            Rule::identifier => {
+                variables.push(argument.as_str().to_string());
+            }
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected rule in ForLoop: {:?}",
+                    argument.as_rule()
+                )));
+            }
+        }
+
+        // parse the in
+        let in_ = pairs.next().unwrap().clone();
+        match in_.as_rule() {
+            Rule::identifier => {
+                in_variable.push_str(in_.as_str());
+            }
+            _ => {
+                return Err(ParserError::from(format!(
+                    "Unexpected rule in ForLoop: {:?}",
+                    in_.as_rule()
+                )));
+            }
+        }
+        // parse the body
+        let statements = self.parse_query_body(pairs.next().unwrap())?;
+
+        Ok(ForLoop {
+            variables,
+            in_variable,
+            statements,
+        })
+    }
+
     fn parse_batch_add_vector(&self, pair: Pair<Rule>) -> Result<BatchAddVector, ParserError> {
         let mut vector_type = None;
         let mut vec_identifier = None;
-        
+        let mut fields = None;
+
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -565,6 +681,9 @@ impl HelixParser {
                 }
                 Rule::identifier => {
                     vec_identifier = Some(p.as_str().to_string());
+                }
+                Rule::create_field => {
+                    fields = Some(self.parse_property_assignments(p)?);
                 }
                 _ => {
                     return Err(ParserError::from(format!(
@@ -576,12 +695,17 @@ impl HelixParser {
             }
         }
 
-        Ok(BatchAddVector { vector_type, vec_identifier })
+        Ok(BatchAddVector {
+            vector_type,
+            vec_identifier,
+            fields,
+        })
     }
 
     fn parse_add_vector(&self, pair: Pair<Rule>) -> Result<AddVector, ParserError> {
         let mut vector_type = None;
         let mut data = None;
+        let mut fields = None;
 
         for p in pair.into_inner() {
             match p.as_rule() {
@@ -597,6 +721,9 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
+                Rule::create_field => {
+                    fields = Some(self.parse_property_assignments(p)?);
+                }
                 _ => {
                     return Err(ParserError::from(format!(
                         "Unexpected rule in AddV: {:?} => {:?}",
@@ -607,7 +734,11 @@ impl HelixParser {
             }
         }
 
-        Ok(AddVector { vector_type, data })
+        Ok(AddVector {
+            vector_type,
+            data,
+            fields,
+        })
     }
 
     fn parse_search_vector(&self, pair: Pair<Rule>) -> Result<SearchVector, ParserError> {
@@ -628,12 +759,23 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
-                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule() {
+                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule()
+                {
                     Rule::integer => {
-                        k = Some(EvaluatesToNumber::Integer(p.as_str().to_string().parse::<usize>().map_err(|_| ParserError::from("Invalid integer value"))?));
+                        k = Some(EvaluatesToNumber::I32(
+                            p.as_str()
+                                .to_string()
+                                .parse::<i32>()
+                                .map_err(|_| ParserError::from("Invalid integer value"))?,
+                        ));
                     }
                     Rule::float => {
-                        k = Some(EvaluatesToNumber::Float(p.as_str().to_string().parse::<f64>().map_err(|_| ParserError::from("Invalid float value"))?));
+                        k = Some(EvaluatesToNumber::F64(
+                            p.as_str()
+                                .to_string()
+                                .parse::<f64>()
+                                .map_err(|_| ParserError::from("Invalid float value"))?,
+                        ));
                     }
                     Rule::identifier => {
                         k = Some(EvaluatesToNumber::Identifier(p.as_str().to_string()));
@@ -650,11 +792,15 @@ impl HelixParser {
             }
         }
 
-        Ok(SearchVector { vector_type, data, k})
+        Ok(SearchVector {
+            vector_type,
+            data,
+            k,
+        })
     }
 
     fn parse_vec_literal(&self, pair: Pair<Rule>) -> Result<Vec<f64>, ParserError> {
-        let mut pairs = pair.into_inner();
+        let pairs = pair.into_inner();
         let mut vec = Vec::new();
         for p in pairs {
             vec.push(
@@ -666,14 +812,14 @@ impl HelixParser {
         Ok(vec)
     }
 
-    fn parse_add_vertex(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
-        let mut vertex_type = None;
+    fn parse_add_node(&self, pair: Pair<Rule>) -> Result<AddNode, ParserError> {
+        let mut node_type = None;
         let mut fields = None;
 
         for p in pair.into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
-                    vertex_type = Some(p.as_str().to_string());
+                    node_type = Some(p.as_str().to_string());
                 }
                 Rule::create_field => {
                     fields = Some(self.parse_property_assignments(p)?);
@@ -688,10 +834,7 @@ impl HelixParser {
             }
         }
 
-        Ok(AddNode {
-            vertex_type,
-            fields,
-        })
+        Ok(AddNode { node_type, fields })
     }
 
     fn parse_property_assignments(
@@ -721,12 +864,12 @@ impl HelixParser {
                             Rule::integer => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|i| ValueType::from(Value::Integer(i)))
+                                .map(|i| ValueType::from(Value::I32(i)))
                                 .map_err(|_| ParserError::from("Invalid integer value")),
                             Rule::float => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|f| ValueType::from(Value::Float(f)))
+                                .map(|f| ValueType::from(Value::F64(f)))
                                 .map_err(|_| ParserError::from("Invalid float value")),
                             Rule::boolean => Ok(ValueType::from(Value::Boolean(
                                 value_pair.as_str() == "true",
@@ -800,7 +943,7 @@ impl HelixParser {
     }
 
     fn parse_to_from(&self, pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
-        let mut pairs = pair.into_inner();
+        let pairs = pair.into_inner();
         let mut from_id = None;
         let mut to_id = None;
         // println!("pairs: {:?}", pairs);
@@ -914,9 +1057,11 @@ impl HelixParser {
                 .map_err(|_| ParserError::from("Invalid float literal")),
             Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
-            Rule::AddN => Ok(Expression::AddNode(self.parse_add_vertex(pair)?)),
+            Rule::AddN => Ok(Expression::AddNode(self.parse_add_node(pair)?)),
             Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
-            Rule::BatchAddV => Ok(Expression::BatchAddVector(self.parse_batch_add_vector(pair)?)),
+            Rule::BatchAddV => Ok(Expression::BatchAddVector(
+                self.parse_batch_add_vector(pair)?,
+            )),
             Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
             Rule::search_vector => Ok(Expression::SearchVector(self.parse_search_vector(pair)?)),
             Rule::none => Ok(Expression::None),
@@ -960,7 +1105,7 @@ impl HelixParser {
 
     fn parse_start_node(&self, pair: Pair<Rule>) -> Result<StartNode, ParserError> {
         match pair.as_rule() {
-            Rule::start_vertex => {
+            Rule::start_node => {
                 let pairs = pair.into_inner();
                 let mut types = None;
                 let mut ids = None;
@@ -1126,13 +1271,13 @@ impl HelixParser {
             Rule::string_literal => {
                 FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
             }
-            Rule::integer => FieldValue::Literal(Value::Integer(
+            Rule::integer => FieldValue::Literal(Value::I32(
                 value_pair
                     .as_str()
                     .parse()
                     .map_err(|_| ParserError::from("Invalid integer literal"))?,
             )),
-            Rule::float => FieldValue::Literal(Value::Float(
+            Rule::float => FieldValue::Literal(Value::F64(
                 value_pair
                     .as_str()
                     .parse()
@@ -1168,13 +1313,13 @@ impl HelixParser {
             Rule::string_literal => {
                 FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
             }
-            Rule::integer => FieldValue::Literal(Value::Integer(
+            Rule::integer => FieldValue::Literal(Value::I32(
                 value_pair
                     .as_str()
                     .parse()
                     .map_err(|_| ParserError::from("Invalid integer literal"))?,
             )),
-            Rule::float => FieldValue::Literal(Value::Float(
+            Rule::float => FieldValue::Literal(Value::F64(
                 value_pair
                     .as_str()
                     .parse()
@@ -1270,7 +1415,7 @@ mod tests {
         let input = r#"
         N::User {
             Name: String,
-            Age: Integer
+            Age: I32
         }
         "#;
 
@@ -1289,7 +1434,7 @@ mod tests {
             From: User,
             To: User,
             Properties: {
-                Since: Float
+                Since: F64
             }
         }
         "#;
@@ -1304,7 +1449,7 @@ mod tests {
         let properties = schema.properties.as_ref().unwrap();
         assert_eq!(properties.len(), 1);
         assert_eq!(properties[0].name, "Since");
-        matches!(properties[0].field_type, FieldType::Float);
+        matches!(properties[0].field_type, FieldType::F64);
     }
 
     #[test]
@@ -1351,7 +1496,7 @@ mod tests {
     #[test]
     fn test_query_with_parameters() {
         let input = r#"
-        QUERY fetchUsers(name: String, age: Integer) =>
+        QUERY fetchUsers(name: String, age: I32) =>
             user <- N<USER>("123")
             nameField <- user::{Name}
             ageField <- user::{Age}
@@ -1363,9 +1508,9 @@ mod tests {
         assert_eq!(query.name, "fetchUsers");
         assert_eq!(query.parameters.len(), 2);
         assert_eq!(query.parameters[0].name, "name");
-        assert_eq!(query.parameters[0].param_type, FieldType::String);
+        assert!(matches!(query.parameters[0].param_type, FieldType::String));
         assert_eq!(query.parameters[1].name, "age");
-        assert_eq!(query.parameters[1].param_type, FieldType::Integer);
+        assert!(matches!(query.parameters[1].param_type, FieldType::I32));
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
     }
@@ -1376,7 +1521,7 @@ mod tests {
         N::USER {
             ID: String,
             Name: String,
-            Age: Integer
+            Age: I32
         }
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -1394,7 +1539,7 @@ mod tests {
             To: USER,
             Properties: {
                 Since: String,
-                Strength: Integer
+                Strength: I32
             }
         }
         "#;
@@ -1541,7 +1686,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_vertex_query() {
+    fn test_add_node_query() {
         let input = r#"
     QUERY analyzeNetwork() =>
         user <- AddN<User>({Name: "Alice"})
@@ -1765,8 +1910,8 @@ mod tests {
         N::ComplexUser {
             ID: String,
             Name: String,
-            Age: Integer,
-            Score: Float,
+            Age: I32,
+            Score: F64,
             Active: Boolean
         }
         E::ComplexRelation {
@@ -1775,9 +1920,9 @@ mod tests {
             Properties: {
                 StartDate: String,
                 EndDate: String,
-                Weight: Float,
+                Weight: F64,
                 Valid: Boolean,
-                Count: Integer
+                Count: I32
             }
         }
         "#;
@@ -1823,7 +1968,7 @@ mod tests {
     #[test]
     fn test_property_assignments() {
         let input = r#"
-        QUERY testProperties(age: Integer) =>
+        QUERY testProperties(age: I32) =>
             user <- AddN<User>({
                 name: "Alice",
                 age: age
@@ -2012,7 +2157,7 @@ mod tests {
     #[test]
     fn test_array_as_param_type() {
         let input = r#"
-        QUERY trWithArrayParam(ids: [String], names:[String], ages: [Integer], createdAt: String) => 
+        QUERY trWithArrayParam(ids: [String], names:[String], ages: [I32], createdAt: String) => 
             AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
@@ -2039,7 +2184,7 @@ mod tests {
         }));
         assert!(query.parameters.iter().any(|param| match param.param_type {
             FieldType::Array(ref field) => match &**field {
-                FieldType::Integer =>
+                FieldType::I32 =>
                     if param.name == "ages" {
                         true
                     } else {
@@ -2090,7 +2235,7 @@ mod tests {
         let input = r#"
         V::User 
 
-        QUERY addVector(vector: [Float]) =>
+        QUERY addVector(vector: [F64]) =>
             RETURN AddV<User>(vector)
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -2101,8 +2246,8 @@ mod tests {
     #[test]
     fn test_bulk_insert() {
         let input = r#"
-        QUERY bulkInsert(vectors: [[Float]]) =>
-            vectors::AddV<User>
+        QUERY bulkInsert(vectors: [[F64]]) =>
+            BatchAddV<User>(vectors)
             RETURN "SUCCESS"
         "#;
         let result = HelixParser::parse_source(input).unwrap();
@@ -2113,10 +2258,10 @@ mod tests {
     #[test]
     fn test_search_vector() {
         let input = r#"
-        V::User 
+        V::User
 
-        QUERY searchVector(vector: [Float]) =>
-            RETURN SearchV<User>(vector)
+        QUERY searchVector(vector: [F64], k: I32) =>
+            RETURN SearchV<User>(vector, k)
         "#;
         let result = HelixParser::parse_source(input).unwrap();
         let query = &result.queries[0];

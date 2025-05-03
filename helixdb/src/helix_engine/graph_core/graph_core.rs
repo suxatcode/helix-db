@@ -10,8 +10,6 @@ use std::str;
 use std::sync::{Arc, RwLock};
 
 use super::config::VectorConfig;
-use super::traversal::TraversalBuilder;
-use super::traversal_steps::{TraversalBuilderMethods, TraversalMethods, TraversalSteps};
 use crate::helixc::parser::helix_parser::{
     BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
     Traversal,

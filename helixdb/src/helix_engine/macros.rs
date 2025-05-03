@@ -79,7 +79,7 @@ pub mod macros {
     /// use helixdb::protocol::items::Node;
     /// use helixdb::protocol::filterable::Filterable;
     /// let pred = node_matches!("name", "Will");
-    /// 
+    ///
     /// let node = Node::new("person", vec![
     ///    ("name".to_string(), Value::String("Will".to_string())),
     ///   ("age".to_string(), Value::Integer(21)),
@@ -149,6 +149,25 @@ pub mod macros {
         ($value:expr) => {
             match $value.decode() {
                 Ok(v) => String::from_utf8(v.to_vec())?,
+                Err(e) => {
+                    return Err(GraphError::ConversionError(format!(
+                        "Error Decoding: {:?}",
+                        e
+                    )))
+                }
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! decode_u128 {
+        ($value:expr) => {
+            match $value.decode() {
+                Ok(v) => {
+                    let mut arr = [0u8; 16];
+                    arr.copy_from_slice(v);
+                    u128::from_le_bytes(arr) // TODO: from_be_bytes??
+                }
                 Err(e) => {
                     return Err(GraphError::ConversionError(format!(
                         "Error Decoding: {:?}",

@@ -1,5 +1,5 @@
-use std::{collections::HashMap};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader, BufWriter, Result};
+use std::collections::HashMap;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader, Result};
 
 #[derive(Debug)]
 pub struct Request {
@@ -11,13 +11,13 @@ pub struct Request {
 
 impl Request {
     /// Parse a request from a stream
-    /// 
+    ///
     /// # Example
-    /// 
-    /// ```rust 
+    ///
+    /// ```rust
     /// use std::io::Cursor;
     /// use helixdb::protocol::request::Request;
-    /// 
+    ///
     /// let request = Request::from_stream(Cursor::new("GET /test HTTP/1.1\r\n\r\n")).unwrap();
     /// assert_eq!(request.method, "GET");
     /// assert_eq!(request.path, "/test");
@@ -63,7 +63,7 @@ impl Request {
             if let Ok(length) = length.parse::<usize>() {
                 let mut buffer = vec![0; length];
                 match tokio::time::timeout(
-                    std::time::Duration::from_secs(5), 
+                    std::time::Duration::from_secs(5),
                     reader.read_exact(&mut buffer)
                 ).await {
                     Ok(Ok(_)) => body = buffer,

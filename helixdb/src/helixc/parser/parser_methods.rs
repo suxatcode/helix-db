@@ -1,6 +1,5 @@
 use super::helix_parser::Rule;
 use core::fmt;
-use std::fmt::write;
 
 pub trait Parser {
     fn parse(&self, input: &str) -> Result<(), String>;
@@ -50,4 +49,4 @@ impl std::fmt::Debug for ParserError {
             ParserError::ParamDoesNotMatchSchema(p) => write!(f, "Parameter with name: {} does not exist in the schema", p),
         }
     }
-} 
+}

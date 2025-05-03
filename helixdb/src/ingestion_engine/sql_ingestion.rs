@@ -1,24 +1,20 @@
-use crate::helix_engine::graph_core::traversal::TraversalBuilder;
-use crate::helix_engine::graph_core::traversal_steps::SourceTraversalSteps;
 use crate::helix_engine::types::GraphError;
-use crate::helix_gateway::router::router::HandlerInput;
-use crate::protocol::items::{Edge, Node};
-use crate::protocol::response::Response;
-use crate::protocol::traversal_value::TraversalValue;
-use crate::protocol::value::Value as ProtocolValue;
-use get_routes::local_handler;
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use rusqlite::{
     params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::fmt;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
-use std::sync::Arc;
+use std::{
+    error::Error,
+    fmt,
+    fs::File,
+    io::Write,
+    path::Path,
+    collections::{
+        HashMap,
+        HashSet
+    },
+};
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -236,73 +232,68 @@ impl SqliteIngestor {
     }
 
     pub fn extract_schema(&mut self) -> Result<Vec<TableSchema>, IngestionError> {
-        let mut schemas = Vec::new();
-
-        // statement
-        let mut stmt = self.sqlite_conn.prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-        )?;
-        let table_names: Vec<String> = stmt
+        let table_names: Vec<String> = self
+            .sqlite_conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )?
             .query_map(params![], |row| row.get(0))?
             .collect::<SqliteResult<Vec<String>>>()?;
 
-        for table_name in table_names {
-            let mut columns: Vec<ColumnInfo> = Vec::new();
-            let mut primary_keys = HashSet::new();
+        table_names
+            .into_iter()
+            .map(|table_name| {
+                let mut col_stmt = self
+                    .sqlite_conn
+                    .prepare(&format!("PRAGMA table_info({})", table_name))?;
 
-            let mut col_stmt = self
-                .sqlite_conn
-                .prepare(&format!("PRAGMA table_info({})", table_name))?;
-            let col_rows = col_stmt.query_map(params![], |row| {
-                let name: String = row.get(1)?;
-                let data_type: String = row.get(2)?;
-                let is_pk: i32 = row.get(5)?;
+                let (columns, primary_keys): (Vec<ColumnInfo>, HashSet<String>) = col_stmt // statement
+                    .query_map(params![], |row| {
+                        let name: String = row.get(1)?;
+                        let is_pk: i32 = row.get(5)?;
+                        Ok((
+                            ColumnInfo {
+                                name: name.clone(),
+                                data_type: row.get(2)?,
+                                is_primary_key: is_pk > 0,
+                            },
+                            if is_pk > 0 { Some(name) } else { None },
+                        ))
+                    })?
+                    .collect::<SqliteResult<Vec<_>>>()?
+                    .into_iter()
+                    .fold(
+                        (Vec::new(), HashSet::new()),
+                        |(mut cols, mut pks), (col, pk)| {
+                            cols.push(col);
+                            if let Some(pk) = pk {
+                                pks.insert(pk);
+                            }
+                            (cols, pks)
+                        },
+                    );
 
-                if is_pk > 0 {
-                    primary_keys.insert(name.clone());
-                }
+                let foreign_keys: Vec<ForeignKey> = self
+                    .sqlite_conn
+                    .prepare(&format!("PRAGMA foreign_key_list({})", table_name))?
+                    .query_map(params![], |row| {
+                        Ok(ForeignKey {
+                            from_table: table_name.clone(),
+                            from_column: row.get(3)?,
+                            to_table: row.get(2)?,
+                            to_column: row.get(4)?,
+                        })
+                    })?
+                    .collect::<SqliteResult<Vec<_>>>()?;
 
-                Ok(ColumnInfo {
-                    name,
-                    data_type,
-                    is_primary_key: is_pk > 0,
+                Ok(TableSchema {
+                    name: table_name,
+                    columns,
+                    primary_keys,
+                    foreign_keys,
                 })
-            })?;
-
-            for col_res in col_rows {
-                columns.push(col_res?);
-            }
-
-            let mut fk_stmt = self
-                .sqlite_conn
-                .prepare(&format!("PRAGMA foreign_key_list({})", table_name))?;
-            let fk_rows = fk_stmt.query_map(params![], |row| {
-                let to_table: String = row.get(2)?;
-                let from_column: String = row.get(3)?;
-                let to_column: String = row.get(4)?;
-
-                Ok(ForeignKey {
-                    from_table: table_name.clone(),
-                    from_column,
-                    to_table,
-                    to_column,
-                })
-            })?;
-
-            let mut foreign_keys: Vec<ForeignKey> = Vec::new();
-            for fk_result in fk_rows {
-                foreign_keys.push(fk_result?);
-            }
-
-            schemas.push(TableSchema {
-                name: table_name,
-                columns,
-                primary_keys,
-                foreign_keys,
-            });
-        }
-
-        Ok(schemas)
+            })
+            .collect::<Result<Vec<TableSchema>, IngestionError>>()
     }
 
     pub fn ingest_table(&mut self, table_schema: &TableSchema) -> Result<(), IngestionError> {
@@ -986,126 +977,127 @@ pub struct IngestSqlRequest {
     pub batch_size: usize,
     pub file_path: String,
 }
-/// A handler that will automatically get built into
-/// the helix container as an endpoint
-///
-/// This handler will ingest a SQL(Lite) database into the helix instance
-///
-/// The handler will take in a JSON payload with the following fields:
-/// - db_url: The URL of the SQL(Lite) database
-/// - instance: The instance name of the helix instance
-/// - batch_size: The batch size for the ingestion
-///
-/// NOTE
-/// - This function is simply meant to read from the jsonl data and upload it to the db
-/// - It does not handle converting the sql data to helix format
-/// - It does not handle uploading or downloading from s3
-///
-/// ALSO
-/// - The ingest function above does the conversion to helix format
-/// - The CLI will do the uploading to s3
-/// - The admin server or cli will handle the downloading from s3
-#[local_handler]
-pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    let data: IngestSqlRequest = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
+// / A handler that will automatically get built into
+// / the helix container as an endpoint
+// /
+// / This handler will ingest a SQL(Lite) database into the helix instance
+// /
+// / The handler will take in a JSON payload with the following fields:
+// / - db_url: The URL of the SQL(Lite) database
+// / - instance: The instance name of the helix instance
+// / - batch_size: The batch size for the ingestion
+// /
+// / NOTE
+// / - This function is simply meant to read from the jsonl data and upload it to the db
+// / - It does not handle converting the sql data to helix format
+// / - It does not handle uploading or downloading from s3
+// /
+// / ALSO
+// / - The ingest function above does the conversion to helix format
+// / - The CLI will do the uploading to s3
+// / - The admin server or cli will handle the downloading from s3
+// ///
+// #[local_handler]
+// pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+//     let data: IngestSqlRequest = match sonic_rs::from_slice(&input.request.body) {
+//         Ok(data) => data,
+//         Err(err) => return Err(GraphError::from(err)),
+//     };
 
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
+//     let db = Arc::clone(&input.graph.storage);
+//     let mut txn = db.graph_env.write_txn().unwrap();
 
-    // read data from path $DATA_DIR/imports/<job_id>.json
-    // but dont load the json into memory, just read the file
-    // line by line and parse the json objects
-    let path = Path::new(&data.file_path);
-    let file = File::open(path.join("ingestion.jsonl")).unwrap();
-    let reader = BufReader::new(file);
-    let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+//     // read data from path $DATA_DIR/imports/<job_id>.json
+//     // but dont load the json into memory, just read the file
+//     // line by line and parse the json objects
+//     let path = Path::new(&data.file_path);
+//     let file = File::open(path.join("ingestion.jsonl")).unwrap();
+//     let reader = BufReader::new(file);
+//     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
 
-    // TODO: need to look at overwriting the id's with the new UUIDs from helix
-    // but keeping all of the connections.
-    // this is because we can't use integers as ids for a graph database.
-    // would have to essentially map all of the generated ids to the old ids for the edges
+//     // TODO: need to look at overwriting the id's with the new UUIDs from helix
+//     // but keeping all of the connections.
+//     // this is because we can't use integers as ids for a graph database.
+//     // would have to essentially map all of the generated ids to the old ids for the edges
 
-    // TODO: could look at using a byte stream to allow for zero copy ingestion
-    reader.lines().for_each(|line| {
-        let line = line.unwrap();
-        let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
-        match data.get("payload_type") {
-            Some(ProtocolValue::String(payload_type)) => {
-                match payload_type.as_str() {
-                    "node" => {
-                        let label = match data.get("label") {
-                            Some(ProtocolValue::String(label)) => label.to_string(),
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        let properties = match data.remove("properties") {
-                            Some(ProtocolValue::Object(properties)) => properties,
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        // insert into db without returning the node
-                        let _ = tr.add_v_temp(
-                            &mut txn,
-                            &label,
-                            properties
-                                .into_iter()
-                                .filter_map(|(k, v)| {
-                                    if k.to_lowercase().contains("id") {
-                                        None
-                                    } else {
-                                        Some((k, v))
-                                    }
-                                })
-                                .collect(),
-                            None,
-                        );
-                    }
-                    "edge" => {
-                        let label = match data.get("label") {
-                            Some(ProtocolValue::String(label)) => label.to_string(),
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        let properties = match data.remove("properties") {
-                            Some(ProtocolValue::Object(properties)) => properties,
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        let from = match data.remove("from") {
-                            Some(ProtocolValue::String(from)) => from.to_string(),
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        let to = match data.remove("to") {
-                            Some(ProtocolValue::String(to)) => to.to_string(),
-                            _ => panic!("error getting value {}", line!()),
-                        };
-                        // insert into db without returning the edge
-                        let _ = tr.add_e_temp(
-                            &mut txn,
-                            &label,
-                            &from,
-                            &to,
-                            properties
-                                .into_iter()
-                                .filter_map(|(k, v)| {
-                                    if k.to_lowercase().contains("id") {
-                                        None
-                                    } else {
-                                        Some((k, v))
-                                    }
-                                })
-                                .collect(),
-                        );
-                    }
-                    _ => panic!("error getting value {}", line!()),
-                }
-            }
-            _ => panic!("error getting value {}", line!()),
-        }
-    });
+//     // TODO: could look at using a byte stream to allow for zero copy ingestion
+//     reader.lines().for_each(|line| {
+//         let line = line.unwrap();
+//         let mut data: HashMap<String, ProtocolValue> = sonic_rs::from_str(&line).unwrap();
+//         match data.get("payload_type") {
+//             Some(ProtocolValue::String(payload_type)) => {
+//                 match payload_type.as_str() {
+//                     "node" => {
+//                         let label = match data.get("label") {
+//                             Some(ProtocolValue::String(label)) => label.to_string(),
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         let properties = match data.remove("properties") {
+//                             Some(ProtocolValue::Object(properties)) => properties,
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         // insert into db without returning the node
+//                         let _ = tr.add_v_temp(
+//                             &mut txn,
+//                             &label,
+//                             properties
+//                                 .into_iter()
+//                                 .filter_map(|(k, v)| {
+//                                     if k.to_lowercase().contains("id") {
+//                                         None
+//                                     } else {
+//                                         Some((k, v))
+//                                     }
+//                                 })
+//                                 .collect(),
+//                             None,
+//                         );
+//                     }
+//                     "edge" => {
+//                         let label = match data.get("label") {
+//                             Some(ProtocolValue::String(label)) => label.to_string(),
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         let properties = match data.remove("properties") {
+//                             Some(ProtocolValue::Object(properties)) => properties,
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         let from = match data.remove("from") {
+//                             Some(ProtocolValue::U128(from)) => from,
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         let to = match data.remove("to") {
+//                             Some(ProtocolValue::U128(to)) => to,
+//                             _ => panic!("error getting value {}", line!()),
+//                         };
+//                         // insert into db without returning the edge
+//                         let _ = tr.add_e_temp(
+//                             &mut txn,
+//                             &label,
+//                             from,
+//                             to,
+//                             properties
+//                                 .into_iter()
+//                                 .filter_map(|(k, v)| {
+//                                     if k.to_lowercase().contains("id") {
+//                                         None
+//                                     } else {
+//                                         Some((k, v))
+//                                     }
+//                                 })
+//                                 .collect(),
+//                         );
+//                     }
+//                     _ => panic!("error getting value {}", line!()),
+//                 }
+//             }
+//             _ => panic!("error getting value {}", line!()),
+//         }
+//     });
 
-    txn.commit()?;
+//     txn.commit()?;
 
-    // the function will then need to log the fact the ingestion has been completed
+//     // the function will then need to log the fact the ingestion has been completed
 
-    Ok(())
-}
+//     Ok(())
+// }

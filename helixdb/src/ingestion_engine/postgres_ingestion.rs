@@ -1,31 +1,30 @@
-use crate::helix_engine::graph_core::traversal::TraversalBuilder;
-use crate::helix_engine::graph_core::traversal_steps::SourceTraversalSteps;
-use crate::helix_engine::types::GraphError;
-use crate::helix_gateway::router::router::HandlerInput;
-use crate::protocol::items::{Edge, Node};
-use crate::protocol::response::Response;
-use crate::protocol::traversal_value::TraversalValue;
-use crate::protocol::value::Value as ProtocolValue;
-use chrono::{DateTime, Utc};
-use get_routes::local_handler;
+use crate::helix_engine::{
+    types::GraphError,
+    vector_core::vector::HVector,
+};
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
+use rand::Rng;
 use reqwest::blocking::Client;
 use rust_decimal::prelude::*;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::fmt;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio_postgres::{
-    config::SslMode, types::Type, Client as PgClient, Config, NoTls, Row, Statement, tls::TlsStream as TlsStreams,
+use std::{
+    error::Error,
+    collections::HashMap,
+    fmt,
+    fs::File,
+    io::Write,
+    path::Path,
+    str::FromStr,
 };
-use uuid::Uuid;
+use tokio_postgres::{
+    config::SslMode,
+    types::Type,
+    Client as PgClient,
+    Config,
+    NoTls,
+    Row,
+};
 
 #[derive(Debug)]
 pub enum IngestionError {
@@ -63,6 +62,7 @@ enum Value {
     Text(String),
     Blob(Vec<u8>),
     Boolean(bool),
+    Vector(HVector),
     // Timestamp(chrono::DateTime<chrono::Utc>),
     // Uuid(uuid::Uuid),
 }
@@ -231,14 +231,14 @@ impl PostgresIngestor {
                         .danger_accept_invalid_certs(true) // Only use this for development/testing
                         .build()
                         .map_err(|e| IngestionError::MappingError(format!("TLS error: {}", e)))?;
-        
+
                     let connector = MakeTlsConnector::new(tls_connector);
                     let tls_config = config.clone();
                     tls_config.connect(connector).await?
                 };
                 // Connect to the database
                 // let (client, connection) = config.connect(tls).await?;
-        
+
                 // Spawn a task to handle the connection
                 tokio::spawn(async move {
                     if let Err(e) = connection.await {
@@ -263,7 +263,7 @@ impl PostgresIngestor {
         // Parse the connection string
 
         // Set up the connection with or without TLS
-        
+
 
         Ok(PostgresIngestor {
             pg_client: client,
@@ -282,9 +282,9 @@ impl PostgresIngestor {
 
         // Get all tables from the public schema
         let query = "
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_type = 'BASE TABLE'
             AND table_name NOT LIKE 'pg_%'
             AND table_name NOT LIKE 'sql_%'
@@ -525,84 +525,96 @@ impl PostgresIngestor {
             }
         }
 
-        // For other types, use the standard approach
-        match col_type {
-            &Type::INT2 => {
-                let val: Option<i16> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Integer(v as i64)),
-                    None => Ok(Value::Null),
+        if col_type.name() == "vector" {
+            let val: Option<String> = row.try_get(index)?;
+            match val {
+                Some(vector_str) => {
+                    // Parse the string representation, e.g., "[1,2,3]"
+                    let vec_f64 = Self::parse_vector_string(&vector_str)?;
+                    let id = rand::rng().random();
+                    Ok(Value::Vector(HVector::new(id, vec_f64)))
                 }
+                None => Ok(Value::Null),
             }
-            &Type::INT4 => {
-                let val: Option<i32> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Integer(v as i64)),
-                    None => Ok(Value::Null),
+        } else {
+            match col_type {
+                &Type::INT2 => {
+                    let val: Option<i16> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Integer(v as i64)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::INT8 => {
-                let val: Option<i64> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Integer(v)),
-                    None => Ok(Value::Null),
+                &Type::INT4 => {
+                    let val: Option<i32> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Integer(v as i64)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::FLOAT4 => {
-                let val: Option<f32> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Real(v as f64)),
-                    None => Ok(Value::Null),
+                &Type::INT8 => {
+                    let val: Option<i64> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Integer(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::FLOAT8 => {
-                let val: Option<f64> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Real(v)),
-                    None => Ok(Value::Null),
+                &Type::FLOAT4 => {
+                    let val: Option<f32> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Real(v as f64)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::TEXT | &Type::VARCHAR | &Type::BPCHAR => {
-                let val: Option<String> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Text(v)),
-                    None => Ok(Value::Null),
+                &Type::FLOAT8 => {
+                    let val: Option<f64> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Real(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::BOOL => {
-                let val: Option<bool> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Boolean(v)),
-                    None => Ok(Value::Null),
+                &Type::TEXT | &Type::VARCHAR | &Type::BPCHAR => {
+                    let val: Option<String> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Text(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::UUID => {
-                let val: Option<uuid::Uuid> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Text(v.to_string())),
-                    None => Ok(Value::Null),
+                &Type::BOOL => {
+                    let val: Option<bool> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Boolean(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::BYTEA => {
-                let val: Option<Vec<u8>> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Blob(v)),
-                    None => Ok(Value::Null),
+                &Type::UUID => {
+                    let val: Option<uuid::Uuid> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Text(v.to_string())),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            &Type::NUMERIC => {
-                let val: Option<rust_decimal::Decimal> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Real(v.to_f64().unwrap_or(0.0))),
-                    None => Ok(Value::Null),
+                &Type::BYTEA => {
+                    let val: Option<Vec<u8>> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Blob(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
-            }
-            _ => {
-                // For unsupported types, convert to string
-                let val: Option<String> = row.try_get(index)?;
-                match val {
-                    Some(v) => Ok(Value::Text(v)),
-                    None => Ok(Value::Null),
+                &Type::NUMERIC => {
+                    let val: Option<rust_decimal::Decimal> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Real(v.to_f64().unwrap_or(0.0))),
+                        None => Ok(Value::Null),
+                    }
+                }
+                _ => {
+                    // For unsupported types, convert to string
+                    let val: Option<String> = row.try_get(index)?;
+                    match val {
+                        Some(v) => Ok(Value::Text(v)),
+                        None => Ok(Value::Null),
+                    }
                 }
             }
         }
@@ -1136,6 +1148,22 @@ impl PostgresIngestor {
         );
         Ok(())
     }
+
+    fn parse_vector_string(vector_str: &str) -> Result<Vec<f64>, IngestionError> {
+        let cleaned = vector_str.trim_matches(|c| c == '[' || c == ']');
+        if cleaned.is_empty() {
+            return Ok(Vec::new());
+        }
+        let values: Result<Vec<f64>, _> = cleaned
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<f64>()
+                    .map_err(|e| IngestionError::MappingError(format!("Failed to parse vector value: {}", e)))
+            })
+        .collect();
+        values
+    }
 }
 
 pub fn to_camel_case(s: &str) -> String {
@@ -1212,6 +1240,7 @@ pub fn map_sql_type_to_helix_type(sql_type: &str) -> String {
         "TEXT LARGE OBJECT" => "String",
         "BYTEA" => "String",
         "STRING" => "String", // Add explicit handling for "String" type
+        "VECTOR" => "HVector", // Add explicit handling for "String" type
         _ => {
             // Instead of panicking, return "String" as a fallback
             "String"
