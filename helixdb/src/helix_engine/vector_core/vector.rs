@@ -153,8 +153,10 @@ impl HVector {
     #[cfg(feature = "cosine")]
     fn cosine_similarity(&self, other: &HVector) -> Result<f64, VectorError> {
         let len = self.data.len();
+        let other_len = other.data.len();
 
-        if len != other.data.len() {
+        if len != other_len {
+            println!("mis-match in vector dimensions!\n{} != {}", len, other_len);
             return Err(VectorError::InvalidVectorLength);
         }
         //debug_assert_eq!(len, other.data.len(), "Vectors must have the same length");

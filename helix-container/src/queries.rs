@@ -130,16 +130,16 @@ pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(),
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-        let tr = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector) -> bool>(&data.query, 1, None)
-;    let vec = tr.collect_to::<Vec<_>>();
+    let tr = G::new(Arc::clone(&db), &txn)
+        .search_v::<fn(&HVector) -> bool>(&data.query, 1, None);
+    let vec = tr.collect_to::<Vec<_>>();
 
-        let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
-.in_("Contains")
-;    let doc_node = tr.collect_to::<Vec<_>>();
+    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
+        .in_("Contains");
+    let doc_node = tr.collect_to::<Vec<_>>();
 
-        let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone())
-        ;let tr = tr.map(|item| {
+    let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone());
+    let tr = tr.map(|item| {
     match item {
     Ok(ref item) => {
     let content = item.check_property("content");

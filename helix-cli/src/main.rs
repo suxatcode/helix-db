@@ -353,13 +353,13 @@ fn main() {
                     }
                 }
 
-                let mut runner = Command::new("cargo"); // TODO: cd in helix-container/ first
+                let mut runner = Command::new("cargo");
                 runner
                     .arg("build")
                     .arg("--release")
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .current_dir(PathBuf::from(&output).join("helix-container"));
+                    .current_dir(PathBuf::from(&output)); // TODO: build only in helix-container/ dir
 
                 match runner.output() {
                     Ok(_) => {
