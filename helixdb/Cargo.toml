@@ -65,6 +65,7 @@ ingestion = [
     "reqwest",
     "native-tls",
     "rust_decimal",
+    "tempfile"
 ]
 build = ["compiler"]
 full = ["build", "compiler", "ingestion", "cosine"]

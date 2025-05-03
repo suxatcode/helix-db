@@ -38,6 +38,10 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterat
             .unique()
             .collect::<B>()
     }
+
+    pub fn collect_to_obj(self) -> Option<TraversalVal> {
+        self.inner.filter_map(|item| item.ok()).take(1).next()
+    }
 }
 pub struct RwTraversalIterator<'a, 'b, I> {
     pub inner: I,
