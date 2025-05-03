@@ -1,24 +1,10 @@
-use std::sync::Arc;
-
-use heed3::{
-    types::{Bytes, Lazy},
-    RoTxn,
-};
-
-use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-        types::GraphError,
-        vector_core::{hnsw::HNSW, vector::HVector},
-    },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
-    },
-};
-
 use super::super::tr_val::TraversalVal;
+use crate::helix_engine::{
+    graph_core::traversal_iter::RoTraversalIterator,
+    types::{GraphError, VectorError},
+    vector_core::{hnsw::HNSW, vector::HVector},
+};
+use std::iter::once;
 
 pub struct SearchV<I: Iterator<Item = Result<TraversalVal, GraphError>>> {
     iter: I,
@@ -61,14 +47,27 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
             .vectors
             .search(self.txn, &query, k, filter, false);
 
-        let iter = vectors
-            .unwrap() // TODO: handle error
-            .into_iter()
-            .map(|vector| Ok::<TraversalVal, GraphError>(TraversalVal::Vector(vector)));
-
-        for i in iter.clone() {
-            println!("{:?}", i.unwrap());
-        }
+        let iter = match vectors {
+            Ok(vectors) => vectors
+                .into_iter()
+                .map(|vector| Ok::<TraversalVal, GraphError>(TraversalVal::Vector(vector)))
+                .collect::<Vec<_>>()
+                .into_iter(),
+            //Err(VectorError::VectorNotFound()) =>
+            //Err(VectorError::InvalidVectorData) =>
+            //Err(VectorError::InvalidVectorId) =>
+            //Err(VectorError::InvalidVectorLevel) =>
+            //Err(VectorError::InvalidEntryPoint) =>
+            //Err(VectorError::EntryPointNotFound) =>
+            //Err(VectorError::InvalidVectorCoreConfig) =>
+            //Err(VectorError::ConversionError()) =>
+            //Err(VectorError::VectorCoreError()) =>
+            Err(VectorError::InvalidVectorLength) => {
+                let error = GraphError::VectorError("invalid vector dimensions!".to_string());
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            }
+            Err(_) => once(Err(GraphError::VectorError("a vector error has occured!".to_string()))).collect::<Vec<_>>().into_iter(),
+        };
 
         let iter = SearchV { iter };
         // Wrap it with the RoTraversalIterator adapter

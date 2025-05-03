@@ -1,36 +1,46 @@
-use crate::helix_engine::graph_core::config::Config;
-use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
-use crate::protocol::filterable::Filterable;
-use crate::protocol::items::{v6_uuid, SerializedEdge, SerializedNode};
-use crate::protocol::label_hash::hash_label;
+use crate::{
+    helix_engine::{
+        graph_core::config::Config,
+        storage_core::storage_methods::StorageMethods,
+        types::GraphError,
+        vector_core::vector_core::{
+            HNSWConfig,
+            VectorCore
+        },
+    },
+    protocol::{
+        filterable::Filterable,
+        label_hash::hash_label,
+        items::{
+            v6_uuid,
+            SerializedEdge,
+            SerializedNode
+        },
+    },
+    decode_u128,
+    protocol::{
+        items::{Edge, Node},
+        value::Value,
+    },
+};
 
 use heed3::byteorder::BE;
 use heed3::{
-    types::*, Database, DatabaseFlags, Env, EnvFlags, EnvOpenOptions, PutFlags, RoTxn, RwTxn,
+    types::*, Database, DatabaseFlags, Env, EnvOpenOptions, RoTxn, RwTxn,
     WithTls,
 };
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
-use uuid::Uuid;
 
-use crate::helix_engine::storage_core::storage_methods::{SearchMethods, StorageMethods};
-use crate::{decode_str, decode_u128};
-
-use crate::helix_engine::types::GraphError;
-use crate::protocol::{
-    items::{Edge, Node},
-    value::Value,
-};
 
 use super::storage_methods::{BasicStorageMethods, DBMethods};
 
 // Database names for different stores
 const DB_NODES: &str = "nodes"; // For node data (n:)
 const DB_EDGES: &str = "edges"; // For edge data (e:)
-const DB_NODE_LABELS: &str = "node_labels"; // For node label indices (nl:)
-const DB_EDGE_LABELS: &str = "edge_labels"; // For edge label indices (el:)
+//const DB_NODE_LABELS: &str = "node_labels"; // For node label indices (nl:)
+//const DB_EDGE_LABELS: &str = "edge_labels"; // For edge label indices (el:)
 const DB_OUT_EDGES: &str = "out_edges"; // For outgoing edge indices (o:)
 const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
@@ -56,7 +66,7 @@ impl HelixGraphStorage {
                 .map_size(config.vector_config.db_max_size.unwrap_or(100) * 1024 * 1024 * 1024) // 10GB max
                 .max_dbs(20)
                 .max_readers(200)
-                
+
                 // .flags(EnvFlags::NO_META_SYNC)
                 // .flags(EnvFlags::MAP_ASYNC)
                 // .flags(EnvFlags::NO_SYNC)
@@ -69,7 +79,7 @@ impl HelixGraphStorage {
         let nodes_db = graph_env
             .database_options()
             .types::<U128<BE>, Bytes>()
-            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            //.flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED) // NOTE: commend out because add_n gave error upon inserting
             .name(DB_NODES)
             .create(&mut wtxn)?;
         let edges_db = graph_env
@@ -350,7 +360,7 @@ impl StorageMethods for HelixGraphStorage {
 
     fn drop_node(&self, txn: &mut RwTxn, id: &u128) -> Result<(), GraphError> {
         // Get node to get its label
-        let node = self.get_node(txn, id)?;
+        //let node = self.get_node(txn, id)?;
 
         // Delete outgoing edges
         let out_edges = {

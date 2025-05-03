@@ -1,13 +1,12 @@
-use crate::helixc::parser::helix_parser::{Exclude, Object, StartNode};
-use crate::protocol::value::Value;
 use crate::{
-    helix_engine::graph_core::ops::out,
+    protocol::value::Value,
     helixc::parser::helix_parser::{
-        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeConnection,
-        EdgeSchema, EvaluatesToNumber, Expression, Field, FieldAddition, FieldType, FieldValue,
+        Exclude, Object,
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp,
+        EdgeSchema, EvaluatesToNumber, Expression, FieldType, FieldValue,
         ForLoop, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source,
-        StartNode::{Anonymous, Edge, Node, Variable},
         Statement, Step, Traversal, ValueType, VectorData,
+        StartNode::{Anonymous, Edge, Node, Variable},
     },
 };
 use std::{collections::HashMap, vec};
@@ -61,7 +60,7 @@ impl CodeGenerator {
             "        out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},\n",
         );
         output.push_str("        vectors::{ insert::InsertVAdapter, search::SearchVAdapter},\n");
-        output.push_str("        source::{add_e::AddEAdapter, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},\n");
+        output.push_str("        source::{add_e::{AddEAdapter, EdgeType}, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},\n");
         output.push_str("        tr_val::{TraversalVal, Traversable},\n");
         output.push_str("        util::{dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut, filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update},\n");
         output.push_str("    },\n");
@@ -1544,10 +1543,17 @@ impl CodeGenerator {
             }
         };
 
+        let should_check: bool = true; // TODO: check some how?
+
+        let edge_type = match &add_edge.edge_type {
+            Some(_) => "EdgeType::Vec",
+            None => "EdgeType::Std",
+        };
+
         output.push_str(&mut self.indent());
         output.push_str(&format!(
-            ".add_e(\"{}\", {}, {}, {}, {})",
-            edge_type, props, possible_id, from_id, to_id,
+            ".add_e(\"{}\", {}, {}, {}, {}, {}, {})",
+            edge_type, props, possible_id, from_id, to_id, should_check, edge_type,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
 

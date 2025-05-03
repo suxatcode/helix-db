@@ -376,7 +376,7 @@ impl VectorCore {
             for candidate in cands.iter() {
                 for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level, filter)? {
                     if visited.insert(neighbor.get_id().to_string()) {
-                        neighbor.set_distance(neighbor.distance_to(query));
+                        neighbor.set_distance(neighbor.distance_to(query)?);
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&neighbor)) {
                             result.push(neighbor);
                         }
@@ -405,7 +405,7 @@ impl VectorCore {
         let mut visited: HashSet<String> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
-        entry_point.set_distance(entry_point.distance_to(query));
+        entry_point.set_distance(entry_point.distance_to(query)?);
         candidates.push(Candidate {
             id: entry_point.get_id(),
             distance: entry_point.get_distance(),
@@ -429,7 +429,7 @@ impl VectorCore {
                     continue;
                 }
 
-                let distance = neighbor.distance_to(query);
+                let distance = neighbor.distance_to(query)?;
 
                 let f = results.get_max().unwrap();
                 if results.len() < ef || distance < f.get_distance() {

@@ -11,7 +11,6 @@ use crate::{
     },
 };
 use heed3::PutFlags;
-use uuid::Uuid;
 
 pub enum EdgeType {
     Vec,
@@ -76,7 +75,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 }
             }
         }
-        
+
         match SerializedEdge::encode_edge(&edge) {
             Ok(bytes) => {
                 if let Err(e) = self.storage.edges_db.put_with_flags(

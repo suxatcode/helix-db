@@ -24,10 +24,6 @@ use std::{
     time::Duration,
 };
 
-/* TODO:
-    - make sure every edge case for every single command is handled
-*/
-
 pub mod args;
 mod instance_manager;
 const DB_DIR: &str = "helixdb-cfg/";
@@ -186,7 +182,7 @@ fn main() {
                 }
             }
 
-            // Check helix installation
+            // check helix installation
             let _ = match check_helix_installation() {
                 Ok(path) => path,
                 Err(_) => {
@@ -347,6 +343,7 @@ fn main() {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .current_dir(PathBuf::from(&output));
+
                 match runner.output() {
                     Ok(_) => {}
                     Err(e) => {
@@ -356,13 +353,13 @@ fn main() {
                     }
                 }
 
-                let mut runner = Command::new("cargo");
+                let mut runner = Command::new("cargo"); // TODO: cd in helix-container/ first
                 runner
                     .arg("build")
                     .arg("--release")
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .current_dir(PathBuf::from(&output));
+                    .current_dir(PathBuf::from(&output).join("helix-container"));
 
                 match runner.output() {
                     Ok(_) => {
@@ -668,6 +665,8 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
+            runner.arg("--branch");
+            runner.arg("graph-engine-pipelining");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 

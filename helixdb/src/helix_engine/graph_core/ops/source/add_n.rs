@@ -1,19 +1,20 @@
-use std::{collections::HashMap, iter::Once, sync::Arc};
-
-use heed3::{PutFlags, RoTxn, RwTxn};
-use uuid::Uuid;
-
+use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage, types::GraphError,
+        types::GraphError,
     },
     protocol::{
-        filterable::Filterable, items::{v6_uuid, Node, SerializedNode}, label_hash::hash_label, value::Value
+        filterable::Filterable,
+        items::{
+            v6_uuid,
+            Node,
+            SerializedNode
+        },
+        value::Value
     },
 };
-
-use super::super::tr_val::TraversalVal;
+use heed3::PutFlags;
 
 pub struct AddNIterator {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -45,17 +46,17 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         label: &'a str,
         properties: Vec<(String, Value)>,
         secondary_indices: Option<&'a [String]>,
-        id: Option<u128>,
+        id: Option<u128>, // TODO: can't be an option has to generated because always needs to be in order
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
         let node = Node {
             id: id.unwrap_or(v6_uuid()),
             label: label.to_string(),
             properties: properties.into_iter().collect(),
         };
+
         let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
-        // insert node
-        
+
         match SerializedNode::encode_node(&node) {
             Ok(bytes) => {
                 if let Err(e) = self.storage.nodes_db.put_with_flags(
@@ -69,7 +70,6 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             }
             Err(e) => result = Err(GraphError::from(e)),
         }
-        
 
         for index in &secondary_indices {
             match self.storage.secondary_indices.get(index.as_str()) {

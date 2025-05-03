@@ -1,9 +1,5 @@
-use std::{collections::HashMap, hash::Hash};
-
-use heed3::types::{Bytes, Lazy};
-
 use crate::{
-    helix_engine::{types::GraphError, vector_core::vector::HVector},
+    helix_engine::vector_core::vector::HVector,
     protocol::{
         count::Count,
         filterable::Filterable,
@@ -11,6 +7,7 @@ use crate::{
         value::Value,
     },
 };
+use std::hash::Hash;
 
 #[derive(Clone, Debug)]
 pub enum TraversalVal {

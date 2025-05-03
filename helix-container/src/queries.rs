@@ -51,20 +51,60 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-for data in data.docs {
+    for doc in data.docs {
         let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);    let doc_node = tr.collect_to::<Vec<_>>();
+            .add_n("Type", props!{ "content".to_string() => doc.doc }, None, None);
+        let doc_node = tr.collect_to::<Vec<_>>();
 
-                let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .insert_vs::<fn(&HVector) -> bool>(&data.vecs, None);    ;    let vectors = tr.collect_to::<Vec<_>>();
+        let tr = G::new_mut(Arc::clone(&db), &mut txn)
+            .insert_vs::<fn(&HVector) -> bool>(&doc.vecs, None);
+        let vectors = tr.collect_to::<Vec<_>>();
 
-for data in vectors {
+        for vec in vectors {
+            let tr = G::new_mut(Arc::clone(&db), &mut txn)
+                .add_e("Contains", props!{}, None, doc_node.id(), vec.id(), true, EdgeType::Vec);
+            let _ = tr.collect_to::<Vec<_>>();
+        }
+    }
+
+    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+
+    txn.commit()?;
+    Ok(())
+}
+
+#[handler]
+pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct ragtestloadData {
+        doc: String,
+        vec: Vec<f64>,
+    }
+
+    let data: ragtestloadData = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+
     let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_e("Contains", props!{}, None, doc_node.id(), data.id(), false, EdgeType::Vec);
+        .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);
+    let doc_node = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
+    let vector = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+    .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), true, EdgeType::Vec);
 let _ = tr.collect_to::<Vec<_>>();
 
-    }
-    }
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
@@ -252,41 +292,3 @@ pub fn hnswload(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
     txn.commit()?;
     Ok(())
 }
-
-#[handler]
-pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct ragtestloadData {
-        doc: String,
-        vec: Vec<f64>,
-    }
-
-    let data: ragtestloadData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
-        let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);    let doc_node = tr.collect_to::<Vec<_>>();
-
-        let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .insert_v::<fn(&HVector) -> bool>(&data.vec, None)
-;    let vector = tr.collect_to::<Vec<_>>();
-
-    let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), true, EdgeType::Vec);
-let _ = tr.collect_to::<Vec<_>>();
-
-    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    txn.commit()?;
-    Ok(())
-}
-

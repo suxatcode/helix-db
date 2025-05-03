@@ -23,9 +23,11 @@ chrono = "0.4.39"
 flume = "0.11.1"
 rayon = "1.8.0"
 itertools = "0.14.0"
+
 # Compiler
 pest = { version = "2.7", optional = true }
 pest_derive = { version = "2.7", optional = true }
+
 # Ingestion
 rust_decimal = { version = "1.34", features = ["tokio-pg"], optional = true }
 native-tls = { version = "0.2.11", optional = true }
@@ -40,23 +42,20 @@ tokio-postgres = { version = "0.7", features = [
     "with-uuid-1",
     "with-chrono-0_4",
 ], optional = true }
-# Testing
-tempfile = { version = "3.2", optional = true }
+
+# testing
 polars = { version = "0.46.0", optional = true, features = ["parquet", "lazy"] }
+tempfile = { version = "3.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
 rand = "0.9.0"
-tempfile = "3.2"
 csv = "1.1"
-polars = { version = "0.46.0", features = ["parquet", "lazy"] }
 lazy_static = "1.4.0"
-
 
 [features]
 compiler = ["pest", "pest_derive"]
 testing = ["polars", "tempfile"]
-euclidean = []
 cosine = []
 ingestion = [
     "rusqlite",

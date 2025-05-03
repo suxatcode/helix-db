@@ -35,28 +35,13 @@ impl Ord for HVector {
 }
 
 pub trait DistanceCalc {
-    // TODO: make this cosine similarity
-    fn distance(from: &HVector, to: &HVector) -> f64;
+    fn distance(from: &HVector, to: &HVector) -> Result<f64, VectorError>;
 }
 
 impl DistanceCalc for HVector {
     #[inline(always)]
-    #[cfg(feature = "euclidean")]
-    fn distance(from: &HVector, to: &HVector) -> f64 {
-        if from.len() == to.len() {
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                return from.simd_distance_unchecked(to);
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            return from.scalar_distance(to);
-        }
-        from.scalar_distance(to)
-    }
-
-    #[inline(always)]
     #[cfg(feature = "cosine")]
-    fn distance(from: &HVector, to: &HVector) -> f64 {
+    fn distance(from: &HVector, to: &HVector) -> Result<f64, VectorError> {
         from.cosine_similarity(to)
     }
 }
@@ -147,7 +132,7 @@ impl HVector {
     }
 
     #[inline(always)]
-    pub fn distance_to(&self, other: &HVector) -> f64 {
+    pub fn distance_to(&self, other: &HVector) -> Result<f64, VectorError> {
         HVector::distance(self, other)
     }
 
@@ -164,49 +149,15 @@ impl HVector {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
-    #[inline(always)]
-    unsafe fn simd_distance_unchecked(&self, other: &HVector) -> f64 {
-        use std::arch::aarch64::{vaddvq_f64, vld1q_f64, vmulq_f64, vsubq_f64};
-
-        let mut sum = 0.0;
-        let n = self.len();
-        let mut i = 0;
-
-        while i + 2 <= n {
-            let a = vld1q_f64(self.data[i..].as_ptr());
-            let b = vld1q_f64(other.data[i..].as_ptr());
-            let diff = vsubq_f64(a, b);
-            let squared = vmulq_f64(diff, diff);
-            sum += vaddvq_f64(squared);
-            i += 2;
-        }
-
-        while i < n {
-            let diff = self.data[i] - other.data[i];
-            sum += diff * diff;
-            i += 1;
-        }
-
-        sum.sqrt()
-    }
-
-    #[inline(always)]
-    #[cfg(feature = "euclidean")]
-    fn scalar_distance(&self, other: &HVector) -> f64 {
-        self.data
-            .iter()
-            .zip(other.data.iter())
-            .map(|(&a, &b)| (a - b).powi(2))
-            .sum::<f64>()
-            .sqrt()
-    }
-
     #[inline(always)]
     #[cfg(feature = "cosine")]
-    fn cosine_similarity(&self, other: &HVector) -> f64 {
+    fn cosine_similarity(&self, other: &HVector) -> Result<f64, VectorError> {
         let len = self.data.len();
-        debug_assert_eq!(len, other.data.len(), "Vectors must have the same length");
+
+        if len != other.data.len() {
+            return Err(VectorError::InvalidVectorLength);
+        }
+        //debug_assert_eq!(len, other.data.len(), "Vectors must have the same length");
 
         #[cfg(target_feature = "avx2")]
         {
@@ -252,7 +203,7 @@ impl HVector {
             magnitude_b += b_val * b_val;
         }
 
-        dot_product / (magnitude_a.sqrt() * magnitude_b.sqrt())
+        Ok(dot_product / (magnitude_a.sqrt() * magnitude_b.sqrt()))
     }
 
     // SIMD implementation using AVX2 (256-bit vectors)
