@@ -1,21 +1,16 @@
 use crate::helix_engine::graph_core::graph_core::HelixGraphEngine;
-use chrono::format;
 use flume::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread;
-use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
 
-use crate::helix_gateway::gateway::GatewayOpts;
 use crate::helix_gateway::router::router::{HelixRouter, RouterError};
 use crate::protocol::request::Request;
 use crate::protocol::response::Response;
 
-extern crate futures;
+
 extern crate tokio;
 
-use futures::future::{lazy, Future};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 
 pub struct Worker {
     pub id: usize,
@@ -46,8 +41,8 @@ impl Worker {
                         continue;
                     }
                 };
-                let mut response = Response::new();
 
+                let mut response = Response::new();
                 if let Err(e) = router.handle(Arc::clone(&graph_access), request, &mut response) {
                     eprintln!("Error handling request: {:?}", e);
                     response.status = 500;

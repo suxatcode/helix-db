@@ -4,16 +4,20 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 // Query definitions
 query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
-param_def    = { identifier ~ ":" ~ type_name }
-query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop )* }
+param_def    = { identifier ~ ":" ~ param_type }
+query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop | for_loop)* }
 
 // Assignments and traversals
 get_stmt            = { identifier ~ "<-" ~ evaluates_to_anything }
-traversal           = { (start_vertex | start_edge | start_vector ) ~ step* ~ last_step? }
+traversal           = { (start_node | start_edge | start_vector ) ~ step* ~ last_step? }
 id_traversal        = { identifier ~ ((step+ ~ last_step?) | last_step) }
 anonymous_traversal = { "_" ~ ((step+ ~ last_step?) | last_step) }
 step                = { "::" ~ (graph_step | where_step | closure_step | object_step | exclude_field | count | ID | range_step | AddE) }
 last_step           = { "::" ~ (bool_operations | update) }
+// change this for loop to be able to take traversals etc in the future. 
+for_loop            = { "FOR" ~ for_argument ~ "IN" ~ identifier ~ "{" ~ query_body ~ "}" }
+for_argument        = { identifier | object_destructuring }
+object_destructuring = { "{" ~ identifier ~ ("," ~ identifier)* ~ "}" }
 
 // Evaluation rules for different types
 evaluates_to_anything = {
@@ -57,7 +61,7 @@ evaluates_to_number = {
 return_stmt = { "RETURN" ~ evaluates_to_anything ~ ("," ~ evaluates_to_anything)* }
 
 // Vertex-related steps
-start_vertex = { "N" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
+start_node = { "N" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 graph_step   = {
     "OutE" ~ ("<" ~ type_args ~ ">")?
   | "InE" ~ ("<" ~ type_args ~ ">")?
@@ -124,16 +128,18 @@ edge_def   = { "E::" ~ identifier_upper ~ edge_body }
 
 node_body  = { "{" ~ field_defs ~ "}" }
 edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
-field_def  = { (identifier ~ ":" ~ type_name) }
+field_def  = { (identifier ~ ":" ~ param_type) }
 field_defs = { field_def ~ ("," ~ field_def)* }
 properties = { "Properties" ~ ":" ~ "{" ~ field_defs? ~ "}" }
 
 // Values and literals
-array            = @{ "[" ~ type_name ~ "]" }
+array            = { "[" ~ param_type ~ "]" }
+object           = { "{" ~ field_defs ~ "}" }
 string_literal   = ${ "\"" ~ inner_string ~ "\"" }
 inner_string     = @{ (!("\"" | "\\") ~ ANY)* }
 boolean          =  { "true" | "false" }
-type_name        = @{ "String" | "Integer" | "Float" | "Boolean" | array | identifier_upper }
+named_type       = { "String" | "Boolean" | "F32" | "F64" | "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64" | "U128" }
+param_type       = { named_type | array | object | identifier }
 identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 integer          = @{ ASCII_DIGIT+ }

@@ -120,14 +120,14 @@ impl TraversalValue {
         }
     }
 
-    pub fn get_id(&self) -> Result<String, TraversalValueError> {
+    pub fn get_id(&self) -> Result<u128, TraversalValueError> {
         match self {
             TraversalValue::NodeArray(nodes) => {
                 if nodes.is_empty() {
                     return Err(TraversalValueError::Empty);
                 }
                 if let Some(node) = nodes.first() {
-                    return Ok(node.id.clone());
+                    return Ok(node.id);
                 }
                 Err(TraversalValueError::NoId)
             },
@@ -136,7 +136,7 @@ impl TraversalValue {
                     return Err(TraversalValueError::Empty);
                 }
                 if let Some(edge) = edges.first() {
-                    return Ok(edge.id.clone());
+                    return Ok(edge.id);
                 }
                 Err(TraversalValueError::NoId)
             },

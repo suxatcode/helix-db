@@ -1,10 +1,15 @@
+use crate::{
+    helixc::parser::parser_methods::ParserError,
+    protocol::traversal_value::TraversalValueError,
+};
 use core::fmt;
-use std::{fmt::format, net::AddrParseError, str::Utf8Error, string::FromUtf8Error};
-
 use heed3::Error as HeedError;
 use sonic_rs::Error as SonicError;
-use crate::helixc::parser::parser_methods::ParserError;
-use crate::protocol::traversal_value::TraversalValueError;
+use std::{
+    net::AddrParseError,
+    str::Utf8Error,
+    string::FromUtf8Error
+};
 
 #[derive(Debug)]
 pub enum GraphError {
@@ -16,6 +21,7 @@ pub enum GraphError {
     ConversionError(String),
     EdgeNotFound,
     NodeNotFound,
+    LabelNotFound,
     VectorError(String),
     Default,
     New(String),
@@ -24,6 +30,7 @@ pub enum GraphError {
     MultipleEdgesWithSameId,
     InvalidNode,
     ConfigFileNotFound,
+    SliceLengthError,
 }
 
 impl fmt::Display for GraphError {
@@ -41,6 +48,7 @@ impl fmt::Display for GraphError {
             GraphError::ConversionError(msg ) => write!(f, "Conversion error: {}", msg),
             GraphError::EdgeNotFound => write!(f, "Edge not found"),
             GraphError::NodeNotFound => write!(f, "Node not found"),
+            GraphError::LabelNotFound => write!(f, "Label not found"),
             GraphError::New(msg) => write!(f, "Graph error: {}", msg),
             GraphError::Default => write!(f, "Graph error"),
             GraphError::Empty => write!(f, "No Error"),
@@ -48,6 +56,7 @@ impl fmt::Display for GraphError {
             GraphError::MultipleEdgesWithSameId => write!(f, "Multiple edges with same id"),
             GraphError::InvalidNode => write!(f, "Invalid node"),
             GraphError::ConfigFileNotFound => write!(f, "Config file not found"),
+            GraphError::SliceLengthError => write!(f, "Slice length error"),
             GraphError::VectorError(msg) => write!(f, "Vector error: {}", msg),
         }
     }
@@ -126,7 +135,7 @@ impl From<uuid::Error> for GraphError {
     fn from(error: uuid::Error) -> Self {
         GraphError::ConversionError(format!("uuid error: {}", error.to_string()))
     }
-}   
+}
 
 
 impl From<TraversalValueError> for GraphError {
@@ -201,6 +210,3 @@ impl From<bincode::Error> for VectorError {
         VectorError::ConversionError(format!("bincode error: {}", error.to_string()))
     }
 }
-
-
-

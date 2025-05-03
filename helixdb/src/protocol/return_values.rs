@@ -1,16 +1,25 @@
-use super::count::Count;
-use super::filterable::{Filterable, FilterableType};
-use super::items::{Edge, Node};
-use super::remapping::{Remapping, ResponseRemapping};
-use super::traversal_value::TraversalValue;
-use super::value::{properties_format, Value};
-use serde::{
-    de::{DeserializeSeed, VariantAccess, Visitor},
-    Deserializer, Serializer,
+use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
+use super::{
+    count::Count,
+    filterable::{
+        Filterable,
+        FilterableType,
+    },
+    items::{
+        Edge,
+        Node,
+    },
+    remapping::{
+        Remapping,
+        ResponseRemapping,
+    },
+    value::Value,
 };
 use sonic_rs::{Deserialize, Serialize};
-use std::cell::RefMut;
-use std::{collections::HashMap, fmt};
+use std::{
+    cell::RefMut,
+    collections::HashMap,
+};
 
 /// A return value enum that represents different possible outputs from graph operations.
 /// Can contain traversal results, counts, boolean flags, or empty values.
@@ -50,7 +59,7 @@ impl From<&Value> for ReturnValue {
 
 impl From<Count> for ReturnValue {
     fn from(count: Count) -> Self {
-        ReturnValue::Value(Value::Integer(count.value() as i32))
+        ReturnValue::Value(Value::I32(count.value() as i32))
     }
 }
 
@@ -74,19 +83,25 @@ impl From<&str> for ReturnValue {
 
 impl From<i32> for ReturnValue {
     fn from(integer: i32) -> Self {
-        ReturnValue::Value(Value::Integer(integer))
+        ReturnValue::Value(Value::I32(integer))
     }
 }
 
 impl From<f64> for ReturnValue {
     fn from(float: f64) -> Self {
-        ReturnValue::Value(Value::Float(float))
+        ReturnValue::Value(Value::F64(float))
+    }
+}
+
+impl From<u128> for ReturnValue {
+    fn from(integer: u128) -> Self {
+        ReturnValue::Value(Value::U128(integer))
     }
 }
 
 impl<I> From<I> for ReturnValue
 where
-    for<'a> I: Filterable<'a> + Clone,
+    I: Filterable + Clone,
 {
     #[inline]
     fn from(item: I) -> Self {
@@ -97,8 +112,8 @@ where
             FilterableType::Edge => {
                 let mut properties =
                     HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
-                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node()));
-                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node()));
+                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node_uuid()));
+                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node_uuid()));
                 properties
             }
             FilterableType::Vector => {
@@ -115,7 +130,7 @@ where
                 return_value
             }
         };
-        properties.insert("id".to_string(), ReturnValue::from(item.id().to_string()));
+        properties.insert("id".to_string(), ReturnValue::from(item.uuid()));
         properties.insert(
             "label".to_string(),
             ReturnValue::from(item.label().to_string()),
@@ -150,50 +165,48 @@ impl ReturnValue {
 
     #[inline(always)]
     fn process_items_with_mixin<T>(
-        items: Vec<T>,
-        mut mixin: RefMut<HashMap<String, ResponseRemapping>>,
+        item: T,
+        mixin: &mut RefMut<HashMap<u128, ResponseRemapping>>,
     ) -> ReturnValue
     where
-        for<'a> T: Filterable<'a> + Clone,
+        T: Filterable + Clone,
     {
-        ReturnValue::Array(
-            items
-                .into_iter()
-                .map(|item| {
-                    let id = item.id().to_string();
-                    if let Some(m) = mixin.get_mut(&id) {
-                        if m.should_spread {
-                            ReturnValue::from(item).mixin_remapping(&mut m.remappings)
-                        } else {
-                            ReturnValue::default().mixin_remapping(&mut m.remappings)
-                        }
-                    } else {
-                        ReturnValue::from(item)
-                    }
-                })
-                .collect(),
-        )
+        let id = item.id();
+        if let Some(m) = mixin.get_mut(&id) {
+            if m.should_spread {
+                ReturnValue::from(item).mixin_remapping(&mut m.remappings)
+            } else {
+                ReturnValue::default().mixin_remapping(&mut m.remappings)
+            }
+        } else {
+            ReturnValue::from(item)
+        }
     }
 
     #[inline]
     pub fn from_traversal_value_array_with_mixin(
-        traversal_value: TraversalValue,
-        mixin: RefMut<HashMap<String, ResponseRemapping>>,
+        traversal_value: Vec<TraversalVal>,
+        mut mixin: RefMut<HashMap<u128, ResponseRemapping>>,
     ) -> Self {
-        match traversal_value {
-            TraversalValue::VectorArray(vectors) => {
-                ReturnValue::process_items_with_mixin(vectors, mixin)
-            }
-            TraversalValue::NodeArray(nodes) => ReturnValue::process_items_with_mixin(nodes, mixin),
-            TraversalValue::EdgeArray(edges) => ReturnValue::process_items_with_mixin(edges, mixin),
-            TraversalValue::ValueArray(values) => ReturnValue::Empty,
-            TraversalValue::Count(count) => ReturnValue::from(count),
-            TraversalValue::Empty => ReturnValue::Empty,
-            _ => {
-                println!("not working");
-                unreachable!()
-            }
-        }
+        ReturnValue::Array(
+            traversal_value
+                .into_iter()
+                .map(|val| match val {
+                    TraversalVal::Node(node) => {
+                        ReturnValue::process_items_with_mixin(node, &mut mixin)
+                    }
+                    TraversalVal::Edge(edge) => {
+                        ReturnValue::process_items_with_mixin(edge, &mut mixin)
+                    }
+                    TraversalVal::Vector(vector) => {
+                        ReturnValue::process_items_with_mixin(vector, &mut mixin)
+                    }
+                    TraversalVal::Count(count) => ReturnValue::from(count),
+                    TraversalVal::Empty => ReturnValue::Empty,
+                    _ => unreachable!(),
+                })
+                .collect(),
+        )
     }
 
     #[inline(always)]
@@ -251,7 +264,7 @@ impl ReturnValue {
                     if v.exclude {
                         let _ = a.remove(k);
                     } else if let Some(new_name) = &v.new_name {
-                        if let Some(value) = a.remove(k) { 
+                        if let Some(value) = a.remove(k) {
                             a.insert(new_name.clone(), value);
                         }
                     } else {
@@ -269,7 +282,7 @@ impl ReturnValue {
     #[ignore = "No use for this function yet, however, I believe it may be useful in the future so I'm keeping it here"]
     pub fn mixin_other<I>(&self, item: I, mut secondary_properties: ResponseRemapping) -> Self
     where
-        for<'a> I: Filterable<'a> + Clone,
+        I: Filterable + Clone,
     {
         let mut return_val = ReturnValue::default();
         if !secondary_properties.should_spread {

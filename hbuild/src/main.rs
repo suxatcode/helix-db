@@ -1,16 +1,12 @@
 use anyhow::Result;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
-use futures::TryStreamExt;
 use helixdb::ingestion_engine::sql_ingestion::IngestSqlRequest;
 use helixdb::protocol::{request::Request, response::Response};
-use socket2::{Domain, Socket, Type};
-use sonic_rs::{from_str, to_string};
 use sonic_rs::{Deserialize, JsonValueTrait, Serialize, Value};
 use std::io::Write;
-use std::path::Path;
 use std::{
-    net::{SocketAddr},
+    net::SocketAddr,
     process::Command,
     time::Duration,
 };
@@ -175,7 +171,7 @@ async fn main() -> Result<(), AdminError> {
                                     .output();
                                 println!("Compile result: {:?}", compile_result);
                                 match compile_result {
-                                    Ok(output) => {
+                                    Ok(_output) => {
                                         // recompile binary
                                         println!("Recompiling binary");
                                         let recompile_result = Command::new("sudo")
@@ -235,7 +231,7 @@ async fn main() -> Result<(), AdminError> {
                                         }
                                     }
 
-                                        
+
                                     }
                                     Err(e) => {
                                         eprintln!("Failed to compile: {:?}", e);
@@ -244,7 +240,7 @@ async fn main() -> Result<(), AdminError> {
                                     }
                                 }
                             }
-                        } 
+                        }
                         else if request.path == "/download_ingestion_data" {
                             let bucket = std::env::var("S3_BUCKET").unwrap_or("helix-queries".to_string());
                             let local_path = std::env::var("LOCAL_QUERY_PATH").unwrap_or("/tmp/queries".to_string());
@@ -257,7 +253,7 @@ async fn main() -> Result<(), AdminError> {
                             }
                             let json_body: DownloadIngestionDataRequest = match sonic_rs::from_slice(&request.body) {
                                 Ok(json) => json,
-                                Err(e) => { 
+                                Err(e) => {
                                     response.status = 400;
                                     response.body = format!("Failed to parse JSON: {}", e).into_bytes();
                                     return Ok(());
@@ -302,8 +298,6 @@ async fn main() -> Result<(), AdminError> {
             }
         }
     }
-
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -314,7 +308,6 @@ pub enum AdminError {
 }
 // replace binary
 // run
-
 
 async fn download_ingestion_data(
     client: &Client,
