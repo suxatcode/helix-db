@@ -65,13 +65,10 @@ start_node = { "N" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 graph_step   = {
     "OutE" ~ ("<" ~ type_args ~ ">")?
   | "InE" ~ ("<" ~ type_args ~ ">")?
-  | "BothE" ~ ("<" ~ type_args ~ ">")?
-  | "OutN" ~ ("<" ~ type_args ~ ">")?
-  | "InN" ~ ("<" ~ type_args ~ ">")?
-  | "BothN" ~ ("<" ~ type_args ~ ">")?
+  | "FromN" ~ ("<" ~ type_args ~ ">")?
+  | "ToN" ~ ("<" ~ type_args ~ ">")?
   | "Out" ~ ("<" ~ type_args ~ ">")?
   | "In" ~ ("<" ~ type_args ~ ">")?
-  | "Both" ~ ("<" ~ type_args ~ ">")?
 }
 
 // Edge-related steps
