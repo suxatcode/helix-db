@@ -13,7 +13,7 @@ use helixdb::{
         in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},
         out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},
         vectors::{ insert::InsertVAdapter, search::SearchVAdapter},
-        source::{add_e::AddEAdapter, add_e::EdgeType, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},
+        source::{add_e::{AddEAdapter, EdgeType}, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},
         tr_val::{TraversalVal, Traversable},
         util::{dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut, filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update},
     },
@@ -36,8 +36,8 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     #[derive(Serialize, Deserialize)]
     struct docsData {
-        doc: String,
         vecs: Vec<Vec<f64>>,
+        doc: String,
     }
 
     let data: ragloaddocsData = match sonic_rs::from_slice(&input.request.body) {
@@ -51,60 +51,20 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-    for doc in data.docs {
+for data in data.docs {
         let tr = G::new_mut(Arc::clone(&db), &mut txn)
-            .add_n("Type", props!{ "content".to_string() => doc.doc }, None, None);
-        let doc_node = tr.collect_to::<Vec<_>>();
+    .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);    let doc_node = tr.collect_to::<Vec<_>>();
 
-        let tr = G::new_mut(Arc::clone(&db), &mut txn)
-            .insert_vs::<fn(&HVector) -> bool>(&doc.vecs, None);
-        let vectors = tr.collect_to::<Vec<_>>();
+                let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .insert_vs::<fn(&HVector) -> bool>(&data.vecs, None);    ;    let vectors = tr.collect_to::<Vec<_>>();
 
-        for vec in vectors {
-            let tr = G::new_mut(Arc::clone(&db), &mut txn)
-                .add_e("Contains", props!{}, None, doc_node.id(), vec.id(), true, EdgeType::Vec);
-            let _ = tr.collect_to::<Vec<_>>();
-        }
-    }
-
-    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    txn.commit()?;
-    Ok(())
-}
-
-#[handler]
-pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct ragtestloadData {
-        doc: String,
-        vec: Vec<f64>,
-    }
-
-    let data: ragtestloadData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
+for data in vectors {
     let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);
-    let doc_node = tr.collect_to::<Vec<_>>();
-
-    let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
-    let vector = tr.collect_to::<Vec<_>>();
-
-    let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), true, EdgeType::Vec);
+    .add_e("EdgeType::Vec", props!{}, None, doc_node.id(), data.id(), true, EdgeType::Vec);
 let _ = tr.collect_to::<Vec<_>>();
 
+    }
+    }
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
@@ -113,10 +73,11 @@ let _ = tr.collect_to::<Vec<_>>();
 }
 
 #[handler]
-pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
+pub fn ragsearchdocs(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize, Debug)]
     struct ragsearchdocData {
         query: Vec<f64>,
+        k: i32,
     }
 
     let data: ragsearchdocData = match sonic_rs::from_slice(&input.request.body) {
@@ -131,14 +92,15 @@ pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(),
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
     let tr = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector) -> bool>(&data.query, 1, None);
-    let vec = tr.collect_to::<Vec<_>>();
+        .search_v::<fn(&HVector) -> bool>(&data.query, data.k as usize, None);
+    let vecs = tr.collect_to::<Vec<_>>();
 
-    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
-        .in_("Contains");
+    let tr = G::new_from(Arc::clone(&db), &txn, vecs.clone())
+        .in_("EdgeType::Vec");
     let doc_node = tr.collect_to::<Vec<_>>();
 
     let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone());
+
     let tr = tr.map(|item| {
     match item {
     Ok(ref item) => {
@@ -162,133 +124,5 @@ pub fn ragsearchdoc(input: &HandlerInput, response: &mut Response) -> Result<(),
     return_vals.insert("doc_node".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
-    Ok(())
-}
-
-#[handler]
-pub fn hnswsearch(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct hnswsearchData {
-        query: Vec<f64>,
-        k: i32,
-    }
-
-    let data: hnswsearchData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let txn = db.graph_env.read_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
-        let tr = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector) -> bool>(&data.query, data.k as usize, None)
-;    let res = tr.collect_to::<Vec<_>>();
-
-    return_vals.insert("res".to_string(), ReturnValue::from_traversal_value_array_with_mixin(res, remapping_vals.borrow_mut()));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    Ok(())
-}
-
-#[handler]
-pub fn hnswinsert(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct hnswinsertData {
-        vector: Vec<f64>,
-    }
-
-    let data: hnswinsertData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
-        let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .insert_v::<fn(&HVector) -> bool>(&data.vector, None)
-;    let res = tr.collect_to::<Vec<_>>();
-
-        let tr = G::new_from(Arc::clone(&db), &txn, res.clone())
-        ;let tr = tr.map(|item| {
-    match item {
-    Ok(ref item) => {
-    let id = item.check_property("ID");
-        let id_remapping = Remapping::new(false, None, Some(
-                        match id {
-                            Some(value) => ReturnValue::from(value.clone()),
-                            None => return Err(GraphError::ConversionError(
-                                "Property not found on id".to_string(),
-                            )),
-                        }
-                    ));remapping_vals.borrow_mut().insert(
-    item.id().clone(),
-    ResponseRemapping::new(
-    HashMap::from([
-("ID".to_string(), id_remapping),
-    ]),    false    ),    );        }    Err(e) => {
-    println!("Error: {:?}", e);
-    return Err(GraphError::ConversionError("Error: {:?}".to_string()))    }};    item}).filter_map(|item| item.ok());
-    let return_val = tr.collect::<Vec<_>>();
-    return_vals.insert("res".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    txn.commit()?;
-    Ok(())
-}
-
-#[handler]
-pub fn hnswload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize)]
-    struct hnswloadData {
-        vectors: Vec<Vec<f64>>,
-    }
-
-    let data: hnswloadData = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let mut txn = db.graph_env.write_txn().unwrap();
-
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
-
-                let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .insert_vs::<fn(&HVector) -> bool>(&data.vectors, None);    ;    let res = tr.collect_to::<Vec<_>>();
-
-        let tr = G::new_from(Arc::clone(&db), &txn, res.clone())
-        ;let tr = tr.map(|item| {
-    match item {
-    Ok(ref item) => {
-    let id = item.check_property("ID");
-        let id_remapping = Remapping::new(false, None, Some(
-                        match id {
-                            Some(value) => ReturnValue::from(value.clone()),
-                            None => return Err(GraphError::ConversionError(
-                                "Property not found on id".to_string(),
-                            )),
-                        }
-                    ));remapping_vals.borrow_mut().insert(
-    item.id().clone(),
-    ResponseRemapping::new(
-    HashMap::from([
-("ID".to_string(), id_remapping),
-    ]),    false    ),    );        }    Err(e) => {
-    println!("Error: {:?}", e);
-    return Err(GraphError::ConversionError("Error: {:?}".to_string()))    }};    item}).filter_map(|item| item.ok());
-    let return_val = tr.collect::<Vec<_>>();
-    return_vals.insert("res".to_string(), ReturnValue::from_traversal_value_array_with_mixin(return_val, remapping_vals.borrow_mut()));
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-
-    txn.commit()?;
     Ok(())
 }

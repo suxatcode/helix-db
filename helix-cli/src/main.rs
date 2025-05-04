@@ -826,8 +826,8 @@ QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
     }
     RETURN "Success"
 
-QUERY ragsearchdoc(query: [F64]) =>
-    vec <- SearchV<Vector>(query, 1)
+QUERY ragsearchdocs(query: [F64], k: I32) =>
+    vec <- SearchV<Vector>(query, k)
     doc_node <- vec::In<Contains>
     RETURN doc_node::{content}
 "#,

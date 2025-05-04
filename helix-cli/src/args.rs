@@ -5,6 +5,7 @@ pub mod version {
     pub const NAME: &str = "Helix CLI";
     pub const AUTHORS: &str = "Helix Team";
 }
+
 use version::{VERSION, NAME, AUTHORS};
 
 #[derive(Debug, Parser)]
