@@ -397,7 +397,7 @@ pub struct Object {
 
 #[derive(Debug, Clone)]
 pub struct Exclude {
-    pub fields: Vec<String>,
+    pub fields: Vec<(Loc, String)>,
     pub loc: Loc,
 }
 
@@ -492,9 +492,7 @@ impl HelixParser {
         // Now parse each individual field_def
         field_defs
             .into_inner()
-            .map(|p| {
-                self.parse_field_def(p)
-            })
+            .map(|p| self.parse_field_def(p))
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -1731,7 +1729,7 @@ impl HelixParser {
     fn parse_exclude(&self, pair: Pair<Rule>) -> Result<Exclude, ParserError> {
         let mut fields = Vec::new();
         for p in pair.clone().into_inner() {
-            fields.push(p.as_str().to_string());
+            fields.push((p.loc(), p.as_str().to_string()));
         }
         Ok(Exclude {
             loc: pair.loc(),
@@ -2504,34 +2502,43 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
 
-        assert!(query.parameters.iter().any(|param| match param.param_type.1 {
-            FieldType::String => true,
-            _ => false,
-        }));
-        assert!(query.parameters.iter().any(|param| match param.param_type.1 {
-            FieldType::Array(ref field) => match &**field {
-                FieldType::String =>
-                    if param.name.1 == "names" || param.name.1 == "ids" {
-                        true
-                    } else {
-                        false
-                    },
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::String => true,
                 _ => false,
-            },
-            _ => false,
-        }));
-        assert!(query.parameters.iter().any(|param| match param.param_type.1 {
-            FieldType::Array(ref field) => match &**field {
-                FieldType::I32 =>
-                    if param.name.1 == "ages" {
-                        true
-                    } else {
-                        false
-                    },
+            }));
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::Array(ref field) => match &**field {
+                    FieldType::String =>
+                        if param.name.1 == "names" || param.name.1 == "ids" {
+                            true
+                        } else {
+                            false
+                        },
+                    _ => false,
+                },
                 _ => false,
-            },
-            _ => false,
-        }))
+            }));
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::Array(ref field) => match &**field {
+                    FieldType::I32 =>
+                        if param.name.1 == "ages" {
+                            true
+                        } else {
+                            false
+                        },
+                    _ => false,
+                },
+                _ => false,
+            }))
     }
 
     #[test]
@@ -2553,16 +2560,19 @@ mod tests {
         // println!("{:?}", query.parameters);
         let mut param_type = "";
         assert!(
-            query.parameters.iter().any(|param| match param.param_type.1 {
-                FieldType::Identifier(ref id) => match id.as_str() {
-                    "User" => true,
-                    _ => {
-                        param_type = id;
-                        false
-                    }
-                },
-                _ => false,
-            }),
+            query
+                .parameters
+                .iter()
+                .any(|param| match param.param_type.1 {
+                    FieldType::Identifier(ref id) => match id.as_str() {
+                        "User" => true,
+                        _ => {
+                            param_type = id;
+                            false
+                        }
+                    },
+                    _ => false,
+                }),
             "Param of type {} was not found",
             param_type
         );

@@ -553,63 +553,14 @@ impl<'a> Ctx<'a> {
                 }
 
                 StepType::Exclude(ex) => {
-                    for f in &ex.fields {
-                        excluded.insert(f.as_str(), ex.loc.clone());
+                    self.validate_exclude(&cur_ty, tr, ex, &excluded, q);
+                    for (_, key) in &ex.fields {
+                        excluded.insert(key.as_str(), ex.loc.clone());
                     }
                 }
 
                 StepType::Object(obj) => {
-                    match &cur_ty {
-                        Type::Nodes(Some(node_ty)) => {
-                            if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
-                                self.validate_object_fields(
-                                    obj,
-                                    &field_set,
-                                    &excluded,
-                                    q,
-                                    node_ty,
-                                    "node",
-                                    Some(tr.loc.clone()),
-                                );
-                            }
-                        }
-                        Type::Edges(Some(edge_ty)) => {
-                            // for (key, val) in &obj.fields {
-                            if let Some(field_set) = self.edge_fields.get(edge_ty).cloned() {
-                                self.validate_object_fields(
-                                    obj,
-                                    &field_set,
-                                    &excluded,
-                                    q,
-                                    edge_ty,
-                                    "edge",
-                                    Some(tr.loc.clone()),
-                                );
-                            }
-                        }
-                        Type::Vector(_) => {
-                            // Vectors only have 'id' and 'embedding' fields
-                            let field_set: HashSet<&str> =
-                                vec!["id", "embedding"].into_iter().collect();
-                            self.validate_object_fields(
-                                obj,
-                                &field_set,
-                                &excluded,
-                                q,
-                                "vector",
-                                "vector",
-                                Some(tr.loc.clone()),
-                            );
-                        }
-                        _ => {
-                            self.push_query_err(
-                                q,
-                                obj.fields[0].1.loc.clone(),
-                                "cannot access properties on this type".to_string(),
-                                "property access is only valid on nodes, edges and vectors",
-                            );
-                        }
-                    }
+                    self.validate_object(&cur_ty, tr, obj, &excluded, q);
                     cur_ty = Type::Unknown;
                 }
 
@@ -668,6 +619,156 @@ impl<'a> Ctx<'a> {
         }
 
         cur_ty
+    }
+
+    fn validate_exclude_fields(
+        &mut self,
+        ex: &Exclude,
+        field_set: &HashSet<&str>,
+        excluded: &HashMap<&str, Loc>,
+        q: &'a Query,
+        type_name: &str,
+        type_kind: &str,
+        span: Option<Loc>,
+    ) {
+        for (loc, key) in &ex.fields {
+            if let Some(loc) = excluded.get(key.as_str()) {
+                self.push_query_err_with_fix(
+                    q,
+                    loc.clone(),
+                    format!("field `{}` was previously excluded in this traversal", key),
+                    format!("remove the exclusion of `{}`", key),
+                    Fix::new(span.clone(), Some(loc.clone()), None),
+                );
+            } else if !field_set.contains(key.as_str()) {
+                self.push_query_err(
+                    q,
+                    loc.clone(),
+                    format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
+                    "check the schema field names",
+                );
+            }
+        }
+    }
+
+    fn validate_exclude(
+        &mut self,
+        cur_ty: &Type<'a>,
+        tr: &'a Traversal,
+        ex: &Exclude,
+        excluded: &HashMap<&str, Loc>,
+        q: &'a Query,
+    ) {
+        match &cur_ty {
+            Type::Nodes(Some(node_ty)) => {
+                if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
+                    self.validate_exclude_fields(
+                        ex,
+                        &field_set,
+                        &excluded,
+                        q,
+                        node_ty,
+                        "node",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Edges(Some(edge_ty)) => {
+                // for (key, val) in &obj.fields {
+                if let Some(field_set) = self.edge_fields.get(edge_ty).cloned() {
+                    self.validate_exclude_fields(
+                        ex,
+                        &field_set,
+                        &excluded,
+                        q,
+                        edge_ty,
+                        "edge",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Vector(_) => {
+                // Vectors only have 'id' and 'embedding' fields
+                let field_set: HashSet<&str> = vec!["id", "embedding"].into_iter().collect();
+                self.validate_exclude_fields(
+                    ex,
+                    &field_set,
+                    &excluded,
+                    q,
+                    "vector",
+                    "vector",
+                    Some(tr.loc.clone()),
+                );
+            }
+            _ => {
+                self.push_query_err(
+                    q,
+                    ex.fields[0].0.clone(),
+                    "cannot access properties on this type".to_string(),
+                    "property access is only valid on nodes, edges and vectors",
+                );
+            }
+        }
+    }
+
+    fn validate_object(
+        &mut self,
+        cur_ty: &Type<'a>,
+        tr: &'a Traversal,
+        obj: &Object,
+        excluded: &HashMap<&str, Loc>,
+        q: &'a Query,
+    ) {
+        match &cur_ty {
+            Type::Nodes(Some(node_ty)) => {
+                if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
+                    self.validate_object_fields(
+                        obj,
+                        &field_set,
+                        &excluded,
+                        q,
+                        node_ty,
+                        "node",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Edges(Some(edge_ty)) => {
+                // for (key, val) in &obj.fields {
+                if let Some(field_set) = self.edge_fields.get(edge_ty).cloned() {
+                    self.validate_object_fields(
+                        obj,
+                        &field_set,
+                        &excluded,
+                        q,
+                        edge_ty,
+                        "edge",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Vector(_) => {
+                // Vectors only have 'id' and 'embedding' fields
+                let field_set: HashSet<&str> = vec!["id", "embedding"].into_iter().collect();
+                self.validate_object_fields(
+                    obj,
+                    &field_set,
+                    &excluded,
+                    q,
+                    "vector",
+                    "vector",
+                    Some(tr.loc.clone()),
+                );
+            }
+            _ => {
+                self.push_query_err(
+                    q,
+                    obj.fields[0].1.loc.clone(),
+                    "cannot access properties on this type".to_string(),
+                    "property access is only valid on nodes, edges and vectors",
+                );
+            }
+        }
     }
 
     /// Check that a graph‑navigation step is allowed for the current element
@@ -775,10 +876,7 @@ impl<'a> Ctx<'a> {
                     q,
                     val.loc.clone(),
                     format!("field `{}` was previously excluded in this traversal", key),
-                    format!(
-                        "remove the exclusion of `{}`",
-                        key
-                    ),
+                    format!("remove the exclusion of `{}`", key),
                     Fix::new(span.clone(), Some(loc.clone()), None),
                 );
             } else if !field_set.contains(key.as_str()) {
