@@ -665,8 +665,6 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
-            runner.arg("--branch");
-            runner.arg("graph-engine-pipelining");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 
