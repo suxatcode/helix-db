@@ -389,6 +389,8 @@ fn main() {
             println!("{} {}", "Successfully compiled queries to".green().bold(), output);
         }
 
+        // ----------------------------------------------------------------------------
+
         args::CommandType::Check(command) => {
             let path = if let Some(p) = &command.path {
                 p
@@ -555,6 +557,7 @@ fn main() {
                 None => println!("\t❌ No test provided"),
             }
         }
+
         args::CommandType::Init(command) => {
             println!("\tInitialising Helix project...");
             let path = match command.path {
