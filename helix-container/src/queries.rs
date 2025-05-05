@@ -13,7 +13,7 @@ use helixdb::{
         in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},
         out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},
         vectors::{ insert::InsertVAdapter, search::SearchVAdapter},
-        source::{add_e::{AddEAdapter, EdgeType}, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},
+        source::{add_e::AddEAdapter, add_e::EdgeType, add_n::AddNAdapter, e::EAdapter, e_from_id::EFromId, e_from_types::EFromTypes, n::NAdapter, n_from_id::NFromId, n_from_types::NFromTypesAdapter},
         tr_val::{TraversalVal, Traversable},
         util::{dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut, filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update},
     },
@@ -36,8 +36,8 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     #[derive(Serialize, Deserialize)]
     struct docsData {
-        vecs: Vec<Vec<f64>>,
         doc: String,
+        vecs: Vec<Vec<f64>>,
     }
 
     let data: ragloaddocsData = match sonic_rs::from_slice(&input.request.body) {
@@ -51,20 +51,60 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-for data in data.docs {
+    for doc in data.docs {
         let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);    let doc_node = tr.collect_to::<Vec<_>>();
+            .add_n("Type", props!{ "content".to_string() => doc.doc }, None, None);
+        let doc_node = tr.collect_to::<Vec<_>>();
 
-                let tr = G::new_mut(Arc::clone(&db), &mut txn)
-        .insert_vs::<fn(&HVector) -> bool>(&data.vecs, None);    ;    let vectors = tr.collect_to::<Vec<_>>();
+        let tr = G::new_mut(Arc::clone(&db), &mut txn)
+            .insert_vs::<fn(&HVector) -> bool>(&doc.vecs, None);
+        let vectors = tr.collect_to::<Vec<_>>();
 
-for data in vectors {
+        for vec in vectors {
+            let tr = G::new_mut(Arc::clone(&db), &mut txn)
+                .add_e("Contains", props!{}, None, doc_node.id(), vec.id(), true, EdgeType::Vec);
+            let _ = tr.collect_to::<Vec<_>>();
+        }
+    }
+
+    return_vals.insert("message".to_string(), ReturnValue::from("Success"));
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+
+    txn.commit()?;
+    Ok(())
+}
+
+#[handler]
+pub fn ragtestload(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    #[derive(Serialize, Deserialize)]
+    struct ragtestloadData {
+        doc: String,
+        vec: Vec<f64>,
+    }
+
+    let data: ragtestloadData = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
+
     let tr = G::new_mut(Arc::clone(&db), &mut txn)
-    .add_e("EdgeType::Vec", props!{}, None, doc_node.id(), data.id(), true, EdgeType::Vec);
+        .add_n("Type", props!{ "content".to_string() => data.doc }, None, None);
+    let doc_node = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+        .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
+    let vector = tr.collect_to::<Vec<_>>();
+
+    let tr = G::new_mut(Arc::clone(&db), &mut txn)
+    .add_e("Contains", props!{}, None, doc_node.id(), vector.id(), true, EdgeType::Vec);
 let _ = tr.collect_to::<Vec<_>>();
 
-    }
-    }
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
@@ -74,13 +114,13 @@ let _ = tr.collect_to::<Vec<_>>();
 
 #[handler]
 pub fn ragsearchdocs(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    #[derive(Serialize, Deserialize, Debug)]
-    struct ragsearchdocData {
+    #[derive(Serialize, Deserialize)]
+    struct ragsearchdocsData {
         query: Vec<f64>,
         k: i32,
     }
 
-    let data: ragsearchdocData = match sonic_rs::from_slice(&input.request.body) {
+    let data: ragsearchdocsData = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
@@ -91,17 +131,16 @@ pub fn ragsearchdocs(input: &HandlerInput, response: &mut Response) -> Result<()
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-    let tr = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector) -> bool>(&data.query, data.k as usize, None);
-    let vecs = tr.collect_to::<Vec<_>>();
+        let tr = G::new(Arc::clone(&db), &txn)
+        .search_v::<fn(&HVector) -> bool>(&data.query, data.k as usize, None)
+;    let vec = tr.collect_to::<Vec<_>>();
 
-    let tr = G::new_from(Arc::clone(&db), &txn, vecs.clone())
-        .in_("EdgeType::Vec");
-    let doc_node = tr.collect_to::<Vec<_>>();
+        let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
+.in_("Contains")
+;    let doc_node = tr.collect_to::<Vec<_>>();
 
-    let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone());
-
-    let tr = tr.map(|item| {
+        let tr = G::new_from(Arc::clone(&db), &txn, doc_node.clone())
+        ;let tr = tr.map(|item| {
     match item {
     Ok(ref item) => {
     let content = item.check_property("content");
