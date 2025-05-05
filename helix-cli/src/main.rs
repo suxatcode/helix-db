@@ -17,6 +17,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    fs,
 };
 use colored::*;
 
@@ -99,54 +100,55 @@ fn main() {
                 }
             };
 
-            // create progress spinner
             let spinner = create_spinner("Compiling Helix queries");
-            // spinner.set_style(
-            //     ProgressStyle::default_spinner()
-            //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-            //         .template("{spinner:.green.bold} {msg}")
-            //         .unwrap(),
-            // );
-            // number of files
-            let numb_of_files = files.len();
+
+            let num_files = files.len();
             let mut successes = HashMap::new();
             let mut errors = HashMap::new();
             let mut code = String::new();
             let mut generator = CodeGenerator::new();
             code.push_str(&generator.generate_headers());
+
             for file in files {
                 let contents = match fs::read_to_string(file.path()) {
                     Ok(contents) => contents,
                     Err(e) => {
-                        spinner.finish_with_message("❌ Failed to read files");
+                        spinner.finish_with_message(format!("{}", "❌ Failed to read files".red().bold()));
                         println!("{}", e);
                         return;
                     }
                 };
+
                 match HelixParser::parse_source(&contents) {
                     Ok(source) => {
                         code.push_str(&generator.generate_source(&source));
-                        successes.insert(file.file_name().to_string_lossy().into_owned(), source);
+                        successes.insert(
+                            file.file_name()
+                                .to_string_lossy()
+                                .into_owned(),
+                            source,
+                        );
                     }
                     Err(e) => {
-                        errors.insert(file.file_name().to_string_lossy().into_owned(), e);
+                        errors.insert(
+                            file.file_name()
+                                .to_string_lossy()
+                                .into_owned(),
+                            e,
+                        );
                     }
                 }
             }
 
             if !errors.is_empty() {
-                finish_spinner_with_message(&spinner, false, "Failed to compile some queries");
+                spinner.finish_with_message(format!("{}", "❌ Failed to compile some queries".red().bold()));
                 for (name, error) in errors {
                     println!("\t❌ {}: {}", name, error);
                 }
                 return;
             }
 
-            finish_spinner_with_message(
-                &spinner,
-                true,
-                &format!("Successfully compiled {} query files", numb_of_files),
-            );
+            spinner.finish_with_message(format!("Successfully compiled {} query files", num_files));
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();

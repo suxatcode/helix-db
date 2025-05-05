@@ -3,6 +3,7 @@ use std::{
     net::{SocketAddr, TcpListener},
     io::ErrorKind,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 
 const DB_DIR: &str = "helixdb-cfg/";
 
@@ -81,25 +82,24 @@ pub fn find_available_port(start_port: u16) -> Option<u16> {
 
 
 
-pub fn create_spinner(message: &str) -> ProgressBar {
+pub fn create_spinner(msg: &str) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
+    spinner.set_message(msg.to_string());
     spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("{prefix:>10.cyan.bold} {spinner:.green} {wide_msg}")
-            .unwrap(),
+        ProgressStyle::with_template("{spinner:.green.bold} {msg}")
+            .unwrap()
+            .tick_strings(&["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]),
     );
-    spinner.set_message(message.to_string());
-    spinner.set_prefix("🔄");
-    spinner.enable_steady_tick(Duration::from_millis(80));
+    //spinner.set_prefix("🔄");
+    //spinner.enable_steady_tick(Duration::from_millis(80));
     spinner
 }
 
-pub fn finish_spinner_with_message(spinner: &ProgressBar, success: bool, message: &str) {
-    let prefix = if success { "✅" } else { "❌" };
-    spinner.set_prefix(prefix);
-    spinner.finish_with_message(message.to_string());
-}
+
+
+
+
+
 
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
