@@ -85,7 +85,7 @@ impl HelixGraphStorage {
         let edges_db = graph_env
             .database_options()
             .types::<U128<BE>, Bytes>()
-            .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            // .flags(DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
             .name(DB_EDGES)
             .create(&mut wtxn)?;
         let out_edges_db: Database<Bytes, Bytes> = graph_env

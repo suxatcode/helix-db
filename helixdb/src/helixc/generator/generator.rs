@@ -1,13 +1,7 @@
 use crate::{
-    protocol::value::Value,
     helixc::parser::helix_parser::{
-        Exclude, Object,
-        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp,
-        EdgeSchema, EvaluatesToNumber, Expression, FieldType, FieldValue,
-        ForLoop, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source,
-        Statement, Step, Traversal, ValueType, VectorData,
-        StartNode::{Anonymous, Edge, Node, Variable},
-    },
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeSchema, EvaluatesToNumber, Exclude, Expression, ExpressionType, FieldType, FieldValue, ForLoop, GraphStep, IdType, NodeSchema, Object, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, StatementType, Step, Traversal, ValueType, VectorData
+    }, protocol::value::Value
 };
 use std::{collections::HashMap, vec};
 
@@ -117,10 +111,10 @@ impl CodeGenerator {
 
     fn generate_node_schema(&mut self, schema: &NodeSchema) -> String {
         let mut output = String::new();
-        output.push_str(&format!("// Node Schema: {}\n", schema.name));
+        output.push_str(&format!("// Node Schema: {}\n", schema.name.1));
         output.push_str("#[derive(Serialize, Deserialize)]\n");
         output.push_str("struct ");
-        output.push_str(&schema.name);
+        output.push_str(&schema.name.1);
         output.push_str(" {\n");
 
         for field in &schema.fields {
@@ -137,10 +131,10 @@ impl CodeGenerator {
 
     fn generate_edge_schema(&mut self, schema: &EdgeSchema) -> String {
         let mut output = String::new();
-        output.push_str(&format!("// Edge Schema: {}\n", schema.name));
+        output.push_str(&format!("// Edge Schema: {}\n", schema.name.1));
         output.push_str("#[derive(Serialize, Deserialize)]\n");
         output.push_str("struct ");
-        output.push_str(&schema.name);
+        output.push_str(&schema.name.1);
         output.push_str(" {\n");
 
         for field in schema.properties.as_ref().unwrap_or(&vec![]) {
@@ -251,18 +245,18 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
-                self.params.push(param.name.clone());
-                match &param.param_type {
+                self.params.push(param.name.1.clone());
+                match &param.param_type.1 {
                     FieldType::Object(_) => {
-                        output.push_str(&self.object_field_to_rust(&param.name))
+                        output.push_str(&self.object_field_to_rust(&param.name.1))
                     }
                     FieldType::Array(_) => {
-                        output.push_str(&self.array_field_to_rust(&param.name, &param.param_type))
+                        output.push_str(&self.array_field_to_rust(&param.name.1, &param.param_type.1))
                     }
                     _ => output.push_str(&format!(
                         "{}: {},\n",
-                        to_snake_case(&param.name),
-                        self.field_type_to_rust(&param.param_type, &param.name)
+                        to_snake_case(&param.name.1),
+                        self.field_type_to_rust(&param.param_type.1, &param.name.1)
                     )),
                 }
             }
@@ -273,13 +267,13 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 println!("param: {:?}", param);
-                match &param.param_type {
+                match &param.param_type.1 {
                     FieldType::Object(fields) => {
-                        output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                        output.push_str(&mut self.object_type_to_rust(&param.name.1, fields));
                     }
                     FieldType::Array(fields) => match fields.as_ref() {
                         FieldType::Object(fields) => {
-                            output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                            output.push_str(&mut self.object_type_to_rust(&param.name.1, fields));
                         }
                         _ => {}
                     },
@@ -347,18 +341,19 @@ impl CodeGenerator {
     }
 
     fn should_be_mut(&mut self, statement: &Statement) -> bool {
-        matches!(statement, Statement::AddNode(_))
-            || matches!(statement, Statement::AddEdge(_))
-            || matches!(statement, Statement::Drop(_))
-            || matches!(statement, Statement::AddVector(_))
-            || matches!(statement, Statement::BatchAddVector(_))
+        let statement = statement.statement;
+        matches!(statement, StatementType::AddNode(_))
+            || matches!(statement, StatementType::AddEdge(_))
+            || matches!(statement, StatementType::Drop(_))
+            || matches!(statement, StatementType::AddVector(_))
+            || matches!(statement, StatementType::BatchAddVector(_))
             || {
                 match statement {
-                    Statement::Assignment(assignment) => {
-                        matches!(assignment.value, Expression::AddNode(_))
-                            || matches!(assignment.value, Expression::AddEdge(_))
-                            || matches!(assignment.value, Expression::AddVector(_))
-                            || matches!(assignment.value, Expression::BatchAddVector(_))
+                    StatementType::Assignment(assignment) => {
+                        matches!(assignment.value.expr, ExpressionType::AddNode(_))
+                            || matches!(assignment.value.expr, ExpressionType::AddEdge(_))
+                            || matches!(assignment.value.expr, ExpressionType::AddVector(_))
+                            || matches!(assignment.value.expr, ExpressionType::BatchAddVector(_))
                             || {
                                 let steps = match &assignment.value {
                                     Expression::Traversal(traversal) => &traversal.steps,

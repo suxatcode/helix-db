@@ -165,7 +165,7 @@ pub fn render(diag: &Diagnostic, src: &str, filename: &str) -> String {
                 format!(
                     "{}{}{}",
                     start_chunk,
-                    format!("{}", to_add.span.trim_end_matches('\n'))
+                    format!("{}", to_add.trim_end_matches('\n'))
                         .green()
                         .bold(),
                     end_chunk

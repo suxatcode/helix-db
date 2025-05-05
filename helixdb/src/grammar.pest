@@ -119,7 +119,7 @@ spread_object = { ".." }
 mapping_field = { (identifier ~ (":" ~ (anonymous_traversal | evaluates_to_anything | object_step))) | identifier }
 
 // Schema definitions
-vector_def = { "V::" ~ identifier_upper }
+vector_def = { "V::" ~ identifier_upper ~ node_body }
 node_def   = { "N::" ~ identifier_upper ~ node_body }
 edge_def   = { "E::" ~ identifier_upper ~ edge_body }
 
@@ -149,9 +149,9 @@ COMMENT    = _{ "//" ~ (!"\n" ~ ANY)* }
 // Add edged and vertices
 create_field  = { "{" ~ new_field ~ ("," ~ new_field)* ~ "}" }
 new_field     = { identifier ~ ":" ~ (anonymous_traversal | evaluates_to_anything | create_field) }
-AddN          = { "AddN" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? }
-AddE          = { "AddE" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ create_field? ~ ")")? ~ to_from }
-AddV          = { "AddV" ~ ("<" ~ identifier_upper ~ ">")? ~ ("(" ~ vector_data? ~ ")")? }
+AddN          = { "AddN" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ create_field? ~ ")")? }
+AddE          = { "AddE" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ create_field? ~ ")")? ~ to_from }
+AddV          = { "AddV" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ vector_data ~ ("," ~ create_field)* ~ ")") }
 
 vector_data = { identifier | vec_literal }
 doc_data    = { identifier | string_literal }

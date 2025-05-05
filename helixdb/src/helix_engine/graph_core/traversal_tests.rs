@@ -1223,7 +1223,7 @@ fn huge_traversal() {
     let mut nodes = Vec::with_capacity(65_000_000);
     let mut start = Instant::now();
 
-    for i in 0..1_000_000 {
+    for i in 0..100_000 {
         // nodes.push(Node::new("person", props! { "name" => i}));
         nodes.push((v6_uuid()));
     }
@@ -1241,7 +1241,7 @@ fn huge_traversal() {
     println!("time taken to add nodes: {:?}", now.elapsed());
     let start = Instant::now();
     let mut edges = Vec::with_capacity(6000 * 2000);
-    for i in 0..1_000_000 {
+    for i in 0..100_000_000 {
         let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
         let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
         // edges.push(Edge {
@@ -1293,7 +1293,7 @@ fn huge_traversal() {
         .out("knows")
         .out("knows")
         .dedup()
-        .range(0, 100)
+        .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
     println!("traversal: {:?}", traversal);
@@ -1347,4 +1347,5 @@ fn huge_traversal() {
     //     "size of mdb file on disk: {:?}",
     //     storage.graph_env.real_disk_size()
     // );
+    assert!(false);
 }

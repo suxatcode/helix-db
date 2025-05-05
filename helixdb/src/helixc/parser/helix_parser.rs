@@ -48,6 +48,8 @@ pub struct NodeSchema {
 #[derive(Debug, Clone)]
 pub struct VectorSchema {
     pub name: String,
+    pub fields: Vec<Field>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -271,14 +273,6 @@ pub enum BooleanOpType {
 }
 
 #[derive(Debug, Clone)]
-pub struct AddVector {
-    pub loc: Loc,
-    pub vector_type: Option<String>,
-    pub data: Option<VectorData>,
-    pub fields: Option<HashMap<String, ValueType>>,
-}
-
-#[derive(Debug, Clone)]
 pub enum VectorData {
     Vector(Vec<f64>),
     Identifier(String),
@@ -312,6 +306,14 @@ pub enum EvaluatesToNumberType {
     F32(f32),
     F64(f64),
     Identifier(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct AddVector {
+    pub loc: Loc,
+    pub vector_type: Option<String>,
+    pub data: Option<VectorData>,
+    pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -478,9 +480,10 @@ impl HelixParser {
     }
 
     fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
-        Ok(VectorSchema { name })
+        let fields = self.parse_node_body(pairs.next().unwrap())?;
+        Ok(VectorSchema { name, fields, loc: pair.loc() })
     }
 
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {

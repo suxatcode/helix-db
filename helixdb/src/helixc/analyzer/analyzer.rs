@@ -68,7 +68,7 @@ struct Ctx<'a> {
     edge_map: HashMap<&'a str, &'a EdgeSchema>,
     node_fields: HashMap<&'a str, HashSet<&'a str>>,
     edge_fields: HashMap<&'a str, HashSet<&'a str>>,
-
+    vector_fields: HashMap<&'a str, HashSet<&'a str>>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -100,6 +100,17 @@ impl<'a> Ctx<'a> {
             })
             .collect();
 
+        let vector_fields = src
+            .vector_schemas
+            .iter()
+            .map(|v| {
+                (
+                    v.name.as_str(),
+                    v.fields.iter().map(|f| f.name.as_str()).collect(),
+                )
+            })
+            .collect();
+
         Self {
             node_set: src.node_schemas.iter().map(|n| n.name.1.as_str()).collect(),
             vector_set: src.vector_schemas.iter().map(|v| v.name.as_str()).collect(),
@@ -110,6 +121,7 @@ impl<'a> Ctx<'a> {
                 .collect(),
             node_fields,
             edge_fields,
+            vector_fields,
             src,
             diagnostics: Vec::new(),
         }
@@ -409,6 +421,23 @@ impl<'a> Ctx<'a> {
                             "declare the node schema first",
                         );
                     }
+                    // Validate fields if both type and fields are present
+                    if let Some(fields) = &add.fields {
+                        // Get the field set before validation
+                        let field_set = self.node_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!("`{}` is not a field of node `{}`", field_name, ty),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
                 Type::Nodes(add.node_type.as_deref())
             }
@@ -422,6 +451,23 @@ impl<'a> Ctx<'a> {
                             "declare the edge schema first",
                         );
                     }
+                    // Validate fields if both type and fields are present
+                    if let Some(fields) = &add.fields {
+                        // Get the field set before validation
+                        let field_set = self.edge_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!("`{}` is not a field of edge `{}`", field_name, ty),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
                 Type::Edges(add.edge_type.as_deref())
             }
@@ -434,6 +480,22 @@ impl<'a> Ctx<'a> {
                             format!("vector type `{}` has not been declared", ty),
                             format!("add a `V::{}` schema first", ty),
                         );
+                    }
+                    // Validate vector fields
+                    if let Some(fields) = &add.fields {
+                        let field_set = self.vector_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!("`{}` is not a field of vector `{}`", field_name, ty),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 Type::Vector(add.vector_type.as_deref())
@@ -872,12 +934,16 @@ impl<'a> Ctx<'a> {
     ) {
         for (key, val) in &obj.fields {
             if let Some(loc) = excluded.get(key.as_str()) {
+                // for the "::"
+                let mut loc = loc.clone();
+                loc.end.column += 2;
+                loc.span.push_str("::");
                 self.push_query_err_with_fix(
                     q,
                     val.loc.clone(),
                     format!("field `{}` was previously excluded in this traversal", key),
                     format!("remove the exclusion of `{}`", key),
-                    Fix::new(span.clone(), Some(loc.clone()), None),
+                    Fix::new(span.clone(), Some(loc.clone()), Some(String::new())),
                 );
             } else if !field_set.contains(key.as_str()) {
                 self.push_query_err(
@@ -1103,17 +1169,19 @@ mod analyzer_tests {
     #[test]
     fn validates_vector_properties() {
         let hx = r#"
-            V::UserEmbedding
+            V::UserEmbedding {
+                content: String
+            }
             
-            QUERY badVectorField() =>
-                v <- V<UserEmbedding>
-                n <- v::{invalid_field}
-                RETURN n
+            QUERY badVectorField(vec: [F64], content: String) =>
+                v <- AddV<UserEmbedding>(vec,{content: content})
+                RETURN v
         "#;
         let diags = run(hx);
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
+        assert!(false);
         assert!(
             diags
                 .iter()
@@ -1163,6 +1231,73 @@ mod analyzer_tests {
                 .iter()
                 .any(|d| d.message.contains("was previously excluded")),
             "expected a diagnostic about accessing excluded field, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_add_node_fields() {
+        let hx = r#"
+            N::User { name: String }
+
+            QUERY badAddNodeField() =>
+                n <- AddN<User>({invalid_field: "test"})
+                RETURN n
+        "#;
+        let diags = run(hx);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a field of node")),
+            "expected a diagnostic about invalid node field, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_add_edge_fields() {
+        let hx = r#"
+            N::User { name: String }
+            N::Post { title: String }
+            E::Wrote {
+                From: User,
+                To: Post,
+                Properties: {
+                    date: String
+                }
+            }
+
+            QUERY badAddEdgeField() =>
+                e <- AddE<Wrote>({invalid_field: "test"})
+                RETURN e
+        "#;
+        let diags = run(hx);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a field of edge")),
+            "expected a diagnostic about invalid edge field, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_add_vector_fields() {
+        let hx = r#"
+            V::UserEmbedding {
+                content: String
+            }
+            
+            QUERY badAddVectorField() =>
+                v <- AddV<UserEmbedding>([1.0, 2.0], {invalid_field: "test"})
+                RETURN v
+        "#;
+        let diags = run(hx);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a valid vector field")),
+            "expected a diagnostic about invalid vector field, got: {:?}",
             diags
         );
     }
