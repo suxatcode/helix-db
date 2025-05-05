@@ -1,7 +1,13 @@
 use crate::{
-    helixc::parser::helix_parser::{
-        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeSchema, EvaluatesToNumber, Exclude, Expression, ExpressionType, FieldType, FieldValue, ForLoop, GraphStep, IdType, NodeSchema, Object, Parameter, Query, SearchVector, Source, StartNode::{Anonymous, Edge, Node, Variable}, Statement, StatementType, Step, Traversal, ValueType, VectorData
-    }, protocol::value::Value
+    helixc::analyzer::types::{
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeSchema,
+        EvaluatesToNumber, Exclude, Expression, FieldValue, ForLoop, GraphStep, IdType, NodeSchema,
+        Object, Parameter, Query, SearchVector, Source,
+        StartNode::{Anonymous, Edge, Node, Variable},
+        Statement, Step, Traversal, ValueType, VectorData,
+    },
+    helixc::parser::helix_parser::FieldType,
+    protocol::value::Value,
 };
 use std::{collections::HashMap, vec};
 
@@ -111,10 +117,10 @@ impl CodeGenerator {
 
     fn generate_node_schema(&mut self, schema: &NodeSchema) -> String {
         let mut output = String::new();
-        output.push_str(&format!("// Node Schema: {}\n", schema.name.1));
+        output.push_str(&format!("// Node Schema: {}\n", schema.name));
         output.push_str("#[derive(Serialize, Deserialize)]\n");
         output.push_str("struct ");
-        output.push_str(&schema.name.1);
+        output.push_str(&schema.name);
         output.push_str(" {\n");
 
         for field in &schema.fields {
@@ -131,10 +137,10 @@ impl CodeGenerator {
 
     fn generate_edge_schema(&mut self, schema: &EdgeSchema) -> String {
         let mut output = String::new();
-        output.push_str(&format!("// Edge Schema: {}\n", schema.name.1));
+        output.push_str(&format!("// Edge Schema: {}\n", schema.name));
         output.push_str("#[derive(Serialize, Deserialize)]\n");
         output.push_str("struct ");
-        output.push_str(&schema.name.1);
+        output.push_str(&schema.name);
         output.push_str(" {\n");
 
         for field in schema.properties.as_ref().unwrap_or(&vec![]) {
@@ -245,18 +251,18 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
-                self.params.push(param.name.1.clone());
-                match &param.param_type.1 {
+                self.params.push(param.name.clone());
+                match &param.param_type {
                     FieldType::Object(_) => {
-                        output.push_str(&self.object_field_to_rust(&param.name.1))
+                        output.push_str(&self.object_field_to_rust(&param.name))
                     }
                     FieldType::Array(_) => {
-                        output.push_str(&self.array_field_to_rust(&param.name.1, &param.param_type.1))
+                        output.push_str(&self.array_field_to_rust(&param.name, &param.param_type))
                     }
                     _ => output.push_str(&format!(
                         "{}: {},\n",
-                        to_snake_case(&param.name.1),
-                        self.field_type_to_rust(&param.param_type.1, &param.name.1)
+                        to_snake_case(&param.name),
+                        self.field_type_to_rust(&param.param_type, &param.name)
                     )),
                 }
             }
@@ -267,13 +273,13 @@ impl CodeGenerator {
 
             for param in &query.parameters {
                 println!("param: {:?}", param);
-                match &param.param_type.1 {
+                match &param.param_type {
                     FieldType::Object(fields) => {
-                        output.push_str(&mut self.object_type_to_rust(&param.name.1, fields));
+                        output.push_str(&mut self.object_type_to_rust(&param.name, fields));
                     }
                     FieldType::Array(fields) => match fields.as_ref() {
                         FieldType::Object(fields) => {
-                            output.push_str(&mut self.object_type_to_rust(&param.name.1, fields));
+                            output.push_str(&mut self.object_type_to_rust(&param.name, fields));
                         }
                         _ => {}
                     },
@@ -341,19 +347,18 @@ impl CodeGenerator {
     }
 
     fn should_be_mut(&mut self, statement: &Statement) -> bool {
-        let statement = statement.statement;
-        matches!(statement, StatementType::AddNode(_))
-            || matches!(statement, StatementType::AddEdge(_))
-            || matches!(statement, StatementType::Drop(_))
-            || matches!(statement, StatementType::AddVector(_))
-            || matches!(statement, StatementType::BatchAddVector(_))
+        matches!(statement, Statement::AddNode(_))
+            || matches!(statement, Statement::AddEdge(_))
+            || matches!(statement, Statement::Drop(_))
+            || matches!(statement, Statement::AddVector(_))
+            || matches!(statement, Statement::BatchAddVector(_))
             || {
                 match statement {
-                    StatementType::Assignment(assignment) => {
-                        matches!(assignment.value.expr, ExpressionType::AddNode(_))
-                            || matches!(assignment.value.expr, ExpressionType::AddEdge(_))
-                            || matches!(assignment.value.expr, ExpressionType::AddVector(_))
-                            || matches!(assignment.value.expr, ExpressionType::BatchAddVector(_))
+                    Statement::Assignment(assignment) => {
+                        matches!(assignment.value, Expression::AddNode(_))
+                            || matches!(assignment.value, Expression::AddEdge(_))
+                            || matches!(assignment.value, Expression::AddVector(_))
+                            || matches!(assignment.value, Expression::BatchAddVector(_))
                             || {
                                 let steps = match &assignment.value {
                                     Expression::Traversal(traversal) => &traversal.steps,
@@ -754,14 +759,11 @@ impl CodeGenerator {
                             output.push_str(".in_e(\"\");\n");
                         }
                     }
-                    GraphStep::BothE(_) => unreachable!(),
-                    GraphStep::Both(_) => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InN => output.push_str(".in_v()\n"),
-                    GraphStep::OutN => output.push_str(".out_v()\n"),
-                    GraphStep::BothN => unreachable!(),
+                    GraphStep::ToN => output.push_str(".in_v()\n"),
+                    GraphStep::FromN => output.push_str(".out_v()\n"),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 _ => output.push_str(&mut self.generate_step(step, query)),
@@ -931,11 +933,8 @@ impl CodeGenerator {
                         output.push_str(".in_e(\"\")\n");
                     }
                 }
-                GraphStep::OutN => output.push_str(".out_v()\n"),
-                GraphStep::InN => output.push_str(".in_v()\n"),
-                GraphStep::BothN => unreachable!(),
-                GraphStep::BothE(types) => unreachable!(),
-                GraphStep::Both(types) => unreachable!(),
+                GraphStep::ToN => output.push_str(".in_v()\n"),
+                GraphStep::FromN => output.push_str(".out_v()\n"),
             },
             Step::Range((start, end)) => {
                 let start = match start {
@@ -1623,7 +1622,7 @@ impl CodeGenerator {
                         value,
                     ));
                 }
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!(
                         "return_vals.insert(\"message\".to_string(), ReturnValue::Empty);\n",
                     ));
@@ -2036,7 +2035,7 @@ impl CodeGenerator {
                         output.push_str(")\n");
                     }
                 },
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!("ReturnValue::Empty\n"));
                 }
                 Expression::Identifier(id) => {

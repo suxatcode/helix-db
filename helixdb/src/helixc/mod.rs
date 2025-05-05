@@ -1,3 +1,3 @@
 pub mod analyzer;
-// pub mod generator;
+pub mod generator;
 pub mod parser;
