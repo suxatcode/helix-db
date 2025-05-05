@@ -18,12 +18,12 @@ pub struct Span {
 
 impl Span {
     pub fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
+        Self { line, column: column + 1 }
     }
 
     pub fn from_pos(pos: &Position) -> Self {
         let (line, column) = pos.line_col();
-        Self { line, column }
+        Self { line, column: column + 1 }
     }
 }
 

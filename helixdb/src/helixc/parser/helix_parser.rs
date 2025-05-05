@@ -490,7 +490,6 @@ impl HelixParser {
         field_defs
             .into_inner()
             .map(|p| {
-                println!("\nFieldDef: {:?}\n", p.clone());
                 self.parse_field_def(p)
             })
             .collect::<Result<Vec<_>, _>>()
@@ -501,7 +500,6 @@ impl HelixParser {
         field: Pair<Rule>,
         schema: Option<&Source>,
     ) -> Result<FieldType, ParserError> {
-        println!("\nFieldType Top: {:?}\n", field);
         match field.as_rule() {
             Rule::named_type => {
                 let type_str = field.as_str();
@@ -541,7 +539,6 @@ impl HelixParser {
             Rule::object => {
                 let mut fields = HashMap::new();
                 for field in field.into_inner().next().unwrap().into_inner() {
-                    println!("\nField: {:?}\n", field);
                     let (field_name, field_type) = {
                         let mut field_pair = field.clone().into_inner();
                         (
@@ -549,8 +546,6 @@ impl HelixParser {
                             field_pair.next().unwrap().into_inner().next().unwrap(),
                         )
                     };
-                    println!("\nField Name: {:?}\n", field_name);
-                    println!("\nField Type: {:?}\n", field_type);
                     let field_type = self.parse_field_type(field_type, Some(&self.source))?;
                     fields.insert(field_name, field_type);
                 }
@@ -558,7 +553,6 @@ impl HelixParser {
             }
             Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
             _ => {
-                println!("\nERROR: {:?}\n", field);
                 unreachable!()
             }
         }
@@ -659,8 +653,6 @@ impl HelixParser {
                     param_pair,
                     Some(&self.source),
                 )?;
-
-                println!("\nParamType: {:?}\n", param_type);
 
                 if seen.insert(name.1.clone()) {
                     Ok(Parameter {

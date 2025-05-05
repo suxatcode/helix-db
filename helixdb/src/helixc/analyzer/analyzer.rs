@@ -448,7 +448,7 @@ impl<'a> Ctx<'a> {
         scope: &HashMap<&'a str, Type<'a>>,
         q: &'a Query,
     ) -> Type<'a> {
-        // 1. Establish the starting type
+        // 1. Establish the starting type
         let mut cur_ty = match &tr.start {
             StartNode::Node { types, .. } => {
                 if let Some(ref ts) = types {
@@ -524,45 +524,51 @@ impl<'a> Ctx<'a> {
                 }
 
                 StepType::Object(obj) => {
-                    // Only validate simple `{name}`‑style accesses
-                    if let Type::Nodes(Some(node_ty)) = &cur_ty {
-                        if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
-                            for (key, _val) in &obj.fields {
-                                if excluded.contains(key.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        tr.loc.clone(),
-                                        format!(
-                                            "field `{}` was previously excluded in this traversal",
-                                            key
-                                        ),
-                                        "remove it from the exclusion or move the exclusion later",
-                                    );
-                                } else if !field_set.contains(key.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        tr.loc.clone(),
-                                        format!("`{}` is not a field of node `{}`", key, node_ty),
-                                        "check the schema field names",
-                                    );
-                                }
+                    match &cur_ty {
+                        Type::Nodes(Some(node_ty)) => {
+                            if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
+                                self.validate_object_fields(
+                                    obj, &field_set, &excluded, q, node_ty, "node",
+                                );
                             }
                         }
+                        Type::Edges(Some(edge_ty)) => {
+                            // for (key, val) in &obj.fields {
+                            if let Some(field_set) = self.edge_fields.get(edge_ty).cloned() {
+                                self.validate_object_fields(
+                                    obj, &field_set, &excluded, q, edge_ty, "edge",
+                                );
+                            }
+                        }
+                        Type::Vector(_) => {
+                            // Vectors only have 'id' and 'embedding' fields
+                            let field_set: HashSet<&str> =
+                                vec!["id", "embedding"].into_iter().collect();
+                            self.validate_object_fields(
+                                obj, &field_set, &excluded, q, "vector", "vector",
+                            );
+                        }
+                        _ => {
+                            self.push_query_err(
+                                q,
+                                obj.fields[0].1.loc.clone(),
+                                "cannot access properties on this type".to_string(),
+                                "property access is only valid on nodes, edges and vectors",
+                            );
+                        }
                     }
-                    // The result of an object projection is usually a scalar or JSON value;
-                    // we mark it unknown for type‑flow purposes.
                     cur_ty = Type::Unknown;
                 }
 
                 StepType::Where(expr) => {
                     self.infer_expr_type(expr, scope, q);
-                    // Where/boolean ops don’t change the element type,
+                    // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
                 }
 
                 StepType::BooleanOperation(expr) => {
                     // self.infer_expr_type(expr, scope, q);
-                    // Where/boolean ops don’t change the element type,
+                    // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
                 }
 
@@ -586,7 +592,7 @@ impl<'a> Ctx<'a> {
                     excluded.clear();
                 }
 
-                StepType::Range(_) => { /* doesn’t affect type */ }
+                StepType::Range(_) => { /* doesn't affect type */ }
                 StepType::Closure(cl) => {
                     // Add identifier to a temporary scope so inner uses pass
                     // let mut tmp_scope = scope.clone();
@@ -625,14 +631,14 @@ impl<'a> Ctx<'a> {
             (OutE(_) | InE(_), Type::Nodes(_)) => {
                 Some(Type::Edges(Some(gs.loc.span.trim_matches(|c: char| {
                     c == '"' || c.is_whitespace() || c == '\n'
-                }))))
+                }).trim_start_matches("OutE<").trim_start_matches("InE<").trim_end_matches(">"))))
             }
 
             // Node‑to‑Node
             (Out(_) | In(_), Type::Nodes(_)) => {
                 Some(Type::Nodes(Some(gs.loc.span.trim_matches(|c: char| {
                     c == '"' || c.is_whitespace() || c == '\n'
-                }))))
+                }).trim_start_matches("Out<").trim_start_matches("In<").trim_end_matches(">"))))
             }
 
             // Edge‑to‑Node
@@ -691,6 +697,34 @@ impl<'a> Ctx<'a> {
                 format!("use `FromN` or `ToN` to traverse nodes from `{}`", span)
             }
             (_, _) => "re-order the traversal or remove the invalid step".to_string(),
+        }
+    }
+
+    fn validate_object_fields(
+        &mut self,
+        obj: &Object,
+        field_set: &HashSet<&str>,
+        excluded: &HashSet<&str>,
+        q: &'a Query,
+        type_name: &str,
+        type_kind: &str,
+    ) {
+        for (key, val) in &obj.fields {
+            if excluded.contains(key.as_str()) {
+                self.push_query_err(
+                    q,
+                    val.loc.clone(),
+                    format!("field `{}` was previously excluded in this traversal", key),
+                    "remove it from the exclusion or move the exclusion later",
+                );
+            } else if !field_set.contains(key.as_str()) {
+                self.push_query_err(
+                    q,
+                    val.loc.clone(),
+                    format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
+                    "check the schema field names",
+                );
+            }
         }
     }
 }
@@ -832,10 +866,10 @@ mod analyzer_tests {
                 Properties: {}
             }
 
-            QUERY ok(hey: Usr) =>
+            QUERY ok(hey: User) =>
                 u <- N<User>
                 p <- u::Out<Wrote>
-                RETURN p::{title}
+                RETURN p::!{title}::{title}
         "#;
         let diags = run(hx);
         for d in diags.iter() {
@@ -844,6 +878,129 @@ mod analyzer_tests {
         assert!(
             diags.is_empty(),
             "expected no diagnostics, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_edge_properties() {
+        let hx = r#"
+            N::User { name: String }
+            N::Post { title: String }
+            E::Wrote {
+                From: User,
+                To: Post,
+                Properties: {
+                    date: String,
+                    likes: I32
+                }
+            }
+
+            QUERY badEdgeField() =>
+                e <- N<User>::OutE<Wrote>
+                n <- e::{invalid_field}
+                RETURN n
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(false);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a field of edge")),
+            "expected a diagnostic about invalid edge property access, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_node_properties() {
+        let hx = r#"
+            N::User { name: String }
+            N::Post { title: String }
+
+            QUERY badNodeField() =>
+                n <- N<User>::{invalid_field}
+                RETURN n
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a field of edge")),
+            "expected a diagnostic about invalid edge property access, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validates_vector_properties() {
+        let hx = r#"
+            V::UserEmbedding
+            
+            QUERY badVectorField() =>
+                v <- V<UserEmbedding>
+                n <- v::{invalid_field}
+                RETURN n
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("is not a field of vector")),
+            "expected a diagnostic about invalid vector property access, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn handles_untyped_nodes() {
+        let hx = r#"
+            N::User { name: String }
+
+            QUERY untypedNode() =>
+                u <- N<User>::{some_field}
+                RETURN n
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for untyped node access, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn respects_excluded_fields() {
+        let hx = r#"
+            N::User { name: String, age: I32 }
+
+            QUERY excludedField() =>
+                u <- N<User>
+                n <- u::!{nam}::{name}
+                RETURN n
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(false);
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("was previously excluded")),
+            "expected a diagnostic about accessing excluded field, got: {:?}",
             diags
         );
     }
