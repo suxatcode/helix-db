@@ -6,7 +6,7 @@ use crate::helixc::parser::{helix_parser::*, location::Loc};
 
 use std::collections::{HashMap, HashSet};
 
-use super::pretty;
+use super::{fix::Fix, pretty};
 
 /// A single diagnostic to be surfaced to the editor.
 #[derive(Debug, Clone)]
@@ -16,6 +16,7 @@ pub struct Diagnostic {
     pub hint: Option<String>,
     pub filename: Option<String>,
     pub severity: DiagnosticSeverity,
+    pub fix: Option<Fix>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,11 +34,13 @@ impl Diagnostic {
         message: impl Into<String>,
         severity: DiagnosticSeverity,
         hint: Option<String>,
+        fix: Option<Fix>,
     ) -> Self {
         Self {
             location,
             message: message.into(),
             hint,
+            fix,
             filename: None,
             severity,
         }
@@ -293,6 +296,7 @@ impl<'a> Ctx<'a> {
                 Loc::new(end.clone(), end, q.loc.span.clone()),
                 "query has no RETURN clause".to_string(),
                 "add `RETURN <expr>` at the end",
+                None,
             );
         }
         for ret in &q.return_values {
@@ -304,8 +308,13 @@ impl<'a> Ctx<'a> {
     // Helpers
     // -----------------------------------------------------
     fn push_schema_err(&mut self, _ident: &str, loc: Loc, msg: String, hint: Option<String>) {
-        self.diagnostics
-            .push(Diagnostic::new(loc, msg, DiagnosticSeverity::Error, hint));
+        self.diagnostics.push(Diagnostic::new(
+            loc,
+            msg,
+            DiagnosticSeverity::Error,
+            hint,
+            None,
+        ));
     }
     fn push_query_err(&mut self, q: &Query, loc: Loc, msg: String, hint: impl Into<String>) {
         self.diagnostics.push(Diagnostic::new(
@@ -313,15 +322,41 @@ impl<'a> Ctx<'a> {
             format!("{} (in QUERY named `{}`)", msg, q.name),
             DiagnosticSeverity::Error,
             Some(hint.into()),
+            None,
         ));
     }
 
-    fn push_query_warn(&mut self, q: &Query, loc: Loc, msg: String, hint: impl Into<String>) {
+    fn push_query_err_with_fix(
+        &mut self,
+        q: &Query,
+        loc: Loc,
+        msg: String,
+        hint: impl Into<String>,
+        fix: Fix,
+    ) {
+        self.diagnostics.push(Diagnostic::new(
+            loc,
+            format!("{} (in QUERY named `{}`)", msg, q.name),
+            DiagnosticSeverity::Error,
+            Some(hint.into()),
+            Some(fix),
+        ));
+    }
+
+    fn push_query_warn(
+        &mut self,
+        q: &Query,
+        loc: Loc,
+        msg: String,
+        hint: impl Into<String>,
+        fix: Option<Fix>,
+    ) {
         self.diagnostics.push(Diagnostic::new(
             loc,
             format!("{} (in QUERY named `{}`)", msg, q.name),
             DiagnosticSeverity::Warning,
             Some(hint.into()),
+            fix,
         ));
     }
 
@@ -397,7 +432,7 @@ impl<'a> Ctx<'a> {
                             q,
                             add.loc.clone(),
                             format!("vector type `{}` has not been declared", ty),
-                            "add a `V::{}` schema first",
+                            format!("add a `V::{}` schema first", ty),
                         );
                     }
                 }
@@ -410,7 +445,7 @@ impl<'a> Ctx<'a> {
                             q,
                             add.loc.clone(),
                             format!("vector type `{}` has not been declared", ty),
-                            "add a `V::{}` schema first",
+                            format!("add a `V::{}` schema first", ty),
                         );
                     }
                 }
@@ -423,7 +458,7 @@ impl<'a> Ctx<'a> {
                             q,
                             sv.loc.clone(),
                             format!("vector type `{}` has not been declared", ty),
-                            "add a `V::{}` schema first",
+                            format!("add a `V::{}` schema first", ty),
                         );
                     }
                 }
@@ -459,7 +494,7 @@ impl<'a> Ctx<'a> {
                                 q,
                                 tr.loc.clone(),
                                 format!("unknown node type `{}`", t),
-                                "declare it with `N::` first",
+                                format!("declare N::{} in the schema first", t),
                             );
                         }
                     }
@@ -476,7 +511,7 @@ impl<'a> Ctx<'a> {
                                 q,
                                 tr.loc.clone(),
                                 format!("unknown edge type `{}`", t),
-                                "declare it with `E::` first",
+                                format!("declare E::{} in the schema first", t),
                             );
                         }
                     }
@@ -490,7 +525,7 @@ impl<'a> Ctx<'a> {
                     q,
                     tr.loc.clone(),
                     format!("identifier `{}` is not in scope", var),
-                    "declare it earlier or fix the typo",
+                    format!("declare {} in the current scope or fix the typo", var),
                 );
                 Type::Unknown
             }),
@@ -498,7 +533,7 @@ impl<'a> Ctx<'a> {
         };
 
         // Track excluded fields for property validation
-        let mut excluded: HashSet<&str> = HashSet::new();
+        let mut excluded: HashMap<&str, Loc> = HashMap::new();
 
         // Stream through the steps
         for graph_step in &tr.steps {
@@ -519,7 +554,7 @@ impl<'a> Ctx<'a> {
 
                 StepType::Exclude(ex) => {
                     for f in &ex.fields {
-                        excluded.insert(f.as_str());
+                        excluded.insert(f.as_str(), ex.loc.clone());
                     }
                 }
 
@@ -528,7 +563,13 @@ impl<'a> Ctx<'a> {
                         Type::Nodes(Some(node_ty)) => {
                             if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
                                 self.validate_object_fields(
-                                    obj, &field_set, &excluded, q, node_ty, "node",
+                                    obj,
+                                    &field_set,
+                                    &excluded,
+                                    q,
+                                    node_ty,
+                                    "node",
+                                    Some(tr.loc.clone()),
                                 );
                             }
                         }
@@ -536,7 +577,13 @@ impl<'a> Ctx<'a> {
                             // for (key, val) in &obj.fields {
                             if let Some(field_set) = self.edge_fields.get(edge_ty).cloned() {
                                 self.validate_object_fields(
-                                    obj, &field_set, &excluded, q, edge_ty, "edge",
+                                    obj,
+                                    &field_set,
+                                    &excluded,
+                                    q,
+                                    edge_ty,
+                                    "edge",
+                                    Some(tr.loc.clone()),
                                 );
                             }
                         }
@@ -545,7 +592,13 @@ impl<'a> Ctx<'a> {
                             let field_set: HashSet<&str> =
                                 vec!["id", "embedding"].into_iter().collect();
                             self.validate_object_fields(
-                                obj, &field_set, &excluded, q, "vector", "vector",
+                                obj,
+                                &field_set,
+                                &excluded,
+                                q,
+                                "vector",
+                                "vector",
+                                Some(tr.loc.clone()),
                             );
                         }
                         _ => {
@@ -628,18 +681,24 @@ impl<'a> Ctx<'a> {
         use GraphStepType::*;
         match (&gs.step, cur_ty) {
             // Node‑to‑Edge
-            (OutE(_) | InE(_), Type::Nodes(_)) => {
-                Some(Type::Edges(Some(gs.loc.span.trim_matches(|c: char| {
-                    c == '"' || c.is_whitespace() || c == '\n'
-                }).trim_start_matches("OutE<").trim_start_matches("InE<").trim_end_matches(">"))))
-            }
+            (OutE(_) | InE(_), Type::Nodes(_)) => Some(Type::Edges(Some(
+                gs.loc
+                    .span
+                    .trim_matches(|c: char| c == '"' || c.is_whitespace() || c == '\n')
+                    .trim_start_matches("OutE<")
+                    .trim_start_matches("InE<")
+                    .trim_end_matches(">"),
+            ))),
 
             // Node‑to‑Node
-            (Out(_) | In(_), Type::Nodes(_)) => {
-                Some(Type::Nodes(Some(gs.loc.span.trim_matches(|c: char| {
-                    c == '"' || c.is_whitespace() || c == '\n'
-                }).trim_start_matches("Out<").trim_start_matches("In<").trim_end_matches(">"))))
-            }
+            (Out(_) | In(_), Type::Nodes(_)) => Some(Type::Nodes(Some(
+                gs.loc
+                    .span
+                    .trim_matches(|c: char| c == '"' || c.is_whitespace() || c == '\n')
+                    .trim_start_matches("Out<")
+                    .trim_start_matches("In<")
+                    .trim_end_matches(">"),
+            ))),
 
             // Edge‑to‑Node
             (FromN | ToN, Type::Edges(_)) => {
@@ -704,18 +763,23 @@ impl<'a> Ctx<'a> {
         &mut self,
         obj: &Object,
         field_set: &HashSet<&str>,
-        excluded: &HashSet<&str>,
+        excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         type_name: &str,
         type_kind: &str,
+        span: Option<Loc>,
     ) {
         for (key, val) in &obj.fields {
-            if excluded.contains(key.as_str()) {
-                self.push_query_err(
+            if let Some(loc) = excluded.get(key.as_str()) {
+                self.push_query_err_with_fix(
                     q,
                     val.loc.clone(),
                     format!("field `{}` was previously excluded in this traversal", key),
-                    "remove it from the exclusion or move the exclusion later",
+                    format!(
+                        "remove the exclusion of `{}`",
+                        key
+                    ),
+                    Fix::new(span.clone(), Some(loc.clone()), None),
                 );
             } else if !field_set.contains(key.as_str()) {
                 self.push_query_err(
@@ -988,7 +1052,7 @@ mod analyzer_tests {
 
             QUERY excludedField() =>
                 u <- N<User>
-                n <- u::!{nam}::{name}
+                n <- u::!{name}::{name}
                 RETURN n
         "#;
         let diags = run(hx);

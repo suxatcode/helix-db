@@ -390,6 +390,7 @@ pub struct Update {
 
 #[derive(Debug, Clone)]
 pub struct Object {
+    pub loc: Loc,
     pub fields: Vec<(String, FieldValue)>,
     pub should_spread: bool,
 }
@@ -397,12 +398,14 @@ pub struct Object {
 #[derive(Debug, Clone)]
 pub struct Exclude {
     pub fields: Vec<String>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct Closure {
     pub identifier: String,
     pub object: Object,
+    pub loc: Loc,
 }
 
 impl HelixParser {
@@ -1390,6 +1393,7 @@ impl HelixParser {
                         },
                     )],
                     should_spread: false,
+                    loc: pair.loc(),
                 }),
             }),
             Rule::update => Ok(Step {
@@ -1658,7 +1662,7 @@ impl HelixParser {
     fn parse_object_step(&self, pair: Pair<Rule>) -> Result<Object, ParserError> {
         let mut fields = Vec::new();
         let mut should_spread = false;
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             if p.as_rule() == Rule::spread_object {
                 should_spread = true;
                 continue;
@@ -1707,6 +1711,7 @@ impl HelixParser {
             fields.push((prop_key, field_addition));
         }
         Ok(Object {
+            loc: pair.loc(),
             fields,
             should_spread,
         })
@@ -1716,15 +1721,22 @@ impl HelixParser {
         let mut pairs = pair.clone().into_inner();
         let identifier = pairs.next().unwrap().as_str().to_string();
         let object = self.parse_object_step(pairs.next().unwrap())?;
-        Ok(Closure { identifier, object })
+        Ok(Closure {
+            loc: pair.loc(),
+            identifier,
+            object,
+        })
     }
 
     fn parse_exclude(&self, pair: Pair<Rule>) -> Result<Exclude, ParserError> {
         let mut fields = Vec::new();
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             fields.push(p.as_str().to_string());
         }
-        Ok(Exclude { fields })
+        Ok(Exclude {
+            loc: pair.loc(),
+            fields,
+        })
     }
 }
 

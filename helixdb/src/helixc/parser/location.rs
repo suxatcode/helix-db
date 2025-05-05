@@ -10,7 +10,7 @@ pub struct Loc {
     pub span: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Span {
     pub line: usize,
     pub column: usize,
