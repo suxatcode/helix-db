@@ -9,9 +9,11 @@ use helixdb::{
         sql_ingestion::SqliteIngestor,
     },
 };
-use instance_manager::InstanceManager;
-use utils::*;
-use args::HelixCLI;
+use crate::{
+    utils::*,
+    args::HelixCLI,
+    instance_manager::InstanceManager,
+};
 use clap::Parser;
 use std::{
     collections::HashMap,
@@ -33,7 +35,7 @@ fn main() {
             match Command::new("cargo").output() {
                 Ok(_) => {},
                 Err(_) => {
-                    println!("{}", "❌ Cargo is not installed".red().bold());
+                    println!("{}", "Cargo is not installed".red().bold());
                     return;
                 }
             }
@@ -41,7 +43,7 @@ fn main() {
             match check_helix_installation() {
                 Ok(_) => {},
                 Err(_) => {
-                    println!("{}", "❌ Helix is not installed. Please run `helix install` first.".red().bold());
+                    println!("{}", "Helix is not installed. Please run `helix install` first.".red().bold());
                     return;
                 }
             };
@@ -67,12 +69,19 @@ fn main() {
             let port = match find_available_port(start_port) {
                 Some(port) => {
                     if port != start_port {
-                        println!("\t⚠️ Port {} is in use, using port {} instead", start_port, port);
+                        println!(
+                            "{} {} {} {} {}",
+                            "Port".yellow(),
+                            start_port,
+                            "is in use, using port".yellow(),
+                            port,
+                            "instead".yellow(),
+                        );
                     }
                     port
                 }
                 None => {
-                    println!("{} {}", "❌ No available ports found starting from".red().bold(), start_port);
+                    println!("{} {}", "No available ports found starting from".red().bold(), start_port);
                     return;
                 }
             };
@@ -95,7 +104,7 @@ fn main() {
                     return;
                 }
                 Err(e) => {
-                    println!("❌ {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
@@ -113,7 +122,7 @@ fn main() {
                 let contents = match fs::read_to_string(file.path()) {
                     Ok(contents) => contents,
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "❌ Failed to read files".red().bold()));
+                        spinner.finish_with_message(format!("{}", "Failed to read files".red().bold()));
                         println!("{}", e);
                         return;
                     }
@@ -141,14 +150,21 @@ fn main() {
             }
 
             if !errors.is_empty() {
-                spinner.finish_with_message(format!("{}", "❌ Failed to compile some queries".red().bold()));
+                spinner.finish_with_message(format!("{}", "Failed to compile some queries".red().bold()));
                 for (name, error) in errors {
-                    println!("\t❌ {}: {}", name, error);
+                    println!("\t{}: {}", name, error);
                 }
                 return;
             }
 
-            spinner.finish_with_message(format!("Successfully compiled {} query files", num_files));
+            spinner.finish_with_message(
+                format!(
+                    "{} {} {}",
+                    "Successfully compiled".green().bold(),
+                    num_files,
+                    "query files".green().bold()
+                )
+            );
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
@@ -156,28 +172,14 @@ fn main() {
             // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
             if local {
                 let spinner = create_spinner("Building Helix");
-                // spinner.set_style(
-                //     ProgressStyle::default_spinner()
-                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-                //         .template("{spinner:.green.bold} {msg}")
-                //         .unwrap(),
-                // );
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            true,
-                            "Successfully wrote queries file",
-                        );
+                        spinner.finish_with_message(format!("{}", "Successfuly wrote queries file".green().bold()));
                     }
                     Err(e) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            false,
-                            "Failed to write queries file",
-                        );
-                        println!("\t└── {}", e);
+                        spinner.finish_with_message(format!("{}", "Filaed to write queries file".red().bold()));
+                        println!("└── {}", e);
                         return;
                     }
                 }
@@ -197,8 +199,8 @@ fn main() {
                 match runner.output() {
                     Ok(_) => {}
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to check Rust code");
-                        println!("\t└── {}", e);
+                        spinner.finish_with_message(format!("{}", "Failed to check Rust code".red().bold()));
+                        println!("└── {}", e);
                         return;
                     }
                 }
@@ -213,22 +215,16 @@ fn main() {
 
                 match runner.output() {
                     Ok(_) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully built Helix");
+                        spinner.finish_with_message(format!("{}", "Successfully built Helix".green().bold()));
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to build Helix");
-                        println!("\t└── {}", e);
+                        spinner.finish_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                        println!("└── {}", e);
                         return;
                     }
                 }
 
                 let spinner = create_spinner("Starting Helix instance");
-                // spinner.set_style(
-                //     ProgressStyle::default_spinner()
-                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-                //         .template("{spinner:.green.bold} {msg}")
-                //         .unwrap(),
-                // );
                 let instance_manager = InstanceManager::new().unwrap();
 
                 let binary_path = dirs::home_dir()
@@ -242,38 +238,31 @@ fn main() {
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            true,
-                            "Successfully started Helix instance",
-                        );
-                        println!("\n\t└── Instance ID: {}", instance.id);
-                        println!("\t└── Port: {}", instance.port);
-                        println!("\t└── Available endpoints:");
+                        spinner.finish_with_message(format!("{}", "Successfully started Helix instance".green().red()));
+                        println!("└── Instance ID: {}", instance.id);
+                        println!("└── Port: {}", instance.port);
+                        println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
-                            println!("\t    └── /{}", endpoint);
+                            println!("    └── /{}", endpoint);
                         }
                     }
                     Err(e) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            false,
-                            "Failed to start Helix instance",
-                        );
-                        println!("\t└── {}", e);
+                        spinner.finish_with_message(format!("{}", "Failed to start Helix instance".red().green()));
+                        println!("└── {}", e);
                     }
                 }
             }
         }
+
         args::CommandType::Instances(_) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
                     if instances.is_empty() {
-                        println!("\tNo running Helix instances");
+                        println!("No running Helix instances");
                         return;
                     }
-                    println!("\tRunning Helix instances:");
+                    println!("Running Helix instances:");
                     for instance in instances {
                         println!("\tID: {}", instance.id);
                         println!("\t  Port: {}", instance.port);
@@ -286,73 +275,65 @@ fn main() {
                     }
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to list instances: {}", e);
+                    println!("{} {}", "Failed to list instances:".red().bold(), e);
                 }
             }
         }
+
         args::CommandType::Stop(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
                     if instances.is_empty() {
-                        println!("\tNo running Helix instances");
+                        println!("No running Helix instances");
                         return;
                     }
                     if command.all {
                         match instance_manager.stop_all_instances() {
-                            Ok(_) => println!("\t✅ Stopped all Helix instances"),
-                            Err(e) => println!("\t❌ Failed to stop instances: {}", e),
+                            Ok(_) => println!("{}", "Stopped all Helix instances".green().bold()),
+                            Err(e) => println!("{} {}", "Failed to stop instances:".red().bold(), e),
                         }
                     } else if let Some(instance_id) = command.instance_id {
                         match instance_manager.stop_instance(&instance_id) {
-                            Ok(_) => println!("\t✅ Stopped instance {}", instance_id),
-                            Err(e) => println!("\t❌ Failed to stop instance: {}", e),
+                            Ok(_) => println!("{} {}", "Stopped instance".green().bold(), instance_id),
+                            Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        println!("\tPlease specify --all or provide an instance ID");
+                        println!("Please specify --all or provide an instance ID");
                     }
 
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to find instances: {}", e);
+                    println!("{} {}", "Failed to find instances:".red().bold(), e);
                 }
             }
         }
+
         args::CommandType::Start(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             let spinner = create_spinner("\tStarting Helix instance");
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    finish_spinner_with_message(
-                        &spinner,
-                        true,
-                        "Successfully restarted Helix instance",
-                    );
-                    println!("\t└── Instance ID: {}", instance.id);
-                    println!("\t└── Port: {}", instance.port);
-                    println!("\t└── Available endpoints:");
+                    spinner.finish_with_message(format!("{}", "Successfully restarted Helix instance".green().bold()));
+                    println!("└── Instance ID: {}", instance.id);
+                    println!("└── Port: {}", instance.port);
+                    println!("└── Available endpoints:");
                     for endpoint in instance.available_endpoints {
-                        println!("\t    └── /{}", endpoint);
+                        println!("    └── /{}", endpoint);
                     }
                 }
                 Ok(None) => {
-                    finish_spinner_with_message(
-                        &spinner,
-                        false,
-                        "Instance not found or binary missing",
-                    );
-                    println!(
-                        "\t└── Could not find instance with ID: {}",
-                        command.instance_id
-                    );
+                    spinner.finish_with_message(format!("{}", "Instance not found or binary missing".red().bold()));
+                    println!("└── Could not find instance with ID: {}", command.instance_id);
                 }
                 Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to restart instance");
-                    println!("\t└── {}", e);
+                    spinner.finish_with_message(format!("{}", "Failed to restart instance".red().bold()));
+                    println!("└── {}", e);
                 }
             }
         }
+
         args::CommandType::Compile(command) => {
             let path = if let Some(p) = &command.path {
                 p
@@ -375,7 +356,7 @@ fn main() {
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
@@ -388,13 +369,15 @@ fn main() {
             let source = match compile_hql_to_source(&files) {
                 Ok(source) => source,
                 Err(e) => {
-                    println!("\n❌ Failed to parse source");
+                    println!("{}", "Failed to parse source".red().bold());
                     println!("|");
                     println!("└─── {}", e);
                     return;
                 }
             };
-            println!("\t✅ Successfully parsed source {:?}", source);
+
+            println!("{} {:?}", "Successfully parsed source".green().bold(), source);
+
             let mut code = String::new();
             let mut generator = CodeGenerator::new();
             code.push_str(&generator.generate_headers());
@@ -403,8 +386,9 @@ fn main() {
             // write source to file
             let file_path = PathBuf::from(&output).join("queries.rs");
             fs::write(file_path, code).unwrap();
-            println!("\t✅ Successfully compiled queries to {}", output);
+            println!("{} {}", "Successfully compiled queries to".green().bold(), output);
         }
+
         args::CommandType::Check(command) => {
             let path = if let Some(p) = &command.path {
                 p
@@ -438,6 +422,7 @@ fn main() {
                 }
             }
         }
+
         args::CommandType::Install(command) => {
             // check if cargo is installed
             let mut runner = Command::new("cargo");
@@ -542,6 +527,7 @@ fn main() {
                 }
             }
         }
+
         args::CommandType::Test(command) => {
             let path = if let Some(p) = command.path {
                 p
@@ -588,122 +574,24 @@ fn main() {
 
             fs::create_dir_all(&path).unwrap();
 
-            // create schema.hx
             let schema_path = path.join("schema.hx");
             fs::write(
                 &schema_path,
-                r#"// Start building your schema here.
-//
-// The schema is used to to ensure a level of type safety in your queries.
-//
-// The schema is made up of Node types, denoted by N::,
-// and Edge types, denoted by E::
-//
-// Under the Node types you can define fields that
-// will be stored in the database.
-//
-// Under the Edge types you can define what type of node
-// the edge will connect to and from, and also the
-// properties that you want to store on the edge.
-//
-// Example:
-//
-// N::User {
-//     Name: String,
-//     Label: String,
-//     Age: Integer,
-//     IsAdmin: Boolean,
-// }
-//
-// E::Knows {
-//     From: User,
-//     To: User,
-//     Properties: {
-//         Since: Integer,
-//     }
-// }
-//
-//
-// For more information on how to write queries,
-// see the documentation at https://docs.helix-db.com
-// or checkout our GitHub at https://github.com/HelixDB/helix-db
-"#,
-            )
-            .unwrap();
+                DEFAULT_SCHEMA,
+            ).unwrap();
 
-            // create queries.hx
             let main_path = path.join("queries.hx");
             fs::write(
                 main_path,
-                r#"// Start writing your queries here.
-//
-// You can use the schema to help you write your queries.
-//
-// Queries take the form:
-//     QUERY {query name}({input name}: {input type}) =>
-//         {variable} <- {traversal}
-//         RETURN {variable}
-//
-// Example:
-//     QUERY GetUserFriends(user_id: String) =>
-//         friends <- N<User>(user_id)::Out<Knows>
-//         RETURN friends
-//
-//
-// For more information on how to write queries,
-// see the documentation at https://docs.helix-db.com
-// or checkout our GitHub at https://github.com/HelixDB/helix-db
+                DEFAULT_QUERIES,
+            ).unwrap();
 
-QUERY hnswinsert(vector: [Float]) =>
-    AddV<Vector>(vector)
-    RETURN "Success"
-
-QUERY hnswload(vectors: [[Float]]) =>
-    res <- BatchAddV<Type>(vectors)
-    RETURN res::{ID}
-
-QUERY hnswsearch(query: [Float], k: Integer) =>
-    res <- SearchV<Type>(query, k)
-    RETURN res
-
-QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
-    FOR {doc, vec} IN docs {
-        doc_node <- AddN<Type>({ content: doc })
-        vectors <- BatchAddV<Doc>(vecs)
-        FOR vec IN vectors {
-            AddE<Contains>::From(doc_node)::To(vec)
-        }
-    }
-    RETURN "Success"
-
-QUERY ragsearchdocs(query: [F64], k: I32) =>
-    vec <- SearchV<Vector>(query, k)
-    doc_node <- vec::In<Contains>
-    RETURN doc_node::{content}
-"#,
-/*
-QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
-    FOR {doc, vec} IN docs {
-        doc_node <- AddN<Type>({ content: doc })
-        vectors <- BatchAddV<Doc>(vecs)
-        FOR vec IN vectors {
-            AddE<Contains>::From(doc_node)::To(vec)
-        }
-    }
-    RETURN "Success"
-
-QUERY ragsearchdoc(query: [F64]) =>
-    vec <- SearchV<Vector>(query, 1)
-    doc_node <- vec::In<Contains>
-    RETURN doc_node::{content}
- */
-            )
-            .unwrap();
             let config_path = path.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
 
             println!("\t✅ Helix project initialised at {}", path.display());
         }
+
         args::CommandType::Ingest(command) => {
             match command.db_type.as_str() {
                 "sqlite" => {

@@ -166,6 +166,7 @@ pub struct IngestCommand {
     pub use_ssl: bool,
 }
 
+// TODO: make this better or don't use a custom CliError thing
 #[derive(Debug)]
 pub enum CliError {
     Io(std::io::Error),

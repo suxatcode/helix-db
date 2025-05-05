@@ -1,11 +1,102 @@
+use crate::args::*;
+use helixdb::helixc::parser::helix_parser::{
+    HelixParser,
+    Source,
+};
 use std::{
     path::PathBuf,
-    net::{SocketAddr, TcpListener},
     io::ErrorKind,
+    net::{SocketAddr, TcpListener},
+    fs,
+    fs::DirEntry,
 };
 use indicatif::{ProgressBar, ProgressStyle};
+use colored::*;
 
-const DB_DIR: &str = "helixdb-cfg/";
+pub const DB_DIR: &str = "helixdb-cfg/";
+
+pub const DEFAULT_SCHEMA: &str = r#"// Start building your schema here.
+//
+// The schema is used to to ensure a level of type safety in your queries.
+//
+// The schema is made up of Node types, denoted by N::,
+// and Edge types, denoted by E::
+//
+// Under the Node types you can define fields that
+// will be stored in the database.
+//
+// Under the Edge types you can define what type of node
+// the edge will connect to and from, and also the
+// properties that you want to store on the edge.
+//
+// Example:
+//
+// N::User {
+//     Name: String,
+//     Label: String,
+//     Age: Integer,
+//     IsAdmin: Boolean,
+// }
+//
+// E::Knows {
+//     From: User,
+//     To: User,
+//     Properties: {
+//         Since: Integer,
+//     }
+// }
+//
+// For more information on how to write queries,
+// see the documentation at https://docs.helix-db.com
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+"#;
+
+pub const DEFAULT_QUERIES: &str = r#"// Start writing your queries here.
+//
+// You can use the schema to help you write your queries.
+//
+// Queries take the form:
+//     QUERY {query name}({input name}: {input type}) =>
+//         {variable} <- {traversal}
+//         RETURN {variable}
+//
+// Example:
+//     QUERY GetUserFriends(user_id: String) =>
+//         friends <- N<User>(user_id)::Out<Knows>
+//         RETURN friends
+//
+//
+// For more information on how to write queries,
+// see the documentation at https://docs.helix-db.com
+// or checkout our GitHub at https://github.com/HelixDB/helix-db
+
+QUERY hnswinsert(vector: [Float]) =>
+    AddV<Vector>(vector)
+    RETURN "Success"
+
+QUERY hnswload(vectors: [[Float]]) =>
+    res <- BatchAddV<Type>(vectors)
+    RETURN res::{ID}
+
+QUERY hnswsearch(query: [Float], k: Integer) =>
+    res <- SearchV<Type>(query, k)
+    RETURN res
+
+QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
+    FOR {doc, vec} IN docs {
+        doc_node <- AddN<Type>({ content: doc })
+        vectors <- BatchAddV<Doc>(vecs)
+        FOR vec IN vectors {
+            AddE<Contains>::From(doc_node)::To(vec)
+        }
+    }
+    RETURN "Success"
+
+QUERY ragsearchdocs(query: [F64], k: I32) =>
+    vec <- SearchV<Vector>(query, k)
+    doc_node <- vec::In<Contains>
+    RETURN doc_node::{content}
+"#;
 
 pub fn check_helix_installation() -> Result<PathBuf, String> {
     let home_dir = dirs::home_dir().ok_or("Could not determine home directory")?;
@@ -79,9 +170,6 @@ pub fn find_available_port(start_port: u16) -> Option<u16> {
     None
 }
 
-
-
-
 pub fn create_spinner(msg: &str) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
     spinner.set_message(msg.to_string());
@@ -90,13 +178,76 @@ pub fn create_spinner(msg: &str) -> ProgressBar {
             .unwrap()
             .tick_strings(&["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]),
     );
-    //spinner.set_prefix("🔄");
     //spinner.enable_steady_tick(Duration::from_millis(80));
     spinner
 }
 
+pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
+    if !fs::read_dir(&path)
+        .map_err(CliError::Io)?
+        .any(|file| file.unwrap().file_name() == "schema.hx")
+    {
+        return Err(CliError::from(format!("{}", "No schema file found".red().bold())));
+    }
+
+    if !fs::read_dir(&path)
+        .map_err(CliError::Io)?
+        .any(|file| file.unwrap().file_name() == "config.hx.json")
+    {
+        return Err(CliError::from(format!("{}", "No config.hx.json file found".red().bold())));
+    }
+
+    let files: Vec<DirEntry> = fs::read_dir(&path)?
+        .filter_map(|entry| entry.ok())
+        .filter(|file| file.file_name().to_string_lossy().ends_with(".hx"))
+        .collect();
+
+    // Check for query files (exclude schema.hx)
+    let has_queries = files
+        .iter()
+        .any(|file| file.file_name() != "schema.hx");
+    if !has_queries {
+        return Err(CliError::from(format!("{}", "No query files (.hx) found".red().bold())));
+    }
+
+    Ok(files)
+}
+
+pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
+    let contents: String = files
+        .iter()
+        .map(|file| -> String {
+            match fs::read_to_string(file.path()) {
+                Ok(contents) => contents,
+                Err(e) => {
+                    panic!("{}", e); // TODO: something better here instead of panic
+                }
+            }
+        })
+        .fold(String::new(), |acc, contents| acc + &contents);
+
+    let source = match HelixParser::parse_source(&contents) {
+        Ok(source) => source,
+        Err(e) => {
+            return Err(CliError::from(format!("{}", e)));
+        }
+    };
+
+    Ok(source)
+}
 
 
+
+
+
+
+
+
+
+
+
+
+/*
 
 
 
@@ -149,40 +300,6 @@ pub fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error
     }
 }
 
-pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
-    // check there is schema and at least one query
-    if !fs::read_dir(&path)
-        .map_err(CliError::Io)?
-        .any(|file| file.unwrap().file_name() == "schema.hx")
-    {
-        println!("{}", CliError::from("\t❌ No schema file found"));
-        // return Err(CliError::from("No schema file found"));
-    }
-
-    if !fs::read_dir(&path)
-        .map_err(CliError::Io)?
-        .any(|file| file.unwrap().file_name() == "config.hx.json")
-    {
-        println!("{}", CliError::from("\t❌ No config.hx.json file found"));
-        // return Err(CliError::from("No config.hx.json file found"));
-    }
-
-    let files: Vec<DirEntry> = fs::read_dir(&path)?
-        .filter_map(|entry| entry.ok())
-        .filter(|file| file.file_name().to_string_lossy().ends_with(".hx"))
-        .collect();
-
-    // Check for query files (exclude schema.hx)
-    let has_queries = files
-        .iter()
-        .any(|file| file.file_name() != "schema.hx");
-    if !has_queries {
-        return Err(CliError::from("No query files (.hx) found"));
-    }
-
-    Ok(files)
-}
-
 pub fn check_is_dir(path: &str) -> bool {
     match fs::metadata(&path) {
         Ok(metadata) => metadata.is_dir(),
@@ -216,32 +333,6 @@ pub fn check_hql_files(files: &Vec<DirEntry>) -> Result<(), CliError> {
     Ok(())
 }
 
-pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
-    // let numb_of_files = files.len();
-    // let mut code = String::new();
-    // let mut generator = CodeGenerator::new();
 
-    let contents: String = files
-        .iter()
-        .map(|file| -> String {
-            match fs::read_to_string(file.path()) {
-                Ok(contents) => contents,
-                Err(e) => {
-                    panic!("{}", e);
-                }
-            }
-        })
-        .fold(String::new(), |acc, contents| acc + &contents);
 
-    let source = match HelixParser::parse_source(&contents) {
-        Ok(source) => {
-            // println!("{:?}", parser);
-            source
-        }
-        Err(e) => {
-            return Err(CliError::from(format!("{}\n", e)));
-        }
-    };
-
-    Ok(source)
-}
+*/
