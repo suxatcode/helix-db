@@ -32,6 +32,19 @@ fn main() {
 
     match args.command {
         args::CommandType::Deploy(command) => {
+            /* cases
+                - [ ] cargo is not installed
+                - [ ] helix is not installed
+                - [ ] default port not available
+                - [ ] no port available
+                - [ ] invalid queries path
+                - [ ] no queries found to compile
+                - [ ] failed to compile some queries
+                - [ ] failed to check rust code
+                - [ ] failed to build helix
+                - [ ] failed to start helix
+            */
+
             match Command::new("cargo").output() {
                 Ok(_) => {},
                 Err(_) => {
@@ -178,7 +191,7 @@ fn main() {
                         spinner.finish_with_message(format!("{}", "Successfuly wrote queries file".green().bold()));
                     }
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Filaed to write queries file".red().bold()));
+                        spinner.finish_with_message(format!("{}", "Failed to write queries file".red().bold()));
                         println!("└── {}", e);
                         return;
                     }
@@ -338,7 +351,7 @@ fn main() {
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("No path provided, defaulting to '{}'", DB_DIR);
                 DB_DIR
             };
 
@@ -362,7 +375,7 @@ fn main() {
             };
 
             if files.is_empty() {
-                println!("\tNo queries found, nothing to compile");
+                println!("{}", "No queries found, nothing to compile".red().bold());
                 return;
             }
 
@@ -389,64 +402,54 @@ fn main() {
             println!("{} {}", "Successfully compiled queries to".green().bold(), output);
         }
 
-        // ----------------------------------------------------------------------------
-
         args::CommandType::Check(command) => {
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("{} '{}'", "No path provided, defaulting to".bold(), DB_DIR);
                 DB_DIR
             };
 
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
 
             if files.is_empty() {
-                println!("\tNo queries found, nothing to compile");
+                println!("{}", "No queries found, nothing to compile".red().bold());
                 return;
             }
 
             match compile_hql_to_source(&files) {
                 Ok(_) => {
-                    println!("\t✅ Successfully parsed source");
+                    println!("{}", "Successfully parsed source".green().bold());
                 }
                 Err(e) => {
-                    println!("\n\t❌ Failed to parse source");
-                    println!("\t|");
-                    println!("\t└─ {}", e);
+                    println!("{}", "Failed to parse source".red().bold());
+                    println!("|");
+                    println!("└─ {}", e);
                     return;
                 }
             }
         }
 
         args::CommandType::Install(command) => {
-            // check if cargo is installed
-            let mut runner = Command::new("cargo");
-            runner.arg("check");
-            match runner.output() {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("\t❌ Cargo is not installed");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+            match Command::new("cargo").output() {
+                Ok(_) => {},
+                Err(_) => {
+                    println!("{}", "Cargo is not installed".red().bold());
+                    return;
                 }
             }
 
-            // check if git is installed
-            let mut runner = Command::new("git");
-            runner.arg("version");
-            match runner.output() {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("\t❌ Git is not installed");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+            match Command::new("git").arg("version").output() {
+                Ok(_) => {},
+                Err(_) => {
+                    println!("{}", "Git is not installed".red().bold());
+                    return;
                 }
             }
 
@@ -454,11 +457,11 @@ fn main() {
                 Some(path) => {
                     let path = PathBuf::from(path);
                     if !path.is_dir() {
-                        println!("\t❌ Path is not a directory");
+                        println!("{}", "Path is not a directory".red().bold());
                         return;
                     }
                     if !path.exists() {
-                        println!("\t❌ Path does not exist");
+                        println!("{}", "Path does not exist".red().bold());
                         return;
                     }
                     path
@@ -468,7 +471,7 @@ fn main() {
                     let home_dir = match dirs::home_dir() {
                         Some(dir) => dir,
                         None => {
-                            println!("\t❌ Could not determine home directory");
+                            println!("{}", "Could not determine home directory".red().bold());
                             return;
                         }
                     };
@@ -480,7 +483,8 @@ fn main() {
                 && repo_path.clone().join("helix-db").is_dir()
             {
                 println!(
-                    "\t✅ Helix repo already exists at {}",
+                    "{} {}",
+                    "Helix repo already exists at".yellow().bold(),
                     repo_path.join("helix-db").display()
                 );
                 return;
@@ -489,21 +493,20 @@ fn main() {
             // Create the directory structure if it doesn't exist
             match fs::create_dir_all(&repo_path) {
                 Ok(_) => println!(
-                    "\t✅ Created directory structure at {}",
+                    "{} {}",
+                    "Created directory structure at".green().bold(),
                     repo_path.display()
                 ),
                 Err(e) => {
-                    println!("\t❌ Failed to create directory structure");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                    println!("{}", "Failed to create directory structure".red().bold());
+                    println!("|");
+                    println!("└── {}", e);
                     return;
                 }
             }
 
             let mut runner = Command::new("git");
             runner.arg("clone");
-            runner.arg("--branch");
-            runner.arg("graph-engine-pipelining");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 
@@ -511,20 +514,21 @@ fn main() {
                 Ok(_) => {
                     let home_dir = dirs::home_dir().unwrap();
                     println!(
-                        "\t✅ Helix repo installed at {}",
+                        "{} {}",
+                        "Helix repo installed at".green().bold(),
                         home_dir.join(".helix/repo/").to_string_lossy()
                     );
-                    println!("\t|");
-                    println!("\t└── To get started, begin writing helix queries in your project.");
-                    println!("\t|");
-                    println!("\t└── Then run `helix check --path <path-to-project>` to check your queries.");
-                    println!("\t|");
-                    println!("\t└── Then run `helix deploy --path <path-to-project> --local` to build your queries.");
+                    println!("|");
+                    println!("└── To get started, begin writing helix queries in your project.");
+                    println!("|");
+                    println!("└── Then run `helix check --path <path-to-project>` to check your queries.");
+                    println!("|");
+                    println!("└── Then run `helix deploy --path <path-to-project> --local` to build your queries.");
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to install Helix repo");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                    println!("{}", "Failed to install Helix repo".red().bold());
+                    println!("|");
+                    println!("└── {}", e);
                     return;
                 }
             }
@@ -534,32 +538,32 @@ fn main() {
             let path = if let Some(p) = command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("{} '{}'", "No path provided, defaulting to".bold(), DB_DIR);
                 DB_DIR.to_string()
             };
 
             let _ = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
 
+            // TODO:
             //let temp_dir = TempDir::new().unwrap();
             // parse
             // interpret
             // generate rust code
-            // run against rocksdb
 
             match command.test {
-                Some(test) => println!("\tTesting: {:?}", test),
-                None => println!("\t❌ No test provided"),
+                Some(test) => println!("{} {:?}", "Testing:".bold(), test),
+                None => println!("{}", "No test provided".red().bold()),
             }
         }
 
         args::CommandType::Init(command) => {
-            println!("\tInitialising Helix project...");
+            println!("Initialising Helix project...");
             let path = match command.path {
                 Some(path) => PathBuf::from(path),
                 None => PathBuf::from(DB_DIR),
@@ -568,7 +572,7 @@ fn main() {
 
             let _ = match check_and_read_files(path_str) {
                 Ok(files) if !files.is_empty() => {
-                    println!("\t❌ Queries already exist in {}", path_str);
+                    println!("{} {}", "Queries already exist in".red().bold(), path_str);
                     return;
                 }
                 Ok(_) => {}
@@ -578,24 +582,20 @@ fn main() {
             fs::create_dir_all(&path).unwrap();
 
             let schema_path = path.join("schema.hx");
-            fs::write(
-                &schema_path,
-                DEFAULT_SCHEMA,
-            ).unwrap();
+            fs::write(&schema_path, DEFAULT_SCHEMA).unwrap();
 
             let main_path = path.join("queries.hx");
-            fs::write(
-                main_path,
-                DEFAULT_QUERIES,
-            ).unwrap();
+            fs::write(main_path, DEFAULT_QUERIES).unwrap();
 
             let config_path = path.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
 
-            println!("\t✅ Helix project initialised at {}", path.display());
+            println!("{} {}", "Helix project initialised at".green().bold(), path.display());
         }
 
         args::CommandType::Ingest(command) => {
+            unimplemented!();
+            /*
             match command.db_type.as_str() {
                 "sqlite" => {
                     let path_str = command.db_url; // Database path for SQLite
@@ -723,6 +723,7 @@ fn main() {
                     return;
                 }
             }
+            */
         }
     }
 }

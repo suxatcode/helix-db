@@ -236,22 +236,6 @@ pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> 
     Ok(source)
 }
 
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-
-
-
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut prev_is_uppercase = false;
@@ -270,6 +254,23 @@ pub fn to_snake_case(s: &str) -> String {
     }
     result
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
 
 pub fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new("curl")
