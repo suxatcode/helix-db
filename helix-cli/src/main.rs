@@ -103,10 +103,8 @@ fn main() {
 
             // TODO: remove this once remote instance is supported
             if !local {
-                println!("Building for remote instance is not supported yet, use --local flag to build for local machine");
-                println!("Example: helix deploy --local");
-                println!();
-                println!("Building for local machine will be available within the next 2 weeks");
+                println!("{}", "Building for remote instance is not supported yet, use --local flag to build for local machine".yellow().bold());
+                println!("└── Example: helix deploy --local");
                 return;
             }
 
@@ -117,7 +115,7 @@ fn main() {
                     return;
                 }
                 Err(e) => {
-                    println!("{}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
@@ -136,7 +134,7 @@ fn main() {
                     Ok(contents) => contents,
                     Err(e) => {
                         spinner.finish_with_message(format!("{}", "Failed to read files".red().bold()));
-                        println!("{}", e);
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 };
@@ -165,7 +163,7 @@ fn main() {
             if !errors.is_empty() {
                 spinner.finish_with_message(format!("{}", "Failed to compile some queries".red().bold()));
                 for (name, error) in errors {
-                    println!("\t{}: {}", name, error);
+                    println!("└── {} {}: {}", "Error:".red().bold(), name, error);
                 }
                 return;
             }
@@ -192,7 +190,7 @@ fn main() {
                     }
                     Err(e) => {
                         spinner.finish_with_message(format!("{}", "Failed to write queries file".red().bold()));
-                        println!("└── {}", e);
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
@@ -213,7 +211,7 @@ fn main() {
                     Ok(_) => {}
                     Err(e) => {
                         spinner.finish_with_message(format!("{}", "Failed to check Rust code".red().bold()));
-                        println!("└── {}", e);
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
@@ -232,7 +230,7 @@ fn main() {
                     }
                     Err(e) => {
                         spinner.finish_with_message(format!("{}", "Failed to build Helix".red().bold()));
-                        println!("└── {}", e);
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
@@ -251,8 +249,8 @@ fn main() {
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        spinner.finish_with_message(format!("{}", "Successfully started Helix instance".green().red()));
-                        println!("└── Instance ID: {}", instance.id);
+                        spinner.finish_with_message(format!("{}", "Successfully started Helix instance".green().bold()));
+                        println!("\n└── Instance ID: {}", instance.id);
                         println!("└── Port: {}", instance.port);
                         println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
@@ -260,8 +258,8 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to start Helix instance".red().green()));
-                        println!("└── {}", e);
+                        spinner.finish_with_message(format!("{}", "Failed to start Helix instance".red().bold()));
+                        println!("└── {} {}", "Error:".red().bold(), e);
                     }
                 }
             }
@@ -275,14 +273,13 @@ fn main() {
                         println!("No running Helix instances");
                         return;
                     }
-                    println!("Running Helix instances:");
+                    println!("{}", "Running Helix instances".green().bold());
                     for instance in instances {
-                        println!("\tID: {}", instance.id);
-                        println!("\t  Port: {}", instance.port);
-                        println!("\t  Started at: {}", instance.started_at);
-                        println!("\t  Available endpoints:");
+                        println!("└── Instance ID: {}", instance.id);
+                        println!("└── Port: {}", instance.port);
+                        println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
-                            println!("\t    /{}", endpoint);
+                            println!("    └── /{}", endpoint);
                         }
                         println!();
                     }
@@ -303,7 +300,12 @@ fn main() {
                     }
                     if command.all {
                         match instance_manager.stop_all_instances() {
-                            Ok(_) => println!("{}", "Stopped all Helix instances".green().bold()),
+                            Ok(_) => {
+                                println!("{}", "Stopping all Helix instances".green().bold());
+                                for instance in instances {
+                                    println!("└── ID: {}", instance.id);
+                                }
+                            }
                             Err(e) => println!("{} {}", "Failed to stop instances:".red().bold(), e),
                         }
                     } else if let Some(instance_id) = command.instance_id {
@@ -312,7 +314,8 @@ fn main() {
                             Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        println!("Please specify --all or provide an instance ID");
+                        // TODO: give a list of all instances to select with arrows or something
+                        println!("{}", "Please specify --all or provide an instance ID".yellow().bold());
                     }
 
                 }
@@ -342,7 +345,7 @@ fn main() {
                 }
                 Err(e) => {
                     spinner.finish_with_message(format!("{}", "Failed to restart instance".red().bold()));
-                    println!("└── {}", e);
+                    println!("└── {} {}", "Error:".red().bold(), e);
                 }
             }
         }
@@ -413,7 +416,7 @@ fn main() {
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("{}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
@@ -545,7 +548,7 @@ fn main() {
             let _ = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("{}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
@@ -572,7 +575,7 @@ fn main() {
 
             let _ = match check_and_read_files(path_str) {
                 Ok(files) if !files.is_empty() => {
-                    println!("{} {}", "Queries already exist in".red().bold(), path_str);
+                    println!("{} {}", "Queries already exist in".yellow().bold(), path_str);
                     return;
                 }
                 Ok(_) => {}
