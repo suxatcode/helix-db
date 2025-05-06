@@ -1,11 +1,17 @@
-use super::parser_methods::ParserError;
+use super::{
+    location::{HasLoc, Loc},
+    parser_methods::ParserError,
+};
 use crate::protocol::value::Value;
 use pest::{
     iterators::{Pair, Pairs},
     Parser as PestParser,
 };
 use pest_derive::Parser;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -37,27 +43,32 @@ pub struct Source {
 
 #[derive(Debug, Clone)]
 pub struct NodeSchema {
-    pub name: String,
+    pub name: (Loc, String),
     pub fields: Vec<Field>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct VectorSchema {
     pub name: String,
+    pub fields: Vec<Field>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct EdgeSchema {
-    pub name: String,
-    pub from: String,
-    pub to: String,
+    pub name: (Loc, String),
+    pub from: (Loc, String),
+    pub to: (Loc, String),
     pub properties: Option<Vec<Field>>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
     pub field_type: FieldType,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +91,59 @@ pub enum FieldType {
     Object(HashMap<String, FieldType>),
 }
 
+impl PartialEq for FieldType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (FieldType::String, FieldType::String) => true,
+            (FieldType::F32, FieldType::F32) => true,
+            (FieldType::F64, FieldType::F64) => true,
+            (FieldType::I8, FieldType::I8) => true,
+            (FieldType::I16, FieldType::I16) => true,
+            (FieldType::I32, FieldType::I32) => true,
+            (FieldType::I64, FieldType::I64) => true,
+            (FieldType::U8, FieldType::U8) => true,
+            (FieldType::U16, FieldType::U16) => true,
+            (FieldType::U32, FieldType::U32) => true,
+            (FieldType::U64, FieldType::U64) => true,
+            (FieldType::U128, FieldType::U128) => true,
+            (FieldType::Boolean, FieldType::Boolean) => true,
+            (FieldType::Array(a), FieldType::Array(b)) => a == b,
+            (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
+            (FieldType::Object(a), FieldType::Object(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Display for FieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldType::String => write!(f, "String"),
+            FieldType::F32 => write!(f, "F32"),
+            FieldType::F64 => write!(f, "F64"),
+            FieldType::I8 => write!(f, "I8"),
+            FieldType::I16 => write!(f, "I16"),
+            FieldType::I32 => write!(f, "I32"),
+            FieldType::I64 => write!(f, "I64"),
+            FieldType::U8 => write!(f, "U8"),
+            FieldType::U16 => write!(f, "U16"),
+            FieldType::U32 => write!(f, "U32"),
+            FieldType::U64 => write!(f, "U64"),
+            FieldType::U128 => write!(f, "U128"),
+            FieldType::Boolean => write!(f, "Boolean"),
+            FieldType::Array(t) => write!(f, "Array({})", t),
+            FieldType::Identifier(s) => write!(f, "{}", s),
+            FieldType::Object(m) => {
+                write!(f, "{{")?;
+                for (k, v) in m {
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Query {
     pub original_query: String,
@@ -87,16 +151,24 @@ pub struct Query {
     pub parameters: Vec<Parameter>,
     pub statements: Vec<Statement>,
     pub return_values: Vec<Expression>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct Parameter {
-    pub name: String,
-    pub param_type: FieldType,
+    pub name: (Loc, String),
+    pub param_type: (Loc, FieldType),
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
+pub struct Statement {
+    pub loc: Loc,
+    pub statement: StatementType,
+}
+
+#[derive(Debug, Clone)]
+pub enum StatementType {
     Assignment(Assignment),
     AddVector(AddVector),
     AddNode(AddNode),
@@ -111,6 +183,7 @@ pub enum Statement {
 pub struct Assignment {
     pub variable: String,
     pub value: Expression,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -118,10 +191,17 @@ pub struct ForLoop {
     pub variables: Vec<String>,
     pub in_variable: String,
     pub statements: Vec<Statement>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub struct Expression {
+    pub loc: Loc,
+    pub expr: ExpressionType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExpressionType {
     Traversal(Box<Traversal>),
     Identifier(String),
     StringLiteral(String),
@@ -136,13 +216,14 @@ pub enum Expression {
     And(Vec<Expression>),
     Or(Vec<Expression>),
     SearchVector(SearchVector),
-    None,
+    Empty,
 }
 
 #[derive(Debug, Clone)]
 pub struct Traversal {
     pub start: StartNode,
     pub steps: Vec<Step>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +231,7 @@ pub struct BatchAddVector {
     pub vector_type: Option<String>,
     pub vec_identifier: Option<String>,
     pub fields: Option<HashMap<String, ValueType>>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -167,7 +249,13 @@ pub enum StartNode {
 }
 
 #[derive(Debug, Clone)]
-pub enum Step {
+pub struct Step {
+    pub loc: Loc,
+    pub step: StepType,
+}
+
+#[derive(Debug, Clone)]
+pub enum StepType {
     Node(GraphStep),
     Edge(GraphStep),
     Where(Box<Expression>),
@@ -186,32 +274,51 @@ pub enum Step {
 pub struct FieldAddition {
     pub name: String,
     pub value: FieldValue,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
-pub enum FieldValue {
+pub struct FieldValue {
+    pub loc: Loc,
+    pub value: FieldValueType,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldValueType {
     Traversal(Box<Traversal>),
     Expression(Expression),
     Fields(Vec<FieldAddition>),
     Literal(Value),
+    Identifier(String),
     Empty,
 }
 
 #[derive(Debug, Clone)]
-pub enum GraphStep {
-    Out(Option<Vec<String>>),
-    In(Option<Vec<String>>),
-    Both(Option<Vec<String>>),
-    OutN,
-    InN,
-    BothN,
-    OutE(Option<Vec<String>>),
-    InE(Option<Vec<String>>),
-    BothE(Option<Vec<String>>),
+pub struct GraphStep {
+    pub loc: Loc,
+    pub step: GraphStepType,
 }
 
 #[derive(Debug, Clone)]
-pub enum BooleanOp {
+pub enum GraphStepType {
+    Out(Option<Vec<String>>),
+    In(Option<Vec<String>>),
+
+    FromN,
+    ToN,
+
+    OutE(Option<Vec<String>>),
+    InE(Option<Vec<String>>),
+}
+
+#[derive(Debug, Clone)]
+pub struct BooleanOp {
+    pub loc: Loc,
+    pub op: BooleanOpType,
+}
+
+#[derive(Debug, Clone)]
+pub enum BooleanOpType {
     And(Vec<Expression>),
     Or(Vec<Expression>),
     GreaterThan(Box<Expression>),
@@ -223,13 +330,6 @@ pub enum BooleanOp {
 }
 
 #[derive(Debug, Clone)]
-pub struct AddVector {
-    pub vector_type: Option<String>,
-    pub data: Option<VectorData>,
-    pub fields: Option<HashMap<String, ValueType>>,
-}
-
-#[derive(Debug, Clone)]
 pub enum VectorData {
     Vector(Vec<f64>),
     Identifier(String),
@@ -237,13 +337,20 @@ pub enum VectorData {
 
 #[derive(Debug, Clone)]
 pub struct SearchVector {
+    pub loc: Loc,
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
     pub k: Option<EvaluatesToNumber>,
 }
 
 #[derive(Debug, Clone)]
-pub enum EvaluatesToNumber {
+pub struct EvaluatesToNumber {
+    pub loc: Loc,
+    pub value: EvaluatesToNumberType,
+}
+
+#[derive(Debug, Clone)]
+pub enum EvaluatesToNumberType {
     I8(i8),
     I16(i16),
     I32(i32),
@@ -259,13 +366,23 @@ pub enum EvaluatesToNumber {
 }
 
 #[derive(Debug, Clone)]
+pub struct AddVector {
+    pub loc: Loc,
+    pub vector_type: Option<String>,
+    pub data: Option<VectorData>,
+    pub fields: Option<HashMap<String, ValueType>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AddNode {
+    pub loc: Loc,
     pub node_type: Option<String>,
     pub fields: Option<HashMap<String, ValueType>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AddEdge {
+    pub loc: Loc,
     pub edge_type: Option<String>,
     pub fields: Option<HashMap<String, ValueType>>,
     pub connection: EdgeConnection,
@@ -274,6 +391,7 @@ pub struct AddEdge {
 
 #[derive(Debug, Clone)]
 pub struct EdgeConnection {
+    pub loc: Loc,
     pub from_id: Option<IdType>,
     pub to_id: Option<IdType>,
 }
@@ -331,19 +449,23 @@ pub struct Update {
 
 #[derive(Debug, Clone)]
 pub struct Object {
+    pub loc: Loc,
+    // TODO: Change this to be a vec of structs where the enums holds the name and value
     pub fields: Vec<(String, FieldValue)>,
     pub should_spread: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Exclude {
-    pub fields: Vec<String>,
+    pub fields: Vec<(Loc, String)>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct Closure {
     pub identifier: String,
     pub object: Object,
+    pub loc: Loc,
 }
 
 impl HelixParser {
@@ -405,16 +527,25 @@ impl HelixParser {
     }
 
     fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
-        Ok(NodeSchema { name, fields })
+        Ok(NodeSchema {
+            name: (pair.loc(), name),
+            fields,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
-        Ok(VectorSchema { name })
+        let fields = self.parse_node_body(pairs.next().unwrap())?;
+        Ok(VectorSchema {
+            name,
+            fields,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
@@ -426,10 +557,7 @@ impl HelixParser {
         // Now parse each individual field_def
         field_defs
             .into_inner()
-            .map(|p| {
-                println!("\nFieldDef: {:?}\n", p.clone());
-                self.parse_field_def(p)
-            })
+            .map(|p| self.parse_field_def(p))
             .collect::<Result<Vec<_>, _>>()
     }
 
@@ -438,7 +566,6 @@ impl HelixParser {
         field: Pair<Rule>,
         schema: Option<&Source>,
     ) -> Result<FieldType, ParserError> {
-        println!("\nFieldType Top: {:?}\n", field);
         match field.as_rule() {
             Rule::named_type => {
                 let type_str = field.as_str();
@@ -478,7 +605,6 @@ impl HelixParser {
             Rule::object => {
                 let mut fields = HashMap::new();
                 for field in field.into_inner().next().unwrap().into_inner() {
-                    println!("\nField: {:?}\n", field);
                     let (field_name, field_type) = {
                         let mut field_pair = field.clone().into_inner();
                         (
@@ -486,8 +612,6 @@ impl HelixParser {
                             field_pair.next().unwrap().into_inner().next().unwrap(),
                         )
                     };
-                    println!("\nField Name: {:?}\n", field_name);
-                    println!("\nField Type: {:?}\n", field_type);
                     let field_type = self.parse_field_type(field_type, Some(&self.source))?;
                     fields.insert(field_name, field_type);
                 }
@@ -495,39 +619,48 @@ impl HelixParser {
             }
             Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
             _ => {
-                println!("\nERROR: {:?}\n", field);
                 unreachable!()
             }
         }
     }
 
     fn parse_field_def(&self, pair: Pair<Rule>) -> Result<Field, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
-
 
         let field_type = self.parse_field_type(
             pairs.next().unwrap().into_inner().next().unwrap(),
             Some(&self.source),
         )?;
-        Ok(Field { name, field_type })
+        Ok(Field {
+            name,
+            field_type,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_edge_def(&self, pair: Pair<Rule>) -> Result<EdgeSchema, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let body = pairs.next().unwrap();
         let mut body_pairs = body.into_inner();
 
-        let from = body_pairs.next().unwrap().as_str().to_string();
-        let to = body_pairs.next().unwrap().as_str().to_string();
+        let from = {
+            let pair = body_pairs.next().unwrap();
+            (pair.loc(), pair.as_str().to_string())
+        };
+        let to = {
+            let pair = body_pairs.next().unwrap();
+            (pair.loc(), pair.as_str().to_string())
+        };
         let properties = Some(self.parse_properties(body_pairs.next().unwrap())?);
 
         Ok(EdgeSchema {
-            name,
+            name: (pair.loc(), name),
             from,
             to,
             properties,
+            loc: pair.loc(),
         })
     }
     fn parse_properties(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
@@ -543,7 +676,7 @@ impl HelixParser {
 
     fn parse_query_def(&self, pair: Pair<Rule>) -> Result<Query, ParserError> {
         let original_query = pair.clone().as_str().to_string();
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let parameters = self.parse_parameters(pairs.next().unwrap())?;
         let nect = pairs.next().unwrap();
@@ -556,6 +689,7 @@ impl HelixParser {
             statements,
             return_values,
             original_query,
+            loc: pair.loc(),
         })
     }
 
@@ -565,26 +699,33 @@ impl HelixParser {
             .into_inner()
             .map(|p: Pair<'_, Rule>| -> Result<Parameter, ParserError> {
                 let mut inner = p.into_inner();
-                let name = inner.next().unwrap().as_str().to_string();
+                let name = {
+                    let pair = inner.next().unwrap();
+                    (pair.loc(), pair.as_str().to_string())
+                };
 
                 // gets param type
+                let param_pair = inner
+                    .clone()
+                    .next()
+                    .unwrap()
+                    .clone()
+                    .into_inner()
+                    .next()
+                    .unwrap();
+                let param_type_location = param_pair.loc();
                 let param_type = self.parse_field_type(
                     // unwraps the param type to get the rule (array, object, named_type, etc)
-                    inner
-                        .clone()
-                        .next()
-                        .unwrap()
-                        .clone()
-                        .into_inner()
-                        .next()
-                        .unwrap(),
+                    param_pair,
                     Some(&self.source),
                 )?;
 
-                println!("\nParamType: {:?}\n", param_type);
-
-                if seen.insert(name.clone()) {
-                    Ok(Parameter { name, param_type })
+                if seen.insert(name.1.clone()) {
+                    Ok(Parameter {
+                        name,
+                        param_type: (param_type_location, param_type),
+                        loc: pair.loc(),
+                    })
                 } else {
                     Err(ParserError::from(format!(
                         r#"Duplicate parameter name: {}
@@ -592,7 +733,7 @@ impl HelixParser {
 
                             Error happened at line {} column {} here: {}
                         "#,
-                        name,
+                        name.1,
                         pair.line_col().0,
                         pair.line_col().1,
                         pair.as_str(),
@@ -605,14 +746,38 @@ impl HelixParser {
     fn parse_query_body(&self, pair: Pair<Rule>) -> Result<Vec<Statement>, ParserError> {
         pair.into_inner()
             .map(|p| match p.as_rule() {
-                Rule::get_stmt => Ok(Statement::Assignment(self.parse_get_statement(p)?)),
-                Rule::AddN => Ok(Statement::AddNode(self.parse_add_node(p)?)),
-                Rule::AddV => Ok(Statement::AddVector(self.parse_add_vector(p)?)),
-                Rule::AddE => Ok(Statement::AddEdge(self.parse_add_edge(p, false)?)),
-                Rule::drop => Ok(Statement::Drop(self.parse_expression(p)?)),
-                Rule::BatchAddV => Ok(Statement::BatchAddVector(self.parse_batch_add_vector(p)?)),
-                Rule::search_vector => Ok(Statement::SearchVector(self.parse_search_vector(p)?)),
-                Rule::for_loop => Ok(Statement::ForLoop(self.parse_for_loop(p)?)),
+                Rule::get_stmt => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::Assignment(self.parse_get_statement(p)?),
+                }),
+                Rule::AddN => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::AddNode(self.parse_add_node(p)?),
+                }),
+                Rule::AddV => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::AddVector(self.parse_add_vector(p)?),
+                }),
+                Rule::AddE => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::AddEdge(self.parse_add_edge(p, false)?),
+                }),
+                Rule::drop => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::Drop(self.parse_expression(p)?),
+                }),
+                Rule::BatchAddV => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::BatchAddVector(self.parse_batch_add_vector(p)?),
+                }),
+                Rule::search_vector => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::SearchVector(self.parse_search_vector(p)?),
+                }),
+                Rule::for_loop => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::ForLoop(self.parse_for_loop(p)?),
+                }),
                 _ => Err(ParserError::from(format!(
                     "Unexpected statement type in query body: {:?}",
                     p.as_rule()
@@ -623,7 +788,7 @@ impl HelixParser {
 
     fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
         println!("\nForLoop: {:?}\n", pair);
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let mut variables = Vec::new();
         let mut in_variable = String::new();
         // parse the arguments
@@ -666,6 +831,7 @@ impl HelixParser {
             variables,
             in_variable,
             statements,
+            loc: pair.loc(),
         })
     }
 
@@ -674,7 +840,7 @@ impl HelixParser {
         let mut vec_identifier = None;
         let mut fields = None;
 
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
                     vector_type = Some(p.as_str().to_string());
@@ -699,6 +865,7 @@ impl HelixParser {
             vector_type,
             vec_identifier,
             fields,
+            loc: pair.loc(),
         })
     }
 
@@ -707,7 +874,7 @@ impl HelixParser {
         let mut data = None;
         let mut fields = None;
 
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
                     vector_type = Some(p.as_str().to_string());
@@ -738,6 +905,7 @@ impl HelixParser {
             vector_type,
             data,
             fields,
+            loc: pair.loc(),
         })
     }
 
@@ -745,7 +913,7 @@ impl HelixParser {
         let mut vector_type = None;
         let mut data = None;
         let mut k = None;
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
                     vector_type = Some(p.as_str().to_string());
@@ -762,23 +930,32 @@ impl HelixParser {
                 Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule()
                 {
                     Rule::integer => {
-                        k = Some(EvaluatesToNumber::I32(
-                            p.as_str()
-                                .to_string()
-                                .parse::<i32>()
-                                .map_err(|_| ParserError::from("Invalid integer value"))?,
-                        ));
+                        k = Some(EvaluatesToNumber {
+                            loc: p.loc(),
+                            value: EvaluatesToNumberType::I32(
+                                p.as_str()
+                                    .to_string()
+                                    .parse::<i32>()
+                                    .map_err(|_| ParserError::from("Invalid integer value"))?,
+                            ),
+                        });
                     }
                     Rule::float => {
-                        k = Some(EvaluatesToNumber::F64(
-                            p.as_str()
-                                .to_string()
-                                .parse::<f64>()
-                                .map_err(|_| ParserError::from("Invalid float value"))?,
-                        ));
+                        k = Some(EvaluatesToNumber {
+                            loc: p.loc(),
+                            value: EvaluatesToNumberType::F64(
+                                p.as_str()
+                                    .to_string()
+                                    .parse::<f64>()
+                                    .map_err(|_| ParserError::from("Invalid float value"))?,
+                            ),
+                        });
                     }
                     Rule::identifier => {
-                        k = Some(EvaluatesToNumber::Identifier(p.as_str().to_string()));
+                        k = Some(EvaluatesToNumber {
+                            loc: p.loc(),
+                            value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
+                        });
                     }
                     _ => unreachable!(),
                 },
@@ -793,6 +970,7 @@ impl HelixParser {
         }
 
         Ok(SearchVector {
+            loc: pair.loc(),
             vector_type,
             data,
             k,
@@ -816,7 +994,7 @@ impl HelixParser {
         let mut node_type = None;
         let mut fields = None;
 
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
                     node_type = Some(p.as_str().to_string());
@@ -834,7 +1012,11 @@ impl HelixParser {
             }
         }
 
-        Ok(AddNode { node_type, fields })
+        Ok(AddNode {
+            node_type,
+            fields,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_property_assignments(
@@ -897,7 +1079,7 @@ impl HelixParser {
         let mut fields = None;
         let mut connection = None;
 
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
                     edge_type = Some(p.as_str().to_string());
@@ -922,6 +1104,7 @@ impl HelixParser {
             fields,
             connection: connection.ok_or_else(|| ParserError::from("Missing edge connection"))?,
             from_identifier,
+            loc: pair.loc(),
         })
     }
 
@@ -943,7 +1126,7 @@ impl HelixParser {
     }
 
     fn parse_to_from(&self, pair: Pair<Rule>) -> Result<EdgeConnection, ParserError> {
-        let pairs = pair.into_inner();
+        let pairs = pair.clone().into_inner();
         let mut from_id = None;
         let mut to_id = None;
         // println!("pairs: {:?}", pairs);
@@ -961,15 +1144,20 @@ impl HelixParser {
         Ok(EdgeConnection {
             from_id: from_id,
             to_id: to_id,
+            loc: pair.loc(),
         })
     }
 
     fn parse_get_statement(&self, pair: Pair<Rule>) -> Result<Assignment, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let variable = pairs.next().unwrap().as_str().to_string();
         let value = self.parse_expression(pairs.next().unwrap())?;
 
-        Ok(Assignment { variable, value })
+        Ok(Assignment {
+            variable,
+            value,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_return_statement(&self, pair: Pair<Rule>) -> Result<Vec<Expression>, ParserError> {
@@ -984,15 +1172,22 @@ impl HelixParser {
         for p in pairs {
             match p.as_rule() {
                 Rule::anonymous_traversal => {
-                    expressions.push(Expression::Traversal(Box::new(
-                        self.parse_anon_traversal(p)?,
-                    )));
+                    expressions.push(Expression {
+                        loc: p.loc(),
+                        expr: ExpressionType::Traversal(Box::new(self.parse_anon_traversal(p)?)),
+                    });
                 }
                 Rule::traversal => {
-                    expressions.push(Expression::Traversal(Box::new(self.parse_traversal(p)?)));
+                    expressions.push(Expression {
+                        loc: p.loc(),
+                        expr: ExpressionType::Traversal(Box::new(self.parse_traversal(p)?)),
+                    });
                 }
                 Rule::id_traversal => {
-                    expressions.push(Expression::Traversal(Box::new(self.parse_traversal(p)?)));
+                    expressions.push(Expression {
+                        loc: p.loc(),
+                        expr: ExpressionType::Traversal(Box::new(self.parse_traversal(p)?)),
+                    });
                 }
                 Rule::evaluates_to_bool => {
                     expressions.push(self.parse_boolean_expression(p)?);
@@ -1006,16 +1201,24 @@ impl HelixParser {
     fn parse_boolean_expression(&self, pair: Pair<Rule>) -> Result<Expression, ParserError> {
         let expression = pair.into_inner().next().unwrap();
         match expression.as_rule() {
-            Rule::and => Ok(Expression::And(
-                self.parse_expression_vec(expression.into_inner())?,
-            )),
-            Rule::or => Ok(Expression::Or(
-                self.parse_expression_vec(expression.into_inner())?,
-            )),
-            Rule::boolean => Ok(Expression::BooleanLiteral(expression.as_str() == "true")),
-            Rule::exists => Ok(Expression::Exists(Box::new(
-                self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
-            ))),
+            Rule::and => Ok(Expression {
+                loc: expression.loc(),
+                expr: ExpressionType::And(self.parse_expression_vec(expression.into_inner())?),
+            }),
+            Rule::or => Ok(Expression {
+                loc: expression.loc(),
+                expr: ExpressionType::Or(self.parse_expression_vec(expression.into_inner())?),
+            }),
+            Rule::boolean => Ok(Expression {
+                loc: expression.loc(),
+                expr: ExpressionType::BooleanLiteral(expression.as_str() == "true"),
+            }),
+            Rule::exists => Ok(Expression {
+                loc: expression.loc(),
+                expr: ExpressionType::Exists(Box::new(
+                    self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
+                )),
+            }),
             _ => unreachable!(),
         }
     }
@@ -1027,44 +1230,86 @@ impl HelixParser {
             .ok_or_else(|| ParserError::from("Empty expression"))?;
 
         match pair.as_rule() {
-            Rule::traversal => Ok(Expression::Traversal(Box::new(self.parse_traversal(pair)?))),
-            Rule::id_traversal => Ok(Expression::Traversal(Box::new(self.parse_traversal(pair)?))),
-            Rule::anonymous_traversal => Ok(Expression::Traversal(Box::new(
-                self.parse_anon_traversal(pair)?,
-            ))),
-            Rule::identifier => Ok(Expression::Identifier(pair.as_str().to_string())),
-            Rule::string_literal => Ok(Expression::StringLiteral(self.parse_string_literal(pair)?)),
+            Rule::traversal => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::Traversal(Box::new(self.parse_traversal(pair)?)),
+            }),
+            Rule::id_traversal => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::Traversal(Box::new(self.parse_traversal(pair)?)),
+            }),
+            Rule::anonymous_traversal => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::Traversal(Box::new(self.parse_anon_traversal(pair)?)),
+            }),
+            Rule::identifier => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::Identifier(pair.as_str().to_string()),
+            }),
+            Rule::string_literal => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::StringLiteral(self.parse_string_literal(pair)?),
+            }),
             Rule::exists => {
                 let traversal = pair
+                    .clone()
                     .into_inner()
                     .next()
                     .ok_or_else(|| ParserError::from("Missing exists traversal"))?;
-                Ok(Expression::Exists(Box::new(match traversal.as_rule() {
-                    Rule::traversal => self.parse_traversal(traversal)?,
-                    Rule::id_traversal => self.parse_traversal(traversal)?,
-                    _ => unreachable!(),
-                })))
+                Ok(Expression {
+                    loc: pair.loc(),
+                    expr: ExpressionType::Exists(Box::new(match traversal.as_rule() {
+                        Rule::traversal => self.parse_traversal(traversal)?,
+                        Rule::id_traversal => self.parse_traversal(traversal)?,
+                        _ => unreachable!(),
+                    })),
+                })
             }
             Rule::integer => pair
                 .as_str()
                 .parse()
-                .map(Expression::IntegerLiteral)
+                .map(|i| Expression {
+                    loc: pair.loc(),
+                    expr: ExpressionType::IntegerLiteral(i),
+                })
                 .map_err(|_| ParserError::from("Invalid integer literal")),
             Rule::float => pair
                 .as_str()
                 .parse()
-                .map(Expression::FloatLiteral)
+                .map(|f| Expression {
+                    loc: pair.loc(),
+                    expr: ExpressionType::FloatLiteral(f),
+                })
                 .map_err(|_| ParserError::from("Invalid float literal")),
-            Rule::boolean => Ok(Expression::BooleanLiteral(pair.as_str() == "true")),
+            Rule::boolean => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::BooleanLiteral(pair.as_str() == "true"),
+            }),
             Rule::evaluates_to_bool => Ok(self.parse_boolean_expression(pair)?),
-            Rule::AddN => Ok(Expression::AddNode(self.parse_add_node(pair)?)),
-            Rule::AddV => Ok(Expression::AddVector(self.parse_add_vector(pair)?)),
-            Rule::BatchAddV => Ok(Expression::BatchAddVector(
-                self.parse_batch_add_vector(pair)?,
-            )),
-            Rule::AddE => Ok(Expression::AddEdge(self.parse_add_edge(pair, false)?)),
-            Rule::search_vector => Ok(Expression::SearchVector(self.parse_search_vector(pair)?)),
-            Rule::none => Ok(Expression::None),
+            Rule::AddN => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::AddNode(self.parse_add_node(pair)?),
+            }),
+            Rule::AddV => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::AddVector(self.parse_add_vector(pair)?),
+            }),
+            Rule::BatchAddV => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::BatchAddVector(self.parse_batch_add_vector(pair)?),
+            }),
+            Rule::AddE => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::AddEdge(self.parse_add_edge(pair, false)?),
+            }),
+            Rule::search_vector => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::SearchVector(self.parse_search_vector(pair)?),
+            }),
+            Rule::none => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::Empty,
+            }),
             _ => Err(ParserError::from(format!(
                 "Unexpected expression type: {:?}",
                 pair.as_rule()
@@ -1084,23 +1329,31 @@ impl HelixParser {
     }
 
     fn parse_traversal(&self, pair: Pair<Rule>) -> Result<Traversal, ParserError> {
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let start = self.parse_start_node(pairs.next().unwrap())?;
         let steps = pairs
             .map(|p| self.parse_step(p))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Traversal { start, steps })
+        Ok(Traversal {
+            start,
+            steps,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_anon_traversal(&self, pair: Pair<Rule>) -> Result<Traversal, ParserError> {
-        let pairs = pair.into_inner();
+        let pairs = pair.clone().into_inner();
         let start = StartNode::Anonymous;
         let steps = pairs
             .map(|p| self.parse_step(p))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Traversal { start, steps })
+        Ok(Traversal {
+            start,
+            steps,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_start_node(&self, pair: Pair<Rule>) -> Result<StartNode, ParserError> {
@@ -1163,21 +1416,61 @@ impl HelixParser {
     fn parse_step(&self, pair: Pair<Rule>) -> Result<Step, ParserError> {
         let inner = pair.clone().into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::graph_step => Ok(Step::Node(self.parse_graph_step(inner))),
-            Rule::object_step => Ok(Step::Object(self.parse_object_step(inner)?)),
-            Rule::closure_step => Ok(Step::Closure(self.parse_closure(inner)?)),
-            Rule::where_step => Ok(Step::Where(Box::new(self.parse_expression(inner)?))),
-            Rule::range_step => Ok(Step::Range(self.parse_range(pair)?)),
+            Rule::graph_step => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Node(self.parse_graph_step(inner)),
+            }),
+            Rule::object_step => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Object(self.parse_object_step(inner)?),
+            }),
+            Rule::closure_step => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Closure(self.parse_closure(inner)?),
+            }),
+            Rule::where_step => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Where(Box::new(self.parse_expression(inner)?)),
+            }),
+            Rule::range_step => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Range(self.parse_range(pair)?),
+            }),
 
-            Rule::bool_operations => Ok(Step::BooleanOperation(self.parse_bool_operation(inner)?)),
-            Rule::count => Ok(Step::Count),
-            Rule::ID => Ok(Step::Object(Object {
-                fields: vec![("id".to_string(), FieldValue::Empty)],
-                should_spread: false,
-            })),
-            Rule::update => Ok(Step::Update(self.parse_update(inner)?)),
-            Rule::exclude_field => Ok(Step::Exclude(self.parse_exclude(inner)?)),
-            Rule::AddE => Ok(Step::AddEdge(self.parse_add_edge(inner, true)?)),
+            Rule::bool_operations => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::BooleanOperation(self.parse_bool_operation(inner)?),
+            }),
+            Rule::count => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Count,
+            }),
+            Rule::ID => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Object(Object {
+                    fields: vec![(
+                        "id".to_string(),
+                        FieldValue {
+                            loc: pair.loc(),
+                            value: FieldValueType::Empty,
+                        },
+                    )],
+                    should_spread: false,
+                    loc: pair.loc(),
+                }),
+            }),
+            Rule::update => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Update(self.parse_update(inner)?),
+            }),
+            Rule::exclude_field => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::Exclude(self.parse_exclude(inner)?),
+            }),
+            Rule::AddE => Ok(Step {
+                loc: pair.loc(),
+                step: StepType::AddEdge(self.parse_add_edge(inner, true)?),
+            }),
             _ => Err(ParserError::from(format!(
                 "Unexpected step type: {:?}",
                 inner.as_rule()
@@ -1203,46 +1496,82 @@ impl HelixParser {
     fn parse_graph_step(&self, pair: Pair<Rule>) -> GraphStep {
         let rule_str = pair.as_str();
         let types = pair
+            .clone()
             .into_inner()
             .next()
             .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
 
         match rule_str {
-            s if s.starts_with("OutE") => GraphStep::OutE(types),
-            s if s.starts_with("InE") => GraphStep::InE(types),
-            s if s.starts_with("BothE") => GraphStep::BothE(types),
-            s if s.starts_with("OutN") => GraphStep::OutN,
-            s if s.starts_with("InN") => GraphStep::InN,
-            s if s.starts_with("BothN") => GraphStep::BothN,
-            s if s.starts_with("Out") => GraphStep::Out(types),
-            s if s.starts_with("In") => GraphStep::In(types),
-            s if s.starts_with("Both") => GraphStep::Both(types),
-            // s if s.starts_with("Range") => GraphStep::Range(),
-            _ => unreachable!(),
+            s if s.starts_with("OutE") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::OutE(types),
+            },
+            s if s.starts_with("InE") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::InE(types),
+            },
+            s if s.starts_with("FromN") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::FromN,
+            },
+            s if s.starts_with("ToN") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::ToN,
+            },
+            s if s.starts_with("Out") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::Out(types),
+            },
+            s if s.starts_with("In") => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::In(types),
+            },
+            _ => {
+                println!("rule_str: {:?}", rule_str);
+                unreachable!()
+            }
         }
     }
 
     fn parse_bool_operation(&self, pair: Pair<Rule>) -> Result<BooleanOp, ParserError> {
-        let inner = pair.into_inner().next().unwrap();
+        let inner = pair.clone().into_inner().next().unwrap();
         let expr = match inner.as_rule() {
-            Rule::GT => BooleanOp::GreaterThan(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
-            Rule::GTE => BooleanOp::GreaterThanOrEqual(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
-            Rule::LT => BooleanOp::LessThan(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
-            Rule::LTE => BooleanOp::LessThanOrEqual(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
-            Rule::EQ => BooleanOp::Equal(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
-            Rule::NEQ => BooleanOp::NotEqual(Box::new(
-                self.parse_expression(inner.into_inner().next().unwrap())?,
-            )),
+            Rule::GT => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::GreaterThan(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
+            Rule::GTE => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::GreaterThanOrEqual(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
+            Rule::LT => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::LessThan(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
+            Rule::LTE => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::LessThanOrEqual(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
+            Rule::EQ => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::Equal(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
+            Rule::NEQ => BooleanOp {
+                loc: pair.loc(),
+                op: BooleanOpType::NotEqual(Box::new(
+                    self.parse_expression(inner.into_inner().next().unwrap())?,
+                )),
+            },
             _ => return Err(ParserError::from("Invalid boolean operation")),
         };
         Ok(expr)
@@ -1255,85 +1584,135 @@ impl HelixParser {
     }
 
     fn parse_new_field_pair(&self, pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
-        let print_pair = pair.clone();
-        let mut pairs = pair.into_inner();
+        let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
         let value: FieldValue = match value_pair.as_rule() {
-            Rule::evaluates_to_anything => {
-                FieldValue::Expression(self.parse_expression(value_pair)?)
-            }
-            Rule::anonymous_traversal => {
-                FieldValue::Traversal(Box::new(self.parse_traversal(value_pair)?))
-            }
-            Rule::object_step => FieldValue::Fields(self.parse_field_additions(value_pair)?),
+            Rule::evaluates_to_anything => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Expression(self.parse_expression(value_pair)?),
+            },
+            Rule::anonymous_traversal => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Traversal(Box::new(self.parse_traversal(value_pair)?)),
+            },
+            Rule::object_step => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Fields(self.parse_field_additions(value_pair)?),
+            },
             Rule::string_literal => {
-                FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
+                println!("string_literal: {:?}", value_pair);
+                FieldValue {
+                    loc: value_pair.loc(),
+                    value: FieldValueType::Literal(Value::String(
+                        self.parse_string_literal(value_pair)?,
+                    )),
+                }
             }
-            Rule::integer => FieldValue::Literal(Value::I32(
-                value_pair
-                    .as_str()
-                    .parse()
-                    .map_err(|_| ParserError::from("Invalid integer literal"))?,
-            )),
-            Rule::float => FieldValue::Literal(Value::F64(
-                value_pair
-                    .as_str()
-                    .parse()
-                    .map_err(|_| ParserError::from("Invalid float literal"))?,
-            )),
-            Rule::boolean => FieldValue::Literal(Value::Boolean(value_pair.as_str() == "true")),
-            Rule::none => FieldValue::Empty,
-            Rule::mapping_field => FieldValue::Fields(self.parse_field_additions(value_pair)?),
+            Rule::integer => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::I32(
+                    value_pair
+                        .as_str()
+                        .parse()
+                        .map_err(|_| ParserError::from("Invalid integer literal"))?,
+                )),
+            },
+            Rule::float => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::F64(
+                    value_pair
+                        .as_str()
+                        .parse()
+                        .map_err(|_| ParserError::from("Invalid float literal"))?,
+                )),
+            },
+            Rule::boolean => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::Boolean(value_pair.as_str() == "true")),
+            },
+            Rule::none => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Empty,
+            },
+            Rule::mapping_field => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Fields(self.parse_field_additions(value_pair)?),
+            },
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected field pair type: {:?} \n {:?} \n\n {:?}",
                     value_pair.as_rule(),
                     value_pair,
-                    print_pair
+                    pair
                 )))
             }
         };
 
-        Ok(FieldAddition { name, value })
+        Ok(FieldAddition {
+            loc: pair.loc(),
+            name,
+            value,
+        })
     }
 
     fn parse_new_field_value(&self, pair: Pair<Rule>) -> Result<FieldValue, ParserError> {
-        let print_pair = pair.clone();
         let value_pair = pair.into_inner().next().unwrap();
         let value: FieldValue = match value_pair.as_rule() {
-            Rule::evaluates_to_anything => {
-                FieldValue::Expression(self.parse_expression(value_pair)?)
-            }
-            Rule::anonymous_traversal => {
-                FieldValue::Traversal(Box::new(self.parse_traversal(value_pair)?))
-            }
-            Rule::object_step => FieldValue::Fields(self.parse_field_additions(value_pair)?),
-            Rule::string_literal => {
-                FieldValue::Literal(Value::String(self.parse_string_literal(value_pair)?))
-            }
-            Rule::integer => FieldValue::Literal(Value::I32(
-                value_pair
-                    .as_str()
-                    .parse()
-                    .map_err(|_| ParserError::from("Invalid integer literal"))?,
-            )),
-            Rule::float => FieldValue::Literal(Value::F64(
-                value_pair
-                    .as_str()
-                    .parse()
-                    .map_err(|_| ParserError::from("Invalid float literal"))?,
-            )),
-            Rule::boolean => FieldValue::Literal(Value::Boolean(value_pair.as_str() == "true")),
-            Rule::none => FieldValue::Empty,
-            Rule::mapping_field => FieldValue::Fields(self.parse_field_additions(value_pair)?),
+            Rule::evaluates_to_anything => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Expression(self.parse_expression(value_pair)?),
+            },
+            Rule::anonymous_traversal => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Traversal(Box::new(self.parse_traversal(value_pair)?)),
+            },
+            Rule::object_step => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Fields(self.parse_field_additions(value_pair)?),
+            },
+            Rule::string_literal => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::String(
+                    self.parse_string_literal(value_pair)?,
+                )),
+            },
+            Rule::integer => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::I32(
+                    value_pair
+                        .as_str()
+                        .parse()
+                        .map_err(|_| ParserError::from("Invalid integer literal"))?,
+                )),
+            },
+            Rule::float => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::F64(
+                    value_pair
+                        .as_str()
+                        .parse()
+                        .map_err(|_| ParserError::from("Invalid float literal"))?,
+                )),
+            },
+            Rule::boolean => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Literal(Value::Boolean(value_pair.as_str() == "true")),
+            },
+            Rule::none => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Empty,
+            },
+            Rule::mapping_field => FieldValue {
+                loc: value_pair.loc(),
+                value: FieldValueType::Fields(self.parse_field_additions(value_pair)?),
+            },
             _ => {
                 return Err(ParserError::from(format!(
-                    "Unexpected field value type: {:?} \n {:?} \n\n {:?}",
+                    "Unexpected field value type: {:?} \n {:?}",
                     value_pair.as_rule(),
                     value_pair,
-                    print_pair
                 )))
             }
         };
@@ -1349,41 +1728,56 @@ impl HelixParser {
     fn parse_object_step(&self, pair: Pair<Rule>) -> Result<Object, ParserError> {
         let mut fields = Vec::new();
         let mut should_spread = false;
-        for p in pair.into_inner() {
+        for p in pair.clone().into_inner() {
             if p.as_rule() == Rule::spread_object {
                 should_spread = true;
                 continue;
             }
-            let mut pairs = p.into_inner();
+            let mut pairs = p.clone().into_inner();
             let prop_key = pairs.next().unwrap().as_str().to_string();
             let field_addition = match pairs.next() {
                 Some(p) => match p.as_rule() {
-                    Rule::evaluates_to_anything => {
-                        FieldValue::Expression(self.parse_expression(p)?)
-                    }
-                    Rule::anonymous_traversal => {
-                        FieldValue::Traversal(Box::new(self.parse_traversal(p)?))
-                    }
-                    Rule::mapping_field => FieldValue::Fields(self.parse_field_additions(p)?),
-                    Rule::object_step => FieldValue::Fields(
-                        self.parse_object_step(p)?
-                            .fields
-                            .iter()
-                            .map(|(k, v)| FieldAddition {
-                                name: k.clone(),
-                                value: v.clone(),
-                            })
-                            .collect(),
-                    ),
-
+                    Rule::evaluates_to_anything => FieldValue {
+                        loc: p.loc(),
+                        value: FieldValueType::Expression(self.parse_expression(p)?),
+                    },
+                    Rule::anonymous_traversal => FieldValue {
+                        loc: p.loc(),
+                        value: FieldValueType::Traversal(Box::new(self.parse_traversal(p)?)),
+                    },
+                    Rule::mapping_field => FieldValue {
+                        loc: p.loc(),
+                        value: FieldValueType::Fields(self.parse_field_additions(p)?),
+                    },
+                    Rule::object_step => FieldValue {
+                        loc: p.clone().loc(),
+                        value: FieldValueType::Fields(
+                            self.parse_object_step(p.clone())?
+                                .fields
+                                .iter()
+                                .map(|(k, v)| FieldAddition {
+                                    loc: p.loc(),
+                                    name: k.clone(),
+                                    value: v.clone(),
+                                })
+                                .collect(),
+                        ),
+                    },
                     _ => self.parse_new_field_value(p)?,
                 },
-                None if prop_key.len() > 0 => FieldValue::Literal(Value::String(prop_key.clone())),
-                None => FieldValue::Empty,
+                None if prop_key.len() > 0 => FieldValue {
+                    loc: p.loc(),
+                    value: FieldValueType::Identifier(prop_key.clone()),
+                },
+                None => FieldValue {
+                    loc: p.loc(),
+                    value: FieldValueType::Empty,
+                },
             };
             fields.push((prop_key, field_addition));
         }
         Ok(Object {
+            loc: pair.loc(),
             fields,
             should_spread,
         })
@@ -1393,15 +1787,22 @@ impl HelixParser {
         let mut pairs = pair.clone().into_inner();
         let identifier = pairs.next().unwrap().as_str().to_string();
         let object = self.parse_object_step(pairs.next().unwrap())?;
-        Ok(Closure { identifier, object })
+        Ok(Closure {
+            loc: pair.loc(),
+            identifier,
+            object,
+        })
     }
 
     fn parse_exclude(&self, pair: Pair<Rule>) -> Result<Exclude, ParserError> {
         let mut fields = Vec::new();
-        for p in pair.into_inner() {
-            fields.push(p.as_str().to_string());
+        for p in pair.clone().into_inner() {
+            fields.push((p.loc(), p.as_str().to_string()));
         }
-        Ok(Exclude { fields })
+        Ok(Exclude {
+            loc: pair.loc(),
+            fields,
+        })
     }
 }
 
@@ -1422,7 +1823,7 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.node_schemas.len(), 1);
         let schema = &result.node_schemas[0];
-        assert_eq!(schema.name, "User");
+        assert_eq!(schema.name.1, "User");
         assert_eq!(schema.fields.len(), 2);
     }
 
@@ -1442,9 +1843,9 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
-        assert_eq!(schema.name, "Follows");
-        assert_eq!(schema.from, "User");
-        assert_eq!(schema.to, "User");
+        assert_eq!(schema.name.1, "Follows");
+        assert_eq!(schema.from.1, "User");
+        assert_eq!(schema.to.1, "User");
         assert!(schema.properties.is_some());
         let properties = schema.properties.as_ref().unwrap();
         assert_eq!(properties.len(), 1);
@@ -1467,9 +1868,9 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
-        assert_eq!(schema.name, "Follows");
-        assert_eq!(schema.from, "User");
-        assert_eq!(schema.to, "User");
+        assert_eq!(schema.name.1, "Follows");
+        assert_eq!(schema.from.1, "User");
+        assert_eq!(schema.to.1, "User");
         assert!(schema.properties.is_some());
         let properties = schema.properties.as_ref().unwrap();
         assert_eq!(properties.len(), 0);
@@ -1488,7 +1889,7 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.name, "FindUser");
         assert_eq!(query.parameters.len(), 1);
-        assert_eq!(query.parameters[0].name, "userName");
+        assert_eq!(query.parameters[0].name.1, "userName");
         assert_eq!(query.statements.len(), 1);
         assert_eq!(query.return_values.len(), 1);
     }
@@ -1507,10 +1908,13 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.name, "fetchUsers");
         assert_eq!(query.parameters.len(), 2);
-        assert_eq!(query.parameters[0].name, "name");
-        assert!(matches!(query.parameters[0].param_type, FieldType::String));
-        assert_eq!(query.parameters[1].name, "age");
-        assert!(matches!(query.parameters[1].param_type, FieldType::I32));
+        assert_eq!(query.parameters[0].name.1, "name");
+        assert!(matches!(
+            query.parameters[0].param_type.1,
+            FieldType::String
+        ));
+        assert_eq!(query.parameters[1].name.1, "age");
+        assert!(matches!(query.parameters[1].param_type.1, FieldType::I32));
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
     }
@@ -1527,7 +1931,7 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.node_schemas.len(), 1);
         let schema = &result.node_schemas[0];
-        assert_eq!(schema.name, "USER");
+        assert_eq!(schema.name.1, "USER");
         assert_eq!(schema.fields.len(), 3);
     }
 
@@ -1546,9 +1950,9 @@ mod tests {
         let result = HelixParser::parse_source(input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
-        assert_eq!(schema.name, "FRIENDSHIP");
-        assert_eq!(schema.from, "USER");
-        assert_eq!(schema.to, "USER");
+        assert_eq!(schema.name.1, "FRIENDSHIP");
+        assert_eq!(schema.from.1, "USER");
+        assert_eq!(schema.to.1, "USER");
         let props = schema.properties.as_ref().unwrap();
         assert_eq!(props.len(), 2);
     }
@@ -2166,34 +2570,43 @@ mod tests {
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
 
-        assert!(query.parameters.iter().any(|param| match param.param_type {
-            FieldType::String => true,
-            _ => false,
-        }));
-        assert!(query.parameters.iter().any(|param| match param.param_type {
-            FieldType::Array(ref field) => match &**field {
-                FieldType::String =>
-                    if param.name == "names" || param.name == "ids" {
-                        true
-                    } else {
-                        false
-                    },
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::String => true,
                 _ => false,
-            },
-            _ => false,
-        }));
-        assert!(query.parameters.iter().any(|param| match param.param_type {
-            FieldType::Array(ref field) => match &**field {
-                FieldType::I32 =>
-                    if param.name == "ages" {
-                        true
-                    } else {
-                        false
-                    },
+            }));
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::Array(ref field) => match &**field {
+                    FieldType::String =>
+                        if param.name.1 == "names" || param.name.1 == "ids" {
+                            true
+                        } else {
+                            false
+                        },
+                    _ => false,
+                },
                 _ => false,
-            },
-            _ => false,
-        }))
+            }));
+        assert!(query
+            .parameters
+            .iter()
+            .any(|param| match param.param_type.1 {
+                FieldType::Array(ref field) => match &**field {
+                    FieldType::I32 =>
+                        if param.name.1 == "ages" {
+                            true
+                        } else {
+                            false
+                        },
+                    _ => false,
+                },
+                _ => false,
+            }))
     }
 
     #[test]
@@ -2215,16 +2628,19 @@ mod tests {
         // println!("{:?}", query.parameters);
         let mut param_type = "";
         assert!(
-            query.parameters.iter().any(|param| match param.param_type {
-                FieldType::Identifier(ref id) => match id.as_str() {
-                    "User" => true,
-                    _ => {
-                        param_type = id;
-                        false
-                    }
-                },
-                _ => false,
-            }),
+            query
+                .parameters
+                .iter()
+                .any(|param| match param.param_type.1 {
+                    FieldType::Identifier(ref id) => match id.as_str() {
+                        "User" => true,
+                        _ => {
+                            param_type = id;
+                            false
+                        }
+                    },
+                    _ => false,
+                }),
             "Param of type {} was not found",
             param_type
         );

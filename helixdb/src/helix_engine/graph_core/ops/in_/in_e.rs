@@ -2,16 +2,24 @@ use std::sync::Arc;
 
 use heed3::{types::Bytes, RoTxn, RwTxn};
 
-use crate::{helix_engine::{
-    graph_core::traversal_iter::RoTraversalIterator,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::GraphError,
-}, protocol::label_hash::hash_label};
+use crate::{
+    helix_engine::{
+        graph_core::traversal_iter::RoTraversalIterator,
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+    },
+    protocol::label_hash::hash_label,
+};
 
 use super::super::tr_val::{Traversable, TraversalVal};
 
 pub struct InEdgesIterator<'a, T> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<
+        'a,
+        Bytes,
+        heed3::types::LazyDecode<Bytes>,
+        heed3::iteration_method::MoveOnCurrentKeyDuplicates,
+    >,
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
 }
@@ -68,19 +76,25 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
         let txn = self.txn;
         let iter = self
             .inner
-            .map(move |item| {
-                let label_hash = hash_label(edge_label, None);
-                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), &label_hash);
-                let iter = db
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
+                match db
                     .in_edges_db
                     .lazily_decode_data()
-                    .prefix_iter(txn, &prefix)
-                    .unwrap();
-
-                InEdgesIterator {
-                    iter,
-                    storage: Arc::clone(&db),
-                    txn,
+                    .get_duplicates(txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(InEdgesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        txn,
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("Error getting out edges: {:?}", e);
+                        // return Err(e);
+                        None
+                    }
                 }
             })
             .flatten();
