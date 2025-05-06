@@ -1,13 +1,13 @@
 use crate::{
-    protocol::value::Value,
-    helixc::parser::helix_parser::{
-        Exclude, Object,
-        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp,
-        EdgeSchema, EvaluatesToNumber, Expression, FieldType, FieldValue,
-        ForLoop, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source,
-        Statement, Step, Traversal, ValueType, VectorData,
+    helixc::analyzer::types::{
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeSchema,
+        EvaluatesToNumber, Exclude, Expression, FieldValue, ForLoop, GraphStep, IdType, NodeSchema,
+        Object, Parameter, Query, SearchVector, Source,
         StartNode::{Anonymous, Edge, Node, Variable},
+        Statement, Step, Traversal, ValueType, VectorData,
     },
+    helixc::parser::helix_parser::FieldType,
+    protocol::value::Value,
 };
 use std::{collections::HashMap, vec};
 
@@ -759,14 +759,11 @@ impl CodeGenerator {
                             output.push_str(".in_e(\"\");\n");
                         }
                     }
-                    GraphStep::BothE(_) => unreachable!(),
-                    GraphStep::Both(_) => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InN => output.push_str(".in_v()\n"),
-                    GraphStep::OutN => output.push_str(".out_v()\n"),
-                    GraphStep::BothN => unreachable!(),
+                    GraphStep::ToN => output.push_str(".in_v()\n"),
+                    GraphStep::FromN => output.push_str(".out_v()\n"),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 _ => output.push_str(&mut self.generate_step(step, query)),
@@ -936,11 +933,8 @@ impl CodeGenerator {
                         output.push_str(".in_e(\"\")\n");
                     }
                 }
-                GraphStep::OutN => output.push_str(".out_v()\n"),
-                GraphStep::InN => output.push_str(".in_v()\n"),
-                GraphStep::BothN => unreachable!(),
-                GraphStep::BothE(types) => unreachable!(),
-                GraphStep::Both(types) => unreachable!(),
+                GraphStep::ToN => output.push_str(".in_v()\n"),
+                GraphStep::FromN => output.push_str(".out_v()\n"),
             },
             Step::Range((start, end)) => {
                 let start = match start {
@@ -1628,7 +1622,7 @@ impl CodeGenerator {
                         value,
                     ));
                 }
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!(
                         "return_vals.insert(\"message\".to_string(), ReturnValue::Empty);\n",
                     ));
@@ -2041,7 +2035,7 @@ impl CodeGenerator {
                         output.push_str(")\n");
                     }
                 },
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!("ReturnValue::Empty\n"));
                 }
                 Expression::Identifier(id) => {
