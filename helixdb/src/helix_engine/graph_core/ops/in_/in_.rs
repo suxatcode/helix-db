@@ -2,16 +2,24 @@ use std::sync::Arc;
 
 use heed3::{types::Bytes, RoTxn, RwTxn};
 
-use crate::{helix_engine::{
-    graph_core::traversal_iter::RoTraversalIterator,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::GraphError,
-}, protocol::label_hash::hash_label};
+use crate::{
+    helix_engine::{
+        graph_core::traversal_iter::RoTraversalIterator,
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+    },
+    protocol::label_hash::hash_label,
+};
 
 use super::super::tr_val::{Traversable, TraversalVal};
 
 pub struct InNodesIterator<'a, T> {
-    iter: heed3::RoPrefix<'a, Bytes, heed3::types::LazyDecode<Bytes>>,
+    iter: heed3::RoIter<
+        'a,
+        Bytes,
+        heed3::types::LazyDecode<Bytes>,
+        heed3::iteration_method::MoveOnCurrentKeyDuplicates,
+    >,
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
     length: usize,
@@ -49,37 +57,6 @@ impl<'a> Iterator for InNodesIterator<'a, RwTxn<'a>> {
     }
 }
 
-pub struct InNodes<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, F, T>
-where
-    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, T>,
-    InNodesIterator<'a, T>: std::iter::Iterator,
-    T: 'a,
-{
-    iter: std::iter::Flatten<std::iter::Map<I, F>>,
-}
-
-impl<'a, I, F> Iterator for InNodes<'a, I, F, RoTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RoTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl<'a, I, F> Iterator for InNodes<'a, I, F, RwTxn<'a>>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(Result<TraversalVal, GraphError>) -> InNodesIterator<'a, RwTxn<'a>>,
-{
-    type Item = Result<TraversalVal, GraphError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 pub trait InAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     fn in_(
         self,
@@ -100,26 +77,32 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a
         let txn = self.txn;
         let iter = self
             .inner
-            .map(move |item| {
-                let label_hash = hash_label(edge_label, None);
-                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), &label_hash);
-                let iter = db
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
+                match db
                     .in_edges_db
                     .lazily_decode_data()
-                    .prefix_iter(txn, &prefix)
-                    .unwrap();
-
-                InNodesIterator {
-                    iter,
-                    storage: Arc::clone(&db),
-                    txn,
-                    length: prefix.len(),
+                    .get_duplicates(txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(InNodesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        txn,
+                        length: prefix.len(),
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("Error getting out edges: {:?}", e);
+                        // return Err(e);
+                        None
+                    }
                 }
             })
             .flatten();
 
         RoTraversalIterator {
-            inner: InNodes { iter },
+            inner: iter,
             storage,
             txn,
         }
