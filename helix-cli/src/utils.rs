@@ -10,7 +10,6 @@ use std::{
     fs,
     fs::DirEntry,
 };
-use indicatif::{ProgressBar, ProgressStyle};
 use colored::*;
 
 pub const DB_DIR: &str = "helixdb-cfg/";
@@ -168,18 +167,6 @@ pub fn find_available_port(start_port: u16) -> Option<u16> {
         }
     }
     None
-}
-
-pub fn create_spinner(msg: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_message(msg.to_string());
-    spinner.set_style(
-        ProgressStyle::with_template("{spinner:.green.bold} {msg}")
-            .unwrap()
-            .tick_strings(&["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]),
-    );
-    //spinner.enable_steady_tick(Duration::from_millis(80));
-    spinner
 }
 
 pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
