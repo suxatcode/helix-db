@@ -320,7 +320,4 @@ pub fn check_hql_files(files: &Vec<DirEntry>) -> Result<(), CliError> {
     }
     Ok(())
 }
-
-
-
 */
