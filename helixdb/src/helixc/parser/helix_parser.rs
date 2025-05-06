@@ -8,7 +8,10 @@ use pest::{
     Parser as PestParser,
 };
 use pest_derive::Parser;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -86,6 +89,59 @@ pub enum FieldType {
     Array(Box<FieldType>),
     Identifier(String),
     Object(HashMap<String, FieldType>),
+}
+
+impl PartialEq for FieldType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (FieldType::String, FieldType::String) => true,
+            (FieldType::F32, FieldType::F32) => true,
+            (FieldType::F64, FieldType::F64) => true,
+            (FieldType::I8, FieldType::I8) => true,
+            (FieldType::I16, FieldType::I16) => true,
+            (FieldType::I32, FieldType::I32) => true,
+            (FieldType::I64, FieldType::I64) => true,
+            (FieldType::U8, FieldType::U8) => true,
+            (FieldType::U16, FieldType::U16) => true,
+            (FieldType::U32, FieldType::U32) => true,
+            (FieldType::U64, FieldType::U64) => true,
+            (FieldType::U128, FieldType::U128) => true,
+            (FieldType::Boolean, FieldType::Boolean) => true,
+            (FieldType::Array(a), FieldType::Array(b)) => a == b,
+            (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
+            (FieldType::Object(a), FieldType::Object(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Display for FieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldType::String => write!(f, "String"),
+            FieldType::F32 => write!(f, "F32"),
+            FieldType::F64 => write!(f, "F64"),
+            FieldType::I8 => write!(f, "I8"),
+            FieldType::I16 => write!(f, "I16"),
+            FieldType::I32 => write!(f, "I32"),
+            FieldType::I64 => write!(f, "I64"),
+            FieldType::U8 => write!(f, "U8"),
+            FieldType::U16 => write!(f, "U16"),
+            FieldType::U32 => write!(f, "U32"),
+            FieldType::U64 => write!(f, "U64"),
+            FieldType::U128 => write!(f, "U128"),
+            FieldType::Boolean => write!(f, "Boolean"),
+            FieldType::Array(t) => write!(f, "Array({})", t),
+            FieldType::Identifier(s) => write!(f, "{}", s),
+            FieldType::Object(m) => {
+                write!(f, "{{")?;
+                for (k, v) in m {
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +289,7 @@ pub enum FieldValueType {
     Expression(Expression),
     Fields(Vec<FieldAddition>),
     Literal(Value),
+    Identifier(String),
     Empty,
 }
 
@@ -393,6 +450,7 @@ pub struct Update {
 #[derive(Debug, Clone)]
 pub struct Object {
     pub loc: Loc,
+    // TODO: Change this to be a vec of structs where the enums holds the name and value
     pub fields: Vec<(String, FieldValue)>,
     pub should_spread: bool,
 }
@@ -483,7 +541,11 @@ impl HelixParser {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
-        Ok(VectorSchema { name, fields, loc: pair.loc() })
+        Ok(VectorSchema {
+            name,
+            fields,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_node_body(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
@@ -1539,12 +1601,15 @@ impl HelixParser {
                 loc: value_pair.loc(),
                 value: FieldValueType::Fields(self.parse_field_additions(value_pair)?),
             },
-            Rule::string_literal => FieldValue {
-                loc: value_pair.loc(),
-                value: FieldValueType::Literal(Value::String(
-                    self.parse_string_literal(value_pair)?,
-                )),
-            },
+            Rule::string_literal => {
+                println!("string_literal: {:?}", value_pair);
+                FieldValue {
+                    loc: value_pair.loc(),
+                    value: FieldValueType::Literal(Value::String(
+                        self.parse_string_literal(value_pair)?,
+                    )),
+                }
+            }
             Rule::integer => FieldValue {
                 loc: value_pair.loc(),
                 value: FieldValueType::Literal(Value::I32(
@@ -1702,7 +1767,7 @@ impl HelixParser {
                 },
                 None if prop_key.len() > 0 => FieldValue {
                     loc: p.loc(),
-                    value: FieldValueType::Literal(Value::String(prop_key.clone())),
+                    value: FieldValueType::Identifier(prop_key.clone()),
                 },
                 None => FieldValue {
                     loc: p.loc(),

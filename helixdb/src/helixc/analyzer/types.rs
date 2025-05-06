@@ -677,6 +677,7 @@ pub enum FieldValue {
     Expression(Expression),
     Fields(Vec<FieldAddition>),
     Literal(Value),
+    Identifier(String),
     Empty,
 }
 
@@ -692,6 +693,7 @@ impl From<ParserFieldValue> for FieldValue {
             }
             ParserFieldValueType::Literal(v) => FieldValue::Literal(v),
             ParserFieldValueType::Empty => FieldValue::Empty,
+            ParserFieldValueType::Identifier(s) => FieldValue::Identifier(s),
         }
     }
 }

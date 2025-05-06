@@ -66,9 +66,9 @@ struct Ctx<'a> {
     node_set: HashSet<&'a str>,
     vector_set: HashSet<&'a str>,
     edge_map: HashMap<&'a str, &'a EdgeSchema>,
-    node_fields: HashMap<&'a str, HashSet<&'a str>>,
-    edge_fields: HashMap<&'a str, HashSet<&'a str>>,
-    vector_fields: HashMap<&'a str, HashSet<&'a str>>,
+    node_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
+    edge_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
+    vector_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -81,7 +81,10 @@ impl<'a> Ctx<'a> {
             .map(|n| {
                 (
                     n.name.1.as_str(),
-                    n.fields.iter().map(|f| f.name.as_str()).collect(),
+                    n.fields
+                        .iter()
+                        .map(|f| (f.name.as_str(), &f.field_type))
+                        .collect(),
                 )
             })
             .collect();
@@ -94,8 +97,8 @@ impl<'a> Ctx<'a> {
                     e.name.1.as_str(),
                     e.properties
                         .as_ref()
-                        .map(|v| v.iter().map(|f| f.name.as_str()).collect())
-                        .unwrap_or_else(HashSet::new),
+                        .map(|v| v.iter().map(|f| (f.name.as_str(), &f.field_type)).collect())
+                        .unwrap_or_else(HashMap::new),
                 )
             })
             .collect();
@@ -106,7 +109,10 @@ impl<'a> Ctx<'a> {
             .map(|v| {
                 (
                     v.name.as_str(),
-                    v.fields.iter().map(|f| f.name.as_str()).collect(),
+                    v.fields
+                        .iter()
+                        .map(|f| (f.name.as_str(), &f.field_type))
+                        .collect(),
                 )
             })
             .collect();
@@ -196,7 +202,7 @@ impl<'a> Ctx<'a> {
                         continue;
                     }
 
-                    let rhs_ty = self.infer_expr_type(&assign.value, &scope, q);
+                    let rhs_ty = self.infer_expr_type(&assign.value, &scope, q, None);
                     scope.insert(assign.variable.as_str(), rhs_ty);
                 }
 
@@ -254,7 +260,7 @@ impl<'a> Ctx<'a> {
 
                 Drop(expr) => {
                     // Nothing special right now; still type‑check sub‑expressions
-                    self.infer_expr_type(expr, &scope, q);
+                    self.infer_expr_type(expr, &scope, q, None);
                 }
 
                 SearchVector(expr) => {
@@ -288,7 +294,7 @@ impl<'a> Ctx<'a> {
                     for body_stmt in &fl.statements {
                         // Recursive walk (but without infinite nesting for now)
                         if let StatementType::Assignment(a) = &body_stmt.statement {
-                            let t = self.infer_expr_type(&a.value, &body_scope, q);
+                            let t = self.infer_expr_type(&a.value, &body_scope, q, None);
                             body_scope.insert(a.variable.as_str(), t);
                         }
                     }
@@ -312,7 +318,7 @@ impl<'a> Ctx<'a> {
             );
         }
         for ret in &q.return_values {
-            self.infer_expr_type(ret, &scope, q);
+            self.infer_expr_type(ret, &scope, q, None);
         }
     }
 
@@ -379,6 +385,7 @@ impl<'a> Ctx<'a> {
         expression: &'a Expression,
         scope: &HashMap<&'a str, Type<'a>>,
         q: &'a Query,
+        parent_ty: Option<Type<'a>>,
     ) -> Type<'a> {
         use ExpressionType::*;
         let expr = &expression.expr;
@@ -389,7 +396,7 @@ impl<'a> Ctx<'a> {
                     self.push_query_err(
                         q,
                         expression.loc.clone(),
-                        format!("identifier `{}` is not in scope", name),
+                        format!("variable named `{}` is not in scope", name),
                         "declare it earlier or fix the typo",
                     );
                     Type::Unknown
@@ -403,7 +410,7 @@ impl<'a> Ctx<'a> {
             Empty => Type::Unknown,
 
             Traversal(tr) | Exists(tr) => {
-                let final_ty = self.check_traversal(tr, scope, q);
+                let final_ty = self.check_traversal(tr, scope, q, parent_ty);
                 if matches!(expr, Exists(_)) {
                     Type::Boolean
                 } else {
@@ -427,7 +434,7 @@ impl<'a> Ctx<'a> {
                         let field_set = self.node_fields.get(ty.as_str()).cloned();
                         if let Some(field_set) = field_set {
                             for (field_name, _) in fields {
-                                if !field_set.contains(field_name.as_str()) {
+                                if !field_set.contains_key(field_name.as_str()) {
                                     self.push_query_err(
                                         q,
                                         add.loc.clone(),
@@ -457,7 +464,7 @@ impl<'a> Ctx<'a> {
                         let field_set = self.edge_fields.get(ty.as_str()).cloned();
                         if let Some(field_set) = field_set {
                             for (field_name, _) in fields {
-                                if !field_set.contains(field_name.as_str()) {
+                                if !field_set.contains_key(field_name.as_str()) {
                                     self.push_query_err(
                                         q,
                                         add.loc.clone(),
@@ -486,11 +493,14 @@ impl<'a> Ctx<'a> {
                         let field_set = self.vector_fields.get(ty.as_str()).cloned();
                         if let Some(field_set) = field_set {
                             for (field_name, _) in fields {
-                                if !field_set.contains(field_name.as_str()) {
+                                if !field_set.contains_key(field_name.as_str()) {
                                     self.push_query_err(
                                         q,
                                         add.loc.clone(),
-                                        format!("`{}` is not a field of vector `{}`", field_name, ty),
+                                        format!(
+                                            "`{}` is not a field of vector `{}`",
+                                            field_name, ty
+                                        ),
                                         "check the schema field names",
                                     );
                                 }
@@ -529,7 +539,7 @@ impl<'a> Ctx<'a> {
             }
             And(v) | Or(v) => {
                 for e in v {
-                    self.infer_expr_type(e, scope, q);
+                    self.infer_expr_type(e, scope, q, parent_ty.clone());
                 }
                 Type::Boolean
             }
@@ -544,8 +554,10 @@ impl<'a> Ctx<'a> {
         tr: &'a Traversal,
         scope: &HashMap<&'a str, Type<'a>>,
         q: &'a Query,
+        parent_ty: Option<Type<'a>>,
     ) -> Type<'a> {
-        // 1. Establish the starting type
+        println!("parent_ty: {:?}", parent_ty);
+        let mut previous_step = None;
         let mut cur_ty = match &tr.start {
             StartNode::Node { types, .. } => {
                 if let Some(ref ts) = types {
@@ -586,16 +598,20 @@ impl<'a> Ctx<'a> {
                 self.push_query_err(
                     q,
                     tr.loc.clone(),
-                    format!("identifier `{}` is not in scope", var),
+                    format!("variable named `{}` is not in scope", var),
                     format!("declare {} in the current scope or fix the typo", var),
                 );
                 Type::Unknown
             }),
-            StartNode::Anonymous => Type::Unknown,
+            StartNode::Anonymous => {
+                println!("parent_ty: {:?}", parent_ty);
+                parent_ty.unwrap_or(Type::Unknown)
+            }
         };
 
         // Track excluded fields for property validation
         let mut excluded: HashMap<&str, Loc> = HashMap::new();
+        println!("cur_ty: {:?}", cur_ty);
 
         // Stream through the steps
         for graph_step in &tr.steps {
@@ -623,16 +639,98 @@ impl<'a> Ctx<'a> {
 
                 StepType::Object(obj) => {
                     self.validate_object(&cur_ty, tr, obj, &excluded, q);
-                    cur_ty = Type::Unknown;
                 }
 
                 StepType::Where(expr) => {
-                    self.infer_expr_type(expr, scope, q);
+                    self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()));
                     // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
                 }
 
-                StepType::BooleanOperation(expr) => {
+                StepType::BooleanOperation(b_op) => {
+                    let step = previous_step.unwrap();
+                    println!("previous_step: {:?}", step);
+                    let property_type = match &b_op.op {
+                        BooleanOpType::LessThanOrEqual(expr)
+                        | BooleanOpType::LessThan(expr)
+                        | BooleanOpType::GreaterThanOrEqual(expr)
+                        | BooleanOpType::GreaterThan(expr)
+                        | BooleanOpType::Equal(expr)
+                        | BooleanOpType::NotEqual(expr) => {
+                            match self.infer_expr_type(expr, scope, q, Some(cur_ty.clone())) {
+                                Type::Scalar(ft) => ft.clone(),
+                                field_type => {
+                                    self.push_query_err(
+                                        q,
+                                        b_op.loc.clone(),
+                                        "boolean operation can only be applied to scalar values".to_string(),
+                                        "make sure the expression evaluates to a number or a string".to_string(),
+                                    );
+                                    return field_type;
+                                }
+                            }
+                        }
+                        _ => return cur_ty.clone(),
+                    };
+
+                    println!("property_type: {:?}", property_type);
+
+                    // get type of field name
+                    let field_name = match step {
+                        StepType::Object(obj) => {
+                            let fields = obj.fields;
+                            assert!(fields.len() == 1);
+                            Some(fields[0].1.value.clone())
+                        }
+                        _ => None,
+                    };
+                    if let Some(FieldValueType::Identifier(field_name)) = &field_name {
+                        println!("current type: {:?}", cur_ty);
+                        match &cur_ty {
+                            Type::Nodes(Some(node_ty)) => {
+                                let field_set = self.node_fields.get(node_ty).cloned();
+                                println!("field_set: {:?}", field_set);
+                                if let Some(field_set) = field_set {
+                                    match field_set.get(field_name.as_str()) {
+                                        Some(field) => {
+                                            println!("field: {:?}", field);
+                                            println!("property_type: {:?}", property_type);
+                                            if field != &&property_type {
+                                                self.push_query_err(
+                                                    q,
+                                                    b_op.loc.clone(),
+                                                    format!("property `{field_name}` is of type `{field}` (from node type `{node_ty}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    "make sure comparison value is of the same type as the property".to_string(),
+                                                );
+                                            }
+                                        }
+                                        None => {
+                                            self.push_query_err(
+                                                q,
+                                                b_op.loc.clone(),
+                                                format!(
+                                                    "`{}` is not a field of {} `{}`",
+                                                    field_name, "node", node_ty
+                                                ),
+                                                "check the schema field names",
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    b_op.loc.clone(),
+                                    "boolean operation can only be applied to scalar values"
+                                        .to_string(),
+                                    "make sure the expression evaluates to a number or a string"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                    }
+
                     // self.infer_expr_type(expr, scope, q);
                     // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
@@ -678,6 +776,7 @@ impl<'a> Ctx<'a> {
                     excluded.clear();
                 }
             }
+            previous_step = Some(step.clone());
         }
 
         cur_ty
@@ -686,7 +785,7 @@ impl<'a> Ctx<'a> {
     fn validate_exclude_fields(
         &mut self,
         ex: &Exclude,
-        field_set: &HashSet<&str>,
+        field_set: &HashMap<&str, &FieldType>,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         type_name: &str,
@@ -702,7 +801,7 @@ impl<'a> Ctx<'a> {
                     format!("remove the exclusion of `{}`", key),
                     Fix::new(span.clone(), Some(loc.clone()), None),
                 );
-            } else if !field_set.contains(key.as_str()) {
+            } else if !field_set.contains_key(key.as_str()) {
                 self.push_query_err(
                     q,
                     loc.clone(),
@@ -749,25 +848,29 @@ impl<'a> Ctx<'a> {
                     );
                 }
             }
-            Type::Vector(_) => {
+            Type::Vector(Some(vector_ty)) => {
                 // Vectors only have 'id' and 'embedding' fields
-                let field_set: HashSet<&str> = vec!["id", "embedding"].into_iter().collect();
-                self.validate_exclude_fields(
-                    ex,
-                    &field_set,
-                    &excluded,
-                    q,
-                    "vector",
-                    "vector",
-                    Some(tr.loc.clone()),
-                );
+                if let Some(fields) = self.vector_fields.get(vector_ty).cloned() {
+                    self.validate_exclude_fields(
+                        ex,
+                        &fields,
+                        &excluded,
+                        q,
+                        vector_ty,
+                        "vector",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Anonymous(ty) => {
+                self.validate_exclude(ty, tr, ex, excluded, q);
             }
             _ => {
                 self.push_query_err(
                     q,
                     ex.fields[0].0.clone(),
                     "cannot access properties on this type".to_string(),
-                    "property access is only valid on nodes, edges and vectors",
+                    "exclude is only valid on nodes, edges and vectors",
                 );
             }
         }
@@ -809,18 +912,22 @@ impl<'a> Ctx<'a> {
                     );
                 }
             }
-            Type::Vector(_) => {
+            Type::Vector(Some(vector_ty)) => {
                 // Vectors only have 'id' and 'embedding' fields
-                let field_set: HashSet<&str> = vec!["id", "embedding"].into_iter().collect();
-                self.validate_object_fields(
-                    obj,
-                    &field_set,
-                    &excluded,
-                    q,
-                    "vector",
-                    "vector",
-                    Some(tr.loc.clone()),
-                );
+                if let Some(fields) = self.vector_fields.get(vector_ty).cloned() {
+                    self.validate_object_fields(
+                        obj,
+                        &fields,
+                        &excluded,
+                        q,
+                        vector_ty,
+                        "vector",
+                        Some(tr.loc.clone()),
+                    );
+                }
+            }
+            Type::Anonymous(ty) => {
+                self.validate_object(ty, tr, obj, excluded, q);
             }
             _ => {
                 self.push_query_err(
@@ -842,7 +949,7 @@ impl<'a> Ctx<'a> {
         q: &'a Query,
     ) -> Option<Type<'a>> {
         use GraphStepType::*;
-        match (&gs.step, cur_ty) {
+        match (&gs.step, cur_ty.base()) {
             // Node‑to‑Edge
             (OutE(_) | InE(_), Type::Nodes(_)) => Some(Type::Edges(Some(
                 gs.loc
@@ -925,7 +1032,7 @@ impl<'a> Ctx<'a> {
     fn validate_object_fields(
         &mut self,
         obj: &Object,
-        field_set: &HashSet<&str>,
+        field_set: &HashMap<&str, &FieldType>,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         type_name: &str,
@@ -945,7 +1052,7 @@ impl<'a> Ctx<'a> {
                     format!("remove the exclusion of `{}`", key),
                     Fix::new(span.clone(), Some(loc.clone()), Some(String::new())),
                 );
-            } else if !field_set.contains(key.as_str()) {
+            } else if !field_set.contains_key(key.as_str()) {
                 self.push_query_err(
                     q,
                     val.loc.clone(),
@@ -963,6 +1070,7 @@ enum Type<'a> {
     Edges(Option<&'a str>),
     Vector(Option<&'a str>),
     Scalar(FieldType),
+    Anonymous(Box<Type<'a>>),
     Boolean,
     Unknown,
 }
@@ -976,6 +1084,23 @@ impl<'a> Type<'a> {
             Type::Scalar(_) => "scalar",
             Type::Boolean => "boolean",
             Type::Unknown => "unknown",
+            Type::Anonymous(ty) => ty.kind_str(),
+        }
+    }
+
+    /// Recursively strip <code>Anonymous</code> layers and return the base type.
+    fn base(&self) -> &Type<'a> {
+        match self {
+            Type::Anonymous(inner) => inner.base(),
+            _ => self,
+        }
+    }
+
+    /// Same, but returns an owned clone for convenience.
+    fn cloned_base(&self) -> Type<'a> {
+        match self {
+            Type::Anonymous(inner) => inner.cloned_base(),
+            _ => self.clone(),
         }
     }
 }
@@ -1268,7 +1393,9 @@ mod analyzer_tests {
             }
 
             QUERY badAddEdgeField() =>
-                e <- AddE<Wrote>({invalid_field: "test"})
+                n1 <- AddN<User>({name: "test"})
+                n2 <- AddN<Post>({title: "test"})
+                e <- AddE<Wrote>({invalid_field: "test"})::To(n1)::From(n2)
                 RETURN e
         "#;
         let diags = run(hx);
@@ -1298,6 +1425,27 @@ mod analyzer_tests {
                 .iter()
                 .any(|d| d.message.contains("is not a valid vector field")),
             "expected a diagnostic about invalid vector field, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validate_boolean_comparison() {
+        let hx = r#"
+            N::User { name: String }
+
+            QUERY booleanComparison() =>
+                a <- N<User>::WHERE(_::{name}::EQ(10))
+                RETURN a
+        "#;
+        let diags = run(hx);
+        for d in diags.iter() {
+            println!("{}", d.render(hx, "query.hx"));
+        }
+        assert!(false);
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics, got: {:?}",
             diags
         );
     }
