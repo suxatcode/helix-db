@@ -1853,7 +1853,7 @@ impl CodeGenerator {
                 }
                 FieldValue::Literal(value) => {
                     output.push_str(&format!(
-                        "let {} = {}.check_property({});\n",
+                        "let {} = {}.check_property(\"{}\");\n",
                         to_snake_case(key),
                         var_name,
                         self.value_to_rust(value)
@@ -1861,7 +1861,7 @@ impl CodeGenerator {
                 }
                 FieldValue::Identifier(id) => {
                     output.push_str(&format!(
-                        "let {} = {}.check_property({});\n",
+                        "let {} = {}.check_property(\"{}\");\n",
                         to_snake_case(key),
                         var_name,
                         to_snake_case(id)
