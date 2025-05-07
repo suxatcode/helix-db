@@ -171,33 +171,52 @@ impl CodeGenerator {
             FieldType::U128 => "u128".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Array(field) => {
-                format!("Vec<{}>", self.field_type_to_rust(&field, &param_name))
+                format!("{}", self.field_type_to_rust(&field, &param_name))
             }
             FieldType::Identifier(id) => format!("{}", id),
             FieldType::Object(_) => format!("{}Data", to_snake_case(&param_name)),
         }
     }
 
-    fn object_field_to_rust(&mut self, name: &str) -> String {
+    fn object_field_to_rust(&mut self, name: &str, is_inner: bool) -> String {
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}: {}Data,\n",
-            to_snake_case(&name),
-            to_snake_case(&name)
-        ));
+        if is_inner {
+            output.push_str(&format!("{}Data,\n", to_snake_case(&name)));
+        } else {
+            output.push_str(&format!(
+                "{}: {}Data,\n",
+                to_snake_case(&name),
+                to_snake_case(&name)
+            ));
+        }
         output
     }
 
-    fn array_field_to_rust(&mut self, name: &str, inner: &FieldType) -> String {
+    fn array_field_to_rust(
+        &mut self,
+        name: &str,
+        inner: &FieldType,
+        objects: &mut String,
+        is_inner: bool,
+    ) -> String {
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}: {},\n",
-            to_snake_case(&name),
-            match &inner {
-                FieldType::Object(_) => self.object_field_to_rust(name),
-                _ => self.field_type_to_rust(inner, name),
-            }
-        ));
+        if is_inner {
+            output.push_str(&format!("Vec<{}>\n", self.field_type_to_rust(inner, name)));
+        } else {
+            output.push_str(&format!(
+                "{}: Vec<{}>,\n",
+                to_snake_case(&name),
+                match &inner {
+                    FieldType::Object(obj) => {
+                        // self.params.push(name.to_string());
+                        // let object_type = self.object_type_to_rust(name, obj, objects);
+                        // objects.push_str(&object_type);
+                        self.object_field_to_rust(name, true)
+                    }
+                    _ => self.field_type_to_rust(inner, name),
+                }
+            ));
+        }
         output
     }
 
@@ -205,6 +224,7 @@ impl CodeGenerator {
         &mut self,
         param_name: &str,
         fields: &HashMap<String, FieldType>,
+        objects: &mut String,
     ) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
@@ -221,7 +241,20 @@ impl CodeGenerator {
                     to_snake_case(&name),
                     match type_name {
                         // TODO: Have separate internal string for type defs
-                        FieldType::Object(_) => self.object_field_to_rust(name),
+                        FieldType::Object(obj) => {
+                            self.params.push(name.clone());
+                            let object_type = self.object_type_to_rust(name, obj, objects);
+                            objects.push_str(&object_type);
+                            self.object_field_to_rust(name, true)
+                        }
+                        FieldType::Array(obj) => {
+                            if let FieldType::Object(obj) = obj.as_ref() {
+                                self.params.push(name.clone());
+                                let object_type = self.object_type_to_rust(name, obj, objects);
+                                objects.push_str(&object_type);
+                            }
+                            self.array_field_to_rust(name, obj, objects, true)
+                        }
                         _ => self.field_type_to_rust(type_name, &param_name),
                     }
                 ));
@@ -248,17 +281,20 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
             output.push_str(&format!("struct {}Data {{\n", query.name));
             self.indent_level += 1;
-
+            let mut objects = String::new();
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
                 self.params.push(param.name.clone());
                 match &param.param_type {
                     FieldType::Object(_) => {
-                        output.push_str(&self.object_field_to_rust(&param.name))
+                        output.push_str(&self.object_field_to_rust(&param.name, false))
                     }
-                    FieldType::Array(_) => {
-                        output.push_str(&self.array_field_to_rust(&param.name, &param.param_type))
-                    }
+                    FieldType::Array(_) => output.push_str(&self.array_field_to_rust(
+                        &param.name,
+                        &param.param_type,
+                        &mut objects,
+                        false,
+                    )),
                     _ => output.push_str(&format!(
                         "{}: {},\n",
                         to_snake_case(&param.name),
@@ -274,17 +310,27 @@ impl CodeGenerator {
             for param in &query.parameters {
                 match &param.param_type {
                     FieldType::Object(fields) => {
-                        output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                        output.push_str(&mut self.object_type_to_rust(
+                            &param.name,
+                            fields,
+                            &mut objects,
+                        ));
                     }
                     FieldType::Array(fields) => match fields.as_ref() {
                         FieldType::Object(fields) => {
-                            output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                            output.push_str(&mut self.object_type_to_rust(
+                                &param.name,
+                                fields,
+                                &mut objects,
+                            ));
                         }
                         _ => {}
                     },
                     _ => {}
                 }
             }
+
+            output.push_str(&objects);
 
             // Deserialize input data
             output.push_str(&mut self.indent());
