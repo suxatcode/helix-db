@@ -823,7 +823,6 @@ impl HelixParser {
     }
 
     fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
-        println!("\nForLoop: {:?}\n", pair);
         let mut pairs = pair.clone().into_inner();
         let mut variables = Vec::new();
         let mut in_variable = String::new();
