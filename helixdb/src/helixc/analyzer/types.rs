@@ -13,7 +13,7 @@ use crate::{
         FieldValue as ParserFieldValue, FieldValueType as ParserFieldValueType,
         GraphStep as ParserGraphStep, GraphStepType as ParserGraphStepType, IdType as ParserIdType,
         NodeSchema as ParserNodeSchema, Object as ParserObject, Query as ParserQuery,
-        SearchVector as ParserSearchVector, StartNode as ParserStartNode,
+        SearchVector as ParserSearchVector, Source as ParserSource, StartNode as ParserStartNode,
         Statement as ParserStatement, StatementType as ParserStatementType, Step as ParserStep,
         StepType as ParserStepType, Traversal as ParserTraversal, Update as ParserUpdate,
         ValueType as ParserValueType, VectorData as ParserVectorData,
@@ -28,6 +28,29 @@ pub struct Source {
     pub edge_schemas: Vec<EdgeSchema>,
     pub vector_schemas: Vec<VectorSchema>,
     pub queries: Vec<Query>,
+}
+
+impl From<ParserSource> for Source {
+    fn from(source: ParserSource) -> Self {
+        Source {
+            node_schemas: source
+                .node_schemas
+                .into_iter()
+                .map(NodeSchema::from)
+                .collect(),
+            edge_schemas: source
+                .edge_schemas
+                .into_iter()
+                .map(EdgeSchema::from)
+                .collect(),
+            vector_schemas: source
+                .vector_schemas
+                .into_iter()
+                .map(VectorSchema::from)
+                .collect(),
+            queries: source.queries.into_iter().map(Query::from).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

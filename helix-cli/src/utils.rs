@@ -1,16 +1,19 @@
 use crate::args::*;
-use helixdb::helixc::parser::helix_parser::{
-    HelixParser,
-    Source,
+use colored::*;
+use colored::*;
+use helixdb::helixc::{
+    analyzer::{analyzer::analyze, types::Source as HelixSource},
+    generator::generator::CodeGenerator,
+    parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use std::{
-    path::PathBuf,
-    io::ErrorKind,
-    net::{SocketAddr, TcpListener},
     fs,
     fs::DirEntry,
+    io::ErrorKind,
+    net::{SocketAddr, TcpListener},
+    path::PathBuf,
 };
-use colored::*;
 
 pub const DB_DIR: &str = "helixdb-cfg/";
 
@@ -103,11 +106,11 @@ pub fn check_helix_installation() -> Result<PathBuf, String> {
     let container_path = repo_path.join("helix-container");
     let cargo_path = container_path.join("Cargo.toml");
 
-    if !repo_path.exists() ||
-        !repo_path.is_dir() ||
-        !container_path.exists() ||
-        !container_path.is_dir()  ||
-        !cargo_path.exists()
+    if !repo_path.exists()
+        || !repo_path.is_dir()
+        || !container_path.exists()
+        || !container_path.is_dir()
+        || !cargo_path.exists()
     {
         return Err("run `helix install` first.".to_string());
     }
@@ -174,14 +177,20 @@ pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
         .map_err(CliError::Io)?
         .any(|file| file.unwrap().file_name() == "schema.hx")
     {
-        return Err(CliError::from(format!("{}", "No schema file found".red().bold())));
+        return Err(CliError::from(format!(
+            "{}",
+            "No schema file found".red().bold()
+        )));
     }
 
     if !fs::read_dir(&path)
         .map_err(CliError::Io)?
         .any(|file| file.unwrap().file_name() == "config.hx.json")
     {
-        return Err(CliError::from(format!("{}", "No config.hx.json file found".red().bold())));
+        return Err(CliError::from(format!(
+            "{}",
+            "No config.hx.json file found".red().bold()
+        )));
     }
 
     let files: Vec<DirEntry> = fs::read_dir(&path)?
@@ -190,38 +199,39 @@ pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
         .collect();
 
     // Check for query files (exclude schema.hx)
-    let has_queries = files
-        .iter()
-        .any(|file| file.file_name() != "schema.hx");
+    let has_queries = files.iter().any(|file| file.file_name() != "schema.hx");
     if !has_queries {
-        return Err(CliError::from(format!("{}", "No query files (.hx) found".red().bold())));
+        return Err(CliError::from(format!(
+            "{}",
+            "No query files (.hx) found".red().bold()
+        )));
     }
 
     Ok(files)
 }
 
-pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
-    let contents: String = files
-        .iter()
-        .map(|file| -> String {
-            match fs::read_to_string(file.path()) {
-                Ok(contents) => contents,
-                Err(e) => {
-                    panic!("{}", e); // TODO: something better here instead of panic
-                }
-            }
-        })
-        .fold(String::new(), |acc, contents| acc + &contents);
+// pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
+//     let contents: String = files
+//         .iter()
+//         .map(|file| -> String {
+//             match fs::read_to_string(file.path()) {
+//                 Ok(contents) => contents,
+//                 Err(e) => {
+//                     panic!("{}", e); // TODO: something better here instead of panic
+//                 }
+//             }
+//         })
+//         .fold(String::new(), |acc, contents| acc + &contents);
 
-    let source = match HelixParser::parse_source(&contents) {
-        Ok(source) => source,
-        Err(e) => {
-            return Err(CliError::from(format!("{}", e)));
-        }
-    };
+//     let source = match HelixParser::parse_source(&contents) {
+//         Ok(source) => source,
+//         Err(e) => {
+//             return Err(CliError::from(format!("{}", e)));
+//         }
+//     };
 
-    Ok(source)
-}
+//     Ok(source)
+// }
 
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -242,20 +252,60 @@ pub fn to_snake_case(s: &str) -> String {
     result
 }
 
+fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
+    let content_str = String::new();
+    let files = files
+        .iter()
+        .map(|file| {
+            let name = file.file_name().to_string_lossy().into_owned();
+            let content = fs::read_to_string(file.path()).unwrap();
+            HxFile { name, content }
+        })
+        .collect();
 
+    let content = Content {
+        content: content_str,
+        files: files,
+        source: Source::default(),
+    };
 
+    Ok(content)
+}
 
+fn parse_content(content: &Content) -> Result<Source, CliError> {
+    let source = match HelixParser::parse_source(&content) {
+        Ok(source) => source,
+        Err(e) => {
+            return Err(CliError::from(format!("{}", e)));
+        }
+    };
 
+    Ok(source)
+}
 
+fn analyze_source(source: Source) -> Result<HelixSource, CliError> {
+    let diagnostics = analyze(&source);
+    if !diagnostics.is_empty() {
+        for diag in diagnostics {
+            println!("{}", diag.render(&source.source, "queries.hx"));
+        }
+        return Err(CliError::CompileFailed);
+    }
 
+    Ok(HelixSource::from(source))
+}
 
-
-
-
-
-
-
-
+pub fn generate(files: &Vec<DirEntry>) -> Result<Content, CliError> {
+    let mut generator = CodeGenerator::new();
+    let mut content = generate_content(&files)?;
+    content.source = parse_content(&content)?;
+    let analyzed_source = analyze_source(content.source.clone())?;
+    content.content.push_str(&generator.generate_headers());
+    content
+        .content
+        .push_str(&generator.generate_source(&analyzed_source));
+    Ok(content)
+}
 
 /*
 

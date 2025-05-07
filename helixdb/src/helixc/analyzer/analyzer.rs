@@ -1127,7 +1127,8 @@ mod analyzer_tests {
 
     /// Convenience helper – parse text and return diagnostics.
     fn run(src: &str) -> Vec<Diagnostic> {
-        let parsed = HelixParser::parse_source(src)
+        let input = write_to_temp_file(vec![src]);
+        let parsed = HelixParser::parse_source(&input)
             .expect("parser should succeed – these tests are for the analyzer");
         analyze(&parsed)
     }

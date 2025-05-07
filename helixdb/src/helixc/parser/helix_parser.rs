@@ -11,6 +11,8 @@ use pest_derive::Parser;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    io::Write,
+    path::Path,
 };
 
 #[derive(Parser)]
@@ -19,10 +21,22 @@ pub struct HelixParser {
     source: Source,
 }
 
+pub struct Content {
+    pub content: String,
+    pub source: Source,
+    pub files: Vec<HxFile>,
+}
+
+pub struct HxFile {
+    pub name: String,
+    pub content: String,
+}
+
 impl Default for HelixParser {
     fn default() -> Self {
         HelixParser {
             source: Source {
+                source: String::new(),
                 node_schemas: Vec::new(),
                 edge_schemas: Vec::new(),
                 vector_schemas: Vec::new(),
@@ -35,12 +49,24 @@ impl Default for HelixParser {
 // AST Structures
 #[derive(Debug, Clone)]
 pub struct Source {
+    pub source: String,
     pub node_schemas: Vec<NodeSchema>,
     pub edge_schemas: Vec<EdgeSchema>,
     pub vector_schemas: Vec<VectorSchema>,
     pub queries: Vec<Query>,
 }
 
+impl Default for Source {
+    fn default() -> Self {
+        Source {
+            source: String::new(),
+            node_schemas: Vec::new(),
+            edge_schemas: Vec::new(),
+            vector_schemas: Vec::new(),
+            queries: Vec::new(),
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct NodeSchema {
     pub name: (Loc, String),
@@ -469,61 +495,71 @@ pub struct Closure {
 }
 
 impl HelixParser {
-    pub fn parse_source(input: &str) -> Result<Source, ParserError> {
-        let file = match HelixParser::parse(Rule::source, input) {
-            Ok(mut pairs) => {
-                let pair = pairs
-                    .next()
-                    .ok_or_else(|| ParserError::from("Empty input"))?;
-                pair
-            }
-            Err(e) => {
-                return Err(ParserError::from(e));
-            }
+    pub fn parse_source(input: &Content) -> Result<Source, ParserError> {
+        let mut source = Source {
+            source: String::new(),
+            node_schemas: Vec::new(),
+            edge_schemas: Vec::new(),
+            vector_schemas: Vec::new(),
+            queries: Vec::new(),
         };
 
-        let mut parser = HelixParser {
-            source: Source {
-                node_schemas: Vec::new(),
-                edge_schemas: Vec::new(),
-                vector_schemas: Vec::new(),
-                queries: Vec::new(),
-            },
-        };
-
-        let pairs = file.into_inner();
-        let mut remaining = HashSet::new();
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::node_def => parser
-                    .source
-                    .node_schemas
-                    .push(parser.parse_node_def(pair)?),
-                Rule::edge_def => parser
-                    .source
-                    .edge_schemas
-                    .push(parser.parse_edge_def(pair)?),
-                Rule::vector_def => parser
-                    .source
-                    .vector_schemas
-                    .push(parser.parse_vector_def(pair)?),
-                Rule::query_def => {
-                    // parser.source.queries.push(parser.parse_query_def(pairs.next().unwrap())?),
-                    remaining.insert(pair);
+        input.files.iter().try_for_each(|file| {
+            source.source.push_str(&file.content);
+            let pair = match HelixParser::parse(Rule::source, &file.content) {
+                Ok(mut pairs) => {
+                    let pair = pairs
+                        .next()
+                        .ok_or_else(|| ParserError::from("Empty input"))?;
+                    pair
                 }
-                Rule::EOI => (),
-                _ => return Err(ParserError::from("Unexpected rule encountered")),
+                Err(e) => {
+                    return Err(ParserError::from(e));
+                }
+            };
+            let mut parser = HelixParser {
+                source: source.clone(),
+            };
+
+            let pairs = pair.into_inner();
+            let mut remaining = HashSet::new();
+            for pair in pairs {
+                match pair.as_rule() {
+                    Rule::node_def => parser
+                        .source
+                        .node_schemas
+                        .push(parser.parse_node_def(pair)?),
+                    Rule::edge_def => parser
+                        .source
+                        .edge_schemas
+                        .push(parser.parse_edge_def(pair)?),
+                    Rule::vector_def => parser
+                        .source
+                        .vector_schemas
+                        .push(parser.parse_vector_def(pair)?),
+                    Rule::query_def => {
+                        // parser.source.queries.push(parser.parse_query_def(pairs.next().unwrap())?),
+                        remaining.insert(pair);
+                    }
+                    Rule::EOI => (),
+                    _ => return Err(ParserError::from("Unexpected rule encountered")),
+                }
             }
-        }
 
-        for pair in remaining {
-            // println!("{:?}", parser.source);
-            parser.source.queries.push(parser.parse_query_def(pair)?);
-        }
+            for pair in remaining {
+                // println!("{:?}", parser.source);
+                parser.source.queries.push(parser.parse_query_def(pair)?);
+            }
 
-        // parse all schemas first then parse queries using self
+            // parse all schemas first then parse queries using self
+            source.node_schemas.extend(parser.source.node_schemas);
+            source.edge_schemas.extend(parser.source.edge_schemas);
+            source.vector_schemas.extend(parser.source.vector_schemas);
+            source.queries.extend(parser.source.queries);
+            Ok(())
+        })?;
 
-        Ok(parser.source)
+        Ok(source)
     }
 
     fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
@@ -1417,36 +1453,36 @@ impl HelixParser {
         let inner = pair.clone().into_inner().next().unwrap();
         match inner.as_rule() {
             Rule::graph_step => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Node(self.parse_graph_step(inner)),
             }),
             Rule::object_step => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Object(self.parse_object_step(inner)?),
             }),
             Rule::closure_step => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Closure(self.parse_closure(inner)?),
             }),
             Rule::where_step => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Where(Box::new(self.parse_expression(inner)?)),
             }),
             Rule::range_step => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Range(self.parse_range(pair)?),
             }),
 
             Rule::bool_operations => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::BooleanOperation(self.parse_bool_operation(inner)?),
             }),
             Rule::count => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Count,
             }),
             Rule::ID => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Object(Object {
                     fields: vec![(
                         "id".to_string(),
@@ -1460,15 +1496,15 @@ impl HelixParser {
                 }),
             }),
             Rule::update => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Update(self.parse_update(inner)?),
             }),
             Rule::exclude_field => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::Exclude(self.parse_exclude(inner)?),
             }),
             Rule::AddE => Ok(Step {
-                loc: pair.loc(),
+                loc: inner.loc(),
                 step: StepType::AddEdge(self.parse_add_edge(inner, true)?),
             }),
             _ => Err(ParserError::from(format!(
@@ -1820,7 +1856,8 @@ mod tests {
         }
         "#;
 
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.node_schemas.len(), 1);
         let schema = &result.node_schemas[0];
         assert_eq!(schema.name.1, "User");
@@ -1840,7 +1877,8 @@ mod tests {
         }
         "#;
 
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
         assert_eq!(schema.name.1, "Follows");
@@ -1864,8 +1902,12 @@ mod tests {
             }
         }
         "#;
-
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = Content {
+            content: input.to_string(),
+            files: vec![],
+            source: Source::default(),
+        };
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
         assert_eq!(schema.name.1, "Follows");
@@ -1884,7 +1926,8 @@ mod tests {
             RETURN user
         "#;
 
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.queries.len(), 1);
         let query = &result.queries[0];
         assert_eq!(query.name, "FindUser");
@@ -1903,7 +1946,8 @@ mod tests {
             ageField <- user::{Age}
             RETURN nameField, ageField
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.queries.len(), 1);
         let query = &result.queries[0];
         assert_eq!(query.name, "fetchUsers");
@@ -1928,7 +1972,8 @@ mod tests {
             Age: I32
         }
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.node_schemas.len(), 1);
         let schema = &result.node_schemas[0];
         assert_eq!(schema.name.1, "USER");
@@ -1947,7 +1992,8 @@ mod tests {
             }
         }
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.edge_schemas.len(), 1);
         let schema = &result.edge_schemas[0];
         assert_eq!(schema.name.1, "FRIENDSHIP");
@@ -1977,7 +2023,8 @@ mod tests {
             }
         }
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.node_schemas.len(), 2);
         assert_eq!(result.edge_schemas.len(), 1);
     }
@@ -1996,7 +2043,8 @@ mod tests {
         condition2 <- user::{age}::GT(20)
         RETURN condition
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "logicalOps");
         assert_eq!(query.statements.len(), 3);
@@ -2009,7 +2057,8 @@ mod tests {
         result <- N::OutE<FRIENDSHIP>::InN::{Age}
         RETURN result
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "anonymousTraversal");
         assert_eq!(query.statements.len(), 1);
@@ -2025,7 +2074,8 @@ mod tests {
         RETURN fromUser, toUser
 
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
@@ -2039,7 +2089,8 @@ mod tests {
             result <- EXISTS(user::OutE::InN<User>)
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.queries.len(), 1);
         let query = &result.queries[0];
         assert_eq!(query.name, "userExists");
@@ -2050,13 +2101,19 @@ mod tests {
     #[test]
     fn test_multiple_return_values() {
         let input = r#"
+    N::USER {
+        Name: String,
+        Age: Int
+    }
+
     QUERY returnMultipleValues() =>
         user <- N<USER>("999")
         name <- user::{Name}
         age <- user::{Age}
         RETURN name, age
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 2);
@@ -2070,7 +2127,8 @@ mod tests {
         enriched <- user::{Name: "name", Follows: _::Out<Follows>::{Age}}
         RETURN enriched
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
     }
@@ -2084,7 +2142,8 @@ mod tests {
         friendCount <- activeFriends::COUNT
         RETURN friendCount
     "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
     }
@@ -2096,7 +2155,8 @@ mod tests {
         user <- AddN<User>({Name: "Alice"})
         RETURN user
     "#;
-        let result = match HelixParser::parse_source(input) {
+        let input = write_to_temp_file(vec![input]);
+        let result = match HelixParser::parse_source(&input) {
             Ok(result) => result,
             Err(e) => {
                 println!("{:?}", e);
@@ -2116,8 +2176,8 @@ mod tests {
         edge <- AddE<Rating>({Rating: 5, Date: "2025-01-01"})::To("123")::From("456")
         RETURN edge
     "#;
-
-        let result = match HelixParser::parse_source(input) {
+        let input = write_to_temp_file(vec![input]);
+        let result = match HelixParser::parse_source(&input) {
             Ok(result) => result,
             Err(e) => {
                 println!("{:?}", e);
@@ -2138,8 +2198,8 @@ mod tests {
         AddE<Follows>({Since: "1.0"})::From(user1)::To(user2)
         RETURN user1, user2
     "#;
-
-        let result = match HelixParser::parse_source(input) {
+        let input = write_to_temp_file(vec![input]);
+        let result = match HelixParser::parse_source(&input) {
             Ok(result) => result,
             Err(e) => {
                 println!("{:?}", e);
@@ -2160,8 +2220,8 @@ mod tests {
         user <- N<User>::WHERE(_::GT(2))
         RETURN user, follows
         "#;
-
-        let result = match HelixParser::parse_source(input) {
+        let input = write_to_temp_file(vec![input]);
+        let result = match HelixParser::parse_source(&input) {
             Ok(result) => result,
             Err(_e) => {
                 panic!();
@@ -2181,7 +2241,8 @@ mod tests {
             DROP N::OutE
             RETURN user
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "deleteUser");
         assert_eq!(query.parameters.len(), 1);
@@ -2197,7 +2258,8 @@ mod tests {
             l <- user::UPDATE({Name: "NewName", Age: 30})
             RETURN user
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "updateUser");
         assert_eq!(query.parameters.len(), 1);
@@ -2219,7 +2281,8 @@ mod tests {
             }
             RETURN result1, result2, result3
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.name, "complexTraversal");
         assert_eq!(query.statements.len(), 3);
@@ -2244,7 +2307,8 @@ mod tests {
             }
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
     }
@@ -2258,7 +2322,8 @@ mod tests {
             edge3 <- edge2::UPDATE({weight: 1.0, updated: "2024-03-01"})
             RETURN edge1, edge2, edge3
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 3);
@@ -2280,7 +2345,8 @@ mod tests {
             ))
             RETURN v1, result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 2);
@@ -2293,8 +2359,8 @@ mod tests {
         QUERY noReturn() =>
             result <- N<User>()
         "#;
-
-        let result = HelixParser::parse_source(missing_return);
+        let input = write_to_temp_file(vec![missing_return]);
+        let result = HelixParser::parse_source(&input);
         assert!(result.is_err());
 
         // Test invalid property access
@@ -2303,8 +2369,8 @@ mod tests {
             result <- N<User>::{}
             RETURN result
         "#;
-
-        let result = HelixParser::parse_source(invalid_props);
+        let input = write_to_temp_file(vec![invalid_props]);
+        let result = HelixParser::parse_source(&input);
         assert!(result.is_err());
     }
 
@@ -2330,7 +2396,8 @@ mod tests {
             }
         }
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         assert_eq!(result.node_schemas.len(), 1);
         assert_eq!(result.edge_schemas.len(), 1);
 
@@ -2363,7 +2430,8 @@ mod tests {
                 ::EQ("active")
             RETURN result, filtered, updated, has_updated
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 4);
         assert_eq!(query.return_values.len(), 4);
@@ -2379,7 +2447,8 @@ mod tests {
             })
             RETURN user
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.parameters.len(), 1);
     }
@@ -2392,7 +2461,8 @@ mod tests {
             mapped <- user::{name: "name", age: "age"}
             RETURN mapped
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
@@ -2408,7 +2478,8 @@ mod tests {
                 age
             }
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 1);
         assert_eq!(query.return_values.len(), 1);
@@ -2431,7 +2502,8 @@ mod tests {
             }
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
@@ -2445,7 +2517,8 @@ mod tests {
             filtered <- user::!{password, secretKey}
             RETURN filtered
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
@@ -2462,7 +2535,8 @@ mod tests {
             }
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
@@ -2481,7 +2555,8 @@ mod tests {
             })
             RETURN updated
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 2);
         assert_eq!(query.return_values.len(), 1);
@@ -2496,7 +2571,8 @@ mod tests {
             filtered <- result::WHERE(_::{likes}::GT(10))
             RETURN filtered
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 3);
         assert_eq!(query.return_values.len(), 1);
@@ -2519,7 +2595,8 @@ mod tests {
             }
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 4);
         assert_eq!(query.return_values.len(), 1);
@@ -2536,7 +2613,8 @@ mod tests {
             }
             RETURN result
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         // println!("\n\nresult: {:?}\n\n", result);
         let query = &result.queries[0];
         assert_eq!(query.statements.len(), 1);
@@ -2553,7 +2631,8 @@ mod tests {
                 }
             }::!{createdAt, lastUpdated}::{username: name, ..}
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
     }
@@ -2565,8 +2644,8 @@ mod tests {
             AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
-
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
 
@@ -2620,8 +2699,8 @@ mod tests {
             AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
-
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
 
@@ -2654,7 +2733,8 @@ mod tests {
         QUERY addVector(vector: [F64]) =>
             RETURN AddV<User>(vector)
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
     }
@@ -2666,7 +2746,8 @@ mod tests {
             BatchAddV<User>(vectors)
             RETURN "SUCCESS"
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
     }
@@ -2679,8 +2760,27 @@ mod tests {
         QUERY searchVector(vector: [F64], k: I32) =>
             RETURN SearchV<User>(vector, k)
         "#;
-        let result = HelixParser::parse_source(input).unwrap();
+        let input = write_to_temp_file(vec![input]);
+        let result = HelixParser::parse_source(&input).unwrap();
         let query = &result.queries[0];
         assert_eq!(query.return_values.len(), 1);
+    }
+}
+
+pub fn write_to_temp_file(content: Vec<&str>) -> Content {
+    let mut files = Vec::new();
+    for c in content {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(c.as_bytes()).unwrap();
+        let path = file.path().to_string_lossy().into_owned();
+        files.push(HxFile {
+            name: path,
+            content: c.to_string(),
+        });
+    }
+    Content {
+        content: String::new(),
+        files: files,
+        source: Source::default(),
     }
 }
