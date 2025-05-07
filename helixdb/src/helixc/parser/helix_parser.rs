@@ -518,7 +518,7 @@ impl HelixParser {
                 }
             };
             let mut parser = HelixParser {
-                source: source.clone(),
+                source: Source::default(),
             };
 
             let pairs = pair.into_inner();

@@ -556,7 +556,6 @@ impl<'a> Ctx<'a> {
         q: &'a Query,
         parent_ty: Option<Type<'a>>,
     ) -> Type<'a> {
-        println!("parent_ty: {:?}", parent_ty);
         let mut previous_step = None;
         let mut cur_ty = match &tr.start {
             StartNode::Node { types, .. } => {
@@ -604,14 +603,12 @@ impl<'a> Ctx<'a> {
                 Type::Unknown
             }),
             StartNode::Anonymous => {
-                println!("parent_ty: {:?}", parent_ty);
                 parent_ty.unwrap_or(Type::Unknown)
             }
         };
 
         // Track excluded fields for property validation
         let mut excluded: HashMap<&str, Loc> = HashMap::new();
-        println!("cur_ty: {:?}", cur_ty);
 
         // Stream through the steps
         for graph_step in &tr.steps {

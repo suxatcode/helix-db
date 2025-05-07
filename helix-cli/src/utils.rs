@@ -253,7 +253,6 @@ pub fn to_snake_case(s: &str) -> String {
 }
 
 fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
-    let content_str = String::new();
     let files = files
         .iter()
         .map(|file| {
@@ -264,8 +263,8 @@ fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
         .collect();
 
     let content = Content {
-        content: content_str,
-        files: files,
+        content: String::new(),
+        files,
         source: Source::default(),
     };
 
