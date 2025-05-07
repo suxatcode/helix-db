@@ -23,6 +23,9 @@ use std::{
 };
 use colored::*;
 
+use spinners::{Spinner, Spinners};
+
+
 pub mod args;
 mod instance_manager;
 mod utils;
@@ -120,7 +123,7 @@ fn main() {
                 }
             };
 
-            let spinner = create_spinner("Compiling Helix queries");
+            let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
 
             let num_files = files.len();
             let mut successes = HashMap::new();
@@ -133,7 +136,7 @@ fn main() {
                 let contents = match fs::read_to_string(file.path()) {
                     Ok(contents) => contents,
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to read files".red().bold()));
+                        sp.stop_with_message(format!("{}", "Failed to read files".red().bold()));
                         println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
@@ -161,35 +164,33 @@ fn main() {
             }
 
             if !errors.is_empty() {
-                spinner.finish_with_message(format!("{}", "Failed to compile some queries".red().bold()));
+                sp.stop_with_message(format!("{}", "Failed to compile some queries".red().bold()));
                 for (name, error) in errors {
                     println!("└── {} {}: {}", "Error:".red().bold(), name, error);
                 }
                 return;
             }
 
-            spinner.finish_with_message(
-                format!(
-                    "{} {} {}",
-                    "Successfully compiled".green().bold(),
-                    num_files,
-                    "query files".green().bold()
-                )
-            );
+            sp.stop_with_message(format!(
+                "{} {} {}",
+                "Successfully compiled".green().bold(),
+                num_files,
+                "query files".green().bold()
+            ));
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
             // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
             if local {
-                let spinner = create_spinner("Building Helix");
+                let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
                 match fs::write(file_path, code) {
                     Ok(_) => {
-                        spinner.finish_with_message(format!("{}", "Successfuly wrote queries file".green().bold()));
+                        sp.stop_with_message(format!("{}", "Successfuly wrote queries file".green().bold()));
                     }
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to write queries file".red().bold()));
+                        sp.stop_with_message(format!("{}", "Failed to write queries file".red().bold()));
                         println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
@@ -210,7 +211,7 @@ fn main() {
                 match runner.output() {
                     Ok(_) => {}
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to check Rust code".red().bold()));
+                        sp.stop_with_message(format!("{}", "Failed to check Rust code".red().bold()));
                         println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
@@ -226,16 +227,16 @@ fn main() {
 
                 match runner.output() {
                     Ok(_) => {
-                        spinner.finish_with_message(format!("{}", "Successfully built Helix".green().bold()));
+                        sp.stop_with_message(format!("{}", "Successfully built Helix".green().bold()));
                     }
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
                         println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
 
-                let spinner = create_spinner("Starting Helix instance");
+                let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
                 let instance_manager = InstanceManager::new().unwrap();
 
                 let binary_path = dirs::home_dir()
@@ -249,7 +250,7 @@ fn main() {
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        spinner.finish_with_message(format!("{}", "Successfully started Helix instance".green().bold()));
+                        sp.stop_with_message(format!("{}", "Successfully started Helix instance".green().bold()));
                         println!("\n└── Instance ID: {}", instance.id);
                         println!("└── Port: {}", instance.port);
                         println!("└── Available endpoints:");
@@ -258,7 +259,7 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        spinner.finish_with_message(format!("{}", "Failed to start Helix instance".red().bold()));
+                        sp.stop_with_message(format!("{}", "Failed to start Helix instance".red().bold()));
                         println!("└── {} {}", "Error:".red().bold(), e);
                     }
                 }
@@ -327,11 +328,11 @@ fn main() {
 
         args::CommandType::Start(command) => {
             let instance_manager = InstanceManager::new().unwrap();
-            let spinner = create_spinner("\tStarting Helix instance");
+            let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    spinner.finish_with_message(format!("{}", "Successfully restarted Helix instance".green().bold()));
+                    sp.stop_with_message(format!("{}", "Successfully restarted Helix instance".green().bold()));
                     println!("└── Instance ID: {}", instance.id);
                     println!("└── Port: {}", instance.port);
                     println!("└── Available endpoints:");
@@ -340,11 +341,11 @@ fn main() {
                     }
                 }
                 Ok(None) => {
-                    spinner.finish_with_message(format!("{}", "Instance not found or binary missing".red().bold()));
+                    sp.stop_with_message(format!("{}", "Instance not found or binary missing".red().bold()));
                     println!("└── Could not find instance with ID: {}", command.instance_id);
                 }
                 Err(e) => {
-                    spinner.finish_with_message(format!("{}", "Failed to restart instance".red().bold()));
+                    sp.stop_with_message(format!("{}", "Failed to restart instance".red().bold()));
                     println!("└── {} {}", "Error:".red().bold(), e);
                 }
             }
