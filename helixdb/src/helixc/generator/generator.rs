@@ -1495,7 +1495,7 @@ impl CodeGenerator {
         output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
         // todo conditionally do new_mut_from
 
-        let edge_type = add_edge
+        let edge_type_label = add_edge
             .edge_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
@@ -1546,7 +1546,7 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         output.push_str(&format!(
             ".add_e(\"{}\", {}, {}, {}, {}, {}, {})",
-            edge_type, props, possible_id, from_id, to_id, should_check, edge_type,
+            edge_type_label, props, possible_id, from_id, to_id, should_check, edge_type,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
 
