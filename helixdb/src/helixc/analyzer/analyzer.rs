@@ -137,7 +137,7 @@ impl<'a> Ctx<'a> {
     /// Validate that every edge references declared node types.
     fn check_schema(&mut self) {
         for edge in &self.src.edge_schemas {
-            if !self.node_set.contains(edge.from.1.as_str()) {
+            if !self.node_set.contains(edge.from.1.as_str()) && !self.vector_set.contains(edge.from.1.as_str()) {
                 self.push_schema_err(
                     &edge.from.1,
                     edge.from.0.clone(),
@@ -145,7 +145,7 @@ impl<'a> Ctx<'a> {
                     Some(format!("Declare `N::{}` before this edge", edge.from.1)),
                 );
             }
-            if !self.node_set.contains(edge.to.1.as_str()) {
+            if !self.node_set.contains(edge.to.1.as_str()) && !self.vector_set.contains(edge.to.1.as_str()) {
                 self.push_schema_err(
                     &edge.to.1,
                     edge.to.0.clone(),

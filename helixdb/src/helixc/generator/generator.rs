@@ -1861,6 +1861,14 @@ impl CodeGenerator {
                         self.value_to_rust(value)
                     ));
                 }
+                FieldValue::Identifier(id) => {
+                    output.push_str(&format!(
+                        "let {} = {}.check_property({});\n",
+                        to_snake_case(key),
+                        var_name,
+                        to_snake_case(id)
+                    ));
+                }
                 FieldValue::Empty => {}
                 _ => {
                     println!("unhandled field type: {:?}", field);
@@ -1947,12 +1955,28 @@ impl CodeGenerator {
                     to_snake_case(key),
                 ));
             }
+            FieldValue::Identifier(id) => {
+                output.push_str(&format!(
+                    r#"let {}_remapping = Remapping::new(false, None, Some(
+                        match {} {{
+                            Some(value) => ReturnValue::from(value.clone()),
+                            None => return Err(GraphError::ConversionError(
+                                "Property not found on {}".to_string(),
+                            )),
+                        }}
+                    ));"#,
+                    to_snake_case(key),
+                    to_snake_case(key),
+                    to_snake_case(key),
+                ));
+            }
             FieldValue::Empty => {
                 output.push_str(&format!(
                     "let {}_remapping = Remapping::new(false, None, None);\n",
                     to_snake_case(key)
                 ));
             }
+
             _ => {
                 println!("unhandled field type: {:?}", field);
                 panic!("unhandled field type");
