@@ -243,7 +243,7 @@ fn main() {
                             "{}",
                             "Successfully started Helix instance".green().bold()
                         ));
-                        println!("\n└── Instance ID: {}", instance.id);
+                        println!("└── Instance ID: {}", instance.id);
                         println!("└── Port: {}", instance.port);
                         println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
@@ -300,7 +300,7 @@ fn main() {
                             Ok(_) => {
                                 println!("{}", "Stopping all Helix instances".green().bold());
                                 for instance in instances {
-                                    println!("└── ID: {}", instance.id);
+                                    println!("└── {} {}", "ID:".green().bold(), instance.id);
                                 }
                             }
                             Err(e) => {
@@ -315,13 +315,11 @@ fn main() {
                             Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        // TODO: give a list of all instances to select with arrows or something
-                        println!(
-                            "{}",
-                            "Please specify --all or provide an instance ID"
-                                .yellow()
-                                .bold()
-                        );
+                        println!("{}", "Please specify --all or provide an instance ID".yellow().bold());
+                        println!("Running instances: ");
+                        for instance in instances {
+                            println!("└── {} {}", "ID:".green().bold(), instance.id);
+                        }
                     }
                 }
                 Err(e) => {
