@@ -1,4 +1,11 @@
-use crate::{args::HelixCLI, instance_manager::InstanceManager, utils::*};
+use crate::{
+    args::{
+        HelixCLI,
+        CommandType,
+    },
+    instance_manager::InstanceManager,
+    utils::*,
+};
 use clap::Parser;
 use colored::*;
 use helixdb::{
@@ -10,7 +17,6 @@ use helixdb::{
     ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
 };
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -26,7 +32,7 @@ fn main() {
     let args = HelixCLI::parse();
 
     match args.command {
-        args::CommandType::Deploy(command) => {
+        CommandType::Deploy(command) => {
             /* cases
                 - [ ] cargo is not installed
                 - [ ] helix is not installed
@@ -256,7 +262,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Instances(_) => {
+        CommandType::Instances(_) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
@@ -281,7 +287,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Stop(command) => {
+        CommandType::Stop(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
@@ -324,7 +330,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Start(command) => {
+        CommandType::Start(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
 
@@ -358,7 +364,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Compile(command) => {
+        CommandType::Compile(command) => {
             let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
             let path = if let Some(p) = &command.path {
                 p
@@ -409,7 +415,7 @@ fn main() {
             );
         }
 
-        args::CommandType::Check(command) => {
+        CommandType::Check(command) => {
             let mut sp = Spinner::new(Spinners::Dots9, "Checking Helix queries\n".into());
             let path = if let Some(p) = &command.path {
                 p
@@ -440,7 +446,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Install(command) => {
+        CommandType::Install(command) => {
             match Command::new("cargo").output() {
                 Ok(_) => {}
                 Err(_) => {
@@ -538,7 +544,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Test(command) => {
+        CommandType::Test(command) => {
             let path = if let Some(p) = command.path {
                 p
             } else {
@@ -566,7 +572,7 @@ fn main() {
             }
         }
 
-        args::CommandType::Init(command) => {
+        CommandType::Init(command) => {
             println!("Initialising Helix project...");
             let path = match command.path {
                 Some(path) => PathBuf::from(path),
@@ -605,7 +611,7 @@ fn main() {
             );
         }
 
-        args::CommandType::Ingest(command) => {
+        CommandType::Ingest(command) => {
             unimplemented!();
             /*
             match command.db_type.as_str() {
