@@ -506,6 +506,7 @@ impl HelixParser {
 
         input.files.iter().try_for_each(|file| {
             source.source.push_str(&file.content);
+            source.source.push_str("\n");
             let pair = match HelixParser::parse(Rule::source, &file.content) {
                 Ok(mut pairs) => {
                     let pair = pairs
