@@ -272,7 +272,6 @@ impl CodeGenerator {
             output.push_str("}\n\n");
 
             for param in &query.parameters {
-                println!("param: {:?}", param);
                 match &param.param_type {
                     FieldType::Object(fields) => {
                         output.push_str(&mut self.object_type_to_rust(&param.name, fields));
@@ -1657,7 +1656,6 @@ impl CodeGenerator {
     }
 
     fn value_type_to_rust(&mut self, value: &ValueType) -> String {
-        println!("value: {:?}", value);
         match value {
             ValueType::Literal(value) => self.value_to_rust(value),
             ValueType::Identifier(identifier) => format!("data.{}", to_snake_case(identifier)),
@@ -2097,7 +2095,6 @@ pub fn to_snake_case(s: &str) -> String {
     let mut prev_is_upper = false;
 
     while let Some(c) = chars.next() {
-        println!("c: {}", c);
         if c.is_uppercase() {
             if !result.is_empty()
                 && (!prev_is_upper || chars.peek().map_or(false, |next| next.is_lowercase()))
