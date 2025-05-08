@@ -1153,7 +1153,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *val != data.{})", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v != data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
@@ -1219,7 +1219,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val != {}))", prop_name, b));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *val != data.{})", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v != data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },

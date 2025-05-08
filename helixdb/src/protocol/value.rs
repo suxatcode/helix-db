@@ -38,6 +38,16 @@ impl PartialEq<i32> for Value {
     }
 }
 
+impl PartialEq<String> for Value {
+    fn eq(&self, other: &String) -> bool {
+        match self {
+            Value::String(s) => s == other,
+            _ => false,
+        }
+    }
+}
+
+
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.
 impl Serialize for Value {
