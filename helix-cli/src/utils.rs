@@ -1,12 +1,10 @@
 use crate::args::*;
 use colored::*;
-use colored::*;
 use helixdb::helixc::{
     analyzer::{analyzer::analyze, types::Source as HelixSource},
     generator::generator::CodeGenerator,
     parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
-use indicatif::{ProgressBar, ProgressStyle};
 use std::{
     fs,
     fs::DirEntry,

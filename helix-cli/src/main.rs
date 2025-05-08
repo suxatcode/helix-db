@@ -363,7 +363,6 @@ fn main() {
         }
 
         CommandType::Compile(command) => {
-            let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
             let path = if let Some(p) = &command.path {
                 p
             } else {
@@ -382,16 +381,18 @@ fn main() {
                     .unwrap_or_else(|| "./.helix/cache/generated/".to_string()),
             };
 
+            let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("{}", e);
+                    sp.stop_with_message(format!("{}", "Failed to read files".red().bold()));
+                    println!("└── {}", e);
                     return;
                 }
             };
 
             if files.is_empty() {
-                println!("{}", "No queries found, nothing to compile".red().bold());
+                sp.stop_with_message(format!("{}", "No queries found, nothing to compile".red().bold()));
                 return;
             }
 
@@ -406,11 +407,11 @@ fn main() {
             // write source to file
             let file_path = PathBuf::from(&output).join("queries.rs");
             fs::write(file_path, code.content).unwrap();
-            println!(
+            sp.stop_with_message(format!(
                 "{} {}",
                 "Successfully compiled queries to".green().bold(),
                 output
-            );
+            ));
         }
 
         CommandType::Check(command) => {
