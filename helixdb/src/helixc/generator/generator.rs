@@ -998,7 +998,7 @@ impl CodeGenerator {
             Step::Where(expr) => {
                 match &**expr {
                     Expression::BooleanLiteral(b) => {
-                        output.push_str("filter_ref(|_, _| {\n");
+                        output.push_str(".filter_ref(|_, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str(&format!("{}", b));
                         output.push_str("})\n");
@@ -1007,7 +1007,7 @@ impl CodeGenerator {
                         output.push_str(&mut self.generate_exists_check(traversal, query));
                     }
                     Expression::And(exprs) => {
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -1022,7 +1022,7 @@ impl CodeGenerator {
                         output.push_str("})\n");
                     }
                     Expression::Or(exprs) => {
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -1038,7 +1038,7 @@ impl CodeGenerator {
                     }
                     Expression::Traversal(_) => {
                         // For traversal-based conditions
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -1153,7 +1153,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *val != data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
@@ -1165,7 +1165,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val > {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val > {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val > data.{}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GT */"),
                                     },
@@ -1177,7 +1177,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val >= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val >= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val >= data.{}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GTE */"),
                                     },
@@ -1189,7 +1189,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val < {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val < {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val < data.{}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LT */"),
                                     },
@@ -1201,7 +1201,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val <= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val <= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val <= data.{}))", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LTE */"),
                                     },
@@ -1219,7 +1219,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val != {}))", prop_name, b));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *val != data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },
@@ -1251,7 +1251,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count == {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count == {}", id));
+                                            output.push_str(&format!("count == data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
@@ -1260,7 +1260,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count > {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count > {}", id));
+                                            output.push_str(&format!("count > data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GT */"),
                                     },
@@ -1269,7 +1269,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count < {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count < {}", id));
+                                            output.push_str(&format!("count < data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LT */"),
                                     },
@@ -1278,7 +1278,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count >= {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count >= {}", id));
+                                            output.push_str(&format!("count >= data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GTE */"),
                                     },
@@ -1287,7 +1287,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count <= {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count <= {}", id));
+                                            output.push_str(&format!("count <= data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LTE */"),
                                     },
@@ -1296,7 +1296,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count != {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count != {}", id));
+                                            output.push_str(&format!("count != data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },

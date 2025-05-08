@@ -29,6 +29,15 @@ pub enum Value {
     Empty,
 }
 
+impl PartialEq<i32> for Value {
+    fn eq(&self, other: &i32) -> bool {
+        match self {
+            Value::I32(i) => i == other,
+            _ => false,
+        }
+    }
+}
+
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.
 impl Serialize for Value {
