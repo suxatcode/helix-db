@@ -73,6 +73,14 @@ impl PartialOrd<i64> for Value {
     }
 }
 
+impl PartialOrd<i32> for Value {
+    fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
+        match self {
+            Value::I32(i) => i.partial_cmp(other),
+            _ => None,
+        }
+    }
+}
 impl PartialOrd<f64> for Value {
     fn partial_cmp(&self, other: &f64) -> Option<Ordering> {
         match self {
@@ -81,6 +89,8 @@ impl PartialOrd<f64> for Value {
         }
     }
 }
+
+
 
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.
