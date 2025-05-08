@@ -1683,7 +1683,7 @@ impl CodeGenerator {
                             var_name,
                         ));
                     } else {
-                        println!("Unhandled return value: {:?}", expr);
+                        println!("Unhandled traversal return value: {:?}", expr);
                         unreachable!()
                     }
                 }
