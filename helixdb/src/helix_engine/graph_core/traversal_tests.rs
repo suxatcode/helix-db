@@ -1156,6 +1156,60 @@ fn test_out_n() {
     assert_eq!(traversal[0].id(), person1.id);
 }
 
+#[test]
+fn test_edge_properties() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node1 = storage
+        .create_node(&mut txn, "person", props!(), None, None)
+        .unwrap();
+    let node2 = storage
+        .create_node(&mut txn, "person", props!(), None, None)
+        .unwrap();
+    let props = props! { "since" => 2020, "date" => 102 };
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props.clone(),
+            Some(v6_uuid()),
+            node1.id,
+            node2.id,
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let edge = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node1.id)
+        .out_e("knows")
+        .filter_ref(|val, _| {
+            if let Ok(val) = val {
+                println!("val: {:?}", val.check_property("date"));
+                val.check_property("date")
+                    .map_or(false, |v| {
+                        println!("v: {:?}", v);
+                        println!("v: {:?}", *v >= 3);
+                        *v >= 3
+                    })
+            } else {
+                false
+            }
+        })
+        .collect_to::<Vec<_>>();
+    let edge = edge.first().unwrap();
+    match edge {
+        TraversalVal::Edge(edge) => {
+            assert_eq!(edge.properties, props.into_iter().collect());
+        }
+        _ => {
+            panic!("Expected Edge value");
+        }
+    }
+}
+
 // #[test]
 // fn test_shortest_mutual_path() {
 //     let (storage, _temp_dir) = setup_test_db();
@@ -1223,7 +1277,7 @@ fn huge_traversal() {
     let mut nodes = Vec::with_capacity(65_000_000);
     let mut start = Instant::now();
 
-    for i in 0..1_000_000 {
+    for i in 0..100_000 {
         // nodes.push(Node::new("person", props! { "name" => i}));
         nodes.push((v6_uuid()));
     }
@@ -1241,7 +1295,7 @@ fn huge_traversal() {
     println!("time taken to add nodes: {:?}", now.elapsed());
     let start = Instant::now();
     let mut edges = Vec::with_capacity(6000 * 2000);
-    for i in 0..1_000_000 {
+    for i in 0..100_000_000 {
         let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
         let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
         // edges.push(Edge {
@@ -1293,7 +1347,7 @@ fn huge_traversal() {
         .out("knows")
         .out("knows")
         .dedup()
-        .range(0, 100)
+        .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
     println!("traversal: {:?}", traversal);
@@ -1347,4 +1401,5 @@ fn huge_traversal() {
     //     "size of mdb file on disk: {:?}",
     //     storage.graph_env.real_disk_size()
     // );
+    assert!(false);
 }

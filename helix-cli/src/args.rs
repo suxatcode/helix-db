@@ -5,6 +5,7 @@ pub mod version {
     pub const NAME: &str = "Helix CLI";
     pub const AUTHORS: &str = "Helix Team";
 }
+
 use version::{VERSION, NAME, AUTHORS};
 
 #[derive(Debug, Parser)]
@@ -43,9 +44,6 @@ pub enum CommandType {
     /// Start a stopped Helix instance
     Start(StartCommand),
 
-    /// Update Helix CLI to the latest version
-    Update(UpdateCommand),
-
     /// Ingest data into Helix
     Ingest(IngestCommand),
 }
@@ -64,9 +62,6 @@ pub struct DeployCommand {
 
     #[clap(short, long, help = "Port to run the instance on")]
     pub port: Option<u16>,
-
-    #[clap(short, long, help = "Should generate python bindings")]
-    pub gen_py: bool,
 }
 
 #[derive(Debug, Args)]
@@ -144,10 +139,6 @@ pub struct StartCommand {
 }
 
 #[derive(Debug, Args)]
-#[clap(name = "update", about = "Update Helix CLI to the latest version")]
-pub struct UpdateCommand {}
-
-#[derive(Debug, Args)]
 #[clap(name = "ingest", about = "Ingest data into Helix")]
 pub struct IngestCommand {
     /// Type of database to ingest from ('sqlite' or 'pg')
@@ -175,11 +166,13 @@ pub struct IngestCommand {
     pub use_ssl: bool,
 }
 
+// TODO: make this better or don't use a custom CliError thing
 #[derive(Debug)]
 pub enum CliError {
     Io(std::io::Error),
     New(String),
     ConfigFileNotFound,
+    CompileFailed,
 }
 
 impl std::fmt::Display for CliError {
@@ -188,6 +181,7 @@ impl std::fmt::Display for CliError {
             CliError::Io(e) => write!(f, "IO error: {}", e),
             CliError::New(msg) => write!(f, "{}", msg),
             CliError::ConfigFileNotFound => write!(f, "Config file not found"),
+            CliError::CompileFailed => write!(f, "Failed to compile queries"),
         }
     }
 }

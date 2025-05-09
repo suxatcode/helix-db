@@ -67,7 +67,7 @@ impl Config {
         "m": 16,
         "ef_construction": 128,
         "ef_search": 768,
-        "db_max_size": 20
+        "db_max_size": 10_000
     },
     "graph_config": {
         "secondary_indices": []
@@ -82,10 +82,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             vector_config: VectorConfig {
-                m: Some(20),
-                ef_construction: Some(256),
+                m: Some(25),
+                ef_construction: Some(512),
                 ef_search: Some(768),
-                db_max_size: Some(20),
+                db_max_size: Some(10_000),
             },
             graph_config: GraphConfig {
                 secondary_indices: None,

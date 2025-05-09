@@ -1,199 +1,74 @@
+use crate::{
+    args::{
+        HelixCLI,
+        CommandType,
+    },
+    instance_manager::InstanceManager,
+    utils::*,
+};
+use clap::Parser;
+use colored::*;
 use helixdb::{
     helix_engine::graph_core::config::Config,
     helixc::{
-        generator::generator::CodeGenerator,
-        parser::helix_parser::{HelixParser, Source},
+        analyzer::analyzer::analyze, generator::generator::CodeGenerator,
+        parser::helix_parser::HelixParser,
     },
-    ingestion_engine::{
-        postgres_ingestion::PostgresIngestor,
-        sql_ingestion::SqliteIngestor,
-    },
+    ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
 };
-use args::{CliError, HelixCLI};
-use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
-use instance_manager::InstanceManager;
-use std::path::PathBuf;
 use std::{
-    collections::HashMap,
-    fs::{self, DirEntry},
-    io::ErrorKind,
-    net::{SocketAddr, TcpListener},
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Duration,
 };
+
+use spinners::{Spinner, Spinners};
 
 pub mod args;
 mod instance_manager;
-const DB_DIR: &str = "helixdb-cfg/";
-
-fn check_helix_installation() -> Result<PathBuf, String> {
-    let home_dir = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let repo_path = home_dir.join(".helix/repo/helix-db");
-    let container_path = repo_path.join("helix-container");
-    let cargo_path = container_path.join("Cargo.toml");
-
-    // Check if main repo directory exists and is a directory
-    if !repo_path.exists() || !repo_path.is_dir() {
-        return Err("Helix repo is not installed. Please run `helix install` first.".to_string());
-    }
-
-    // Check if helix-container exists and is a directory
-    if !container_path.exists() || !container_path.is_dir() {
-        return Err(
-            "Helix container is missing. Please run `helix install` to repair the installation."
-                .to_string(),
-        );
-    }
-
-    // Check if Cargo.toml exists in helix-container
-    if !cargo_path.exists() {
-        return Err("Helix container's Cargo.toml is missing. Please run `helix install` to repair the installation.".to_string());
-    }
-
-    Ok(container_path)
-}
-
-fn find_available_port(start_port: u16) -> Option<u16> {
-    let mut port = start_port;
-    while port < 65535 {
-        let addr = format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap();
-        match TcpListener::bind(addr) {
-            Ok(listener) => {
-                drop(listener);
-                let localhost = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
-                match TcpListener::bind(localhost) {
-                    Ok(local_listener) => {
-                        drop(local_listener);
-                        return Some(port);
-                    }
-                    Err(e) => {
-                        //println!("Error binding to {}: {:?}", addr, e);
-                        if e.kind() != ErrorKind::AddrInUse {
-                            return None;
-                        }
-                        port += 1;
-                        continue;
-                    }
-                }
-            }
-            Err(e) => {
-                if e.kind() != ErrorKind::AddrInUse {
-                    return None;
-                }
-                port += 1;
-                continue;
-            }
-        }
-    }
-    None
-}
-
-fn create_spinner(message: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("{prefix:>10.cyan.bold} {spinner:.green} {wide_msg}")
-            .unwrap(),
-    );
-    spinner.set_message(message.to_string());
-    spinner.set_prefix("🔄");
-    spinner.enable_steady_tick(Duration::from_millis(80));
-    spinner
-}
-
-fn finish_spinner_with_message(spinner: &ProgressBar, success: bool, message: &str) {
-    let prefix = if success { "✅" } else { "❌" };
-    spinner.set_prefix(prefix);
-    spinner.finish_with_message(message.to_string());
-}
-
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut prev_is_uppercase = false;
-
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 && !prev_is_uppercase {
-                result.push('_');
-            }
-            result.push(c.to_lowercase().next().unwrap());
-            prev_is_uppercase = true;
-        } else {
-            result.push(c);
-            prev_is_uppercase = false;
-        }
-    }
-    result
-}
-
-fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
-    let status = Command::new("curl")
-        .args(&["-sSL", "https://install.helix-db.com"])
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            finish_spinner_with_message(&spinner, false, "Failed to start curl");
-            e
-        })?
-        .stdout
-        .ok_or_else(|| {
-            finish_spinner_with_message(&spinner, false, "Failed to capture curl output");
-            "Failed to capture curl output"
-        })?;
-
-    let status = Command::new("bash").stdin(status).status().map_err(|e| {
-        finish_spinner_with_message(&spinner, false, "Failed to execute install script");
-        e
-    })?;
-
-    if status.success() {
-        finish_spinner_with_message(&spinner, true, "Successfully updated Helix CLI");
-        Ok(())
-    } else {
-        finish_spinner_with_message(&spinner, false, "Update script failed");
-        Err(format!("Exit code: {}", status).into())
-    }
-}
+mod utils;
 
 fn main() {
     let args = HelixCLI::parse();
+
     match args.command {
-        args::CommandType::Update(_) => {
-            unimplemented!();
-            return;
-            let spinner = create_spinner("Updating Helix CLI");
-            if let Err(e) = update_cli(&spinner) {
-                println!("\t└── {}", e);
-            }
-        }
-        args::CommandType::Deploy(command) => {
-            // check if cargo is installed
-            let mut runner = Command::new("cargo");
-            match runner.output() {
+        CommandType::Deploy(command) => {
+            /* cases
+                - [ ] cargo is not installed
+                - [ ] helix is not installed
+                - [ ] default port not available
+                - [ ] no port available
+                - [ ] invalid queries path
+                - [ ] no queries found to compile
+                - [ ] failed to compile some queries
+                - [ ] failed to check rust code
+                - [ ] failed to build helix
+                - [ ] failed to start helix
+            */
+
+            match Command::new("cargo").output() {
                 Ok(_) => {}
-                Err(e) => {
-                    println!("\t❌ Cargo is not installed");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                Err(_) => {
+                    println!("{}", "Cargo is not installed".red().bold());
                     return;
                 }
             }
 
-            // check helix installation
-            let _ = match check_helix_installation() {
-                Ok(path) => path,
+            match check_helix_installation() {
+                Ok(_) => {}
                 Err(_) => {
-                    println!("\t❌ Helix is not installed. Please run `helix install` first.");
+                    println!(
+                        "{}",
+                        "Helix is not installed. Please run `helix install` first."
+                            .red()
+                            .bold()
+                    );
                     return;
                 }
             };
 
             let path = get_cfg_deploy_path(command.path).unwrap();
 
-            // output path
             let output = match command.output {
                 Some(output) => output,
                 None => dirs::home_dir()
@@ -207,130 +82,91 @@ fn main() {
 
             let start_port = match command.port {
                 Some(port) => port,
-                None => 6969,
+                None => 6969, // TODO: no more 6969
             };
 
             let port = match find_available_port(start_port) {
                 Some(port) => {
                     if port != start_port {
                         println!(
-                            "\t⚠️  Port {} is in use, using port {} instead",
-                            start_port, port
+                            "{} {} {} {} {}",
+                            "Port".yellow(),
+                            start_port,
+                            "is in use, using port".yellow(),
+                            port,
+                            "instead".yellow(),
                         );
                     }
                     port
                 }
                 None => {
-                    println!("\t❌ No available ports found starting from {}", start_port);
+                    println!(
+                        "{} {}",
+                        "No available ports found starting from".red().bold(),
+                        start_port
+                    );
                     return;
                 }
             };
 
-            // local flag
             let local = command.local;
 
             // TODO: remove this once remote instance is supported
             if !local {
-                println!("Building for remote instance is not supported yet, use --local flag to build for local machine");
-                println!("Example: helix deploy --local");
-                println!();
-                println!("Building for local machine will be available within the next 2 weeks");
+                println!("{}", "Building for remote instance is not supported yet, use --local flag to build for local machine".yellow().bold());
+                println!("└── Example: helix deploy --local");
                 return;
             }
 
-            // check and read files
             let files = match check_and_read_files(&path) {
-                Ok(files) => files,
+                Ok(files) if !files.is_empty() => files,
+                Ok(_) => {
+                    println!("{}", "No queries found, nothing to compile".red().bold());
+                    return;
+                }
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
-            if files.is_empty() {
-                println!("\tNo queries found, nothing to compile");
-                return;
-            }
 
-            // create progress spinner
-            let spinner = create_spinner("Compiling Helix queries");
-            // spinner.set_style(
-            //     ProgressStyle::default_spinner()
-            //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-            //         .template("{spinner:.green.bold} {msg}")
-            //         .unwrap(),
-            // );
-            // number of files
-            let numb_of_files = files.len();
-            let mut successes = HashMap::new();
-            let mut errors = HashMap::new();
-            let mut code = String::new();
-            let mut generator = CodeGenerator::new();
-            code.push_str(&generator.generate_headers());
-            for file in files {
-                let contents = match fs::read_to_string(file.path()) {
-                    Ok(contents) => contents,
-                    Err(e) => {
-                        spinner.finish_with_message("❌ Failed to read files");
-                        println!("{}", e);
-                        return;
-                    }
-                };
-                match HelixParser::parse_source(&contents) {
-                    Ok(source) => {
-                        code.push_str(&generator.generate_source(&source));
-                        successes.insert(file.file_name().to_string_lossy().into_owned(), source);
-                    }
-                    Err(e) => {
-                        errors.insert(file.file_name().to_string_lossy().into_owned(), e);
-                    }
+            let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
+
+            let num_files = files.len();
+
+            let code = match generate(&files) {
+                Ok(code) => code,
+                Err(e) => {
+                    sp.stop_with_message(format!("{}", e.to_string().red().bold()));
+                    return;
                 }
-            }
+            };
 
-            if !errors.is_empty() {
-                finish_spinner_with_message(&spinner, false, "Failed to compile some queries");
-                for (name, error) in errors {
-                    println!("\t❌ {}: {}", name, error);
-                }
-                return;
-            }
-
-            finish_spinner_with_message(
-                &spinner,
-                true,
-                &format!("Successfully compiled {} query files", numb_of_files),
-            );
+            sp.stop_with_message(format!(
+                "{} {} {}",
+                "Successfully compiled".green().bold(),
+                num_files,
+                "query files".green().bold()
+            ));
 
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
             // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
             if local {
-                let spinner = create_spinner("Building Helix");
-                // spinner.set_style(
-                //     ProgressStyle::default_spinner()
-                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-                //         .template("{spinner:.green.bold} {msg}")
-                //         .unwrap(),
-                // );
                 let file_path = PathBuf::from(&output).join("src/queries.rs");
-                match fs::write(file_path, code) {
+                match fs::write(file_path, code.content) {
                     Ok(_) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            true,
-                            "Successfully wrote queries file",
-                        );
+                        println!("{}", "Successfully wrote queries file".green().bold());
                     }
                     Err(e) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            false,
-                            "Failed to write queries file",
-                        );
-                        println!("\t└── {}", e);
+                        println!("{}", "Failed to write queries file".red().bold());
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
+
+                let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
 
                 // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
                 let config_path = PathBuf::from(&output).join("src/config.hx.json");
@@ -347,8 +183,11 @@ fn main() {
                 match runner.output() {
                     Ok(_) => {}
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to check Rust code");
-                        println!("\t└── {}", e);
+                        sp.stop_with_message(format!(
+                            "{}",
+                            "Failed to check Rust code".red().bold()
+                        ));
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
@@ -357,157 +196,178 @@ fn main() {
                 runner
                     .arg("build")
                     .arg("--release")
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .current_dir(PathBuf::from(&output)); // TODO: build only in helix-container/ dir
+                    .current_dir(PathBuf::from(&output)) // TODO: build only in helix-container/ dir
+                    .env("RUSTFLAGS", "-Awarnings");
 
                 match runner.output() {
-                    Ok(_) => {
-                        finish_spinner_with_message(&spinner, true, "Successfully built Helix");
+                    Ok(output) => {
+                        if output.status.success() {
+                            sp.stop_with_message(format!(
+                                "{}",
+                                "Successfully built Helix".green().bold()
+                            ));
+                        } else {
+                            sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            if !stderr.is_empty() {
+                                println!("└── {} {}", "Error:\n".red().bold(), stderr);
+                            }
+                            return;
+                        }
                     }
                     Err(e) => {
-                        finish_spinner_with_message(&spinner, false, "Failed to build Helix");
-                        println!("\t└── {}", e);
+                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                        println!("└── {} {}", "Error:".red().bold(), e);
                         return;
                     }
                 }
 
-                let spinner = create_spinner("Starting Helix instance");
-                // spinner.set_style(
-                //     ProgressStyle::default_spinner()
-                //         .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈")
-                //         .template("{spinner:.green.bold} {msg}")
-                //         .unwrap(),
-                // );
+                let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
+
                 let instance_manager = InstanceManager::new().unwrap();
 
                 let binary_path = dirs::home_dir()
                     .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
                     .unwrap();
 
-                let endpoints: Vec<String> = successes
-                    .values()
-                    .flat_map(|source| source.queries.iter().map(|q| to_snake_case(&q.name)))
+                let endpoints: Vec<String> = code
+                    .source
+                    .queries
+                    .iter()
+                    .map(|q| to_snake_case(&q.name))
                     .collect();
 
                 match instance_manager.start_instance(&binary_path, port, endpoints) {
                     Ok(instance) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            true,
-                            "Successfully started Helix instance",
-                        );
-                        println!("\n\t└── Instance ID: {}", instance.id);
-                        println!("\t└── Port: {}", instance.port);
-                        println!("\t└── Available endpoints:");
+                        sp.stop_with_message(format!(
+                            "{}",
+                            "Successfully started Helix instance".green().bold()
+                        ));
+                        println!("└── Instance ID: {}", instance.id);
+                        println!("└── Port: {}", instance.port);
+                        println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
-                            println!("\t    └── /{}", endpoint);
+                            println!("    └── /{}", endpoint);
                         }
                     }
                     Err(e) => {
-                        finish_spinner_with_message(
-                            &spinner,
-                            false,
-                            "Failed to start Helix instance",
-                        );
-                        println!("\t└── {}", e);
+                        sp.stop_with_message(format!(
+                            "{}",
+                            "Failed to start Helix instance".red().bold()
+                        ));
+                        println!("└── {} {}", "Error:".red().bold(), e);
+                        return;
                     }
                 }
             }
         }
-        args::CommandType::Instances(_) => {
+
+        CommandType::Instances(_) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
                     if instances.is_empty() {
-                        println!("\tNo running Helix instances");
+                        println!("No running Helix instances");
                         return;
                     }
-                    println!("\tRunning Helix instances:");
+                    println!("{}", "Running Helix instances".green().bold());
                     for instance in instances {
-                        println!("\tID: {}", instance.id);
-                        println!("\t  Port: {}", instance.port);
-                        println!("\t  Started at: {}", instance.started_at);
-                        println!("\t  Available endpoints:");
+                        println!("└── Instance ID: {}", instance.id);
+                        println!("└── Port: {}", instance.port);
+                        println!("└── Available endpoints:");
                         for endpoint in instance.available_endpoints {
-                            println!("\t    /{}", endpoint);
+                            println!("    └── /{}", endpoint);
                         }
                         println!();
                     }
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to list instances: {}", e);
+                    println!("{} {}", "Failed to list instances:".red().bold(), e);
                 }
             }
         }
-        args::CommandType::Stop(command) => {
+
+        CommandType::Stop(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             match instance_manager.list_instances() {
                 Ok(instances) => {
                     if instances.is_empty() {
-                        println!("\tNo running Helix instances");
+                        println!("No running Helix instances");
                         return;
                     }
                     if command.all {
                         match instance_manager.stop_all_instances() {
-                            Ok(_) => println!("\t✅ Stopped all Helix instances"),
-                            Err(e) => println!("\t❌ Failed to stop instances: {}", e),
+                            Ok(_) => {
+                                println!("{}", "Stopping all Helix instances".green().bold());
+                                for instance in instances {
+                                    println!("└── {} {}", "ID:".green().bold(), instance.id);
+                                }
+                            }
+                            Err(e) => {
+                                println!("{} {}", "Failed to stop instances:".red().bold(), e)
+                            }
                         }
                     } else if let Some(instance_id) = command.instance_id {
                         match instance_manager.stop_instance(&instance_id) {
-                            Ok(_) => println!("\t✅ Stopped instance {}", instance_id),
-                            Err(e) => println!("\t❌ Failed to stop instance: {}", e),
+                            Ok(_) => {
+                                println!("{} {}", "Stopped instance".green().bold(), instance_id)
+                            }
+                            Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        println!("\tPlease specify --all or provide an instance ID");
+                        println!("{}", "Please specify --all or provide an instance ID".yellow().bold());
+                        println!("Running instances: ");
+                        for instance in instances {
+                            println!("└── {} {}", "ID:".green().bold(), instance.id);
+                        }
                     }
-
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to find instances: {}", e);
+                    println!("{} {}", "Failed to find instances:".red().bold(), e);
                 }
             }
         }
-        args::CommandType::Start(command) => {
+
+        CommandType::Start(command) => {
             let instance_manager = InstanceManager::new().unwrap();
-            let spinner = create_spinner("\tStarting Helix instance");
+            let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
 
             match instance_manager.restart_instance(&command.instance_id) {
                 Ok(Some(instance)) => {
-                    finish_spinner_with_message(
-                        &spinner,
-                        true,
-                        "Successfully restarted Helix instance",
-                    );
-                    println!("\t└── Instance ID: {}", instance.id);
-                    println!("\t└── Port: {}", instance.port);
-                    println!("\t└── Available endpoints:");
+                    sp.stop_with_message(format!(
+                        "{}",
+                        "Successfully restarted Helix instance".green().bold()
+                    ));
+                    println!("└── Instance ID: {}", instance.id);
+                    println!("└── Port: {}", instance.port);
+                    println!("└── Available endpoints:");
                     for endpoint in instance.available_endpoints {
-                        println!("\t    └── /{}", endpoint);
+                        println!("    └── /{}", endpoint);
                     }
                 }
                 Ok(None) => {
-                    finish_spinner_with_message(
-                        &spinner,
-                        false,
-                        "Instance not found or binary missing",
-                    );
+                    sp.stop_with_message(format!(
+                        "{}",
+                        "Instance not found or binary missing".red().bold()
+                    ));
                     println!(
-                        "\t└── Could not find instance with ID: {}",
+                        "└── Could not find instance with ID: {}",
                         command.instance_id
                     );
                 }
                 Err(e) => {
-                    finish_spinner_with_message(&spinner, false, "Failed to restart instance");
-                    println!("\t└── {}", e);
+                    sp.stop_with_message(format!("{}", "Failed to restart instance".red().bold()));
+                    println!("└── {} {}", "Error:".red().bold(), e);
                 }
             }
         }
-        args::CommandType::Compile(command) => {
+
+        CommandType::Compile(command) => {
+            let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("No path provided, defaulting to '{}'", DB_DIR);
                 DB_DIR
             };
 
@@ -525,91 +385,79 @@ fn main() {
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{}", e);
                     return;
                 }
             };
 
             if files.is_empty() {
-                println!("\tNo queries found, nothing to compile");
+                println!("{}", "No queries found, nothing to compile".red().bold());
                 return;
             }
 
-            let source = match compile_hql_to_source(&files) {
-                Ok(source) => source,
+            let code = match generate(&files) {
+                Ok(code) => code,
                 Err(e) => {
-                    println!("\n❌ Failed to parse source");
-                    println!("|");
-                    println!("└─── {}", e);
+                    sp.stop_with_message(format!("{}", e.to_string().red().bold()));
                     return;
                 }
             };
-            println!("\t✅ Successfully parsed source {:?}", source);
-            let mut code = String::new();
-            let mut generator = CodeGenerator::new();
-            code.push_str(&generator.generate_headers());
-            code.push_str(&generator.generate_source(&source));
 
             // write source to file
             let file_path = PathBuf::from(&output).join("queries.rs");
-            fs::write(file_path, code).unwrap();
-            println!("\t✅ Successfully compiled queries to {}", output);
+            fs::write(file_path, code.content).unwrap();
+            println!(
+                "{} {}",
+                "Successfully compiled queries to".green().bold(),
+                output
+            );
         }
-        args::CommandType::Check(command) => {
+
+        CommandType::Check(command) => {
+            let mut sp = Spinner::new(Spinners::Dots9, "Checking Helix queries\n".into());
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("{} '{}'", "No path provided, defaulting to".bold(), DB_DIR);
                 DB_DIR
             };
 
             let files = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
 
             if files.is_empty() {
-                println!("\tNo queries found, nothing to compile");
+                println!("{}", "No queries found, nothing to compile".red().bold());
                 return;
             }
 
-            match compile_hql_to_source(&files) {
-                Ok(_) => {
-                    println!("\t✅ Successfully parsed source");
-                }
+            match generate(&files) {
+                Ok(code) => {}
                 Err(e) => {
-                    println!("\n\t❌ Failed to parse source");
-                    println!("\t|");
-                    println!("\t└─ {}", e);
+                    sp.stop_with_message(format!("{}", e.to_string().red().bold()));
                     return;
                 }
             }
         }
-        args::CommandType::Install(command) => {
-            // check if cargo is installed
-            let mut runner = Command::new("cargo");
-            runner.arg("check");
-            match runner.output() {
+
+        CommandType::Install(command) => {
+            match Command::new("cargo").output() {
                 Ok(_) => {}
-                Err(e) => {
-                    println!("\t❌ Cargo is not installed");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                Err(_) => {
+                    println!("{}", "Cargo is not installed".red().bold());
+                    return;
                 }
             }
 
-            // check if git is installed
-            let mut runner = Command::new("git");
-            runner.arg("version");
-            match runner.output() {
+            match Command::new("git").arg("version").output() {
                 Ok(_) => {}
-                Err(e) => {
-                    println!("\t❌ Git is not installed");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                Err(_) => {
+                    println!("{}", "Git is not installed".red().bold());
+                    return;
                 }
             }
 
@@ -617,11 +465,11 @@ fn main() {
                 Some(path) => {
                     let path = PathBuf::from(path);
                     if !path.is_dir() {
-                        println!("\t❌ Path is not a directory");
+                        println!("{}", "Path is not a directory".red().bold());
                         return;
                     }
                     if !path.exists() {
-                        println!("\t❌ Path does not exist");
+                        println!("{}", "Path does not exist".red().bold());
                         return;
                     }
                     path
@@ -631,7 +479,7 @@ fn main() {
                     let home_dir = match dirs::home_dir() {
                         Some(dir) => dir,
                         None => {
-                            println!("\t❌ Could not determine home directory");
+                            println!("{}", "Could not determine home directory".red().bold());
                             return;
                         }
                     };
@@ -643,7 +491,8 @@ fn main() {
                 && repo_path.clone().join("helix-db").is_dir()
             {
                 println!(
-                    "\t✅ Helix repo already exists at {}",
+                    "{} {}",
+                    "Helix repo already exists at".yellow().bold(),
                     repo_path.join("helix-db").display()
                 );
                 return;
@@ -652,13 +501,14 @@ fn main() {
             // Create the directory structure if it doesn't exist
             match fs::create_dir_all(&repo_path) {
                 Ok(_) => println!(
-                    "\t✅ Created directory structure at {}",
+                    "{} {}",
+                    "Created directory structure at".green().bold(),
                     repo_path.display()
                 ),
                 Err(e) => {
-                    println!("\t❌ Failed to create directory structure");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                    println!("{}", "Failed to create directory structure".red().bold());
+                    println!("|");
+                    println!("└── {}", e);
                     return;
                 }
             }
@@ -672,53 +522,56 @@ fn main() {
                 Ok(_) => {
                     let home_dir = dirs::home_dir().unwrap();
                     println!(
-                        "\t✅ Helix repo installed at {}",
+                        "{} {}",
+                        "Helix repo installed at".green().bold(),
                         home_dir.join(".helix/repo/").to_string_lossy()
                     );
-                    println!("\t|");
-                    println!("\t└── To get started, begin writing helix queries in your project.");
-                    println!("\t|");
-                    println!("\t└── Then run `helix check --path <path-to-project>` to check your queries.");
-                    println!("\t|");
-                    println!("\t└── Then run `helix deploy --path <path-to-project> --local` to build your queries.");
+                    println!("|");
+                    println!("└── To get started, begin writing helix queries in your project.");
+                    println!("|");
+                    println!("└── Then run `helix check --path <path-to-project>` to check your queries.");
+                    println!("|");
+                    println!("└── Then run `helix deploy --path <path-to-project> --local` to build your queries.");
                 }
                 Err(e) => {
-                    println!("\t❌ Failed to install Helix repo");
-                    println!("\t|");
-                    println!("\t└── {}", e);
+                    println!("{}", "Failed to install Helix repo".red().bold());
+                    println!("|");
+                    println!("└── {}", e);
                     return;
                 }
             }
         }
-        args::CommandType::Test(command) => {
+
+        CommandType::Test(command) => {
             let path = if let Some(p) = command.path {
                 p
             } else {
-                println!("\tNo path provided, defaulting to '{}'", DB_DIR);
+                println!("{} '{}'", "No path provided, defaulting to".bold(), DB_DIR);
                 DB_DIR.to_string()
             };
 
             let _ = match check_and_read_files(&path) {
                 Ok(files) => files,
                 Err(e) => {
-                    println!("\t❌ {}", e);
+                    println!("{} {}", "Error:".red().bold(), e);
                     return;
                 }
             };
 
+            // TODO:
             //let temp_dir = TempDir::new().unwrap();
             // parse
             // interpret
             // generate rust code
-            // run against rocksdb
 
             match command.test {
-                Some(test) => println!("\tTesting: {:?}", test),
-                None => println!("\t❌ No test provided"),
+                Some(test) => println!("{} {:?}", "Testing:".bold(), test),
+                None => println!("{}", "No test provided".red().bold()),
             }
         }
-        args::CommandType::Init(command) => {
-            println!("\tInitialising Helix project...");
+
+        CommandType::Init(command) => {
+            println!("Initialising Helix project...");
             let path = match command.path {
                 Some(path) => PathBuf::from(path),
                 None => PathBuf::from(DB_DIR),
@@ -727,7 +580,11 @@ fn main() {
 
             let _ = match check_and_read_files(path_str) {
                 Ok(files) if !files.is_empty() => {
-                    println!("\t❌ Queries already exist in {}", path_str);
+                    println!(
+                        "{} {}",
+                        "Queries already exist in".yellow().bold(),
+                        path_str
+                    );
                     return;
                 }
                 Ok(_) => {}
@@ -736,123 +593,25 @@ fn main() {
 
             fs::create_dir_all(&path).unwrap();
 
-            // create schema.hx
             let schema_path = path.join("schema.hx");
-            fs::write(
-                &schema_path,
-                r#"// Start building your schema here.
-//
-// The schema is used to to ensure a level of type safety in your queries.
-//
-// The schema is made up of Node types, denoted by N::,
-// and Edge types, denoted by E::
-//
-// Under the Node types you can define fields that
-// will be stored in the database.
-//
-// Under the Edge types you can define what type of node
-// the edge will connect to and from, and also the
-// properties that you want to store on the edge.
-//
-// Example:
-//
-// N::User {
-//     Name: String,
-//     Label: String,
-//     Age: Integer,
-//     IsAdmin: Boolean,
-// }
-//
-// E::Knows {
-//     From: User,
-//     To: User,
-//     Properties: {
-//         Since: Integer,
-//     }
-// }
-//
-//
-// For more information on how to write queries,
-// see the documentation at https://docs.helix-db.com
-// or checkout our GitHub at https://github.com/HelixDB/helix-db
-"#,
-            )
-            .unwrap();
+            fs::write(&schema_path, DEFAULT_SCHEMA).unwrap();
 
-            // create queries.hx
             let main_path = path.join("queries.hx");
-            fs::write(
-                main_path,
-                r#"// Start writing your queries here.
-//
-// You can use the schema to help you write your queries.
-//
-// Queries take the form:
-//     QUERY {query name}({input name}: {input type}) =>
-//         {variable} <- {traversal}
-//         RETURN {variable}
-//
-// Example:
-//     QUERY GetUserFriends(user_id: String) =>
-//         friends <- N<User>(user_id)::Out<Knows>
-//         RETURN friends
-//
-//
-// For more information on how to write queries,
-// see the documentation at https://docs.helix-db.com
-// or checkout our GitHub at https://github.com/HelixDB/helix-db
+            fs::write(main_path, DEFAULT_QUERIES).unwrap();
 
-QUERY hnswinsert(vector: [Float]) =>
-    AddV<Vector>(vector)
-    RETURN "Success"
-
-QUERY hnswload(vectors: [[Float]]) =>
-    res <- BatchAddV<Type>(vectors)
-    RETURN res::{ID}
-
-QUERY hnswsearch(query: [Float], k: Integer) =>
-    res <- SearchV<Type>(query, k)
-    RETURN res
-
-QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
-    FOR {doc, vec} IN docs {
-        doc_node <- AddN<Type>({ content: doc })
-        vectors <- BatchAddV<Doc>(vecs)
-        FOR vec IN vectors {
-            AddE<Contains>::From(doc_node)::To(vec)
-        }
-    }
-    RETURN "Success"
-
-QUERY ragsearchdoc(query: [F64]) =>
-    vec <- SearchV<Vector>(query, 1)
-    doc_node <- vec::In<Contains>
-    RETURN doc_node::{content}
-"#,
-/*
-QUERY ragloaddocs(docs: [{ doc: String, vecs: [[F64]] }]) =>
-    FOR {doc, vec} IN docs {
-        doc_node <- AddN<Type>({ content: doc })
-        vectors <- BatchAddV<Doc>(vecs)
-        FOR vec IN vectors {
-            AddE<Contains>::From(doc_node)::To(vec)
-        }
-    }
-    RETURN "Success"
-
-QUERY ragsearchdoc(query: [F64]) =>
-    vec <- SearchV<Vector>(query, 1)
-    doc_node <- vec::In<Contains>
-    RETURN doc_node::{content}
- */
-            )
-            .unwrap();
             let config_path = path.join("config.hx.json");
             fs::write(config_path, Config::init_config()).unwrap();
 
-            println!("\t✅ Helix project initialised at {}", path.display());
+            println!(
+                "{} {}",
+                "Helix project initialised at".green().bold(),
+                path.display()
+            );
         }
-        args::CommandType::Ingest(command) => {
+
+        CommandType::Ingest(command) => {
+            unimplemented!();
+            /*
             match command.db_type.as_str() {
                 "sqlite" => {
                     let path_str = command.db_url; // Database path for SQLite
@@ -980,153 +739,7 @@ QUERY ragsearchdoc(query: [F64]) =>
                     return;
                 }
             }
+            */
         }
     }
 }
-
-fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
-    // check there is schema and at least one query
-    if !fs::read_dir(&path)
-        .map_err(CliError::Io)?
-        .any(|file| file.unwrap().file_name() == "schema.hx")
-    {
-        println!("{}", CliError::from("\t❌ No schema file found"));
-        // return Err(CliError::from("No schema file found"));
-    }
-
-    if !fs::read_dir(&path)
-        .map_err(CliError::Io)?
-        .any(|file| file.unwrap().file_name() == "config.hx.json")
-    {
-        println!("{}", CliError::from("\t❌ No config.hx.json file found"));
-        // return Err(CliError::from("No config.hx.json file found"));
-    }
-
-    let files: Vec<DirEntry> = fs::read_dir(&path)?
-        .filter_map(|entry| entry.ok())
-        .filter(|file| file.file_name().to_string_lossy().ends_with(".hx"))
-        .collect();
-
-    // Check for query files (exclude schema.hx)
-    let has_queries = files
-        .iter()
-        .any(|file| file.file_name() != "schema.hx");
-    if !has_queries {
-        return Err(CliError::from("No query files (.hx) found"));
-    }
-
-    Ok(files)
-}
-
-fn check_is_dir(path: &str) -> bool {
-    match fs::metadata(&path) {
-        Ok(metadata) => metadata.is_dir(),
-        Err(e) => {
-            println!("{}", CliError::Io(e));
-            return false;
-        }
-    }
-}
-
-fn format_rust_file(file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let status = Command::new("rustfmt").arg(file_path).status()?;
-
-    if !status.success() {
-        return Err(format!("rustfmt failed with exit code: {}", status).into());
-    }
-
-    Ok(())
-}
-
-fn check_hql_files(files: &Vec<DirEntry>) -> Result<(), CliError> {
-    for file in files {
-        let contents = fs::read_to_string(file.path()).unwrap();
-        match HelixParser::parse_source(&contents) {
-            Ok(_) => (),
-            Err(e) => {
-                return Err(CliError::from(format!("{}\n", e)));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
-    // let numb_of_files = files.len();
-    // let mut code = String::new();
-    // let mut generator = CodeGenerator::new();
-
-    let contents: String = files
-        .iter()
-        .map(|file| -> String {
-            match fs::read_to_string(file.path()) {
-                Ok(contents) => contents,
-                Err(e) => {
-                    panic!("{}", e);
-                }
-            }
-        })
-        .fold(String::new(), |acc, contents| acc + &contents);
-
-    let source = match HelixParser::parse_source(&contents) {
-        Ok(source) => {
-            // println!("{:?}", parser);
-            source
-        }
-        Err(e) => {
-            return Err(CliError::from(format!("{}\n", e)));
-        }
-    };
-
-    Ok(source)
-}
-
-/*
-fn generate_rust_from_source(source: &Source, output_path: &String, numb_of_files: usize) {
-    let mut generator = CodeGenerator::new();
-    let mut code = String::new();
-    code.push_str(&generator.generate_headers());
-    code.push_str(&generator.generate_source(&source));
-
-    let cache_dir = PathBuf::from(&output_path);
-    fs::create_dir_all(&cache_dir).unwrap();
-
-    let file_path = cache_dir.join(format!("queries.rs",));
-    fs::write(&file_path, code).unwrap();
-    match format_rust_file(&file_path) {
-        Ok(_) => println!("\nCompiled and formatted {} files!\n", numb_of_files),
-        Err(e) => println!(
-            "\nCompiled {} files! (formatting failed: {})\n",
-            numb_of_files, e
-        ),
-    };
-}
-*/
-
-fn get_cfg_deploy_path(cmd_path: Option<String>) -> Result<String, CliError> {
-    if let Some(path) = cmd_path {
-        return Ok(path);
-    }
-
-    let cwd = ".";
-    let files = match check_and_read_files(cwd) {
-        Ok(files) => files,
-        Err(_) => {
-            return Ok(DB_DIR.to_string());
-        }
-    };
-
-    if !files.is_empty() {
-        return Ok(cwd.to_string());
-    }
-
-    Ok(DB_DIR.to_string())
-}
-
-/*
-struct Query {
-    name: String,
-    query: String,
-    inputs: Vec<String>,
-}
-*/

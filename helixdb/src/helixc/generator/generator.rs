@@ -1,13 +1,13 @@
 use crate::{
-    protocol::value::Value,
-    helixc::parser::helix_parser::{
-        Exclude, Object,
-        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp,
-        EdgeSchema, EvaluatesToNumber, Expression, FieldType, FieldValue,
-        ForLoop, GraphStep, IdType, NodeSchema, Parameter, Query, SearchVector, Source,
-        Statement, Step, Traversal, ValueType, VectorData,
+    helixc::analyzer::types::{
+        AddEdge, AddNode, AddVector, Assignment, BatchAddVector, BooleanOp, EdgeSchema,
+        EvaluatesToNumber, Exclude, Expression, FieldValue, ForLoop, GraphStep, IdType, NodeSchema,
+        Object, Parameter, Query, SearchVector, Source,
         StartNode::{Anonymous, Edge, Node, Variable},
+        Statement, Step, Traversal, ValueType, VectorData,
     },
+    helixc::parser::helix_parser::FieldType,
+    protocol::value::Value,
 };
 use std::{collections::HashMap, vec};
 
@@ -171,33 +171,52 @@ impl CodeGenerator {
             FieldType::U128 => "u128".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Array(field) => {
-                format!("Vec<{}>", self.field_type_to_rust(&field, &param_name))
+                format!("{}", self.field_type_to_rust(&field, &param_name))
             }
             FieldType::Identifier(id) => format!("{}", id),
             FieldType::Object(_) => format!("{}Data", to_snake_case(&param_name)),
         }
     }
 
-    fn object_field_to_rust(&mut self, name: &str) -> String {
+    fn object_field_to_rust(&mut self, name: &str, is_inner: bool) -> String {
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}: {}Data,\n",
-            to_snake_case(&name),
-            to_snake_case(&name)
-        ));
+        if is_inner {
+            output.push_str(&format!("{}Data,\n", to_snake_case(&name)));
+        } else {
+            output.push_str(&format!(
+                "{}: {}Data,\n",
+                to_snake_case(&name),
+                to_snake_case(&name)
+            ));
+        }
         output
     }
 
-    fn array_field_to_rust(&mut self, name: &str, inner: &FieldType) -> String {
+    fn array_field_to_rust(
+        &mut self,
+        name: &str,
+        inner: &FieldType,
+        objects: &mut String,
+        is_inner: bool,
+    ) -> String {
         let mut output = String::new();
-        output.push_str(&format!(
-            "{}: {},\n",
-            to_snake_case(&name),
-            match &inner {
-                FieldType::Object(_) => self.object_field_to_rust(name),
-                _ => self.field_type_to_rust(inner, name),
-            }
-        ));
+        if is_inner {
+            output.push_str(&format!("Vec<{}>\n", self.field_type_to_rust(inner, name)));
+        } else {
+            output.push_str(&format!(
+                "{}: Vec<{}>,\n",
+                to_snake_case(&name),
+                match &inner {
+                    FieldType::Object(obj) => {
+                        // self.params.push(name.to_string());
+                        // let object_type = self.object_type_to_rust(name, obj, objects);
+                        // objects.push_str(&object_type);
+                        self.object_field_to_rust(name, true)
+                    }
+                    _ => self.field_type_to_rust(inner, name),
+                }
+            ));
+        }
         output
     }
 
@@ -205,6 +224,7 @@ impl CodeGenerator {
         &mut self,
         param_name: &str,
         fields: &HashMap<String, FieldType>,
+        objects: &mut String,
     ) -> String {
         let mut output = String::new();
         output.push_str(&mut self.indent());
@@ -221,7 +241,20 @@ impl CodeGenerator {
                     to_snake_case(&name),
                     match type_name {
                         // TODO: Have separate internal string for type defs
-                        FieldType::Object(_) => self.object_field_to_rust(name),
+                        FieldType::Object(obj) => {
+                            self.params.push(name.clone());
+                            let object_type = self.object_type_to_rust(name, obj, objects);
+                            objects.push_str(&object_type);
+                            self.object_field_to_rust(name, true)
+                        }
+                        FieldType::Array(obj) => {
+                            if let FieldType::Object(obj) = obj.as_ref() {
+                                self.params.push(name.clone());
+                                let object_type = self.object_type_to_rust(name, obj, objects);
+                                objects.push_str(&object_type);
+                            }
+                            self.array_field_to_rust(name, obj, objects, true)
+                        }
                         _ => self.field_type_to_rust(type_name, &param_name),
                     }
                 ));
@@ -248,17 +281,20 @@ impl CodeGenerator {
             output.push_str(&mut self.indent());
             output.push_str(&format!("struct {}Data {{\n", query.name));
             self.indent_level += 1;
-
+            let mut objects = String::new();
             for param in &query.parameters {
                 output.push_str(&mut self.indent());
                 self.params.push(param.name.clone());
                 match &param.param_type {
                     FieldType::Object(_) => {
-                        output.push_str(&self.object_field_to_rust(&param.name))
+                        output.push_str(&self.object_field_to_rust(&param.name, false))
                     }
-                    FieldType::Array(_) => {
-                        output.push_str(&self.array_field_to_rust(&param.name, &param.param_type))
-                    }
+                    FieldType::Array(_) => output.push_str(&self.array_field_to_rust(
+                        &param.name,
+                        &param.param_type,
+                        &mut objects,
+                        false,
+                    )),
                     _ => output.push_str(&format!(
                         "{}: {},\n",
                         to_snake_case(&param.name),
@@ -272,20 +308,29 @@ impl CodeGenerator {
             output.push_str("}\n\n");
 
             for param in &query.parameters {
-                println!("param: {:?}", param);
                 match &param.param_type {
                     FieldType::Object(fields) => {
-                        output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                        output.push_str(&mut self.object_type_to_rust(
+                            &param.name,
+                            fields,
+                            &mut objects,
+                        ));
                     }
                     FieldType::Array(fields) => match fields.as_ref() {
                         FieldType::Object(fields) => {
-                            output.push_str(&mut self.object_type_to_rust(&param.name, fields));
+                            output.push_str(&mut self.object_type_to_rust(
+                                &param.name,
+                                fields,
+                                &mut objects,
+                            ));
                         }
                         _ => {}
                     },
                     _ => {}
                 }
             }
+
+            output.push_str(&objects);
 
             // Deserialize input data
             output.push_str(&mut self.indent());
@@ -759,14 +804,11 @@ impl CodeGenerator {
                             output.push_str(".in_e(\"\");\n");
                         }
                     }
-                    GraphStep::BothE(_) => unreachable!(),
-                    GraphStep::Both(_) => unreachable!(),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 Step::Edge(graph_step) => match graph_step {
-                    GraphStep::InN => output.push_str(".in_v()\n"),
-                    GraphStep::OutN => output.push_str(".out_v()\n"),
-                    GraphStep::BothN => unreachable!(),
+                    GraphStep::ToN => output.push_str(".in_v()\n"),
+                    GraphStep::FromN => output.push_str(".out_v()\n"),
                     _ => output.push_str(&mut self.generate_step(step, query)),
                 },
                 _ => output.push_str(&mut self.generate_step(step, query)),
@@ -789,7 +831,7 @@ impl CodeGenerator {
                     output.push_str(&format!("Value::Boolean(val) if *val == {})));\n", b));
                 }
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if *val == {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if *val == {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if *val == {})));\n", f));
@@ -804,19 +846,19 @@ impl CodeGenerator {
             },
             BooleanOp::GreaterThan(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if val > {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if val > {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if val > {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("Value::I32(val) if val > {})));\n", id));
+                    output.push_str(&format!("Value::I64(val) if val > {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GT\n"),
             },
             BooleanOp::GreaterThanOrEqual(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if val >= {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if val >= {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if val >= {})));\n", f));
@@ -825,31 +867,31 @@ impl CodeGenerator {
                     output.push_str(&format!("Value::String(val) if val >= \"{}\")));\n", s));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("Value::I32(val) if val >= {})));\n", id));
+                    output.push_str(&format!("Value::I64(val) if val >= {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in GTE\n"),
             },
             BooleanOp::LessThan(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if val < {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if val < {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if val < {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("Value::I32(val) if val < {})));\n", id));
+                    output.push_str(&format!("Value::I64(val) if val < {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LT\n"),
             },
             BooleanOp::LessThanOrEqual(value) => match &**value {
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if val <= {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if val <= {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if val <= {})));\n", f));
                 }
                 Expression::Identifier(id) => {
-                    output.push_str(&format!("Value::I32(val) if val <= {})));\n", id));
+                    output.push_str(&format!("Value::I64(val) if val <= {})));\n", id));
                 }
                 _ => output.push_str("// Unhandled value type in LTE\n"),
             },
@@ -861,7 +903,7 @@ impl CodeGenerator {
                     output.push_str(&format!("Value::String(val) if *val != \"{}\"))));\n", s));
                 }
                 Expression::IntegerLiteral(i) => {
-                    output.push_str(&format!("Value::I32(val) if *val != {})));\n", i));
+                    output.push_str(&format!("Value::I64(val) if *val != {})));\n", i));
                 }
                 Expression::FloatLiteral(f) => {
                     output.push_str(&format!("Value::F64(val) if *val != {})));\n", f));
@@ -936,11 +978,8 @@ impl CodeGenerator {
                         output.push_str(".in_e(\"\")\n");
                     }
                 }
-                GraphStep::OutN => output.push_str(".out_v()\n"),
-                GraphStep::InN => output.push_str(".in_v()\n"),
-                GraphStep::BothN => unreachable!(),
-                GraphStep::BothE(types) => unreachable!(),
-                GraphStep::Both(types) => unreachable!(),
+                GraphStep::ToN => output.push_str(".in_v()\n"),
+                GraphStep::FromN => output.push_str(".out_v()\n"),
             },
             Step::Range((start, end)) => {
                 let start = match start {
@@ -959,7 +998,7 @@ impl CodeGenerator {
             Step::Where(expr) => {
                 match &**expr {
                     Expression::BooleanLiteral(b) => {
-                        output.push_str("filter_ref(|_, _| {\n");
+                        output.push_str(".filter_ref(|_, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str(&format!("{}", b));
                         output.push_str("})\n");
@@ -968,7 +1007,7 @@ impl CodeGenerator {
                         output.push_str(&mut self.generate_exists_check(traversal, query));
                     }
                     Expression::And(exprs) => {
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -983,7 +1022,7 @@ impl CodeGenerator {
                         output.push_str("})\n");
                     }
                     Expression::Or(exprs) => {
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -999,7 +1038,7 @@ impl CodeGenerator {
                     }
                     Expression::Traversal(_) => {
                         // For traversal-based conditions
-                        output.push_str("filter_ref(|val, _| {\n");
+                        output.push_str(".filter_ref(|val, _| {\n");
                         output.push_str(&mut self.indent());
                         output.push_str("if let Ok(val) = val {\n");
                         output.push_str(&mut self.indent());
@@ -1105,7 +1144,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val == {}))", prop_name, b));
                                         }
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val == {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val == {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val == {}))", prop_name, f));
@@ -1114,55 +1153,55 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, s));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val == \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v == data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
                                     BooleanOp::GreaterThan(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val > {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val > {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val > {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val > {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v > data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GT */"),
                                     },
                                     BooleanOp::GreaterThanOrEqual(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val >= {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val >= {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val >= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val >= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v >= data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GTE */"),
                                     },
                                     BooleanOp::LessThan(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val < {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val < {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val < {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val < {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v < data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LT */"),
                                     },
                                     BooleanOp::LessThanOrEqual(value) => match &**value {
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val <= {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val <= {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val <= {}))", prop_name, f));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val <= {}))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v <= data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LTE */"),
                                     },
@@ -1171,7 +1210,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, s));
                                         }
                                         Expression::IntegerLiteral(i) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I32(val) if *val != {}))", prop_name, i));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::I64(val) if *val != {}))", prop_name, i));
                                         }
                                         Expression::FloatLiteral(f) => {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::F64(val) if *val != {}))", prop_name, f));
@@ -1180,7 +1219,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::Boolean(val) if *val != {}))", prop_name, b));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| matches!(v, Value::String(val) if *val != \"{}\"))", prop_name, id));
+                                            output.push_str(&format!("val.check_property(\"{}\").map_or(false, |v| *v != data.{})", prop_name, id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },
@@ -1212,7 +1251,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count == {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count == {}", id));
+                                            output.push_str(&format!("count == data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in EQ */"),
                                     },
@@ -1221,7 +1260,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count > {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count > {}", id));
+                                            output.push_str(&format!("count > data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GT */"),
                                     },
@@ -1230,7 +1269,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count < {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count < {}", id));
+                                            output.push_str(&format!("count < data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LT */"),
                                     },
@@ -1239,7 +1278,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count >= {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count >= {}", id));
+                                            output.push_str(&format!("count >= data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in GTE */"),
                                     },
@@ -1248,7 +1287,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count <= {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count <= {}", id));
+                                            output.push_str(&format!("count <= data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in LTE */"),
                                     },
@@ -1257,7 +1296,7 @@ impl CodeGenerator {
                                             output.push_str(&format!("count != {}", i));
                                         }
                                         Expression::Identifier(id) => {
-                                            output.push_str(&format!("count != {}", id));
+                                            output.push_str(&format!("count != data.{}", id));
                                         }
                                         _ => output.push_str("/* Unhandled value type in NEQ */"),
                                     },
@@ -1280,7 +1319,7 @@ impl CodeGenerator {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::Boolean(val) if *val == {}))\n", b));
                                 }
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if *val == {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if *val == {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if *val == {}))\n", f));
@@ -1298,19 +1337,19 @@ impl CodeGenerator {
                             },
                             BooleanOp::GreaterThan(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val > {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val > {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if val > {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val > {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val > {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in GT\n"),
                             },
                             BooleanOp::GreaterThanOrEqual(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val >= {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val >= {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if val >= {}))\n", f));
@@ -1319,31 +1358,31 @@ impl CodeGenerator {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if val >= \"{}\"))\n", s));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val >= {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val >= {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in GTE\n"),
                             },
                             BooleanOp::LessThan(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val < {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val < {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if val < {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val < {}))\n", id));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val < {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in LT\n"),
                             },
                             BooleanOp::LessThanOrEqual(value) => match &**value {
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if val <= {}))\n", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if val <= {}))\n", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if val <= {}))\n", f));
                                 }
                                 Expression::Identifier(id) => {
-                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::I32(val) if val <= {}))\n", id));
+                                    output.push_str(&format!("matches!(node.check_property(current_prop).unwrap(), Value::I64(val) if val <= {}))\n", id));
                                 }
                                 _ => output.push_str("// Unhandled value type in LTE\n"),
                             },
@@ -1355,7 +1394,7 @@ impl CodeGenerator {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::String(val) if *val != \"{}\")", s));
                                 }
                                 Expression::IntegerLiteral(i) => {
-                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I32(val) if *val != {})", i));
+                                    output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::I64(val) if *val != {})", i));
                                 }
                                 Expression::FloatLiteral(f) => {
                                     output.push_str(&format!("matches!(val.check_property(current_prop).unwrap(), Value::F64(val) if *val != {})", f));
@@ -1502,7 +1541,7 @@ impl CodeGenerator {
         output.push_str("let tr = G::new_mut(Arc::clone(&db), &mut txn)\n");
         // todo conditionally do new_mut_from
 
-        let edge_type = add_edge
+        let edge_type_label = add_edge
             .edge_type
             .as_ref()
             .map_or("".to_string(), |t| t.clone());
@@ -1553,7 +1592,7 @@ impl CodeGenerator {
         output.push_str(&mut self.indent());
         output.push_str(&format!(
             ".add_e(\"{}\", {}, {}, {}, {}, {}, {})",
-            edge_type, props, possible_id, from_id, to_id, should_check, edge_type,
+            edge_type_label, props, possible_id, from_id, to_id, should_check, edge_type,
         ));
         // output.push_str(&format!("tr.result()?;\n"));
 
@@ -1628,7 +1667,7 @@ impl CodeGenerator {
                         value,
                     ));
                 }
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!(
                         "return_vals.insert(\"message\".to_string(), ReturnValue::Empty);\n",
                     ));
@@ -1644,7 +1683,7 @@ impl CodeGenerator {
                             var_name,
                         ));
                     } else {
-                        println!("Unhandled return value: {:?}", expr);
+                        println!("Unhandled traversal return value: {:?}", expr);
                         unreachable!()
                     }
                 }
@@ -1663,7 +1702,6 @@ impl CodeGenerator {
     }
 
     fn value_type_to_rust(&mut self, value: &ValueType) -> String {
-        println!("value: {:?}", value);
         match value {
             ValueType::Literal(value) => self.value_to_rust(value),
             ValueType::Identifier(identifier) => format!("data.{}", to_snake_case(identifier)),
@@ -1674,7 +1712,7 @@ impl CodeGenerator {
     fn value_to_rust(&mut self, value: &Value) -> String {
         match value {
             Value::String(s) => format!("\"{}\"", s),
-            Value::I32(i) => i.to_string(),
+            Value::I64(i) => i.to_string(),
             Value::F64(f) => f.to_string(),
             Value::Boolean(b) => b.to_string(),
             Value::Array(arr) => format!(
@@ -1861,10 +1899,18 @@ impl CodeGenerator {
                 }
                 FieldValue::Literal(value) => {
                     output.push_str(&format!(
-                        "let {} = {}.check_property({});\n",
+                        "let {} = {}.check_property(\"{}\");\n",
                         to_snake_case(key),
                         var_name,
                         self.value_to_rust(value)
+                    ));
+                }
+                FieldValue::Identifier(id) => {
+                    output.push_str(&format!(
+                        "let {} = {}.check_property(\"{}\");\n",
+                        to_snake_case(key),
+                        var_name,
+                        to_snake_case(id)
                     ));
                 }
                 FieldValue::Empty => {}
@@ -1953,12 +1999,28 @@ impl CodeGenerator {
                     to_snake_case(key),
                 ));
             }
+            FieldValue::Identifier(id) => {
+                output.push_str(&format!(
+                    r#"let {}_remapping = Remapping::new(false, None, Some(
+                        match {} {{
+                            Some(value) => ReturnValue::from(value.clone()),
+                            None => return Err(GraphError::ConversionError(
+                                "Property not found on {}".to_string(),
+                            )),
+                        }}
+                    ));"#,
+                    to_snake_case(key),
+                    to_snake_case(key),
+                    to_snake_case(key),
+                ));
+            }
             FieldValue::Empty => {
                 output.push_str(&format!(
                     "let {}_remapping = Remapping::new(false, None, None);\n",
                     to_snake_case(key)
                 ));
             }
+
             _ => {
                 println!("unhandled field type: {:?}", field);
                 panic!("unhandled field type");
@@ -2041,7 +2103,7 @@ impl CodeGenerator {
                         output.push_str(")\n");
                     }
                 },
-                Expression::None => {
+                Expression::Empty => {
                     output.push_str(&format!("ReturnValue::Empty\n"));
                 }
                 Expression::Identifier(id) => {
@@ -2079,7 +2141,6 @@ pub fn to_snake_case(s: &str) -> String {
     let mut prev_is_upper = false;
 
     while let Some(c) = chars.next() {
-        println!("c: {}", c);
         if c.is_uppercase() {
             if !result.is_empty()
                 && (!prev_is_upper || chars.peek().map_or(false, |next| next.is_lowercase()))

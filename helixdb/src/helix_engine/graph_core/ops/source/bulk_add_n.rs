@@ -53,6 +53,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
         nodes.sort_unstable_by_key(|node| *node);
         let chunks = nodes.chunks_mut(chunk_size);
         let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
+        let mut count = 0;
         for chunk in chunks {
             for node in chunk {
                 let node = Node {
@@ -77,6 +78,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                     }
                     Err(e) => result = Err(GraphError::from(e)),
                 }
+                count += 1;
 
                 // for index in &secondary_indices {
                 //     match self.storage.secondary_indices.get(index.as_str()) {
@@ -113,6 +115,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                 //         }
                 //     }
                 // }
+            }
+            
+            if count % 1000000 == 0 {
+                println!("processed: {:?}", count);
             }
         }
         RwTraversalIterator {
