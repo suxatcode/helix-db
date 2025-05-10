@@ -305,7 +305,6 @@ pub fn generate(files: &Vec<DirEntry>) -> Result<Content, CliError> {
 }
 
 /*
-
 pub fn update_cli(spinner: &ProgressBar) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new("curl")
         .args(&["-sSL", "https://install.helix-db.com"])

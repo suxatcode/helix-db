@@ -366,7 +366,7 @@ fn main() {
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("No path provided, defaulting to '{}'", DB_DIR);
+                println!("{} '{}'", "No path provided, defaulting to".yellow().bold(), DB_DIR);
                 DB_DIR
             };
 
@@ -543,32 +543,8 @@ fn main() {
             }
         }
 
-        CommandType::Test(command) => {
-            let path = if let Some(p) = command.path {
-                p
-            } else {
-                println!("{} '{}'", "No path provided, defaulting to".bold(), DB_DIR);
-                DB_DIR.to_string()
-            };
-
-            let _ = match check_and_read_files(&path) {
-                Ok(files) => files,
-                Err(e) => {
-                    println!("{} {}", "Error:".red().bold(), e);
-                    return;
-                }
-            };
-
-            // TODO:
-            //let temp_dir = TempDir::new().unwrap();
-            // parse
-            // interpret
-            // generate rust code
-
-            match command.test {
-                Some(test) => println!("{} {:?}", "Testing:".bold(), test),
-                None => println!("{}", "No test provided".red().bold()),
-            }
+        CommandType::Test(_command) => {
+            unimplemented!("helix test coming soon!");
         }
 
         CommandType::Init(command) => {
