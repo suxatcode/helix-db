@@ -1127,7 +1127,7 @@ impl<'a> From<&'a FieldType> for Type<'a> {
     fn from(ft: &'a FieldType) -> Self {
         use FieldType::*;
         match ft {
-            String | Boolean | F32 | F64 | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | U128 => {
+            String | Boolean | F32 | F64 | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | U128 | Uuid => {
                 Type::Scalar(ft.clone())
             }
             Array(_) | Object(_) | Identifier(_) => Type::Unknown,

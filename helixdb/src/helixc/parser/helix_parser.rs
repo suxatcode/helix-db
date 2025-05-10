@@ -112,6 +112,7 @@ pub enum FieldType {
     U64,
     U128,
     Boolean,
+    Uuid,
     Array(Box<FieldType>),
     Identifier(String),
     Object(HashMap<String, FieldType>),
@@ -133,6 +134,7 @@ impl PartialEq for FieldType {
             (FieldType::U64, FieldType::U64) => true,
             (FieldType::U128, FieldType::U128) => true,
             (FieldType::Boolean, FieldType::Boolean) => true,
+            (FieldType::Uuid, FieldType::Uuid) => true,
             (FieldType::Array(a), FieldType::Array(b)) => a == b,
             (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
             (FieldType::Object(a), FieldType::Object(b)) => a == b,
@@ -157,6 +159,7 @@ impl Display for FieldType {
             FieldType::U64 => write!(f, "U64"),
             FieldType::U128 => write!(f, "U128"),
             FieldType::Boolean => write!(f, "Boolean"),
+            FieldType::Uuid => write!(f, "Uuid"),
             FieldType::Array(t) => write!(f, "Array({})", t),
             FieldType::Identifier(s) => write!(f, "{}", s),
             FieldType::Object(m) => {
@@ -655,6 +658,7 @@ impl HelixParser {
                 Ok(FieldType::Object(fields))
             }
             Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
+            Rule::ID_TYPE => Ok(FieldType::Uuid),
             _ => {
                 unreachable!()
             }
@@ -663,6 +667,11 @@ impl HelixParser {
 
     fn parse_field_def(&self, pair: Pair<Rule>) -> Result<Field, ParserError> {
         let mut pairs = pair.clone().into_inner();
+        // structure is index? ~ identifier ~ ":" ~ param_type
+        let index: bool = match pairs.next().unwrap().as_rule() {
+            Rule::index => true,
+            _ => false,
+        };
         let name = pairs.next().unwrap().as_str().to_string();
 
         let field_type = self.parse_field_type(
