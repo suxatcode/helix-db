@@ -165,7 +165,7 @@ impl<'a> Ctx<'a> {
 
     fn check_query(&mut self, q: &'a Query) {
         // -------------------------------------------------
-        // 2‑a. Parameter validation
+        // Parameter validation
         // -------------------------------------------------
         for param in &q.parameters {
             if let FieldType::Identifier(ref id) = param.param_type.1 {
@@ -181,13 +181,13 @@ impl<'a> Ctx<'a> {
         }
 
         // -------------------------------------------------
-        // 2‑b. Statement‑by‑statement walk
+        // Statement‑by‑statement walk
         // -------------------------------------------------
         let mut scope: HashMap<&str, Type<'a>> = HashMap::new();
         for param in &q.parameters {
             scope.insert(param.name.1.as_str(), Type::from(&param.param_type.1));
         }
-
+        
         use StatementType::*;
         for stmt in &q.statements {
             match &stmt.statement {
@@ -305,7 +305,7 @@ impl<'a> Ctx<'a> {
         }
 
         // -------------------------------------------------
-        // 2‑c. Validate RETURN expressions
+        // Validate RETURN expressions
         // -------------------------------------------------
         if q.return_values.is_empty() {
             let end = q.loc.end.clone();
@@ -646,7 +646,6 @@ impl<'a> Ctx<'a> {
 
                 StepType::BooleanOperation(b_op) => {
                     let step = previous_step.unwrap();
-                    println!("previous_step: {:?}", step);
                     let property_type = match &b_op.op {
                         BooleanOpType::LessThanOrEqual(expr)
                         | BooleanOpType::LessThan(expr)
@@ -660,7 +659,7 @@ impl<'a> Ctx<'a> {
                                     self.push_query_err(
                                         q,
                                         b_op.loc.clone(),
-                                        "boolean operation can only be applied to scalar values".to_string(),
+                                        format!("boolean operation `{}` cannot be applied to `{}`", b_op.loc.span, field_type.kind_str()),
                                         "make sure the expression evaluates to a number or a string".to_string(),
                                     );
                                     return field_type;
@@ -669,8 +668,6 @@ impl<'a> Ctx<'a> {
                         }
                         _ => return cur_ty.clone(),
                     };
-
-                    println!("property_type: {:?}", property_type);
 
                     // get type of field name
                     let field_name = match step {
@@ -682,16 +679,12 @@ impl<'a> Ctx<'a> {
                         _ => None,
                     };
                     if let Some(FieldValueType::Identifier(field_name)) = &field_name {
-                        println!("current type: {:?}", cur_ty);
                         match &cur_ty {
                             Type::Nodes(Some(node_ty)) => {
                                 let field_set = self.node_fields.get(node_ty).cloned();
-                                println!("field_set: {:?}", field_set);
                                 if let Some(field_set) = field_set {
                                     match field_set.get(field_name.as_str()) {
                                         Some(field) => {
-                                            println!("field: {:?}", field);
-                                            println!("property_type: {:?}", property_type);
                                             if field != &&property_type {
                                                 self.push_query_err(
                                                     q,
@@ -708,6 +701,34 @@ impl<'a> Ctx<'a> {
                                                 format!(
                                                     "`{}` is not a field of {} `{}`",
                                                     field_name, "node", node_ty
+                                                ),
+                                                "check the schema field names",
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Type::Edges(Some(edge_ty)) => {
+                                let field_set = self.edge_fields.get(edge_ty).cloned();
+                                if let Some(field_set) = field_set {
+                                    match field_set.get(field_name.as_str()) {
+                                        Some(field) => {
+                                            if field != &&property_type {
+                                                self.push_query_err(
+                                                    q,
+                                                    b_op.loc.clone(),
+                                                    format!("property `{field_name}` is of type `{field}` (from edge type `{edge_ty}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    "make sure comparison value is of the same type as the property".to_string(),
+                                                );
+                                            }
+                                        }
+                                        None => {
+                                            self.push_query_err(
+                                                q,
+                                                b_op.loc.clone(),
+                                                format!(
+                                                    "`{}` is not a field of {} `{}`",
+                                                    field_name, "edge", edge_ty
                                                 ),
                                                 "check the schema field names",
                                             );

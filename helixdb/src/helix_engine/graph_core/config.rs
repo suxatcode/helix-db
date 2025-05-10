@@ -67,7 +67,7 @@ impl Config {
         "m": 16,
         "ef_construction": 128,
         "ef_search": 768,
-        "db_max_size": 10_000
+        "db_max_size": 100
     },
     "graph_config": {
         "secondary_indices": []

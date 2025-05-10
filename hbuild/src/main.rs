@@ -161,6 +161,7 @@ async fn main() -> Result<(), AdminError> {
                                 response.body = format!("Failed to process query files: {:?}", e).into_bytes();
                             } else {
                                 // Run helix compile command
+                                println!("Compiling queries at {}", local_path);
                                 let compile_result = Command::new("sudo")
                                     .arg("/root/.local/bin/helix")
                                     .arg("compile")

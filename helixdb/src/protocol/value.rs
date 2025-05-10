@@ -5,7 +5,7 @@ use serde::{
 };
 use serde_json::Value as JsonValue;
 use sonic_rs::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
+use std::{cmp::Ordering, collections::HashMap, fmt};
 
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
@@ -28,6 +28,69 @@ pub enum Value {
     Object(HashMap<String, Value>),
     Empty,
 }
+
+impl PartialEq<i32> for Value {
+    fn eq(&self, other: &i32) -> bool {
+        match self {
+            Value::I32(i) => i == other,
+            _ => false,
+        }
+    }
+}
+impl PartialEq<i64> for Value {
+    fn eq(&self, other: &i64) -> bool {
+        match self {
+            Value::I64(i) => i == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<f64> for Value {
+    fn eq(&self, other: &f64) -> bool {
+        match self {
+            Value::F64(f) => f == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<String> for Value {
+    fn eq(&self, other: &String) -> bool {
+        match self {
+            Value::String(s) => s == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialOrd<i64> for Value {
+    fn partial_cmp(&self, other: &i64) -> Option<Ordering> {
+        match self {
+            Value::I64(i) => i.partial_cmp(other),
+            _ => None,
+        }
+    }
+}
+
+impl PartialOrd<i32> for Value {
+    fn partial_cmp(&self, other: &i32) -> Option<Ordering> {
+        match self {
+            Value::I32(i) => i.partial_cmp(other),
+            _ => None,
+        }
+    }
+}
+impl PartialOrd<f64> for Value {
+    fn partial_cmp(&self, other: &f64) -> Option<Ordering> {
+        match self {
+            Value::F64(f) => f.partial_cmp(other),
+            _ => None,
+        }
+    }
+}
+
+
 
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.

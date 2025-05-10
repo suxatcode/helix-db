@@ -1156,6 +1156,59 @@ fn test_out_n() {
     assert_eq!(traversal[0].id(), person1.id);
 }
 
+#[test]
+fn test_edge_properties() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None, None)
+        .collect_to::<Vec<_>>();
+    let node1 = node1.first().unwrap().clone();
+    let node2 = storage
+        .create_node(&mut txn, "person", props!(), None, None)
+        .unwrap();
+    let props = props! { "since" => 2020, "date" => 1744965900, "name" => "hello"};
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props.clone(),
+            Some(v6_uuid()),
+            node1.id(),
+            node2.id,
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let edge = G::new_from(Arc::clone(&storage), &txn, vec![node1])
+        .out_e("knows")
+        .filter_ref(|val, _| {
+            if let Ok(val) = val {
+                println!("val: {:?}", val.check_property("date"));
+                val.check_property("date").map_or(false, |v| {
+                    println!("v: {:?}", v);
+                    println!("v: {:?}", *v == 1743290007);
+                    *v >= 1743290007
+                })
+            } else {
+                false
+            }
+        })
+        .collect_to::<Vec<_>>();
+    let edge = edge.first().unwrap();
+    match edge {
+        TraversalVal::Edge(edge) => {
+            assert_eq!(edge.properties, props.into_iter().collect());
+        }
+        _ => {
+            panic!("Expected Edge value");
+        }
+    }
+}
+
 // #[test]
 // fn test_shortest_mutual_path() {
 //     let (storage, _temp_dir) = setup_test_db();
