@@ -1,5 +1,5 @@
 use crate::{
-    helix_engine::vector_core::vector::HVector,
+    helix_engine::{types::GraphError, vector_core::vector::HVector},
     protocol::{
         count::Count,
         filterable::Filterable,
@@ -50,7 +50,7 @@ impl PartialEq for TraversalVal {
 pub trait Traversable {
     fn id(&self) -> u128;
     fn label(&self) -> String;
-    fn check_property(&self, prop: &str) -> Option<&Value>;
+    fn check_property(&self, prop: &str) -> Result<&Value, GraphError>;
     fn uuid(&self) -> String;
 }
 
@@ -81,12 +81,14 @@ impl Traversable for TraversalVal {
         }
     }
 
-    fn check_property(&self, prop: &str) -> Option<&Value> {
+    fn check_property(&self, prop: &str) -> Result<&Value, GraphError> {
         match self {
             TraversalVal::Node(node) => node.check_property(prop),
             TraversalVal::Edge(edge) => edge.check_property(prop),
             TraversalVal::Vector(vector) => vector.check_property(prop),
-            _ => None,
+            _ => Err(GraphError::ConversionError(format!(
+                "Invalid traversal value"
+            ))),
         }
     }
 }
@@ -100,7 +102,7 @@ impl Traversable for Vec<TraversalVal> {
         self[0].label()
     }
 
-    fn check_property(&self, prop: &str) -> Option<&Value> {
+    fn check_property(&self, prop: &str) -> Result<&Value, GraphError> {
         self[0].check_property(prop)
     }
 

@@ -33,3 +33,22 @@ where
         }
     }
 }
+
+impl<T> GenRef<T>
+where
+    T: Display,
+{
+    pub fn inner(&self) -> &T {
+        match self {
+            GenRef::Literal(t) => t,
+            GenRef::Mut(t) => t,
+            GenRef::Ref(t) => t,
+            GenRef::RefLT(_, t) => t,
+            GenRef::DeRef(t) => t,
+            GenRef::MutRef(t) => t,
+            GenRef::MutRefLT(_, t) => t,
+            GenRef::MutDeRef(t) => t,
+            GenRef::RefLiteral(t) => t,
+        }
+    }
+}

@@ -73,12 +73,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             match self.storage.secondary_indices.get(index.as_str()) {
                 Some(db) => {
                     let key = match node.check_property(&index) {
-                        Some(value) => value,
-                        None => {
-                            result = Err(GraphError::New(format!(
-                                "Secondary Index {} not found",
-                                index
-                            )));
+                        Ok(value) => value,
+                        Err(e) => {
+                            result = Err(e);
                             continue;
                         }
                     };

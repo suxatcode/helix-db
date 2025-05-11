@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
+use helixdb::{field_remapping, traversal_remapping};
+use helixdb::helix_engine::graph_core::ops::util::map::MapAdapter;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
     helix_engine::graph_core::ops::{
@@ -87,51 +89,51 @@ pub fn ragloaddocs(input: &HandlerInput, response: &mut Response) -> Result<(), 
 
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::with_capacity(1);
 
-    for data in data.docs {
-        let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
-            "Doc",
-            props! { "content".to_string() => data.doc },
-            None,
-            None,
-        );
-        let doc_node = tr.collect_to::<Vec<_>>();
+    // for data in data.docs {
+    //     let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
+    //         "Doc",
+    //         props! { "content".to_string() => data.doc },
+    //         None,
+    //         None,
+    //     );
+    //     let doc_node = tr.collect_to::<Vec<_>>();
 
-        for data in data.vectors {
-            let tr = G::new_mut(Arc::clone(&db), &mut txn)
-                .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
-            let vec = tr.collect_to::<Vec<_>>();
+    //     for data in data.vectors {
+    //         let tr = G::new_mut(Arc::clone(&db), &mut txn)
+    //             .insert_v::<fn(&HVector) -> bool>(&data.vec, None);
+    //         let vec = tr.collect_to::<Vec<_>>();
 
-            let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
-                "Chunk",
-                props! { "content".to_string() => data.chunk },
-                None,
-                None,
-            );
-            let chunk_node = tr.collect_to::<Vec<_>>();
+    //         let tr = G::new_mut(Arc::clone(&db), &mut txn).add_n(
+    //             "Chunk",
+    //             props! { "content".to_string() => data.chunk },
+    //             None,
+    //             None,
+    //         );
+    //         let chunk_node = tr.collect_to::<Vec<_>>();
 
-            let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
-                "Contains",
-                props! {},
-                None,
-                doc_node.id(),
-                chunk_node.id(),
-                true,
-                EdgeType::Vec,
-            );
-            let _ = tr.collect_to::<Vec<_>>();
+    //         let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
+    //             "Contains",
+    //             props! {},
+    //             None,
+    //             doc_node.id(),
+    //             chunk_node.id(),
+    //             true,
+    //             EdgeType::Vec,
+    //         );
+    //         let _ = tr.collect_to::<Vec<_>>();
 
-            let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
-                "EmbeddingOf",
-                props! {},
-                None,
-                chunk_node.id(),
-                vec.id(),
-                true,
-                EdgeType::Vec,
-            );
-            let _ = tr.collect_to::<Vec<_>>();
-        }
-    }
+    //         let tr = G::new_mut(Arc::clone(&db), &mut txn).add_e(
+    //             "EmbeddingOf",
+    //             props! {},
+    //             None,
+    //             chunk_node.id(),
+    //             vec.id(),
+    //             true,
+    //             EdgeType::Vec,
+    //         );
+    //         let _ = tr.collect_to::<Vec<_>>();
+    //     }
+    // }
     return_vals.insert("message".to_string(), ReturnValue::from("Success"));
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
 
@@ -166,52 +168,13 @@ pub fn ragsearchdocs(input: &HandlerInput, response: &mut Response) -> Result<()
     );
     let vec = tr.collect_to::<Vec<_>>();
 
-    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone())
-        .in_("EmbeddingOf")
-        .filter_ref(|val, _| -> Result<bool, GraphError> {
-            if let Ok(val) = val {
-                val.check_property("content").map_or(
-                    false,
-                    |v| matches!(v, Value::String(val) if *val == "chunk"),
-                )
-            } else {
-                false
-            }
-        });
+    let tr = G::new_from(Arc::clone(&db), &txn, vec.clone()).in_("EmbeddingOf");
     let chunks = tr.collect_to::<Vec<_>>();
 
     let tr = G::new_from(Arc::clone(&db), &txn, chunks.clone());
     let tr = tr
-        .map(|item| {
-            match item {
-                Ok(ref item) => {
-                    let content = item.check_property("content");
-                    let content_remapping = Remapping::new(
-                        false,
-                        None,
-                        Some(match content {
-                            Some(value) => ReturnValue::from(value.clone()),
-                            None => {
-                                return Err(GraphError::ConversionError(
-                                    "Property not found on content".to_string(),
-                                ))
-                            }
-                        }),
-                    );
-                    remapping_vals.borrow_mut().insert(
-                        item.id().clone(),
-                        ResponseRemapping::new(
-                            HashMap::from([("content".to_string(), content_remapping)]),
-                            false,
-                        ),
-                    );
-                }
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                    return Err(GraphError::ConversionError("Error: {:?}".to_string()));
-                }
-            };
-            item
+        .map_traversal(|item, _| -> Result<TraversalVal, GraphError> {
+            traversal_remapping!(remapping_vals, item, "content" => G::new_from(Arc::clone(&db), &txn, item.id()).out("Contains").out("content").collect_to::<Vec<_>>())
         })
         .filter_map(|item| item.ok());
     let return_val = tr.collect::<Vec<_>>();
