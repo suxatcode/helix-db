@@ -64,9 +64,27 @@ pub enum BoExp {
     // Eq(Traversal, Traversal),
     Expr(Traversal),
 }
-
-
-
+impl Display for BoExp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BoExp::And(traversals) => {
+                let tr = traversals
+                    .iter()
+                    .map(|s| format!("{}", s))
+                    .collect::<Vec<_>>();
+                write!(f, "{}", tr.join(" && "))
+            }
+            BoExp::Or(traversals) => {
+                let tr = traversals
+                    .iter()
+                    .map(|s| format!("{}", s))
+                    .collect::<Vec<_>>();
+                write!(f, "{}", tr.join(" || "))
+            }
+            BoExp::Expr(traversal) => write!(f, "{}", traversal),
+        }
+    }
+}
 
 pub enum GeneratedValue {
     // needed?
