@@ -1,7 +1,5 @@
 use super::{
-    generator_types::{BoExp, GeneratedValue},
-    source_steps::SourceStep,
-    types::GenRef,
+    bool_op::BoolOp, generator_types::{BoExp, GeneratedValue}, object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping}, source_steps::SourceStep, types::GenRef
 };
 use core::fmt;
 use std::fmt::Display;
@@ -36,16 +34,15 @@ pub enum Step {
     Dedup,
 
     // bool ops
-    Gt(GeneratedValue),
-    Gte(GeneratedValue),
-    Lt(GeneratedValue),
-    Lte(GeneratedValue),
-    Eq(GeneratedValue),
-    Neq(GeneratedValue),
-    Contains(GeneratedValue), // TODO: Implement
+    BoolOp(BoolOp),
 
     // property
     Property(GenRef<String>),
+
+    // object
+    ClosureFieldRemapping(ClosureFieldRemapping),
+    FieldRemapping(FieldRemapping),
+    ExcludeField(ExcludeField),
 
     EOF,
 }
@@ -163,3 +160,4 @@ impl Display for Order {
         }
     }
 }
+

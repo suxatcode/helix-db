@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::protocol::value::Value;
 
-use super::traversal_steps::Traversal;
+use super::{traversal_steps::Traversal, types::GenRef};
 
 pub struct Source {}
 
@@ -88,7 +88,7 @@ impl Display for BoExp {
 
 pub enum GeneratedValue {
     // needed?
-    Literal(String),
+    Literal(GenRef<String>),
 }
 
 impl Display for GeneratedValue {
