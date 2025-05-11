@@ -30,7 +30,7 @@ impl Display for AddN {
         let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            "add_n({}, {}, {})",
+            ".add_n({}, {}, {})",
             self.label, properties, secondary_indices
         )
     }
@@ -49,7 +49,7 @@ impl Display for AddE {
         let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            "add_e({}, {}, {}, {}, {})",
+            ".add_e({}, {}, {}, {}, {})",
             self.label, properties, self.from, self.to, secondary_indices
         )
     }
@@ -62,7 +62,7 @@ pub struct AddV {
 impl Display for AddV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        write!(f, "add_v({}, {}, {})", self.vec, self.label, properties)
+        write!(f, ".add_v({}, {}, {})", self.vec, self.label, properties)
     }
 }
 
@@ -75,8 +75,8 @@ pub struct SearchV {
 impl Display for SearchV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        // write!(f, "search_v({}, {}, {})", self.vec, properties, self.f)
-        write!(f, "NOT IMPLEMENTED")
+        let f_str = self.f.iter().map(|f| format!("{}", f)).collect::<Vec<_>>().join(", ");
+        write!(f, ".search_v({}, {}, {})", self.vec, properties, f_str)
     }
 }
 
@@ -87,7 +87,7 @@ pub struct NFromID {
 impl Display for NFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: possibly add label for runtime label checking?
-        write!(f, "n_from_id({})", self.id)
+        write!(f, ".n_from_id({})", self.id)
     }
 }
 
@@ -96,7 +96,7 @@ pub struct NFromType {
 }
 impl Display for NFromType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "n_from_type(&{})", self.label)
+        write!(f, ".n_from_type(&{})", self.label)
     }
 }
 
@@ -106,7 +106,7 @@ pub struct EFromID {
 }
 impl Display for EFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "e_from_id({})", self.id)
+        write!(f, ".e_from_id({})", self.id)
     }
 }
 
@@ -115,7 +115,7 @@ pub struct EFromType {
 }
 impl Display for EFromType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "e_from_type(&{})", self.label)
+        write!(f, ".e_from_type(&{})", self.label)
     }
 }
 

@@ -49,11 +49,11 @@ pub enum Step {
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Step::Count => write!(f, "count()"),
-            Step::Dedup => write!(f, "dedup()"),
-            Step::FromN => write!(f, "from_n()"),
-            Step::ToN => write!(f, "to_n()"),
-            Step::Property(property) => write!(f, "check_property({})", property),
+            Step::Count => write!(f, ".count()"),
+            Step::Dedup => write!(f, ".dedup()"),
+            Step::FromN => write!(f, ".from_n()"),
+            Step::ToN => write!(f, ".to_n()"),
+            Step::Property(property) => write!(f, ".check_property({})", property),
             _ => write!(f, "{}", self),
         }
     }
@@ -63,7 +63,7 @@ pub struct Out {
 }
 impl Display for Out {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "out({})", self.label)
+        write!(f, ".out({})", self.label)
     }
 }
 
@@ -72,7 +72,7 @@ pub struct In {
 }
 impl Display for In {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "in({})", self.label)
+        write!(f, ".in({})", self.label)
     }
 }
 
@@ -81,7 +81,7 @@ pub struct OutE {
 }
 impl Display for OutE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "out_e({})", self.label)
+        write!(f, ".out_e({})", self.label)
     }
 }
 
@@ -90,7 +90,7 @@ pub struct InE {
 }
 impl Display for InE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "in_e({})", self.label)
+        write!(f, ".in_e({})", self.label)
     }
 }
 
@@ -106,7 +106,7 @@ impl Display for WhereRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "filter_ref(||val, txn|{{
+            ".filter_ref(||val, txn|{{
                 if let Ok(val) = val {{ 
                     {}
                 }} else {{
@@ -133,7 +133,7 @@ pub struct Range {
 }
 impl Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "range({}, {})", self.start, self.end)
+        write!(f, ".range({}, {})", self.start, self.end)
     }
 }
 
@@ -143,7 +143,7 @@ pub struct OrderBy {
 }
 impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
+        write!(f, ".order_by({}, HelixOrder::{})", self.property, self.order)
     }
 }
 // TODO: probably move to protocol

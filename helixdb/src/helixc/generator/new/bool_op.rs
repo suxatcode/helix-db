@@ -14,7 +14,7 @@ pub enum BoolOp {
 }
 impl Display for BoolOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "map_or(false, |v| *v{}))", self)
+        write!(f, ".map_or(false, |v| *v{}))", self)
     }
 }
 pub struct Gt {
