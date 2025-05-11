@@ -376,9 +376,9 @@ QUERY to_n(edge_id: ID) =>
 ```rs
 query: Vec<f64>
 k: usize
-filter: Option<&[F]>
+filter: Option<&[Fn(&HVector) -> bool]>
 
-.search_v(query: Vec<f64>, k: usize, filter: Option<&[F]>)
+.search_v(query: Vec<f64>, k: usize, filter: Option<&[Fn(&HVector) -> bool]>)
 ```
 
 #### query

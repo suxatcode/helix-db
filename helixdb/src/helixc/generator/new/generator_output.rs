@@ -1,7 +1,13 @@
+use super::{
+    source_steps::{AddE, AddN, EFromID, EFromType, NFromID, NFromType},
+    traversal_steps::{In, InE, OrderBy, Out, OutE, Range, Traversal, Where},
+};
+
 pub trait GeneratorOutput {
     fn generate_headers(&self) -> String;
     fn generate_source(&self) -> String;
     fn generate_query(&self) -> String;
+    fn generate_traversal(&self, traversal: Traversal) -> String;
 
     // ============================================================
     // terminals
@@ -32,7 +38,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - nothing can come before `add_n`
-    fn generate_add_n(&self) -> String;
+    fn generate_add_n(&self, add_n: AddN) -> String;
 
     /// Used to insert an edge into the graph
     ///
@@ -57,7 +63,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - nothing can come before `add_e`
-    fn generate_add_e(&self) -> String;
+    fn generate_add_e(&self, add_e: AddE) -> String;
 
     /// Used to insert a vector into the graph
     ///
@@ -87,13 +93,11 @@ pub trait GeneratorOutput {
     /// Used to delete a node from the graph
     ///
     /// **Inputs:**
-    /// - label: `&'a str`
-    /// - id: `u128`
     ///
     /// ## Internal API:
     /// ```
     /// // needs G::new_mut
-    /// drop(&label, id)
+    /// drop()
     /// ```
     ///
     /// ## HQL Example:
@@ -130,7 +134,7 @@ pub trait GeneratorOutput {
     /// - Type must exist in schema
     /// - the ID type is a UUID String in HQL
     ///     - This will get converted to a u128 inside the query
-    fn generate_n_from_id(&self) -> String;
+    fn generate_n_from_id(&self, n_from_id: NFromID) -> String;
 
     /// Used to get a node from its types
     ///
@@ -151,7 +155,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - Type must exist in schema
-    fn generate_n_from_type(&self) -> String;
+    fn generate_n_from_type(&self, n_from_type: NFromType) -> String;
 
     /// Used to get an edge from its id
     ///
@@ -174,7 +178,7 @@ pub trait GeneratorOutput {
     /// - Type must exist in schema
     /// - the ID type is a UUID String in HQL
     ///     - This will get converted to a u128 inside the query
-    fn generate_e_from_id(&self) -> String;
+    fn generate_e_from_id(&self, e_from_id: EFromID) -> String;
 
     /// Used to get an edge from its type
     ///
@@ -195,14 +199,14 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - Type must exist in schema
-    fn generate_e_from_type(&self) -> String;
+    fn generate_e_from_type(&self, e_from_type: EFromType) -> String;
 
     /// Used to search for a vector in the graph
     ///
     /// **Inputs:**
     /// -query: Vec<f64>
     /// - k: `usize`
-    /// - filter: `Option<&[f64]>`
+    /// - filter: `Option<&[Fn(&HVector) -> bool]>`
     ///
     /// ## Internal API:
     /// ```
@@ -247,7 +251,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - the edge label must exist in the schema
-    fn generate_out(&self) -> String;
+    fn generate_out(&self, out: Out) -> String;
 
     /// Used to get the incoming edges of a node
     ///
@@ -257,7 +261,7 @@ pub trait GeneratorOutput {
     /// ## Internal API:
     /// ```
     /// // needs G::new
-    /// in(edge_label)
+    /// in(&edge_label)
     /// ```
     ///
     /// ## HQL Example:
@@ -268,7 +272,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - the edge label must exist in the schema
-    fn generate_in(&self) -> String;
+    fn generate_in(&self, in_: In) -> String;
 
     /// Used to get the outgoing edges of a node
     ///
@@ -278,7 +282,7 @@ pub trait GeneratorOutput {
     /// ## Internal API:
     /// ```
     /// // needs G::new
-    /// out_e(edge_label)
+    /// out_e(&edge_label)
     /// ```
     ///
     /// ## HQL Example:
@@ -289,7 +293,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - the edge label must exist in the schema
-    fn generate_out_e(&self) -> String;
+    fn generate_out_e(&self, out_e: OutE) -> String;
 
     /// Used to get the incoming edges of a node
     ///
@@ -310,7 +314,7 @@ pub trait GeneratorOutput {
     ///
     /// ## HQL Rules:
     /// - the edge label must exist in the schema
-    fn generate_in_e(&self) -> String;
+    fn generate_in_e(&self, in_e: InE) -> String;
 
     /// Used to get the nodes connected to a node
     ///
@@ -387,7 +391,7 @@ pub trait GeneratorOutput {
     /// ## HQL Rules:
     /// - anything that returns a collection of traversal items (nodes, edges, vectors) can be filtered
     /// - only an anonymous or an EXISTS traversal that evaluates to a boolean can be used in the WHERE clause
-    fn generate_filter(&self) -> String;
+    fn generate_filter(&self, where_: Where) -> String;
 
     /// Used to get the range of a node
     ///
@@ -407,7 +411,7 @@ pub trait GeneratorOutput {
     ///     nodes <- N<Type>::Range(start, end)
     /// ```
     ///  
-    fn generate_range(&self) -> String;
+    fn generate_range(&self, range: Range) -> String;
 
     /// Used to order the results of a query
     ///     
@@ -428,7 +432,7 @@ pub trait GeneratorOutput {
     ///                                             ::DESC
     /// ```
     ///
-    fn generate_order_by(&self) -> String;
+    fn generate_order_by(&self, order_by: OrderBy) -> String;
 
     /// Used to deduplicate the results of a query
     ///
@@ -472,7 +476,7 @@ pub trait GeneratorOutput {
     ///
     fn generate_count(&self) -> String;
 
-    // TODO: 
+    // TODO:
     /// Used to iterate over the results of a query
     ///
     /// **Inputs:**
