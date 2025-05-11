@@ -38,7 +38,7 @@ impl Display for ExcludeField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            ".map(|item| {{ exclude_fields!({}) }})",
+            "|item| {{ exclude_fields!({}) }}",
             self.fields_to_exclude.join(", ")
         )
     }
