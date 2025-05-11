@@ -48,14 +48,14 @@ impl PartialEq for TraversalVal {
 }
 
 pub trait Traversable {
-    fn id(&self) -> String;
+    fn id(&self) -> u128;
     fn label(&self) -> String;
     fn check_property(&self, prop: &str) -> Option<&Value>;
-    fn u128_id(&self) -> u128;
+    fn uuid(&self) -> String;
 }
 
 impl Traversable for TraversalVal {
-    fn u128_id(&self) -> u128 {
+    fn id(&self) -> u128 {
         match self {
             TraversalVal::Node(node) => node.id,
             TraversalVal::Edge(edge) => edge.id,
@@ -64,7 +64,7 @@ impl Traversable for TraversalVal {
         }
     }
 
-    fn id(&self) -> String {
+    fn uuid(&self) -> String {
         match self {
             TraversalVal::Node(node) => uuid::Uuid::from_u128(node.id).to_string(),
             TraversalVal::Edge(edge) => uuid::Uuid::from_u128(edge.id).to_string(),
@@ -92,7 +92,7 @@ impl Traversable for TraversalVal {
 }
 
 impl Traversable for Vec<TraversalVal> {
-    fn id(&self) -> String {
+    fn id(&self) -> u128 {
         self[0].id()
     }
 
@@ -104,7 +104,7 @@ impl Traversable for Vec<TraversalVal> {
         self[0].check_property(prop)
     }
 
-    fn u128_id(&self) -> u128 {
-        self[0].u128_id()
+    fn uuid(&self) -> String {
+        self[0].uuid()
     }
 }
