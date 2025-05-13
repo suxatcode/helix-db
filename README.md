@@ -9,9 +9,9 @@ HelixDB is a Rust written, open-source, graph-vector database built for RAG and 
 
 ## Overview
 
-HelixDB is a high-performance database system designed with a focus on developer experience and efficient data operations. Built in Rust and powered by LMDB as its storage engine, it combines the reliability of a proven storage layer with modern features tailored for AI and vector-based applications.
+HelixDB is a high-performance graph-vector database  designed with a focus on developer experience and performance. Built in Rust and powered by LMDB as its storage engine, it combines the reliability of a proven storage layer with modern features tailored for AI and vector-based applications.
 
-We are currently using LMDB via Heed, a rust wrapper built by the amazing team over at [Meilisearch](https://github.com/meilisearch/heed).
+We are currently using LMDB via Heed3, a rust wrapper built by the amazing team over at [Meilisearch](https://github.com/meilisearch/heed).
 
 ## Key Features
 
@@ -42,57 +42,57 @@ The Helix CLI tool can be used to check, compile and deploy Helix locally.
 3. Setup
 
    ```bash
-   helix init --path <path-to-create-files-at>
+   helix init --path <path-to-project>
    ```
 
 4. Write queries
 
    Open your newly created `.hx` files and start writing your schema and queries.
    Head over to [our docs](https://docs.helix-db.com/introduction/cookbook/basic) for more information about writing queries
-```js
-QUERY addUser(name: String, age: Integer) =>
-    user <- AddN<User({name: name, age: age})
-    RETURN user
+   ```js
+   QUERY addUser(name: String, age: Integer) =>
+      user <- AddN<User({name: name, age: age})
+      RETURN user
 
-QUERY getUser(user_name: String) =>
-    user <- N<User::WHERE(_::{name}::EQ(user_name))
-    RETURN user
-```
+   QUERY getUser(user_name: String) =>
+      user <- N<User::WHERE(_::{name}::EQ(user_name))
+      RETURN user
+   ```
    
 6. Check your queries compile before building them into API endpoints (optional)
-
+   
    ```bash
-   cd <path-to-your-project>
+   # in ./<path-to-project>
    helix check
    ```
 
 7. Deploy your queries
 
    ```bash
-   cd <path-to-your-project>
+   # in ./<path-to-project>
    helix deploy --local
    ```
 8. Start calling them using our [TypeScript SDK](https://github.com/HelixDB/helix-ts) or [Python SDK](https://github.com/HelixDB/helix-py). For example:
-```typescript
-import HelixDB from "helix-ts";
+   ```typescript
+   import HelixDB from "helix-ts";
 
-// Create a new HelixDB client 
-// The default port is 6969
-const client = new HelixDB();
+   // Create a new HelixDB client 
+   // The default port is 6969
+   const client = new HelixDB();
 
-// Query the database
-await client.query("addUser", {
-    name: "John",
-    age: 20
-});
+   // Query the database
+   await client.query("addUser", {
+      name: "John",
+      age: 20
+   });
 
-// Get the created user
-const user = await client.query("getUser", {
-    user_name: "John"
-});
+   // Get the created user
+   const user = await client.query("getUser", {
+      user_name: "John"
+   });
 
-console.log(user);
-```
+   console.log(user);
+   ```
 
 
 Other commands:
@@ -106,11 +106,15 @@ Other commands:
 
 Our current focus areas include:
 
-- Expanding vector data type capabilities for AI/ML applications
-- Enhancing the query language with robust type checking
-- Binary quantisation for even better performance
-- Implementing an easy-to-use testing system via CLI
-- Optimizing performance for core operations
+- Expanding vector data type capabilities for RAG applications
+- Enhancing the query language with more robust type checking 
+- Implementing a test suite to enable end-to-end testing of queries before deployment
+- Building a Deterministic Simulation Testing engine enabling us to robustly iterate faster
+- Binary quantisation for even better performance 
+
+Long term projects:
+- In-house graph-vector storage engine (to replace LMDB)
+- In-house network protocol & serdes libraries (similar to protobufs/gRPC)
 
 ## License
 
