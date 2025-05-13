@@ -100,6 +100,24 @@ impl From<u128> for ReturnValue {
     }
 }
 
+impl From<Vec<TraversalVal>> for ReturnValue {
+    fn from(array: Vec<TraversalVal>) -> Self {
+        ReturnValue::Array(array.into_iter().map(|val| val.into()).collect())
+    }
+}
+
+impl From<TraversalVal> for ReturnValue {
+    fn from(val: TraversalVal) -> Self {
+        match val {
+            TraversalVal::Node(node) => ReturnValue::from(node),
+            TraversalVal::Edge(edge) => ReturnValue::from(edge),
+            TraversalVal::Vector(vector) => ReturnValue::from(vector),
+            TraversalVal::Count(count) => ReturnValue::from(count),
+            TraversalVal::Empty => ReturnValue::Empty,
+            _ => unreachable!(),
+        }
+    }
+}
 impl<I> From<I> for ReturnValue
 where
     I: Filterable + Clone,

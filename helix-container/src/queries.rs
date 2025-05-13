@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
-use helixdb::{field_remapping, traversal_remapping};
 use helixdb::helix_engine::graph_core::ops::util::map::MapAdapter;
 use helixdb::helix_engine::vector_core::vector::HVector;
+use helixdb::{field_remapping, traversal_remapping};
 use helixdb::{
     helix_engine::graph_core::ops::{
         g::G,
@@ -174,7 +174,8 @@ pub fn ragsearchdocs(input: &HandlerInput, response: &mut Response) -> Result<()
     let tr = G::new_from(Arc::clone(&db), &txn, chunks.clone());
     let tr = tr
         .map_traversal(|item, _| -> Result<TraversalVal, GraphError> {
-            traversal_remapping!(remapping_vals, item, "content" => G::new_from(Arc::clone(&db), &txn, item.id()).out("Contains").out("content").collect_to::<Vec<_>>())
+            traversal_remapping!(remapping_vals, item, "content" => G::new_from(Arc::clone(&db), &txn, vec![item.unwrap().clone()]).out("Contains").out("content").collect_to::<Vec<TraversalVal>>())?;
+            traversal_remapping!(remapping_vals, item, "content" => G::new_from(Arc::clone(&db), &txn, vec![item.unwrap().clone()]).out("Contains").out("content").collect_to::<Vec<TraversalVal>>())
         })
         .filter_map(|item| item.ok());
     let return_val = tr.collect::<Vec<_>>();

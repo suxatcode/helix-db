@@ -9,7 +9,7 @@ use super::{
 };
 
 pub enum SourceStep {
-    Variable(String),
+    Variable(GenRef<String>),
     AddN(AddN),
     AddE(AddE),
     AddV(AddV),
@@ -18,7 +18,9 @@ pub enum SourceStep {
     NFromType(NFromType),
     EFromID(EFromID),
     EFromType(EFromType),
+    Empty,
 }
+
 pub struct AddN {
     pub label: GenRef<String>,
     pub properties: Vec<(String, GeneratedValue)>,
@@ -30,17 +32,17 @@ impl Display for AddN {
         let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            ".add_n({}, {}, {})",
+            "add_n({}, {}, {})",
             self.label, properties, secondary_indices
         )
     }
 }
 
 pub struct AddE {
-    pub label: String,
+    pub label: GenRef<String>,
     pub properties: Vec<(String, GeneratedValue)>,
-    pub from: String,
-    pub to: String,
+    pub from: GenRef<String>,
+    pub to: GenRef<String>,
     pub secondary_indices: Option<Vec<String>>,
 }
 impl Display for AddE {
@@ -49,7 +51,7 @@ impl Display for AddE {
         let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            ".add_e({}, {}, {}, {}, {})",
+            "add_e({}, {}, {}, {}, {})",
             self.label, properties, self.from, self.to, secondary_indices
         )
     }
@@ -62,7 +64,7 @@ pub struct AddV {
 impl Display for AddV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        write!(f, ".add_v({}, {}, {})", self.vec, self.label, properties)
+        write!(f, "add_v({}, {}, {})", self.vec, self.label, properties)
     }
 }
 
@@ -76,46 +78,46 @@ impl Display for SearchV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
         let f_str = self.f.iter().map(|f| format!("{}", f)).collect::<Vec<_>>().join(", ");
-        write!(f, ".search_v({}, {}, {})", self.vec, properties, f_str)
+        write!(f, "search_v({}, {}, {})", self.vec, properties, f_str)
     }
 }
 
 pub struct NFromID {
-    pub id: u128,
-    pub label: String, // possible not needed, do we do runtime label checking?
+    pub id: GenRef<String>,
+    pub label: GenRef<String>, // possible not needed, do we do runtime label checking?
 }
 impl Display for NFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: possibly add label for runtime label checking?
-        write!(f, ".n_from_id({})", self.id)
+        write!(f, "n_from_id({})", self.id)
     }
 }
 
 pub struct NFromType {
-    pub label: String,
+    pub label: GenRef<String>,
 }
 impl Display for NFromType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".n_from_type(&{})", self.label)
+        write!(f, "n_from_type({})", self.label)
     }
 }
 
 pub struct EFromID {
-    pub id: u128,
-    pub label: String, // possible not needed, do we do runtime label checking?
+    pub id: GenRef<String>,
+    pub label: GenRef<String>, // possible not needed, do we do runtime label checking?
 }
 impl Display for EFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".e_from_id({})", self.id)
+        write!(f, "e_from_id({})", self.id)
     }
 }
 
 pub struct EFromType {
-    pub label: String,
+    pub label: GenRef<String>,
 }
 impl Display for EFromType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".e_from_type(&{})", self.label)
+        write!(f, "e_from_type({})", self.label)
     }
 }
 
@@ -131,6 +133,7 @@ impl Display for SourceStep {
             SourceStep::NFromType(n_from_type) => write!(f, "{}", n_from_type),
             SourceStep::EFromID(e_from_id) => write!(f, "{}", e_from_id),
             SourceStep::EFromType(e_from_type) => write!(f, "{}", e_from_type),
+            SourceStep::Empty => panic!("Should not be empty"),
         }
     }
 }

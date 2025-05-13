@@ -1,6 +1,6 @@
 use super::{
     bool_op::BoolOp,
-    generator_types::{BoExp, GeneratedValue},
+    generator_types::{BoExp, GeneratedValue, Separator},
     object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping},
     source_steps::SourceStep,
     types::GenRef,
@@ -12,6 +12,7 @@ pub enum TraversalType {
     Ref,
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
+    Empty,
 }
 impl Display for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -22,14 +23,16 @@ impl Display for TraversalType {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
                 write!(f, "G::new_from(Arc::clone(&db), txn, {})", nested)
             }
+            TraversalType::Empty => panic!("Should not be empty"),
         }
     }
 }
 
 pub struct Traversal {
+
     pub traversal_type: TraversalType,
     pub source_step: SourceStep,
-    pub steps: Vec<Step>,
+    pub steps: Vec<Separator<Step>>,
 }
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -39,6 +42,15 @@ impl Display for Traversal {
             write!(f, "{}", step)?;
         }
         Ok(())
+    }
+}
+impl Default for Traversal {
+    fn default() -> Self {
+        Self {
+            traversal_type: TraversalType::Ref,
+            source_step: SourceStep::Empty,
+            steps: vec![],
+        }
     }
 }
 pub enum Step {
@@ -68,16 +80,15 @@ pub enum Step {
     FieldRemapping(FieldRemapping),
     ExcludeField(ExcludeField),
 
-    EOF,
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Step::Count => write!(f, ".count()"),
-            Step::Dedup => write!(f, ".dedup()"),
-            Step::FromN => write!(f, ".from_n()"),
-            Step::ToN => write!(f, ".to_n()"),
-            Step::Property(property) => write!(f, ".check_property({})", property),
+            Step::Count => write!(f, "count()"),
+            Step::Dedup => write!(f, "dedup()"),
+            Step::FromN => write!(f, "from_n()"),
+            Step::ToN => write!(f, "to_n()"),
+            Step::Property(property) => write!(f, "check_property({})", property),
 
             Step::Out(out) => write!(f, "{}", out),
             Step::In(in_) => write!(f, "{}", in_),
@@ -92,7 +103,6 @@ impl Display for Step {
             }
             Step::FieldRemapping(field_remapping) => write!(f, "{}", field_remapping),
             Step::ExcludeField(exclude_field) => write!(f, "{}", exclude_field),
-            Step::EOF => write!(f, ";"),
         }
     }
 }
@@ -101,7 +111,7 @@ pub struct Out {
 }
 impl Display for Out {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".out({})", self.label)
+        write!(f, "out({})", self.label)
     }
 }
 
@@ -110,7 +120,7 @@ pub struct In {
 }
 impl Display for In {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".in({})", self.label)
+        write!(f, "in({})", self.label)
     }
 }
 
@@ -119,7 +129,7 @@ pub struct OutE {
 }
 impl Display for OutE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".out_e({})", self.label)
+        write!(f, "out_e({})", self.label)
     }
 }
 
@@ -128,7 +138,7 @@ pub struct InE {
 }
 impl Display for InE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".in_e({})", self.label)
+        write!(f, "in_e({})", self.label)
     }
 }
 
@@ -149,7 +159,7 @@ impl Display for WhereRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            ".filter_ref(||val, txn|{{
+            "filter_ref(||val, txn|{{
                 if let Ok(val) = val {{ 
                     {}
                 }} else {{
@@ -171,12 +181,12 @@ impl Display for WhereMut {
 }
 
 pub struct Range {
-    pub start: u64,
-    pub end: u64,
+    pub start: GenRef<String>,
+    pub end: GenRef<String>,
 }
 impl Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".range({}, {})", self.start, self.end)
+        write!(f, "range({}, {})", self.start, self.end)
     }
 }
 
@@ -188,7 +198,7 @@ impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            ".order_by({}, HelixOrder::{})",
+            "order_by({}, HelixOrder::{})",
             self.property, self.order
         )
     }

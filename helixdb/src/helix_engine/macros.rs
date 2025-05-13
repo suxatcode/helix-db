@@ -59,11 +59,11 @@ pub mod macros {
     vec![]
     };
     ($($key:expr => $value:expr),* $(,)?) => {
-    vec![
-    $(
-    (String::from($key), $value.into()),
-    )*
-    ]
+        vec![
+            $(
+            (String::from($key), $value.into()),
+            )*
+        ]
     };
  }
 
@@ -218,7 +218,7 @@ pub mod macros {
             match $var_name {
                 Ok(item) => {
                     // TODO: ref?
-                    let traversal_result = $traversal;
+                    let traversal_result: Vec<TraversalVal> = $traversal;
                     let new_remapping = Remapping::new(
                         false,
                         Some($new_name.to_string()),

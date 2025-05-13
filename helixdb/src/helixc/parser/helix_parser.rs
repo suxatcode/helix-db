@@ -113,6 +113,7 @@ pub enum FieldType {
     U128,
     Boolean,
     Uuid,
+    Date,
     Array(Box<FieldType>),
     Identifier(String),
     Object(HashMap<String, FieldType>),
@@ -159,7 +160,8 @@ impl Display for FieldType {
             FieldType::U64 => write!(f, "U64"),
             FieldType::U128 => write!(f, "U128"),
             FieldType::Boolean => write!(f, "Boolean"),
-            FieldType::Uuid => write!(f, "Uuid"),
+            FieldType::Uuid => todo!(),
+            FieldType::Date => todo!(),
             FieldType::Array(t) => write!(f, "Array({})", t),
             FieldType::Identifier(s) => write!(f, "{}", s),
             FieldType::Object(m) => {
@@ -266,11 +268,11 @@ pub struct BatchAddVector {
 #[derive(Debug, Clone)]
 pub enum StartNode {
     Node {
-        types: Option<Vec<String>>,
+        node_type: String,
         ids: Option<Vec<String>>,
     },
     Edge {
-        types: Option<Vec<String>>,
+        edge_type: String,
         ids: Option<Vec<String>>,
     },
     Variable(String),
@@ -298,7 +300,25 @@ pub enum StepType {
     AddEdge(AddEdge),
     SearchVector(String),
 }
-
+impl PartialEq<StepType> for StepType {
+    fn eq(&self, other: &StepType) -> bool {
+        match (self, other) {
+            (&StepType::Node(_), &StepType::Node(_)) => true,
+            (&StepType::Edge(_), &StepType::Edge(_)) => true,
+            (&StepType::Where(_), &StepType::Where(_)) => true,
+            (&StepType::BooleanOperation(_), &StepType::BooleanOperation(_)) => true,
+            (&StepType::Count, &StepType::Count) => true,
+            (&StepType::Update(_), &StepType::Update(_)) => true,
+            (&StepType::Object(_), &StepType::Object(_)) => true,
+            (&StepType::Exclude(_), &StepType::Exclude(_)) => true,
+            (&StepType::Closure(_), &StepType::Closure(_)) => true,
+            (&StepType::Range(_), &StepType::Range(_)) => true,
+            (&StepType::AddEdge(_), &StepType::AddEdge(_)) => true,
+            (&StepType::SearchVector(_), &StepType::SearchVector(_)) => true,
+            _ => false,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct FieldAddition {
     pub name: String,
@@ -330,14 +350,14 @@ pub struct GraphStep {
 
 #[derive(Debug, Clone)]
 pub enum GraphStepType {
-    Out(Option<Vec<String>>),
-    In(Option<Vec<String>>),
+    Out(Option<String>),
+    In(Option<String>),
 
     FromN,
     ToN,
 
-    OutE(Option<Vec<String>>),
-    InE(Option<Vec<String>>),
+    OutE(Option<String>),
+    InE(Option<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -1405,16 +1425,13 @@ impl HelixParser {
         match pair.as_rule() {
             Rule::start_node => {
                 let pairs = pair.into_inner();
-                let mut types = None;
+                let mut node_type = String::new();
                 let mut ids = None;
                 for p in pairs {
                     match p.as_rule() {
                         Rule::type_args => {
-                            types = Some(
-                                p.into_inner()
-                                    .map(|t| t.as_str().to_string())
-                                    .collect::<Vec<_>>(),
-                            );
+                            node_type = p.into_inner().next().unwrap().as_str().to_string();
+                            // WATCH
                         }
                         Rule::id_args => {
                             ids = Some(
@@ -1426,20 +1443,16 @@ impl HelixParser {
                         _ => unreachable!(),
                     }
                 }
-                Ok(StartNode::Node { types, ids })
+                Ok(StartNode::Node { node_type, ids })
             }
             Rule::start_edge => {
                 let pairs = pair.into_inner();
-                let mut types = None;
+                let mut edge_type = String::new();
                 let mut ids = None;
                 for p in pairs {
                     match p.as_rule() {
                         Rule::type_args => {
-                            types = Some(
-                                p.into_inner()
-                                    .map(|t| t.as_str().to_string())
-                                    .collect::<Vec<_>>(),
-                            );
+                            edge_type = p.into_inner().next().unwrap().as_str().to_string();
                         }
                         Rule::id_args => {
                             ids = Some(
@@ -1451,7 +1464,7 @@ impl HelixParser {
                         _ => unreachable!(),
                     }
                 }
-                Ok(StartNode::Edge { types, ids })
+                Ok(StartNode::Edge { edge_type, ids })
             }
             Rule::identifier => Ok(StartNode::Variable(pair.as_str().to_string())),
             _ => Ok(StartNode::Anonymous),
@@ -1544,7 +1557,7 @@ impl HelixParser {
             .clone()
             .into_inner()
             .next()
-            .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
+            .map(|p| p.as_str().to_string());
 
         match rule_str {
             s if s.starts_with("OutE") => GraphStep {
