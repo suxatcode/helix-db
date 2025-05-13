@@ -48,7 +48,7 @@ The Helix CLI tool can be used to check, compile and deploy Helix locally.
 4. Write queries
 
    Open your newly created `.hx` files and start writing your schema and queries.
-   Head over to [our docs]([https://github.com/HelixDB/helix-db](https://docs.helix-db.com/introduction/cookbook/basic)) for more information about writing queries
+   Head over to [our docs](https://docs.helix-db.com/introduction/cookbook/basic) for more information about writing queries
 ```js
 QUERY addUser(name: String, age: Integer) =>
     user <- AddN<User({name: name, age: age})
@@ -72,7 +72,28 @@ QUERY getUser(user_name: String) =>
    cd <path-to-your-project>
    helix deploy --local
    ```
-8. Start calling them using our [TypeScript SDK](https://github.com/HelixDB/helix-ts) or [Python SDK](https://github.com/HelixDB/helix-py)
+8. Start calling them using our [TypeScript SDK](https://github.com/HelixDB/helix-ts) or [Python SDK](https://github.com/HelixDB/helix-py). For example:
+```typescript
+import HelixDB from "helix-ts";
+
+// Create a new HelixDB client 
+// The default port is 6969
+const client = new HelixDB();
+
+// Query the database
+await client.query("addUser", {
+    name: "John",
+    age: 20
+});
+
+// Get the created user
+const user = await client.query("getUser", {
+    user_name: "John"
+});
+
+console.log(user);
+```
+
 
 Other commands:
 
@@ -87,7 +108,7 @@ Our current focus areas include:
 
 - Expanding vector data type capabilities for AI/ML applications
 - Enhancing the query language with robust type checking
-- Improving build tools and developer experience
+- Binary quantisation for even better performance
 - Implementing an easy-to-use testing system via CLI
 - Optimizing performance for core operations
 
