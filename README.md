@@ -4,7 +4,7 @@
 
 # HelixDB
 
-HelixDB is a graph-vector database built for performance and simplicity.
+HelixDB is a Rust written, open-source, graph-vector database built for RAG and AI applications.
 
 
 ## Overview
@@ -15,12 +15,11 @@ We are currently using LMDB via Heed, a rust wrapper built by the amazing team o
 
 ## Key Features
 
-- **Fast & Efficient**: Built for performance with lightning-fast startup times and millisecond query latency
-- **Vector-First**: Native support for vector data types, making it ideal for RAG (Retrieval Augmented Generation) and AI applications
-- **Developer Friendly**: Intuitive query language with built-in type checking and easy-to-use build tools
+- **Fast & Efficient**: Built for performance we're currently 1000x faster than Neo4j, 100x faster than TigerGraph and on par with Qdrant for vectors.
+- **RAG-First**: Native support for graph and vector data types, making it ideal for RAG (Retrieval Augmented Generation) and AI applications
+- **Graph-Vector**: Easiest database for storing relationships between nodes, vectors, or nodes AND vectors.
 - **Reliable Storage**: Powered by LMDB (Lightning Memory-Mapped Database) for robust and efficient data persistence
 - **ACID Compliant**: Ensures data integrity and consistency
-- **Managed Service**: Available as a fully managed cloud service for simplified operations
 
 ## Getting Started
 
@@ -48,29 +47,39 @@ The Helix CLI tool can be used to check, compile and deploy Helix locally.
 
 4. Write queries
 
-   Write your schema and queries in the newly created `.hx` files.
-   Head over to [our GitHub](https://github.com/HelixDB/helix-db) for more information about writing queries
+   Open your newly created `.hx` files and start writing your schema and queries.
+   Head over to [our docs]([https://github.com/HelixDB/helix-db](https://docs.helix-db.com/introduction/cookbook/basic)) for more information about writing queries
+```js
+QUERY addUser(name: String, age: Integer) =>
+    user <- AddN<User({name: name, age: age})
+    RETURN user
 
-5. Check your queries (optional)
+QUERY getUser(user_name: String) =>
+    user <- N<User::WHERE(_::{name}::EQ(user_name))
+    RETURN user
+```
+   
+6. Check your queries compile before building them into API endpoints (optional)
 
    ```bash
    cd <path-to-your-project>
    helix check
    ```
 
-6. Deploy your queries
+7. Deploy your queries
 
    ```bash
    cd <path-to-your-project>
    helix deploy --local
    ```
+8. Start calling them using our [TypeScript SDK](https://github.com/HelixDB/helix-ts) or [Python SDK](https://github.com/HelixDB/helix-py)
 
 Other commands:
 
-- `helix instances` to see your local instances.
-- `helix stop <instance-id>` to stop your local instances.
+- `helix instances` to see all your local instances.
+- `helix stop <instance-id>` to stop your local instance with specified id.
 - `helix stop --all` to stop all your local instances.
-- `helix start <instance-id>` to start your local instances.
+- `helix start <instance-id>` to start your local instance with specific id.
 
 ## Roadmap
 
@@ -84,8 +93,8 @@ Our current focus areas include:
 
 ## License
 
-HelixDB is licensed under the GNU General Public License v3.0 (GPL-3.0).
+HelixDB is licensed under the The AGPL (Affero General Public License).
 
 ## Commercial Support
 
-HelixDB is available as a managed service. Contact us for more information about enterprise support and deployment options.
+HelixDB is available as a managed service for selected users, if you're interested in using Helix's managed service or want enterprise support contact us for more information and deployment options.
