@@ -6,6 +6,14 @@
 
 HelixDB is a Rust written, open-source, graph-vector database built for RAG and AI applications.
 
+## Social Links
+
+- [Website](https://helix-db.com)
+- [Docs](https://docs.helix-db.com)
+- [Discord](https://discord.gg/2stgMPr5BD)
+- [Twitter](https://x.com/hlx_db)
+- [LinkedIn](https://www.linkedin.com/company/helixdb)
+
 
 ## Overview
 
@@ -20,6 +28,8 @@ We are currently using LMDB via Heed3, a rust wrapper built by the amazing team 
 - **Graph-Vector**: Easiest database for storing relationships between nodes, vectors, or nodes AND vectors.
 - **Reliable Storage**: Powered by LMDB (Lightning Memory-Mapped Database) for robust and efficient data persistence
 - **ACID Compliant**: Ensures data integrity and consistency
+
+
 
 ## Getting Started
 
