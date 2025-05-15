@@ -179,6 +179,8 @@ pub enum Statement {
     Drop(Drop),
     Traversal(Traversal),
     ForEach(ForEach),
+    Literal(GenRef<String>),
+    Identifier(GenRef<String>),
 }
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -187,16 +189,18 @@ impl Display for Statement {
             Statement::Drop(drop) => write!(f, "{}", drop),
             Statement::Traversal(traversal) => write!(f, "{}", traversal),
             Statement::ForEach(foreach) => write!(f, "{}", foreach),
+            Statement::Literal(literal) => write!(f, "{}", literal),
+            Statement::Identifier(identifier) => write!(f, "{}", identifier),
         }
     }
 }
 pub struct Assignment {
     pub variable: String,
-    pub value: Traversal,
+    pub value: Box<Statement>,
 }
 impl Display for Assignment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "let {} = {};", self.variable, self.value)
+        write!(f, "let {} = {};", self.variable, *self.value)
     }
 }
 

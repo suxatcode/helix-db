@@ -688,8 +688,11 @@ impl HelixParser {
     fn parse_field_def(&self, pair: Pair<Rule>) -> Result<Field, ParserError> {
         let mut pairs = pair.clone().into_inner();
         // structure is index? ~ identifier ~ ":" ~ param_type
-        let index: bool = match pairs.next().unwrap().as_rule() {
-            Rule::index => true,
+        let index: bool = match pairs.clone().next().unwrap().as_rule() {
+            Rule::index => {
+                pairs.next().unwrap();
+                true
+            }
             _ => false,
         };
         let name = pairs.next().unwrap().as_str().to_string();

@@ -1,13 +1,13 @@
 use crate::args::*;
 use colored::*;
-use colored::*;
 use helixdb::helixc::{
-    analyzer::{analyzer::analyze, types::Source as HelixSource},
-    generator::generator::CodeGenerator,
+    analyzer::analyzer::analyze,
+    generator::new::generator_types::Source as GeneratedSource,
     parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{
+    fmt::Write,
     fs,
     fs::DirEntry,
     io::ErrorKind,
@@ -282,7 +282,7 @@ fn parse_content(content: &Content) -> Result<Source, CliError> {
     Ok(source)
 }
 
-fn analyze_source(source: Source) -> Result<HelixSource, CliError> {
+fn analyze_source(source: Source) -> Result<GeneratedSource, CliError> {
     let (diagnostics, source) = analyze(&source);
     if !diagnostics.is_empty() {
         for diag in diagnostics {
@@ -291,19 +291,14 @@ fn analyze_source(source: Source) -> Result<HelixSource, CliError> {
         return Err(CliError::CompileFailed);
     }
 
-    Ok(HelixSource::from(source))
+    Ok(source)
 }
 
-pub fn generate(files: &Vec<DirEntry>) -> Result<Content, CliError> {
-    let mut generator = CodeGenerator::new();
+pub fn generate(files: &Vec<DirEntry>) -> Result<(Content, GeneratedSource), CliError> {
     let mut content = generate_content(&files)?;
     content.source = parse_content(&content)?;
     let analyzed_source = analyze_source(content.source.clone())?;
-    content.content.push_str(&generator.generate_headers());
-    content
-        .content
-        .push_str(&generator.generate_source(&analyzed_source));
-    Ok(content)
+    Ok((content, analyzed_source))
 }
 
 /*

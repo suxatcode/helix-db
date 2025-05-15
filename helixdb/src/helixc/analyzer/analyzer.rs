@@ -5,8 +5,7 @@ use colored::Colorize;
 use crate::helixc::{
     generator::new::{
         generator_types::{
-            GeneratedType, Parameter as GeneratedParameter, Query as GeneratedQuery, Separator,
-            Source as GeneratedSource,
+            Assignment as GeneratedAssignment, GeneratedType, Parameter as GeneratedParameter, Query as GeneratedQuery, Separator, Source as GeneratedSource, Statement as GeneratedStatement
         },
         object_remapping_generation::{
             ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
@@ -232,7 +231,7 @@ impl<'a> Ctx<'a> {
 
         use StatementType::*;
         for stmt in &q.statements {
-            match &stmt.statement {
+            let gen_statement = match &stmt.statement {
                 Assignment(assign) => {
                     if scope.contains_key(assign.variable.as_str()) {
                         self.push_query_err(
@@ -246,6 +245,10 @@ impl<'a> Ctx<'a> {
 
                     let rhs_ty = self.infer_expr_type(&assign.value, &scope, q, None);
                     scope.insert(assign.variable.as_str(), rhs_ty);
+                    GeneratedStatement::Assignment(GeneratedAssignment {
+                        variable: assign.variable.clone(),
+                        value: assign.value.clone(),
+                    })
                 }
 
                 AddNode(add) => {
@@ -428,7 +431,7 @@ impl<'a> Ctx<'a> {
         scope: &HashMap<&'a str, Type<'a>>,
         q: &'a Query,
         parent_ty: Option<Type<'a>>,
-    ) -> Type<'a> {
+    ) -> Type<'a> { // TODO: Look at returning statement as well or passing mut query to push to
         use ExpressionType::*;
         let expr = &expression.expr;
         match expr {
@@ -455,6 +458,7 @@ impl<'a> Ctx<'a> {
                 let mut gen_traversal = GeneratedTraversal::default();
                 let final_ty = self.check_traversal(tr, scope, q, parent_ty, &mut gen_traversal);
                 // push query
+
                 if matches!(expr, Exists(_)) {
                     Type::Boolean
                 } else {
@@ -667,6 +671,7 @@ impl<'a> Ctx<'a> {
             0 => 0,
             n => n - 1,
         };
+
         for (i, graph_step) in tr.steps.iter().enumerate() {
             let step = &graph_step.step;
             match step {
@@ -725,14 +730,16 @@ impl<'a> Ctx<'a> {
                 }
 
                 StepType::Object(obj) => {
-                    if i != number_of_steps {
-                        self.push_query_err(
-                            q,
-                            obj.loc.clone(),
-                            "object is only valid as the last step in a traversal".to_string(),
-                            "move the object to the end of the traversal",
-                        );
-                    }
+                    // TODO: Fix issue with step count being incorrect (i think its counting each field as a step)
+                    // if i != number_of_steps {
+                    //     println!("{} {}", i, number_of_steps);
+                    //     self.push_query_err(
+                    //         q,
+                    //         obj.loc.clone(),
+                    //         "object is only valid as the last step in a traversal".to_string(),
+                    //         "move the object to the end of the traversal",
+                    //     );
+                    // }
                     self.validate_object(&cur_ty, tr, obj, &excluded, q, gen_traversal);
                 }
 

@@ -72,15 +72,7 @@ impl GeneratedParameter {
             }
             FieldType::Array(inner) => match inner.as_ref() {
                 FieldType::Object(obj) => {
-                    sub_parameters.push((
-                        format!("{}Data", param.name.1),
-                        obj.iter()
-                            .map(|(name, field_type)| GeneratedParameter {
-                                name: name.clone(),
-                                field_type: field_type.clone().into(),
-                            })
-                            .collect(),
-                    ));
+                    unwrap_object(format!("{}Data", param.name.1), obj, sub_parameters);
                 }
                 param_type => {
                     parameters.push(GeneratedParameter {
@@ -90,15 +82,7 @@ impl GeneratedParameter {
                 }
             },
             FieldType::Object(obj) => {
-                sub_parameters.push((
-                    format!("{}Data", param.name.1),
-                    obj.iter()
-                        .map(|(name, field_type)| GeneratedParameter {
-                            name: name.clone(),
-                            field_type: field_type.clone().into(),
-                        })
-                        .collect(),
-                ));
+                unwrap_object(format!("{}Data", param.name.1), &obj, sub_parameters);
             }
             param_type => {
                 parameters.push(GeneratedParameter {
@@ -130,18 +114,34 @@ fn unwrap_object(
     let sub_param = (
         name,
         obj.iter()
-            .map(|(field_name, field_type)| match field_type {
-                FieldType::Object(obj) => {
-                    unwrap_object(field_name.clone(), obj, sub_parameters);
-                    GeneratedParameter {
-                        name: field_name.clone(),
-                        field_type: GeneratedType::Object(field_name.clone()),
+            .map(|(field_name, field_type)| {
+                println!("{:?}", field_type);
+                match field_type {
+                    FieldType::Object(obj) => {
+                        unwrap_object(field_name.clone(), obj, sub_parameters);
+                        GeneratedParameter {
+                            name: field_name.clone(),
+                            field_type: GeneratedType::Object(field_name.clone()),
+                        }
                     }
+                    FieldType::Array(inner) => match inner.as_ref() {
+                        FieldType::Object(obj) => {
+                            unwrap_object(field_name.clone(), obj, sub_parameters);
+                            GeneratedParameter {
+                                name: field_name.clone(),
+                                field_type: GeneratedType::Object(field_name.clone()),
+                            }
+                        }
+                        _ => GeneratedParameter {
+                            name: field_name.clone(),
+                            field_type: GeneratedType::from(field_type.clone()),
+                        },
+                    },
+                    _ => GeneratedParameter {
+                        name: field_name.clone(),
+                        field_type: GeneratedType::from(field_type.clone()),
+                    },
                 }
-                _ => GeneratedParameter {
-                    name: field_name.clone(),
-                    field_type: GeneratedType::from(field_type.clone()),
-                },
             })
             .collect(),
     );
@@ -167,7 +167,17 @@ impl From<FieldType> for GeneratedType {
             FieldType::Date => GeneratedType::RustType(GeneratedRustType::Date),
             FieldType::Array(inner) => GeneratedType::Vec(Box::new(GeneratedType::from(*inner))),
             FieldType::Identifier(ref id) => GeneratedType::Variable(id.clone()),
-            _ => unimplemented!(),
+            // FieldType::Object(obj) => GeneratedType::Object(
+            //     obj.iter()
+            //         .map(|(name, field_type)| {
+            //             (name.clone(), GeneratedType::from(field_type.clone()))
+            //         })
+            //         .collect(),
+            // ),
+            _ => {
+                println!("unimplemented: {:?}", generated);
+                unimplemented!()
+            }
         }
     }
 }

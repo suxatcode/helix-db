@@ -18,7 +18,7 @@ impl Display for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), txn)"),
-            TraversalType::Mut => write!(f, "MG::new_mut(Arc::clone(&db), txn)"),
+            TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), txn)"),
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
                 write!(f, "G::new_from(Arc::clone(&db), txn, {})", nested)
