@@ -1,11 +1,15 @@
-use crate::helix_engine::types::GraphError;
+use crate::{helix_engine::types::GraphError, helixc::generator::new::types::GenRef};
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,
 };
 use serde_json::Value as JsonValue;
 use sonic_rs::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::HashMap, fmt::{self, Display}};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::{self, Display},
+};
 
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
@@ -89,8 +93,6 @@ impl PartialOrd<f64> for Value {
         }
     }
 }
-
-
 
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.
@@ -595,6 +597,29 @@ impl Encodings for HashMap<String, Value> {
                 "Error serializing properties: {}",
                 e
             ))),
+        }
+    }
+}
+
+impl From<Value> for GenRef<String> {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::String(s) => GenRef::Literal(s),
+            Value::I8(i) => GenRef::Literal(i.to_string()),
+            Value::I16(i) => GenRef::Literal(i.to_string()),
+            Value::I32(i) => GenRef::Literal(i.to_string()),
+            Value::I64(i) => GenRef::Literal(i.to_string()),
+            Value::F32(f) => GenRef::Literal(f.to_string()),
+            Value::F64(f) => GenRef::Literal(f.to_string()),
+            Value::Boolean(b) => GenRef::Literal(b.to_string()),
+            Value::U8(u) => GenRef::Literal(u.to_string()),
+            Value::U16(u) => GenRef::Literal(u.to_string()),
+            Value::U32(u) => GenRef::Literal(u.to_string()),
+            Value::U64(u) => GenRef::Literal(u.to_string()),
+            Value::U128(u) => GenRef::Literal(u.to_string()),
+            Value::Array(a) => unimplemented!(),
+            Value::Object(o) => unimplemented!(),
+            Value::Empty => GenRef::Literal("".to_string()),
         }
     }
 }

@@ -283,10 +283,10 @@ fn parse_content(content: &Content) -> Result<Source, CliError> {
 }
 
 fn analyze_source(source: Source) -> Result<HelixSource, CliError> {
-    let diagnostics = analyze(&source);
+    let (diagnostics, source) = analyze(&source);
     if !diagnostics.is_empty() {
         for diag in diagnostics {
-            println!("{}", diag.render(&source.source, "queries.hx"));
+            println!("{}", diag.render(&source.src, "queries.hx"));
         }
         return Err(CliError::CompileFailed);
     }

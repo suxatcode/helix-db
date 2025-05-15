@@ -8,7 +8,10 @@ use crate::helixc::{
             GeneratedType, Parameter as GeneratedParameter, Query as GeneratedQuery, Separator,
             Source as GeneratedSource,
         },
-        object_remapping_generation::{ExcludeField, FieldRemapping},
+        object_remapping_generation::{
+            ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
+            RemappingType, TraversalRemapping, ValueRemapping,
+        },
         source_steps::{EFromID, NFromID, SourceStep},
         traversal_steps::{
             In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
@@ -19,7 +22,10 @@ use crate::helixc::{
     parser::{helix_parser::*, location::Loc},
 };
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::ControlFlow,
+};
 
 use super::{fix::Fix, pretty};
 
@@ -446,7 +452,9 @@ impl<'a> Ctx<'a> {
             Empty => Type::Unknown,
 
             Traversal(tr) | Exists(tr) => {
-                let final_ty = self.check_traversal(tr, scope, q, parent_ty);
+                let mut gen_traversal = GeneratedTraversal::default();
+                let final_ty = self.check_traversal(tr, scope, q, parent_ty, &mut gen_traversal);
+                // push query
                 if matches!(expr, Exists(_)) {
                     Type::Boolean
                 } else {
@@ -703,15 +711,17 @@ impl<'a> Ctx<'a> {
                     }
                     gen_traversal
                         .steps
-                        .push(Separator::Comma(GeneratedStep::ExcludeField(
-                            ExcludeField {
+                        .push(Separator::Comma(GeneratedStep::Remapping(Remapping {
+                            variable_name: "".to_string(),
+                            is_inner: false,
+                            remappings: vec![RemappingType::ExcludeField(ExcludeField {
                                 fields_to_exclude: ex
                                     .fields
                                     .iter()
                                     .map(|(_, field)| field.clone())
                                     .collect(),
-                            },
-                        )));
+                            })],
+                        })));
                 }
 
                 StepType::Object(obj) => {
@@ -723,7 +733,7 @@ impl<'a> Ctx<'a> {
                             "move the object to the end of the traversal",
                         );
                     }
-                    self.validate_object(&cur_ty, tr, obj, &excluded, q);
+                    self.validate_object(&cur_ty, tr, obj, &excluded, q, gen_traversal);
                 }
 
                 StepType::Where(expr) => {
@@ -762,7 +772,7 @@ impl<'a> Ctx<'a> {
                         StepType::Object(obj) => {
                             let fields = obj.fields;
                             assert!(fields.len() == 1);
-                            Some(fields[0].1.value.clone())
+                            Some(fields[0].value.value.clone())
                         }
                         _ => None,
                     };
@@ -929,7 +939,7 @@ impl<'a> Ctx<'a> {
     fn validate_exclude(
         &mut self,
         cur_ty: &Type<'a>,
-        tr: &'a Traversal,
+        tr: &Traversal,
         ex: &Exclude,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
@@ -993,8 +1003,8 @@ impl<'a> Ctx<'a> {
     fn validate_object(
         &mut self,
         cur_ty: &Type<'a>,
-        tr: &'a Traversal,
-        obj: &Object,
+        tr: &Traversal,
+        obj: &'a Object,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         gen_traversal: &mut GeneratedTraversal,
@@ -1004,12 +1014,12 @@ impl<'a> Ctx<'a> {
                 if let Some(field_set) = self.node_fields.get(node_ty).cloned() {
                     // if there is only one field then it is a property access
                     if obj.fields.len() == 1 {
-                        let field = match &obj.fields[0].1.value {
+                        let field = match &obj.fields[0].value.value {
                             FieldValueType::Identifier(lit) => lit.clone(),
                             field_type => {
                                 self.push_query_err(
                                     q,
-                                    obj.fields[0].1.loc.clone(),
+                                    obj.fields[0].loc.clone(),
                                     format!(
                                         "field access `{:?}` must be a valid field name",
                                         field_type
@@ -1021,16 +1031,27 @@ impl<'a> Ctx<'a> {
                         };
                         gen_traversal
                             .steps
-                            .push(Separator::Comma(GeneratedStep::Property(GenRef::Literal(
-                                field,
-                            ))));
-                    } else {
+                            .push(Separator::Period(GeneratedStep::PropertyFetch(
+                                GenRef::Literal(field),
+                            )));
+                    } else if obj.fields.len() > 1 {
                         // if there are multiple fields then it is a field remapping
                         // push object remapping where
-                        // for each field if field value is identifier then push field remapping
-                        // if the field value is a traversal then it is a TraversalRemapping
-                        // if the field value is another object or closure then recurse (sub mapping would go where traversal would go)
+                        let remapping =
+                            self.parse_object_remapping(&obj.fields, q, false, &HashMap::new());
+                        gen_traversal
+                            .steps
+                            .push(Separator::Period(GeneratedStep::Remapping(remapping)));
+                    } else {
+                        // error
+                        self.push_query_err(
+                            q,
+                            obj.fields[0].value.loc.clone(),
+                            "object must have at least one field".to_string(),
+                            "object must have at least one field".to_string(),
+                        );
                     }
+
                     self.validate_object_fields(
                         obj,
                         &field_set,
@@ -1071,12 +1092,12 @@ impl<'a> Ctx<'a> {
                 }
             }
             Type::Anonymous(ty) => {
-                self.validate_object(ty, tr, obj, excluded, q);
+                self.validate_object(ty, tr, obj, excluded, q, gen_traversal);
             }
             _ => {
                 self.push_query_err(
                     q,
-                    obj.fields[0].1.loc.clone(),
+                    obj.fields[0].value.loc.clone(),
                     "cannot access properties on this type".to_string(),
                     "property access is only valid on nodes, edges and vectors",
                 );
@@ -1233,7 +1254,7 @@ impl<'a> Ctx<'a> {
         type_kind: &str,
         span: Option<Loc>,
     ) {
-        for (key, val) in &obj.fields {
+        for FieldAddition { key, value, .. } in &obj.fields {
             if let Some(loc) = excluded.get(key.as_str()) {
                 // for the "::"
                 let mut loc = loc.clone();
@@ -1241,7 +1262,7 @@ impl<'a> Ctx<'a> {
                 loc.span.push_str("::");
                 self.push_query_err_with_fix(
                     q,
-                    val.loc.clone(),
+                    value.loc.clone(),
                     format!("field `{}` was previously excluded in this traversal", key),
                     format!("remove the exclusion of `{}`", key),
                     Fix::new(span.clone(), Some(loc.clone()), Some(String::new())),
@@ -1249,11 +1270,146 @@ impl<'a> Ctx<'a> {
             } else if !field_set.contains_key(key.as_str()) {
                 self.push_query_err(
                     q,
-                    val.loc.clone(),
+                    value.loc.clone(),
                     format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
                     "check the schema field names",
                 );
             }
+        }
+    }
+
+    fn parse_object_remapping(
+        &mut self,
+        obj: &'a Vec<FieldAddition>,
+        q: &'a Query,
+        is_inner: bool,
+        scope: &HashMap<&'a str, Type<'a>>,
+    ) -> Remapping {
+        // for each field
+
+        let remappings = obj
+            .into_iter()
+            .map(|FieldAddition { key, value, .. }| {
+                match &value.value {
+                    // if the field value is a traversal then it is a TraversalRemapping
+                    FieldValueType::Traversal(traversal) => {
+                        let mut inner_traversal = GeneratedTraversal::default();
+                        self.check_traversal(&traversal, scope, q, None, &mut inner_traversal);
+
+                        RemappingType::TraversalRemapping(TraversalRemapping {
+                            variable_name: key.clone(),
+                            new_field: key.clone(),
+                            new_value: inner_traversal,
+                        })
+                    }
+                    FieldValueType::Expression(expr) => {
+                        match &expr.expr {
+                            ExpressionType::Traversal(traversal) => {
+                                let mut inner_traversal = GeneratedTraversal::default();
+                                self.check_traversal(
+                                    &traversal,
+                                    &HashMap::new(),
+                                    q,
+                                    None,
+                                    &mut inner_traversal,
+                                );
+
+                                RemappingType::TraversalRemapping(TraversalRemapping {
+                                    variable_name: key.clone(),
+                                    new_field: key.clone(),
+                                    new_value: inner_traversal,
+                                })
+                            }
+                            ExpressionType::Exists(exists) => {
+                                todo!()
+                            }
+                            ExpressionType::BooleanLiteral(bo_lit) => {
+                                RemappingType::ValueRemapping(ValueRemapping {
+                                    variable_name: key.clone(),
+                                    field_name: key.clone(),
+                                    value: GenRef::Literal(bo_lit.to_string()), // TODO: Implement
+                                })
+                            }
+                            ExpressionType::FloatLiteral(float) => {
+                                RemappingType::ValueRemapping(ValueRemapping {
+                                    variable_name: key.clone(),
+                                    field_name: key.clone(),
+                                    value: GenRef::Literal(float.to_string()), // TODO: Implement
+                                })
+                            }
+                            ExpressionType::StringLiteral(string) => {
+                                RemappingType::ValueRemapping(ValueRemapping {
+                                    variable_name: key.clone(),
+                                    field_name: key.clone(),
+                                    value: GenRef::Literal(string.clone()), // TODO: Implement
+                                })
+                            }
+                            ExpressionType::IntegerLiteral(integer) => {
+                                RemappingType::ValueRemapping(ValueRemapping {
+                                    variable_name: key.clone(),
+                                    field_name: key.clone(),
+                                    value: GenRef::Literal(integer.to_string()), // TODO: Implement
+                                })
+                            }
+                            ExpressionType::Identifier(identifier) => {
+                                RemappingType::IdentifierRemapping(IdentifierRemapping {
+                                    variable_name: key.clone(),
+                                    field_name: key.clone(),
+                                    identifier_value: identifier.into(), // TODO: Implement
+                                })
+                            }
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    expr.loc.clone(),
+                                    "invalid expression".to_string(),
+                                    "invalid expression".to_string(),
+                                );
+                                RemappingType::Empty
+                            }
+                        }
+                    }
+                    // if field value is identifier then push field remapping
+                    FieldValueType::Literal(lit) => {
+                        RemappingType::ValueRemapping(ValueRemapping {
+                            variable_name: key.clone(),
+                            field_name: key.clone(),
+                            value: GenRef::from(lit.clone()), // TODO: Implement
+                        })
+                    }
+                    FieldValueType::Identifier(identifier) => {
+                        RemappingType::IdentifierRemapping(IdentifierRemapping {
+                            variable_name: key.clone(),
+                            field_name: key.clone(),
+                            identifier_value: identifier.into(), // TODO: Implement
+                        })
+                    }
+                    // if the field value is another object or closure then recurse (sub mapping would go where traversal would go)
+                    FieldValueType::Fields(fields) => {
+                        let remapping = self.parse_object_remapping(&fields, q, true, scope);
+                        RemappingType::ObjectRemapping(ObjectRemapping {
+                            variable_name: key.clone(),
+                            field_name: key.clone(),
+                            remapping,
+                        })
+                    } // object or closure
+                    FieldValueType::Empty => {
+                        self.push_query_err(
+                            q,
+                            obj[0].loc.clone(),
+                            "object must have at least one field".to_string(),
+                            "object must have at least one field".to_string(),
+                        );
+                        RemappingType::Empty
+                    } // err
+                }
+                // cast to a remapping type
+            })
+            .collect();
+        Remapping {
+            variable_name: "".to_string(),
+            is_inner,
+            remappings,
         }
     }
 }

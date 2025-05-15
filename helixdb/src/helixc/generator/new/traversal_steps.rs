@@ -1,7 +1,7 @@
 use super::{
     bool_op::BoolOp,
     generator_types::{BoExp, GeneratedValue, Separator},
-    object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping},
+    object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping, Remapping},
     source_steps::SourceStep,
     types::GenRef,
 };
@@ -29,11 +29,11 @@ impl Display for TraversalType {
 }
 
 pub struct Traversal {
-
     pub traversal_type: TraversalType,
     pub source_step: SourceStep,
     pub steps: Vec<Separator<Step>>,
 }
+
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.traversal_type)?;
@@ -73,13 +73,10 @@ pub enum Step {
     BoolOp(BoolOp),
 
     // property
-    Property(GenRef<String>),
+    PropertyFetch(GenRef<String>),
 
     // object
-    ClosureFieldRemapping(ClosureFieldRemapping),
-    FieldRemapping(FieldRemapping),
-    ExcludeField(ExcludeField),
-
+    Remapping(Remapping),
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -88,7 +85,7 @@ impl Display for Step {
             Step::Dedup => write!(f, "dedup()"),
             Step::FromN => write!(f, "from_n()"),
             Step::ToN => write!(f, "to_n()"),
-            Step::Property(property) => write!(f, "check_property({})", property),
+            Step::PropertyFetch(property) => write!(f, "check_property({})", property),
 
             Step::Out(out) => write!(f, "{}", out),
             Step::In(in_) => write!(f, "{}", in_),
@@ -98,14 +95,11 @@ impl Display for Step {
             Step::Range(range) => write!(f, "{}", range),
             Step::OrderBy(order_by) => write!(f, "{}", order_by),
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
-            Step::ClosureFieldRemapping(closure_field_remapping) => {
-                write!(f, "{}", closure_field_remapping)
-            }
-            Step::FieldRemapping(field_remapping) => write!(f, "{}", field_remapping),
-            Step::ExcludeField(exclude_field) => write!(f, "{}", exclude_field),
+            Step::Remapping(remapping) => write!(f, "{}", remapping),
         }
     }
 }
+
 pub struct Out {
     pub label: GenRef<String>,
 }
@@ -196,11 +190,7 @@ pub struct OrderBy {
 }
 impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "order_by({}, HelixOrder::{})",
-            self.property, self.order
-        )
+        write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
     }
 }
 // TODO: probably move to protocol

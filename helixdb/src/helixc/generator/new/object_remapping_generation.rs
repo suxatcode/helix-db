@@ -85,6 +85,16 @@ impl Display for ValueRemapping {
     }
 }
 
+pub struct IdentifierRemapping {
+    pub variable_name: String,
+    pub field_name: String,
+    pub identifier_value: String,
+}
+impl Display for IdentifierRemapping {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "identifier_remapping!({}, {}: {})", self.variable_name, self.field_name, self.identifier_value)
+    }
+}
 // pub enum RemappingValue {
 //     Remapping(Remapping),
 //     String(GenRef<String>),
@@ -100,7 +110,7 @@ impl Display for ValueRemapping {
 pub struct Remapping {
     pub is_inner: bool,
     pub variable_name: String,
-    pub remappings: Vec<RemappingType>,
+    pub remappings: Vec<RemappingType>, 
 }
 impl Display for Remapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -141,6 +151,9 @@ pub enum RemappingType {
     ClosureFieldRemapping(ClosureFieldRemapping),
     ExcludeField(ExcludeField),
     TraversalRemapping(TraversalRemapping),
+    ValueRemapping(ValueRemapping),
+    IdentifierRemapping(IdentifierRemapping),
+    Empty,
 }
 impl Display for RemappingType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

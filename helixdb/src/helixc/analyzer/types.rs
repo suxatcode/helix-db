@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
 use crate::helixc::{
-    generator::new::generator_types::{
-        Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema, GeneratedType,
-        NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter,
-        RustType as GeneratedRustType, Statement as GeneratedStatement,
-        VectorSchema as GeneratedVectorSchema,
+    generator::new::{
+        generator_types::{
+            Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema, GeneratedType,
+            NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter,
+            RustType as GeneratedRustType, Statement as GeneratedStatement,
+            VectorSchema as GeneratedVectorSchema,
+        },
+        traversal_steps::Traversal as GeneratedTraversal,
     },
     parser::helix_parser::{
         Assignment, EdgeSchema, FieldType, NodeSchema, Parameter, VectorSchema,
@@ -108,13 +111,13 @@ impl GeneratedParameter {
 }
 
 impl GeneratedStatement {
-    pub fn unwrap_assignment(assignment: Assignment, statements: &mut Vec<GeneratedStatement>) {
-        let generated_assignment = GeneratedStatement::Assignment(GeneratedAssignment {
-            variable: assignment.variable.clone(),
-            value: assignment.value.into(),
-        });
-        statements.push(generated_assignment);
-    }
+    // pub fn unwrap_assignment(assignment: Assignment, statements: &mut Vec<GeneratedStatement>) {
+    //     let generated_assignment = GeneratedStatement::Assignment(GeneratedAssignment {
+    //         variable: assignment.variable.clone(),
+    //         value: assignment.value.into(),
+    //     });
+    //     statements.push(generated_assignment);
+    // }
 
     fn unwrap_traversal(traversal: GeneratedTraversal, statements: &mut Vec<GeneratedStatement>) {}
 }

@@ -10,6 +10,7 @@ pub struct Source {
     pub edges: Vec<EdgeSchema>,
     pub vectors: Vec<VectorSchema>,
     pub queries: Vec<Query>,
+    pub src: String,
 }
 impl Default for Source {
     fn default() -> Self {
@@ -18,6 +19,7 @@ impl Default for Source {
             edges: vec![],
             vectors: vec![],
             queries: vec![],
+            src: "".to_string(),
         }
     }
 }
@@ -321,13 +323,15 @@ pub enum Separator<T> {
     Comma(T),
     Semicolon(T),
     Period(T),
+    Newline(T),
 }
 impl<T: Display> Display for Separator<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Separator::Comma(t) => write!(f, "{}", t),
-            Separator::Semicolon(t) => write!(f, "{}", t),
-            Separator::Period(t) => write!(f, "{}", t),
+            Separator::Comma(t) => write!(f, ",\n{}", t),
+            Separator::Semicolon(t) => write!(f, ";\n{}", t),
+            Separator::Period(t) => write!(f, "\n.{}", t),
+            Separator::Newline(t) => write!(f, "\n{}", t),
         }
     }
 }

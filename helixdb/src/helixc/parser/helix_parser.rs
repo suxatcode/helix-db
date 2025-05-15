@@ -321,7 +321,7 @@ impl PartialEq<StepType> for StepType {
 }
 #[derive(Debug, Clone)]
 pub struct FieldAddition {
-    pub name: String,
+    pub key: String,
     pub value: FieldValue,
     pub loc: Loc,
 }
@@ -500,7 +500,7 @@ pub struct Update {
 pub struct Object {
     pub loc: Loc,
     // TODO: Change this to be a vec of structs where the enums holds the name and value
-    pub fields: Vec<(String, FieldValue)>,
+    pub fields: Vec<FieldAddition>,
     pub should_spread: bool,
 }
 
@@ -1506,13 +1506,14 @@ impl HelixParser {
             Rule::ID => Ok(Step {
                 loc: inner.loc(),
                 step: StepType::Object(Object {
-                    fields: vec![(
-                        "id".to_string(),
-                        FieldValue {
+                    fields: vec![FieldAddition {
+                        key: "id".to_string(),
+                        value: FieldValue {
                             loc: pair.loc(),
                             value: FieldValueType::Empty,
                         },
-                    )],
+                        loc: pair.loc(),
+                    }],
                     should_spread: false,
                     loc: pair.loc(),
                 }),
@@ -1643,7 +1644,7 @@ impl HelixParser {
 
     fn parse_new_field_pair(&self, pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
         let mut pairs = pair.clone().into_inner();
-        let name = pairs.next().unwrap().as_str().to_string();
+        let key = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
         let value: FieldValue = match value_pair.as_rule() {
@@ -1710,7 +1711,7 @@ impl HelixParser {
 
         Ok(FieldAddition {
             loc: pair.loc(),
-            name,
+            key,
             value,
         })
     }
@@ -1809,17 +1810,7 @@ impl HelixParser {
                     },
                     Rule::object_step => FieldValue {
                         loc: p.clone().loc(),
-                        value: FieldValueType::Fields(
-                            self.parse_object_step(p.clone())?
-                                .fields
-                                .iter()
-                                .map(|(k, v)| FieldAddition {
-                                    loc: p.loc(),
-                                    name: k.clone(),
-                                    value: v.clone(),
-                                })
-                                .collect(),
-                        ),
+                        value: FieldValueType::Fields(self.parse_object_step(p.clone())?.fields),
                     },
                     _ => self.parse_new_field_value(p)?,
                 },
@@ -1832,7 +1823,11 @@ impl HelixParser {
                     value: FieldValueType::Empty,
                 },
             };
-            fields.push((prop_key, field_addition));
+            fields.push(FieldAddition {
+                loc: p.loc(),
+                key: prop_key,
+                value: field_addition,
+            });
         }
         Ok(Object {
             loc: pair.loc(),
