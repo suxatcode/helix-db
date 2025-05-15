@@ -119,11 +119,14 @@ pub struct Query {
     pub statements: Vec<Statement>,
     pub parameters: Vec<Parameter>, // iterate through and print each one
     pub sub_parameters: Vec<(String, Vec<Parameter>)>,
+    pub return_vals: Vec<String>,
+    pub is_mut: bool,
 }
 impl Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // prints sub parameter structs (e.g. (docs: {doc: String, id: String}))
         for (name, parameters) in &self.sub_parameters {
+            writeln!(f, "#[derive(Serialize, Deserialize)]")?;
             write!(f, "pub struct {} {{\n", name)?;
             for parameter in parameters {
                 write!(f, "    pub {}: {},\n", parameter.name, parameter.field_type)?;
@@ -131,6 +134,8 @@ impl Display for Query {
             write!(f, "}}\n")?;
         }
         // prints top level parameters (e.g. (docs: {doc: String, id: String}))
+        writeln!(f, "#[derive(Serialize, Deserialize)]")?;
+        writeln!(f, "pub struct {}Input {{\n", self.name)?;
         write!(
             f,
             "{}",
@@ -138,13 +143,39 @@ impl Display for Query {
                 .iter()
                 .map(|p| format!("{}", p))
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join(",\n")
         )?;
+        write!(f, "\n}}\n")?;
+
         write!(f, "#[handler]\n")?; // Handler macro
 
         // prints the function signature
-        write!(f, "pub struct (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {{\n")?;
+        write!(f, "pub fn {} (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {{\n", self.name)?;
 
+        // prints basic query items
+        write!(
+            f,
+            "let data: {}Input = match sonic_rs::from_slice(&input.request.body) {{\n",
+            self.name
+        )?;
+        writeln!(f, "    Ok(data) => data,")?;
+        writeln!(f, "    Err(err) => return Err(GraphError::from(err)),")?;
+        writeln!(f, "}};\n")?;
+        writeln!(f, "let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());")?;
+
+        writeln!(f, "let db = Arc::clone(&input.graph.storage);")?;
+        // if mut then get write txn
+        // if not then get read txn
+        if self.is_mut {
+            writeln!(f, "let mut txn = db.graph_env.write_txn().unwrap();")?;
+        } else {
+            writeln!(f, "let txn = db.graph_env.read_txn().unwrap();")?;
+        }
+      
+        writeln!(
+            f,
+            "let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();"
+        )?;
         // prints each statement
         for statement in &self.statements {
             write!(f, "    {}\n", statement)?;
@@ -160,6 +191,8 @@ impl Default for Query {
             statements: vec![],
             parameters: vec![],
             sub_parameters: vec![],
+            return_vals: vec![],
+            is_mut: false,
         }
     }
 }
@@ -256,12 +289,16 @@ impl Display for BoExp {
 pub enum GeneratedValue {
     // needed?
     Literal(GenRef<String>),
+    Identifier(GenRef<String>),
+    Unknown,
 }
 
 impl Display for GeneratedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GeneratedValue::Literal(value) => write!(f, "{}", value),
+            GeneratedValue::Literal(value) => write!(f, "\"{}\"", value),
+            GeneratedValue::Identifier(value) => write!(f, "{}", value),
+            GeneratedValue::Unknown => write!(f, ""),
         }
     }
 }
@@ -336,6 +373,7 @@ impl<T: Display> Display for Separator<T> {
             Separator::Semicolon(t) => write!(f, ";\n{}", t),
             Separator::Period(t) => write!(f, "\n.{}", t),
             Separator::Newline(t) => write!(f, "\n{}", t),
+            _ => write!(f, ""),
         }
     }
 }
@@ -361,10 +399,10 @@ use helixdb::{
             add_n::AddNAdapter,
             e::EAdapter,
             e_from_id::EFromId,
-            e_from_types::EFromTypes,
+            e_from_type::EFromTypeAdapter,
             n::NAdapter,
             n_from_id::NFromId,
-            n_from_types::NFromTypesAdapter,
+            n_from_type::NFromTypeAdapter,
         },
         tr_val::{Traversable, TraversalVal},
         util::{

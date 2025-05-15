@@ -58,7 +58,7 @@ impl Display for AddE {
 }
 pub struct AddV {
     pub vec: GeneratedValue,
-    pub label: String,
+    pub label: GenRef<String>,
     pub properties: Vec<(String, GeneratedValue)>,
 }
 impl Display for AddV {

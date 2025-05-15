@@ -5,16 +5,18 @@ use colored::Colorize;
 use crate::helixc::{
     generator::new::{
         generator_types::{
-            Assignment as GeneratedAssignment, GeneratedType, Parameter as GeneratedParameter, Query as GeneratedQuery, Separator, Source as GeneratedSource, Statement as GeneratedStatement
+            Assignment as GeneratedAssignment, GeneratedType, GeneratedValue,
+            Parameter as GeneratedParameter, Query as GeneratedQuery, Separator,
+            Source as GeneratedSource, Statement as GeneratedStatement,
         },
         object_remapping_generation::{
             ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
             RemappingType, TraversalRemapping, ValueRemapping,
         },
-        source_steps::{EFromID, NFromID, SourceStep},
+        source_steps::{AddE, AddN, AddV, EFromID, NFromID, NFromType, SourceStep},
         traversal_steps::{
             In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-            Step as GeneratedStep, Traversal as GeneratedTraversal,
+            Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType,
         },
         types::GenRef,
     },
@@ -231,7 +233,7 @@ impl<'a> Ctx<'a> {
 
         use StatementType::*;
         for stmt in &q.statements {
-            let gen_statement = match &stmt.statement {
+            match &stmt.statement {
                 Assignment(assign) => {
                     if scope.contains_key(assign.variable.as_str()) {
                         self.push_query_err(
@@ -243,12 +245,8 @@ impl<'a> Ctx<'a> {
                         continue;
                     }
 
-                    let rhs_ty = self.infer_expr_type(&assign.value, &scope, q, None);
+                    let rhs_ty = self.infer_expr_type(&assign.value, &scope, q, None, &mut query);
                     scope.insert(assign.variable.as_str(), rhs_ty);
-                    GeneratedStatement::Assignment(GeneratedAssignment {
-                        variable: assign.variable.clone(),
-                        value: assign.value.clone(),
-                    })
                 }
 
                 AddNode(add) => {
@@ -305,7 +303,7 @@ impl<'a> Ctx<'a> {
 
                 Drop(expr) => {
                     // Nothing special right now; still type‑check sub‑expressions
-                    self.infer_expr_type(expr, &scope, q, None);
+                    self.infer_expr_type(expr, &scope, q, None, &mut query);
                 }
 
                 SearchVector(expr) => {
@@ -339,7 +337,7 @@ impl<'a> Ctx<'a> {
                     for body_stmt in &fl.statements {
                         // Recursive walk (but without infinite nesting for now)
                         if let StatementType::Assignment(a) = &body_stmt.statement {
-                            let t = self.infer_expr_type(&a.value, &body_scope, q, None);
+                            let t = self.infer_expr_type(&a.value, &body_scope, q, None, &mut query);
                             body_scope.insert(a.variable.as_str(), t);
                         }
                     }
@@ -363,8 +361,9 @@ impl<'a> Ctx<'a> {
             );
         }
         for ret in &q.return_values {
-            self.infer_expr_type(ret, &scope, q, None);
+            self.infer_expr_type(ret, &scope, q, None, &mut query);
         }
+        self.output.queries.push(query);
     }
 
     // -----------------------------------------------------
@@ -431,12 +430,17 @@ impl<'a> Ctx<'a> {
         scope: &HashMap<&'a str, Type<'a>>,
         q: &'a Query,
         parent_ty: Option<Type<'a>>,
-    ) -> Type<'a> { // TODO: Look at returning statement as well or passing mut query to push to
+        gen_query: &mut GeneratedQuery,
+    ) -> Type<'a> {
+        // TODO: Look at returning statement as well or passing mut query to push to
         use ExpressionType::*;
         let expr = &expression.expr;
         match expr {
             Identifier(name) => match scope.get(name.as_str()) {
-                Some(t) => t.clone(),
+                Some(t) => {
+                    gen_query.statements.push(GeneratedStatement::Identifier(GenRef::Ref(name.clone())));
+                    t.clone()
+                }
                 None => {
                     self.push_query_err(
                         q,
@@ -448,17 +452,32 @@ impl<'a> Ctx<'a> {
                 }
             },
 
-            IntegerLiteral(_) => Type::Scalar(FieldType::I32),
-            FloatLiteral(_) => Type::Scalar(FieldType::F64),
-            StringLiteral(_) => Type::Scalar(FieldType::String),
-            BooleanLiteral(_) => Type::Boolean,
-            Empty => Type::Unknown,
+            IntegerLiteral(i) => {
+                gen_query.statements.push(GeneratedStatement::Literal(GenRef::Literal(i.to_string())));
+                Type::Scalar(FieldType::I32)
+            },
+            FloatLiteral(f) => {
+                gen_query.statements.push(GeneratedStatement::Literal(GenRef::Literal(f.to_string())));
+                Type::Scalar(FieldType::F64)
+            },
+            StringLiteral(s) => {
+                gen_query.statements.push(GeneratedStatement::Literal(GenRef::Literal(s.to_string())));
+                Type::Scalar(FieldType::String)
+            },
+            BooleanLiteral(b) => {
+                gen_query.statements.push(GeneratedStatement::Literal(GenRef::Literal(b.to_string())));
+                Type::Boolean
+            },
+            Empty => {
+                Type::Unknown
+            },
 
             Traversal(tr) | Exists(tr) => {
                 let mut gen_traversal = GeneratedTraversal::default();
-                let final_ty = self.check_traversal(tr, scope, q, parent_ty, &mut gen_traversal);
+                let final_ty = self.check_traversal(tr, scope, q, parent_ty, &mut gen_traversal, gen_query);
                 // push query
-
+                let stmt = GeneratedStatement::Traversal(gen_traversal);
+                gen_query.statements.push(stmt);
                 if matches!(expr, Exists(_)) {
                     Type::Boolean
                 } else {
@@ -476,6 +495,7 @@ impl<'a> Ctx<'a> {
                             "declare the node schema first",
                         );
                     }
+                    let label = GenRef::Literal(ty.clone());
                     // Validate fields if both type and fields are present
                     if let Some(fields) = &add.fields {
                         // Get the field set before validation
@@ -492,9 +512,53 @@ impl<'a> Ctx<'a> {
                                 }
                             }
                         }
+                        let properties = fields
+                            .iter()
+                            .map(|(field_name, value)| {
+                                (
+                                    field_name.clone(),
+                                    match value {
+                                        ValueType::Literal(l) => {
+                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        }
+                                        ValueType::Identifier(i) => {
+                                            GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                        }
+                                        v => {
+                                            self.push_query_err(
+                                                q,
+                                                add.loc.clone(),
+                                                format!("`{:?}` is not a valid field value", v),
+                                                "use a literal or identifier",
+                                            );
+                                            GeneratedValue::Unknown
+                                        }
+                                    },
+                                )
+                            })
+                            .collect();
+                        let add_n = AddN {
+                            label,
+                            properties,
+                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: SourceStep::AddN(add_n),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                        });
+                        gen_query.statements.push(stmt);
+                        gen_query.is_mut = true;
+                        return Type::Nodes(Some(ty));
                     }
                 }
-                Type::Nodes(add.node_type.as_deref())
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddN` must have a node type".to_string(),
+                    "add a node type",
+                );
+                Type::Nodes(None)
             }
             AddEdge(add) => {
                 if let Some(ref ty) = add.edge_type {
@@ -506,6 +570,7 @@ impl<'a> Ctx<'a> {
                             "declare the edge schema first",
                         );
                     }
+                    let label = GenRef::Literal(ty.clone());
                     // Validate fields if both type and fields are present
                     if let Some(fields) = &add.fields {
                         // Get the field set before validation
@@ -522,9 +587,85 @@ impl<'a> Ctx<'a> {
                                 }
                             }
                         }
+                        let properties = fields
+                            .iter()
+                            .map(|(field_name, value)| {
+                                (
+                                    field_name.clone(),
+                                    match value {
+                                        ValueType::Literal(l) => {
+                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        }
+                                        ValueType::Identifier(i) => {
+                                            GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                        }
+                                        v => {
+                                            self.push_query_err(
+                                                q,
+                                                add.loc.clone(),
+                                                format!("`{:?}` is not a valid field value", v),
+                                                "use a literal or identifier",
+                                            );
+                                            GeneratedValue::Unknown
+                                        }
+                                    },
+                                )
+                            })
+                            .collect();
+
+                        let to = match &add.connection.to_id {
+                            Some(id) => match id {
+                                IdType::Identifier(id) => GenRef::Ref(id.clone()),
+                                IdType::Literal(id) => GenRef::Literal(id.clone()),
+                            },
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    add.loc.clone(),
+                                    "`AddE` must have a to id".to_string(),
+                                    "add a to id",
+                                );
+                                GenRef::Unknown
+                            }
+                        };
+                        let from = match &add.connection.from_id {
+                            Some(id) => match id {
+                                IdType::Identifier(id) => GenRef::Ref(id.clone()),
+                                IdType::Literal(id) => GenRef::Literal(id.clone()),
+                            },
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    add.loc.clone(),
+                                    "`AddE` must have a from id".to_string(),
+                                    "add a from id",
+                                );
+                                GenRef::Unknown
+                            }
+                        };
+                        let add_e = AddE {
+                            to,
+                            from,
+                            label,
+                            properties,
+                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: SourceStep::AddE(add_e),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                        });
+                        gen_query.statements.push(stmt);
+                        return Type::Edges(Some(ty));
                     }
                 }
-                Type::Edges(add.edge_type.as_deref())
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddE` must have an edge type".to_string(),
+                    "add an edge type",
+                );
+                Type::Edges(None)
             }
             AddVector(add) => {
                 if let Some(ref ty) = add.vector_type {
@@ -554,42 +695,106 @@ impl<'a> Ctx<'a> {
                                 }
                             }
                         }
+                        if let Some(vec_data) = &add.data {
+                            let label = GenRef::Literal(ty.clone());
+                            let properties = fields
+                                .iter()
+                                .map(|(field_name, value)| {
+                                    (
+                                        field_name.clone(),
+                                        match value {
+                                            ValueType::Literal(l) => {
+                                                GeneratedValue::Literal(GenRef::from(l.clone()))
+                                            }
+                                            ValueType::Identifier(i) => {
+                                                GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                            }
+                                            v => {
+                                                self.push_query_err(
+                                                    q,
+                                                    add.loc.clone(),
+                                                    format!("`{:?}` is not a valid field value", v),
+                                                    "use a literal or identifier",
+                                                );
+                                                GeneratedValue::Unknown
+                                            }
+                                        },
+                                    )
+                                })
+                                .collect();
+                            let vec = match vec_data {
+                                VectorData::Vector(v) => {
+                                    GeneratedValue::Literal(GenRef::Ref(format!(
+                                        "[{}]",
+                                        v.iter()
+                                            .map(|f| f.to_string())
+                                            .collect::<Vec<String>>()
+                                            .join(",")
+                                    )))
+                                }
+                                VectorData::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                }
+                            };
+                            let add_v = AddV {
+                                vec,
+                                label,
+                                properties,
+                            };
+                            let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                                source_step: SourceStep::AddV(add_v),
+                                steps: vec![],
+                                traversal_type: TraversalType::Mut,
+                            });
+                            gen_query.statements.push(stmt);
+                            return Type::Vector(Some(ty));
+                        }
                     }
                 }
-                Type::Vector(add.vector_type.as_deref())
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddV` must have a vector type".to_string(),
+                    "add a vector type",
+                );
+                Type::Vector(None)
             }
-            BatchAddVector(add) => {
-                if let Some(ref ty) = add.vector_type {
-                    if !self.vector_set.contains(ty.as_str()) {
-                        self.push_query_err(
-                            q,
-                            add.loc.clone(),
-                            format!("vector type `{}` has not been declared", ty),
-                            format!("add a `V::{}` schema first", ty),
-                        );
-                    }
-                }
-                Type::Vector(add.vector_type.as_deref())
-            }
-            SearchVector(sv) => {
-                if let Some(ref ty) = sv.vector_type {
-                    if !self.vector_set.contains(ty.as_str()) {
-                        self.push_query_err(
-                            q,
-                            sv.loc.clone(),
-                            format!("vector type `{}` has not been declared", ty),
-                            format!("add a `V::{}` schema first", ty),
-                        );
-                    }
-                }
-                // Search returns nodes that contain the vectors
-                Type::Nodes(None)
-            }
-            And(v) | Or(v) => {
-                for e in v {
-                    self.infer_expr_type(e, scope, q, parent_ty.clone());
-                }
-                Type::Boolean
+            // BatchAddVector(add) => {
+            //     if let Some(ref ty) = add.vector_type {
+            //         if !self.vector_set.contains(ty.as_str()) {
+            //             self.push_query_err(
+            //                 q,
+            //                 add.loc.clone(),
+            //                 format!("vector type `{}` has not been declared", ty),
+            //                 format!("add a `V::{}` schema first", ty),
+            //             );
+            //         }
+            //     }
+            //     Type::Vector(add.vector_type.as_deref())
+            // }
+            // SearchVector(sv) => {
+            //     if let Some(ref ty) = sv.vector_type {
+            //         if !self.vector_set.contains(ty.as_str()) {
+            //             self.push_query_err(
+            //                 q,
+            //                 sv.loc.clone(),
+            //                 format!("vector type `{}` has not been declared", ty),
+            //                 format!("add a `V::{}` schema first", ty),
+            //             );
+            //         }
+            //     }
+            //     // Search returns nodes that contain the vectors
+            //     Type::Nodes(None)
+            // }
+            // And(v) | Or(v) => {
+            //     for e in v {
+            //         self.infer_expr_type(e, scope, q, parent_ty.clone());
+            //     }
+            //     Type::Boolean
+            // }
+            _ => {
+                println!("Unknown expression: {:?}", expr);
+                todo!()
             }
         }
     }
@@ -604,6 +809,7 @@ impl<'a> Ctx<'a> {
         q: &'a Query,
         parent_ty: Option<Type<'a>>,
         gen_traversal: &mut GeneratedTraversal,
+        gen_query: &mut GeneratedQuery,
     ) -> Type<'a> {
         let mut previous_step = None;
         let mut cur_ty = match &tr.start {
@@ -622,7 +828,14 @@ impl<'a> Ctx<'a> {
                         id: GenRef::Literal(ids[0].clone()),
                         label: GenRef::Literal(node_type.clone()),
                     });
+                } else {
+                    let src = SourceStep::NFromType(NFromType {
+                        label: GenRef::Literal(node_type.clone()),
+                    });
+                    gen_traversal.source_step = src;
                 }
+
+
                 Type::Nodes(Some(node_type))
             }
             StartNode::Edge { edge_type, ids } => {
@@ -688,7 +901,7 @@ impl<'a> Ctx<'a> {
                     excluded.clear();
                     gen_traversal
                         .steps
-                        .push(Separator::Comma(GeneratedStep::Count));
+                        .push(Separator::Period(GeneratedStep::Count));
                 }
 
                 StepType::Exclude(ex) => {
@@ -716,7 +929,7 @@ impl<'a> Ctx<'a> {
                     }
                     gen_traversal
                         .steps
-                        .push(Separator::Comma(GeneratedStep::Remapping(Remapping {
+                        .push(Separator::Period(GeneratedStep::Remapping(Remapping {
                             variable_name: "".to_string(),
                             is_inner: false,
                             remappings: vec![RemappingType::ExcludeField(ExcludeField {
@@ -740,11 +953,11 @@ impl<'a> Ctx<'a> {
                     //         "move the object to the end of the traversal",
                     //     );
                     // }
-                    self.validate_object(&cur_ty, tr, obj, &excluded, q, gen_traversal);
+                    self.validate_object(&cur_ty, tr, obj, &excluded, q, gen_traversal, gen_query);
                 }
 
                 StepType::Where(expr) => {
-                    self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()));
+                    self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()), gen_query);
                     // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
                 }
@@ -758,7 +971,7 @@ impl<'a> Ctx<'a> {
                         | BooleanOpType::GreaterThan(expr)
                         | BooleanOpType::Equal(expr)
                         | BooleanOpType::NotEqual(expr) => {
-                            match self.infer_expr_type(expr, scope, q, Some(cur_ty.clone())) {
+                            match self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()), gen_query) {
                                 Type::Scalar(ft) => ft.clone(),
                                 field_type => {
                                     self.push_query_err(
@@ -1015,6 +1228,7 @@ impl<'a> Ctx<'a> {
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         gen_traversal: &mut GeneratedTraversal,
+        gen_query: &mut GeneratedQuery,
     ) {
         match &cur_ty {
             Type::Nodes(Some(node_ty)) => {
@@ -1045,7 +1259,7 @@ impl<'a> Ctx<'a> {
                         // if there are multiple fields then it is a field remapping
                         // push object remapping where
                         let remapping =
-                            self.parse_object_remapping(&obj.fields, q, false, &HashMap::new());
+                            self.parse_object_remapping(&obj.fields, q, false, &HashMap::new(), gen_query);
                         gen_traversal
                             .steps
                             .push(Separator::Period(GeneratedStep::Remapping(remapping)));
@@ -1099,7 +1313,7 @@ impl<'a> Ctx<'a> {
                 }
             }
             Type::Anonymous(ty) => {
-                self.validate_object(ty, tr, obj, excluded, q, gen_traversal);
+                self.validate_object(ty, tr, obj, excluded, q, gen_traversal, gen_query);
             }
             _ => {
                 self.push_query_err(
@@ -1127,7 +1341,7 @@ impl<'a> Ctx<'a> {
             (OutE(Some(label)), Type::Nodes(_)) => {
                 traversal
                     .steps
-                    .push(Separator::Comma(GeneratedStep::OutE(GeneratedOutE {
+                    .push(Separator::Period(GeneratedStep::OutE(GeneratedOutE {
                         label: GenRef::Literal(label.clone()),
                     })));
                 Some(Type::Edges(Some(
@@ -1141,7 +1355,7 @@ impl<'a> Ctx<'a> {
             (InE(Some(label)), Type::Nodes(_)) => {
                 traversal
                     .steps
-                    .push(Separator::Comma(GeneratedStep::InE(GeneratedInE {
+                    .push(Separator::Period(GeneratedStep::InE(GeneratedInE {
                         label: GenRef::Literal(label.clone()),
                     })));
                 Some(Type::Edges(Some(
@@ -1157,7 +1371,7 @@ impl<'a> Ctx<'a> {
             (Out(Some(label)), Type::Nodes(_)) => {
                 traversal
                     .steps
-                    .push(Separator::Comma(GeneratedStep::Out(GeneratedOut {
+                    .push(Separator::Period(GeneratedStep::Out(GeneratedOut {
                         label: GenRef::Literal(label.clone()),
                     })));
                 Some(Type::Nodes(Some(
@@ -1172,7 +1386,7 @@ impl<'a> Ctx<'a> {
             (In(Some(label)), Type::Nodes(_)) => {
                 traversal
                     .steps
-                    .push(Separator::Comma(GeneratedStep::In(GeneratedIn {
+                    .push(Separator::Period(GeneratedStep::In(GeneratedIn {
                         label: GenRef::Literal(label.clone()),
                     })));
                 Some(Type::Nodes(Some(
@@ -1187,13 +1401,13 @@ impl<'a> Ctx<'a> {
 
             // Edge‑to‑Node
             (FromN, Type::Edges(_)) => {
-                traversal.steps.push(Separator::Comma(GeneratedStep::FromN));
+                traversal.steps.push(Separator::Period(GeneratedStep::FromN));
                 Some(Type::Nodes(Some(gs.loc.span.trim_matches(|c: char| {
                     c == '"' || c.is_whitespace() || c == '\n'
                 }))))
             }
             (ToN, Type::Edges(_)) => {
-                traversal.steps.push(Separator::Comma(GeneratedStep::ToN));
+                traversal.steps.push(Separator::Period(GeneratedStep::ToN));
                 Some(Type::Nodes(Some(gs.loc.span.trim_matches(|c: char| {
                     c == '"' || c.is_whitespace() || c == '\n'
                 }))))
@@ -1291,6 +1505,7 @@ impl<'a> Ctx<'a> {
         q: &'a Query,
         is_inner: bool,
         scope: &HashMap<&'a str, Type<'a>>,
+        gen_query: &mut GeneratedQuery,
     ) -> Remapping {
         // for each field
 
@@ -1301,7 +1516,7 @@ impl<'a> Ctx<'a> {
                     // if the field value is a traversal then it is a TraversalRemapping
                     FieldValueType::Traversal(traversal) => {
                         let mut inner_traversal = GeneratedTraversal::default();
-                        self.check_traversal(&traversal, scope, q, None, &mut inner_traversal);
+                        self.check_traversal(&traversal, scope, q, None, &mut inner_traversal, gen_query);
 
                         RemappingType::TraversalRemapping(TraversalRemapping {
                             variable_name: key.clone(),
@@ -1319,6 +1534,7 @@ impl<'a> Ctx<'a> {
                                     q,
                                     None,
                                     &mut inner_traversal,
+                                    gen_query,
                                 );
 
                                 RemappingType::TraversalRemapping(TraversalRemapping {
@@ -1393,7 +1609,7 @@ impl<'a> Ctx<'a> {
                     }
                     // if the field value is another object or closure then recurse (sub mapping would go where traversal would go)
                     FieldValueType::Fields(fields) => {
-                        let remapping = self.parse_object_remapping(&fields, q, true, scope);
+                        let remapping = self.parse_object_remapping(&fields, q, true, scope, gen_query);
                         RemappingType::ObjectRemapping(ObjectRemapping {
                             variable_name: key.clone(),
                             field_name: key.clone(),

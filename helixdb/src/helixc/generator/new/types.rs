@@ -13,6 +13,7 @@ where
     MutRefLT(String, T),
     MutDeRef(T),
     RefLiteral(T),
+    Unknown,
 }
 
 impl<T> Display for GenRef<T>
@@ -21,7 +22,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GenRef::Literal(t) => write!(f, "{}", t),
+            GenRef::Literal(t) => write!(f, "\"{}\"", t),
             GenRef::Mut(t) => write!(f, "mut {}", t),
             GenRef::Ref(t) => write!(f, "&{}", t),
             GenRef::RefLT(lifetime_name, t) => write!(f, "&'{} {}", lifetime_name, t),
@@ -30,6 +31,7 @@ where
             GenRef::MutRefLT(lifetime_name, t) => write!(f, "&'{} mut {}", lifetime_name, t),
             GenRef::MutDeRef(t) => write!(f, "mut *{}", t),
             GenRef::RefLiteral(t) => write!(f, "ref {}", t),
+            GenRef::Unknown => write!(f, ""),
         }
     }
 }
@@ -49,6 +51,7 @@ where
             GenRef::MutRefLT(_, t) => t,
             GenRef::MutDeRef(t) => t,
             GenRef::RefLiteral(t) => t,
+            GenRef::Unknown => panic!("Cannot get inner of unknown"),
         }
     }
 }

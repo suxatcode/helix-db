@@ -12,17 +12,19 @@ pub enum TraversalType {
     Ref,
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
+    // FromVar(GenRef<String>),
     Empty,
 }
 impl Display for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), txn)"),
-            TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), txn)"),
+            TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), &txn)"),
+            TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), &mut txn)"),
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
-                write!(f, "G::new_from(Arc::clone(&db), txn, {})", nested)
+                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)
             }
+            // TraversalType::FromVar(var) => write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var),
             TraversalType::Empty => panic!("Should not be empty"),
         }
     }
@@ -37,11 +39,11 @@ pub struct Traversal {
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.traversal_type)?;
-        write!(f, "{}", self.source_step)?;
-        for step in &self.steps {
-            write!(f, "{}", step)?;
-        }
-        Ok(())
+        write!(f, ".{}", self.source_step)?;
+        // for step in &self.steps {
+        //     write!(f, "\n{}", step)?;
+        // }
+        write!(f, "\n    .collect_to::<Vec<_>>();")
     }
 }
 impl Default for Traversal {
