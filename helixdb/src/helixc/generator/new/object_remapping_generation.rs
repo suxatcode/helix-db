@@ -1,9 +1,10 @@
 use core::fmt;
 use std::fmt::Display;
 
-use super::{traversal_steps::Traversal, types::GenRef};
+use super::{traversal_steps::Traversal, utils::GenRef};
 
 /// This is for creating a new field where the result is a traversal
+#[derive(Clone)]
 pub struct TraversalRemapping {
     pub variable_name: String,
     pub new_field: String,
@@ -20,6 +21,7 @@ impl Display for TraversalRemapping {
 }
 
 /// This is used for renaming fields
+#[derive(Clone)]
 pub struct FieldRemapping {
     pub variable_name: String,
     pub new_name: String,
@@ -37,6 +39,7 @@ impl Display for FieldRemapping {
 }
 
 /// This is used for excluding fields
+#[derive(Clone)]
 pub struct ExcludeField {
     pub fields_to_exclude: Vec<String>,
 }
@@ -46,6 +49,7 @@ impl Display for ExcludeField {
     }
 }
 
+#[derive(Clone)]
 pub struct ClosureFieldRemapping {
     pub variable_name: String,
     pub remapping: Remapping,
@@ -58,6 +62,7 @@ impl Display for ClosureFieldRemapping {
 }
 
 /// This is used for creating a new field where the result is either another value or another object
+#[derive(Clone)]
 pub struct ObjectRemapping {
     pub variable_name: String,
     pub field_name: String,
@@ -70,6 +75,7 @@ impl Display for ObjectRemapping {
     }
 }
 
+#[derive(Clone)]
 pub struct ValueRemapping {
     pub variable_name: String,
     pub field_name: String,
@@ -85,6 +91,7 @@ impl Display for ValueRemapping {
     }
 }
 
+#[derive(Clone)]
 pub struct IdentifierRemapping {
     pub variable_name: String,
     pub field_name: String,
@@ -92,7 +99,11 @@ pub struct IdentifierRemapping {
 }
 impl Display for IdentifierRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "identifier_remapping!({}, {}: {})", self.variable_name, self.field_name, self.identifier_value)
+        write!(
+            f,
+            "identifier_remapping!({}, {}: {})",
+            self.variable_name, self.field_name, self.identifier_value
+        )
     }
 }
 // pub enum RemappingValue {
@@ -107,10 +118,11 @@ impl Display for IdentifierRemapping {
 
 // split obj and tr
 
+#[derive(Clone)]
 pub struct Remapping {
     pub is_inner: bool,
     pub variable_name: String,
-    pub remappings: Vec<RemappingType>, 
+    pub remappings: Vec<RemappingType>,
 }
 impl Display for Remapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -145,6 +157,7 @@ impl Display for Remapping {
 // if the field value is a traversal then it is a TraversalRemapping
 // if the field value is another object or closure then recurse (sub mapping would go where traversal would go)
 
+#[derive(Clone)]
 pub enum RemappingType {
     ObjectRemapping(ObjectRemapping),
     FieldRemapping(FieldRemapping),

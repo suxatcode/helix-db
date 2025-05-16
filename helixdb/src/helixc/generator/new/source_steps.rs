@@ -1,15 +1,16 @@
 use core::fmt;
 use std::fmt::Display;
 
-use crate::helixc::generator::new::new_generator::{write_properties, write_secondary_indices};
+use crate::helixc::generator::new::utils::{write_properties, write_secondary_indices};
 
 use super::{
-    generator_types::{BoExp, GeneratedValue},
-    types::GenRef,
+    generator_types::BoExp,
+    utils::{GenRef, GeneratedValue},
 };
 
+#[derive(Clone)]
 pub enum SourceStep {
-    Variable(GenRef<String>),
+    Identifier(GenRef<String>),
     AddN(AddN),
     AddE(AddE),
     AddV(AddV),
@@ -21,6 +22,7 @@ pub enum SourceStep {
     Empty,
 }
 
+#[derive(Clone)]
 pub struct AddN {
     pub label: GenRef<String>,
     pub properties: Vec<(String, GeneratedValue)>,
@@ -38,6 +40,7 @@ impl Display for AddN {
     }
 }
 
+#[derive(Clone)]
 pub struct AddE {
     pub label: GenRef<String>,
     pub properties: Vec<(String, GeneratedValue)>,
@@ -56,6 +59,7 @@ impl Display for AddE {
         )
     }
 }
+#[derive(Clone)]
 pub struct AddV {
     pub vec: GeneratedValue,
     pub label: GenRef<String>,
@@ -69,6 +73,7 @@ impl Display for AddV {
 }
 
 /// where F: Fn(&HVector) -> bool;
+#[derive(Clone)]
 pub struct SearchV {
     pub vec: GeneratedValue,
     pub properties: Vec<(String, GeneratedValue)>,
@@ -77,11 +82,17 @@ pub struct SearchV {
 impl Display for SearchV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        let f_str = self.f.iter().map(|f| format!("{}", f)).collect::<Vec<_>>().join(", ");
+        let f_str = self
+            .f
+            .iter()
+            .map(|f| format!("{}", f))
+            .collect::<Vec<_>>()
+            .join(", ");
         write!(f, "search_v({}, {}, {})", self.vec, properties, f_str)
     }
 }
 
+#[derive(Clone)]
 pub struct NFromID {
     pub id: GenRef<String>,
     pub label: GenRef<String>, // possible not needed, do we do runtime label checking?
@@ -93,6 +104,7 @@ impl Display for NFromID {
     }
 }
 
+#[derive(Clone)]
 pub struct NFromType {
     pub label: GenRef<String>,
 }
@@ -102,6 +114,7 @@ impl Display for NFromType {
     }
 }
 
+#[derive(Clone)]
 pub struct EFromID {
     pub id: GenRef<String>,
     pub label: GenRef<String>, // possible not needed, do we do runtime label checking?
@@ -112,6 +125,7 @@ impl Display for EFromID {
     }
 }
 
+#[derive(Clone)]
 pub struct EFromType {
     pub label: GenRef<String>,
 }
@@ -124,7 +138,7 @@ impl Display for EFromType {
 impl Display for SourceStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SourceStep::Variable(v) => write!(f, "{}", v),
+            SourceStep::Identifier(identifier) => write!(f, "{}", identifier),
             SourceStep::AddN(add_n) => write!(f, "{}", add_n),
             SourceStep::AddE(add_e) => write!(f, "{}", add_e),
             SourceStep::AddV(add_v) => write!(f, "{}", add_v),

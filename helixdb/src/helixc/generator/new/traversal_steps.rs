@@ -1,14 +1,16 @@
 use super::{
     bool_op::BoolOp,
-    generator_types::{BoExp, GeneratedValue, Separator},
+    generator_types::BoExp,
     object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping, Remapping},
     source_steps::SourceStep,
-    types::GenRef,
+    utils::{GenRef, Order, Separator},
 };
 use core::fmt;
-use std::fmt::Display;
+use std::{clone, fmt::Display};
 
+#[derive(Clone)]
 pub enum TraversalType {
+    FromVar,
     Ref,
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
@@ -18,6 +20,7 @@ pub enum TraversalType {
 impl Display for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TraversalType::FromVar => write!(f, ""),
             TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), &txn)"),
             TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), &mut txn)"),
             TraversalType::Nested(nested) => {
@@ -30,31 +33,37 @@ impl Display for TraversalType {
     }
 }
 
+#[derive(Clone)]
 pub struct Traversal {
     pub traversal_type: TraversalType,
-    pub source_step: SourceStep,
+    pub source_step: Separator<SourceStep>,
     pub steps: Vec<Separator<Step>>,
 }
 
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.traversal_type)?;
-        write!(f, ".{}", self.source_step)?;
-        // for step in &self.steps {
-        //     write!(f, "\n{}", step)?;
-        // }
-        write!(f, "\n    .collect_to::<Vec<_>>();")
+        write!(f, "{}", self.source_step)?;
+        for step in &self.steps {
+            write!(f, "\n{}", step)?;
+        }
+        if let TraversalType::FromVar = self.traversal_type {
+            write!(f, "")
+        } else {
+            write!(f, "\n    .collect_to::<Vec<_>>()")
+        }
     }
 }
 impl Default for Traversal {
     fn default() -> Self {
         Self {
             traversal_type: TraversalType::Ref,
-            source_step: SourceStep::Empty,
+            source_step: Separator::Empty(SourceStep::Empty),
             steps: vec![],
         }
     }
 }
+#[derive(Clone)]
 pub enum Step {
     // graph steps
     Out(Out),
@@ -102,6 +111,7 @@ impl Display for Step {
     }
 }
 
+#[derive(Clone)]
 pub struct Out {
     pub label: GenRef<String>,
 }
@@ -111,6 +121,7 @@ impl Display for Out {
     }
 }
 
+#[derive(Clone)]
 pub struct In {
     pub label: GenRef<String>,
 }
@@ -120,6 +131,7 @@ impl Display for In {
     }
 }
 
+#[derive(Clone)]
 pub struct OutE {
     pub label: GenRef<String>,
 }
@@ -129,6 +141,7 @@ impl Display for OutE {
     }
 }
 
+#[derive(Clone)]
 pub struct InE {
     pub label: GenRef<String>,
 }
@@ -138,6 +151,7 @@ impl Display for InE {
     }
 }
 
+#[derive(Clone)]
 pub enum Where {
     Ref(WhereRef),
     Mut(WhereMut),
@@ -148,6 +162,7 @@ impl Display for Where {
     }
 }
 
+#[derive(Clone)]
 pub struct WhereRef {
     pub expr: BoExp,
 }
@@ -167,6 +182,7 @@ impl Display for WhereRef {
     }
 }
 
+#[derive(Clone)]
 pub struct WhereMut {
     pub expr: BoExp,
 }
@@ -176,6 +192,7 @@ impl Display for WhereMut {
     }
 }
 
+#[derive(Clone)]
 pub struct Range {
     pub start: GenRef<String>,
     pub end: GenRef<String>,
@@ -186,6 +203,7 @@ impl Display for Range {
     }
 }
 
+#[derive(Clone)]
 pub struct OrderBy {
     pub property: String,
     pub order: Order,
@@ -193,19 +211,5 @@ pub struct OrderBy {
 impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
-    }
-}
-// TODO: probably move to protocol
-pub enum Order {
-    Asc,
-    Desc,
-}
-
-impl Display for Order {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Order::Asc => write!(f, "Asc"),
-            Order::Desc => write!(f, "Desc"),
-        }
     }
 }

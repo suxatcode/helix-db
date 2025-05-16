@@ -1,4 +1,4 @@
-use crate::{helix_engine::types::GraphError, helixc::generator::new::types::GenRef};
+use crate::{helix_engine::types::GraphError, helixc::generator::new::utils::GenRef};
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,

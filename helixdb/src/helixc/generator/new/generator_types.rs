@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::protocol::value::Value;
 
-use super::{traversal_steps::Traversal, types::GenRef};
+use super::{
+    traversal_steps::Traversal,
+    utils::{write_headers, GenRef, GeneratedType},
+};
 
 pub struct Source {
     pub nodes: Vec<NodeSchema>,
@@ -119,7 +122,7 @@ pub struct Query {
     pub statements: Vec<Statement>,
     pub parameters: Vec<Parameter>, // iterate through and print each one
     pub sub_parameters: Vec<(String, Vec<Parameter>)>,
-    pub return_vals: Vec<String>,
+    pub return_values: Vec<ReturnValue>,
     pub is_mut: bool,
 }
 impl Display for Query {
@@ -171,7 +174,7 @@ impl Display for Query {
         } else {
             writeln!(f, "let txn = db.graph_env.read_txn().unwrap();")?;
         }
-      
+
         writeln!(
             f,
             "let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();"
@@ -180,7 +183,16 @@ impl Display for Query {
         for statement in &self.statements {
             write!(f, "    {}\n", statement)?;
         }
+
+        for return_value in &self.return_values {
+            write!(f, "    {}\n", return_value)?;
+        }
         // closes the handler function
+        write!(
+            f,
+            "    response.body = sonic_rs::to_vec(&return_vals).unwrap();\n"
+        )?;
+        write!(f, "    Ok(())\n")?;
         write!(f, "}}\n")
     }
 }
@@ -191,7 +203,7 @@ impl Default for Query {
             statements: vec![],
             parameters: vec![],
             sub_parameters: vec![],
-            return_vals: vec![],
+            return_values: vec![],
             is_mut: false,
         }
     }
@@ -228,7 +240,7 @@ impl Display for Statement {
     }
 }
 pub struct Assignment {
-    pub variable: String,
+    pub variable: GenRef<String>,
     pub value: Box<Statement>,
 }
 impl Display for Assignment {
@@ -257,6 +269,7 @@ impl Display for Drop {
 
 /// Boolean expression is used for a traversal or set of traversals wrapped in AND/OR
 /// that resolve to a boolean value
+#[derive(Clone)]
 pub enum BoExp {
     And(Vec<Traversal>),
     Or(Vec<Traversal>),
@@ -286,143 +299,68 @@ impl Display for BoExp {
     }
 }
 
-pub enum GeneratedValue {
-    // needed?
+pub struct ReturnValue {
+    pub value: ReturnValueExpr,
+    pub return_type: ReturnType,
+}
+impl Display for ReturnValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.return_type {
+            ReturnType::Literal(name) => {
+                write!(
+                    f,
+                    "    return_vals.insert({}.to_string(), ReturnValue::from({}));\n",
+                    name, self.value
+                )
+            }
+            ReturnType::NamedExpr(name) => {
+                write!(f, "    return_vals.insert({}.to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n", String::from(name.clone()), self.value)
+            }
+            ReturnType::UnnamedExpr => {
+                write!(f, "// need to implement unnamed return value\n todo!()")
+            }
+        }
+    }
+}
+impl ReturnValue {
+    pub fn new_literal(value: GenRef<String>) -> Self {
+        Self {
+            value: ReturnValueExpr::Value(value.clone()),
+            return_type: ReturnType::Literal(value),
+        }
+    }
+    pub fn new_named(name: GenRef<String>, value: ReturnValueExpr) -> Self {
+        Self {
+            value,
+            return_type: ReturnType::NamedExpr(name),
+        }
+    }
+    pub fn new_unnamed(value: ReturnValueExpr) -> Self {
+        Self {
+            value,
+            return_type: ReturnType::UnnamedExpr,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum ReturnType {
     Literal(GenRef<String>),
+    NamedExpr(GenRef<String>),
+    UnnamedExpr,
+}
+#[derive(Clone)]
+pub enum ReturnValueExpr {
+    Traversal(Traversal),
     Identifier(GenRef<String>),
-    Unknown,
+    Value(GenRef<String>),
 }
-
-impl Display for GeneratedValue {
+impl Display for ReturnValueExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GeneratedValue::Literal(value) => write!(f, "\"{}\"", value),
-            GeneratedValue::Identifier(value) => write!(f, "{}", value),
-            GeneratedValue::Unknown => write!(f, ""),
+            ReturnValueExpr::Traversal(traversal) => write!(f, "{}", traversal),
+            ReturnValueExpr::Identifier(identifier) => write!(f, "{}", identifier),
+            ReturnValueExpr::Value(value) => write!(f, "{}", value),
         }
     }
-}
-
-pub enum GeneratedType {
-    RustType(RustType),
-    Vec(Box<GeneratedType>),
-    Object(String),
-    Variable(String),
-}
-
-impl Display for GeneratedType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GeneratedType::RustType(t) => write!(f, "{}", t),
-            GeneratedType::Vec(t) => write!(f, "Vec<{}>", t),
-            GeneratedType::Variable(v) => write!(f, "{}", v),
-            GeneratedType::Object(o) => write!(f, "{}", o),
-        }
-    }
-}
-
-pub enum RustType {
-    String,
-    I8,
-    I16,
-    I32,
-    I64,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    F32,
-    F64,
-    Bool,
-    Uuid,
-    Date,
-}
-impl Display for RustType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RustType::String => write!(f, "String"),
-            RustType::I8 => write!(f, "i8"),
-            RustType::I16 => write!(f, "i16"),
-            RustType::I32 => write!(f, "i32"),
-            RustType::I64 => write!(f, "i64"),
-            RustType::U8 => write!(f, "u8"),
-            RustType::U16 => write!(f, "u16"),
-            RustType::U32 => write!(f, "u32"),
-            RustType::U64 => write!(f, "u64"),
-            RustType::U128 => write!(f, "u128"),
-            RustType::F32 => write!(f, "f32"),
-            RustType::F64 => write!(f, "f64"),
-            RustType::Bool => write!(f, "bool"),
-            RustType::Uuid => unimplemented!(),
-            RustType::Date => unimplemented!(),
-        }
-    }
-}
-
-pub enum Separator<T> {
-    Comma(T),
-    Semicolon(T),
-    Period(T),
-    Newline(T),
-}
-impl<T: Display> Display for Separator<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Separator::Comma(t) => write!(f, ",\n{}", t),
-            Separator::Semicolon(t) => write!(f, ";\n{}", t),
-            Separator::Period(t) => write!(f, "\n.{}", t),
-            Separator::Newline(t) => write!(f, "\n{}", t),
-            _ => write!(f, ""),
-        }
-    }
-}
-
-fn write_headers() -> String {
-    r#"
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Instant;
-
-use get_routes::handler;
-use helixdb::{field_remapping, traversal_remapping};
-use helixdb::helix_engine::graph_core::ops::util::map::MapAdapter;
-use helixdb::helix_engine::vector_core::vector::HVector;
-use helixdb::{
-    helix_engine::graph_core::ops::{
-        g::G,
-        in_::{in_::InAdapter, in_e::InEdgesAdapter, to_n::ToNAdapter},
-        out::{from_n::FromNAdapter, out::OutAdapter, out_e::OutEdgesAdapter},
-        source::{
-            add_e::{AddEAdapter, EdgeType},
-            add_n::AddNAdapter,
-            e::EAdapter,
-            e_from_id::EFromId,
-            e_from_type::EFromTypeAdapter,
-            n::NAdapter,
-            n_from_id::NFromId,
-            n_from_type::NFromTypeAdapter,
-        },
-        tr_val::{Traversable, TraversalVal},
-        util::{
-            dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
-            filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update,
-        },
-        vectors::{insert::InsertVAdapter, search::SearchVAdapter},
-    },
-    helix_engine::types::GraphError,
-    helix_gateway::router::router::HandlerInput,
-    node_matches, props,
-    protocol::count::Count,
-    protocol::remapping::ResponseRemapping,
-    protocol::response::Response,
-    protocol::traversal_value::TraversalValue,
-    protocol::{
-        filterable::Filterable, remapping::Remapping, return_values::ReturnValue, value::Value,
-    },
-};
-use sonic_rs::{Deserialize, Serialize};
-    "#
-    .to_string()
 }

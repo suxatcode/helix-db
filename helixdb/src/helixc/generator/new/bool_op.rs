@@ -1,8 +1,9 @@
 use core::fmt;
 use std::fmt::Display;
 
-use super::generator_types::GeneratedValue;
+use super::utils::GeneratedValue;
 
+#[derive(Clone)]
 pub enum BoolOp {
     Gt(Gt),
     Gte(Gte),
@@ -17,6 +18,7 @@ impl Display for BoolOp {
         write!(f, ".map_or(false, |v| *v{}))", self)
     }
 }
+#[derive(Clone)]
 pub struct Gt {
     pub value: GeneratedValue,
 }
@@ -26,6 +28,7 @@ impl Display for Gt {
     }
 }
 
+#[derive(Clone)]
 pub struct Gte {
     pub value: GeneratedValue,
 }
@@ -35,6 +38,7 @@ impl Display for Gte {
     }
 }
 
+#[derive(Clone)]
 pub struct Lt {
     pub value: GeneratedValue,
 }
@@ -44,6 +48,7 @@ impl Display for Lt {
     }
 }
 
+#[derive(Clone)]
 pub struct Lte {
     pub value: GeneratedValue,
 }
@@ -53,6 +58,7 @@ impl Display for Lte {
     }
 }
 
+#[derive(Clone)]
 pub struct Eq {
     pub value: GeneratedValue,
 }
@@ -61,6 +67,8 @@ impl Display for Eq {
         write!(f, " == {}", self.value)
     }
 }
+
+#[derive(Clone)]
 pub struct Neq {
     pub value: GeneratedValue,
 }
@@ -70,6 +78,7 @@ impl Display for Neq {
     }
 }
 
+#[derive(Clone)]
 pub struct Contains {
     pub value: GeneratedValue,
 }

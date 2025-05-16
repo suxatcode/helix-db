@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use crate::helixc::{
     generator::new::{
         generator_types::{
-            Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema, GeneratedType,
+            Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema,
             NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter,
-            RustType as GeneratedRustType, Statement as GeneratedStatement,
-            VectorSchema as GeneratedVectorSchema,
+            Statement as GeneratedStatement, VectorSchema as GeneratedVectorSchema,
         },
         traversal_steps::Traversal as GeneratedTraversal,
+        utils::{GenRef, GeneratedType, RustType as GeneratedRustType},
     },
     parser::helix_parser::{
         Assignment, EdgeSchema, FieldType, NodeSchema, Parameter, VectorSchema,
@@ -67,12 +67,19 @@ impl GeneratedParameter {
             FieldType::Identifier(ref id) => {
                 parameters.push(GeneratedParameter {
                     name: param.name.1,
-                    field_type: GeneratedType::Variable(id.clone()),
+                    field_type: GeneratedType::Variable(GenRef::Std(id.clone())),
                 });
             }
             FieldType::Array(inner) => match inner.as_ref() {
                 FieldType::Object(obj) => {
                     unwrap_object(format!("{}Data", param.name.1), obj, sub_parameters);
+                    parameters.push(GeneratedParameter {
+                        name: param.name.1.clone(),
+                        field_type: GeneratedType::Variable(GenRef::Std(format!(
+                            "{}Data",
+                            param.name.1
+                        ))),
+                    });
                 }
                 param_type => {
                     parameters.push(GeneratedParameter {
@@ -83,6 +90,13 @@ impl GeneratedParameter {
             },
             FieldType::Object(obj) => {
                 unwrap_object(format!("{}Data", param.name.1), &obj, sub_parameters);
+                parameters.push(GeneratedParameter {
+                    name: param.name.1.clone(),
+                    field_type: GeneratedType::Variable(GenRef::Std(format!(
+                        "{}Data",
+                        param.name.1
+                    ))),
+                });
             }
             param_type => {
                 parameters.push(GeneratedParameter {
@@ -121,7 +135,7 @@ fn unwrap_object(
                         unwrap_object(field_name.clone(), obj, sub_parameters);
                         GeneratedParameter {
                             name: field_name.clone(),
-                            field_type: GeneratedType::Object(field_name.clone()),
+                            field_type: GeneratedType::Object(GenRef::Std(field_name.clone())),
                         }
                     }
                     FieldType::Array(inner) => match inner.as_ref() {
@@ -129,7 +143,7 @@ fn unwrap_object(
                             unwrap_object(field_name.clone(), obj, sub_parameters);
                             GeneratedParameter {
                                 name: field_name.clone(),
-                                field_type: GeneratedType::Object(field_name.clone()),
+                                field_type: GeneratedType::Object(GenRef::Std(field_name.clone())),
                             }
                         }
                         _ => GeneratedParameter {
@@ -166,7 +180,7 @@ impl From<FieldType> for GeneratedType {
             FieldType::Uuid => GeneratedType::RustType(GeneratedRustType::Uuid),
             FieldType::Date => GeneratedType::RustType(GeneratedRustType::Date),
             FieldType::Array(inner) => GeneratedType::Vec(Box::new(GeneratedType::from(*inner))),
-            FieldType::Identifier(ref id) => GeneratedType::Variable(id.clone()),
+            FieldType::Identifier(ref id) => GeneratedType::Variable(GenRef::Std(id.clone())),
             // FieldType::Object(obj) => GeneratedType::Object(
             //     obj.iter()
             //         .map(|(name, field_type)| {

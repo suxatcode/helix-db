@@ -275,7 +275,7 @@ pub enum StartNode {
         edge_type: String,
         ids: Option<Vec<String>>,
     },
-    Variable(String),
+    Identifier(String),
     Anonymous,
 }
 
@@ -1469,7 +1469,7 @@ impl HelixParser {
                 }
                 Ok(StartNode::Edge { edge_type, ids })
             }
-            Rule::identifier => Ok(StartNode::Variable(pair.as_str().to_string())),
+            Rule::identifier => Ok(StartNode::Identifier(pair.as_str().to_string())),
             _ => Ok(StartNode::Anonymous),
         }
     }
