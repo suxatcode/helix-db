@@ -1,9 +1,12 @@
+
+use crate::helixc::generator::new::utils::write_properties;
+
 use super::{
     bool_op::BoolOp,
     generator_types::BoExp,
     object_remapping_generation::{ClosureFieldRemapping, ExcludeField, FieldRemapping, Remapping},
     source_steps::SourceStep,
-    utils::{GenRef, Order, Separator},
+    utils::{GenRef, GeneratedValue, Order, Separator},
 };
 use core::fmt;
 use std::{clone, fmt::Display};
@@ -15,6 +18,7 @@ pub enum TraversalType {
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
     // FromVar(GenRef<String>),
+    Update,
     Empty,
 }
 impl Display for TraversalType {
@@ -22,11 +26,13 @@ impl Display for TraversalType {
         match self {
             TraversalType::FromVar => write!(f, ""),
             TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), &txn)"),
+
             TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), &mut txn)"),
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
                 write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)
             }
+            TraversalType::Update => write!(f, ""),
             // TraversalType::FromVar(var) => write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var),
             TraversalType::Empty => panic!("Should not be empty"),
         }
@@ -88,6 +94,9 @@ pub enum Step {
 
     // object
     Remapping(Remapping),
+
+    // update
+    Update(Update),
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -213,3 +222,17 @@ impl Display for OrderBy {
         write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
     }
 }
+
+
+#[derive(Clone)]
+pub struct Update {
+    pub fields: Vec<(String, GeneratedValue)>,
+}
+
+impl Display for Update {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "G::new_mut_from(Arc::clone(&db), &mut txn,)")?;
+        write!(f, ".update({})", write_properties(&self.fields))
+    }
+}
+
