@@ -73,7 +73,8 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         .filter_ref(|val, txn| {
             if let Ok(val) = val {
                 Ok(val.check_property("age").map_or(false, |v| *v > 29)
-                    && val.check_property("age").map_or(false, |v| *v < 41))
+                    || val.check_property("age").map_or(false, |v| *v < 41)
+                        && val.check_property("age").map_or(false, |v| *v == 32))
             } else {
                 Ok(false)
             }

@@ -868,14 +868,11 @@ impl<'a> Ctx<'a> {
                             stmt.is_some(),
                             "incorrect stmt should've been caught by `infer_expr_type`"
                         );
-                        assert!(
-                            matches!(stmt, Some(GeneratedStatement::Traversal(_))),
-                            "stmt that is not a traversal should've been caught by `infer_expr_type`"
-                        );
-                        if let Some(GeneratedStatement::Traversal(tr)) = stmt {
-                            return tr.clone()
-                        } else {
-                            unreachable!()
+
+                        match stmt.unwrap() {
+                            GeneratedStatement::BoExp(expr) => expr,
+                            GeneratedStatement::Traversal(tr) => BoExp::Expr(tr),
+                            _ => unreachable!(),
                         }
                     })
                     .collect::<Vec<_>>();
@@ -894,14 +891,10 @@ impl<'a> Ctx<'a> {
                             stmt.is_some(),
                             "incorrect stmt should've been caught by `infer_expr_type`"
                         );
-                        assert!(
-                            matches!(stmt, Some(GeneratedStatement::Traversal(_))),
-                            "stmt that is not a traversal should've been caught by `infer_expr_type`"
-                        );
-                        if let Some(GeneratedStatement::Traversal(tr)) = stmt  {
-                            return tr
-                        } else {
-                            unreachable!()
+                        match stmt.unwrap() {
+                            GeneratedStatement::BoExp(expr) => expr,
+                            GeneratedStatement::Traversal(tr) => BoExp::Expr(tr),
+                            _ => unreachable!(),
                         }
                     })
                     .collect::<Vec<_>>();

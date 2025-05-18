@@ -267,7 +267,7 @@ impl Display for WhereRef {
             f,
             "filter_ref(|val, txn|{{
                 if let Ok(val) = val {{ 
-                    {}
+                    Ok({})
                 }} else {{
                     Ok(false)
                 }}

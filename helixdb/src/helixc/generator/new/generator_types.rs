@@ -273,8 +273,8 @@ impl Display for Drop {
 /// that resolve to a boolean value
 #[derive(Clone)]
 pub enum BoExp {
-    And(Vec<Traversal>),
-    Or(Vec<Traversal>),
+    And(Vec<BoExp>),
+    Or(Vec<BoExp>),
     // Not(Traversal),
     // Eq(Traversal, Traversal),
     Expr(Traversal),
@@ -287,16 +287,16 @@ impl Display for BoExp {
                     .iter()
                     .map(|s| format!("{}", s))
                     .collect::<Vec<_>>();
-                write!(f, "Ok({})", tr.join(" && "))
+                write!(f, "{}", tr.join(" && "))
             }
             BoExp::Or(traversals) => {
                 let tr = traversals
                     .iter()
                     .map(|s| format!("{}", s))
                     .collect::<Vec<_>>();
-                write!(f, "Ok({})", tr.join(" || "))
+                write!(f, "{}", tr.join(" || "))
             }
-            BoExp::Expr(traversal) => write!(f, "Ok({})", traversal),
+            BoExp::Expr(traversal) => write!(f, "{}", traversal),
         }
     }
 }
