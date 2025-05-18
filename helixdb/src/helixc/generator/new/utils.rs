@@ -249,7 +249,6 @@ impl<T: Display> Separator<T> {
 }
 pub fn write_headers() -> String {
     r#"
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;

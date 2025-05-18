@@ -1,25 +1,13 @@
-use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
 use super::{
     count::Count,
-    filterable::{
-        Filterable,
-        FilterableType,
-    },
-    items::{
-        Edge,
-        Node,
-    },
-    remapping::{
-        Remapping,
-        ResponseRemapping,
-    },
+    filterable::{Filterable, FilterableType},
+    items::{Edge, Node},
+    remapping::{Remapping, ResponseRemapping},
     value::Value,
 };
+use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
 use sonic_rs::{Deserialize, Serialize};
-use std::{
-    cell::RefMut,
-    collections::HashMap,
-};
+use std::{cell::RefMut, collections::HashMap};
 
 /// A return value enum that represents different possible outputs from graph operations.
 /// Can contain traversal results, counts, boolean flags, or empty values.
@@ -44,7 +32,6 @@ impl Serialize for ReturnValue {
         }
     }
 }
-
 
 impl From<Value> for ReturnValue {
     fn from(value: Value) -> Self {
@@ -131,8 +118,14 @@ where
             FilterableType::Edge => {
                 let mut properties =
                     HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
-                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node_uuid()));
-                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node_uuid()));
+                properties.insert(
+                    "from_node".to_string(),
+                    ReturnValue::from(item.from_node_uuid()),
+                );
+                properties.insert(
+                    "to_node".to_string(),
+                    ReturnValue::from(item.to_node_uuid()),
+                );
                 properties
             }
             FilterableType::Vector => {
@@ -185,7 +178,7 @@ impl ReturnValue {
     #[inline(always)]
     fn process_items_with_mixin<T>(
         item: T,
-        mixin: &mut RefMut<HashMap<u128, ResponseRemapping>>,
+        mixin: &mut HashMap<u128, ResponseRemapping>,
     ) -> ReturnValue
     where
         T: Filterable + Clone,
@@ -205,7 +198,7 @@ impl ReturnValue {
     #[inline]
     pub fn from_traversal_value_array_with_mixin(
         traversal_value: Vec<TraversalVal>,
-        mut mixin: RefMut<HashMap<u128, ResponseRemapping>>,
+        mut mixin: HashMap<u128, ResponseRemapping>,
     ) -> Self {
         ReturnValue::Array(
             traversal_value

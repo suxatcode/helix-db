@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -64,8 +63,7 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         Err(err) => return Err(GraphError::from(err)),
     };
 
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
-        RefCell::new(HashMap::new());
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
     let db = Arc::clone(&input.graph.storage);
     let txn = db.graph_env.read_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
@@ -83,7 +81,7 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
                     item
                 })
                 .collect_to::<Vec<_>>(),
-            remapping_vals.borrow_mut(),
+            remapping_vals,
         ),
     );
 
