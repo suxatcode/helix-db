@@ -8,17 +8,30 @@ use super::{
     utils::{GenRef, GeneratedValue, Order, Separator},
 };
 use core::fmt;
-use std::{clone, fmt::Display};
+use std::{
+    clone,
+    fmt::{Debug, Display},
+};
 
 #[derive(Clone)]
 pub enum TraversalType {
-    FromVar,
+    FromVar(GenRef<String>),
     Ref,
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
     // FromVar(GenRef<String>),
     Update(Vec<(String, GeneratedValue)>),
     Empty,
+}
+impl Debug for TraversalType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TraversalType::FromVar(_) => write!(f, "FromVar"),
+            TraversalType::Ref => write!(f, "Ref"),
+            TraversalType::Nested(_) => write!(f, "Nested"),
+            _ => write!(f, "other"),
+        }
+    }
 }
 // impl Display for TraversalType {
 //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -47,12 +60,24 @@ pub struct Traversal {
 
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        println!("LENGHT {} {:?} ", self.steps.len(), self.traversal_type);
         match &self.traversal_type {
-            TraversalType::FromVar => write!(f, ""),
+            TraversalType::FromVar(var) => {
+                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var)?;
+                write!(f, "{}", self.source_step)?;
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
+                Ok(())
+            }
             TraversalType::Ref => {
                 write!(f, "G::new(Arc::clone(&db), &txn)")?;
                 write!(f, "{}", self.source_step)?;
                 for step in &self.steps {
+                    match step.inner() {
+                        s => println!("{:?}", s),
+                    }
                     write!(f, "\n{}", step)?;
                 }
                 write!(f, "\n    .collect_to::<Vec<_>>()")?;
@@ -87,12 +112,12 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-write!(f, "\n    .collect_to::<Vec<_>>();")?;
+                write!(f, "\n    .collect_to::<Vec<_>>();")?;
                 write!(
                     f,
                     "G::new_mut_from(Arc::clone(&db), &mut txn, update_tr)", // TODO: make
-                                                                                      // this less
-                                                                                      // scrappy
+                                                                             // this less
+                                                                             // scrappy
                 )?;
                 write!(f, "\n    .update({})", write_properties(&fields))?;
                 write!(f, "\n    .collect_to::<Vec<_>>()")?;
@@ -155,6 +180,27 @@ impl Display for Step {
             Step::OrderBy(order_by) => write!(f, "{}", order_by),
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
             Step::Remapping(remapping) => write!(f, "{}", remapping),
+        }
+    }
+}
+impl Debug for Step {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Step::Count => write!(f, "Count"),
+            Step::Dedup => write!(f, "Dedup"),
+            Step::FromN => write!(f, "FromN"),
+            Step::ToN => write!(f, "ToN"),
+            Step::PropertyFetch(property) => write!(f, "check_property({})", property),
+
+            Step::Out(out) => write!(f, "Out"),
+            Step::In(in_) => write!(f, "In"),
+            Step::OutE(out_e) => write!(f, "OutE"),
+            Step::InE(in_e) => write!(f, "InE"),
+            Step::Where(where_) => write!(f, "Where"),
+            Step::Range(range) => write!(f, "Range"),
+            Step::OrderBy(order_by) => write!(f, "OrderBy"),
+            Step::BoolOp(bool_op) => write!(f, "Bool"),
+            Step::Remapping(remapping) => write!(f, "Remapping"),
         }
     }
 }

@@ -14,8 +14,8 @@ impl Display for TraversalRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "|{}, txn| {{ traversal_remapping!({}, {} => {}) }}",
-            self.variable_name, self.variable_name, self.new_field, self.new_value
+            "traversal_remapping!(remapping_vals, {}, \"{}\" => {})",
+            self.variable_name, self.new_field, self.new_value
         )
     }
 }
@@ -25,15 +25,14 @@ impl Display for TraversalRemapping {
 pub struct FieldRemapping {
     pub variable_name: String,
     pub new_name: String,
-    pub old_name: String,
-    pub should_spread: bool,
+    pub field_name: String,
 }
 impl Display for FieldRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "field_remapping!({}, {} => {})",
-            self.variable_name, self.old_name, self.new_name
+            "field_remapping!(remapping_vals, {}, \"{}\" => \"{}\")",
+            self.variable_name, self.field_name, self.new_name
         )
     }
 }
@@ -41,11 +40,19 @@ impl Display for FieldRemapping {
 /// This is used for excluding fields
 #[derive(Clone)]
 pub struct ExcludeField {
-    pub fields_to_exclude: Vec<String>,
+    pub fields_to_exclude: Vec<GenRef<String>>,
 }
 impl Display for ExcludeField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "exclude_fields!({})", self.fields_to_exclude.join(", "))
+        write!(
+            f,
+            "exclude_fields!(remapping_vals, {})",
+            self.fields_to_exclude
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
     }
 }
 
@@ -85,7 +92,7 @@ impl Display for ValueRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "value_remapping!({}, {}: {})",
+            "value_remapping!(remapping_vals, {}, \"{}\" => {})",
             self.variable_name, self.field_name, self.value
         )
     }
@@ -101,7 +108,7 @@ impl Display for IdentifierRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "identifier_remapping!({}, {}: {})",
+            "identifier_remapping!(remapping_vals, {}, \"{}\" => \"{}\")",
             self.variable_name, self.field_name, self.identifier_value
         )
     }
@@ -121,6 +128,7 @@ impl Display for IdentifierRemapping {
 #[derive(Clone)]
 pub struct Remapping {
     pub is_inner: bool,
+    pub should_spread: bool,
     pub variable_name: String,
     pub remappings: Vec<RemappingType>,
 }
@@ -139,13 +147,14 @@ impl Display for Remapping {
             ),
             false => write!(
                 f,
-                "map_traversal(|{}, txn| {{ {} }}",
+                "map_traversal(|{}, txn| {{ {}?;\n {} }})",
                 self.variable_name,
                 self.remappings
                     .iter()
                     .map(|remapping| format!("{}", remapping))
                     .collect::<Vec<String>>()
-                    .join("?;")
+                    .join("?;\n"),
+                self.variable_name
             ),
         }
     }
@@ -166,10 +175,21 @@ pub enum RemappingType {
     TraversalRemapping(TraversalRemapping),
     ValueRemapping(ValueRemapping),
     IdentifierRemapping(IdentifierRemapping),
+    Spread,
     Empty,
 }
 impl Display for RemappingType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match self {
+            RemappingType::ObjectRemapping(r) => write!(f, "{}", r),
+            RemappingType::FieldRemapping(r) => write!(f, "{}", r),
+            RemappingType::ClosureFieldRemapping(r) => write!(f, "{}", r),
+            RemappingType::ExcludeField(r) => write!(f, "{}", r),
+            RemappingType::TraversalRemapping(r) => write!(f, "{}", r),
+            RemappingType::ValueRemapping(r) => write!(f, "{}", r),
+            RemappingType::IdentifierRemapping(r) => write!(f, "{}", r),
+            RemappingType::Spread => write!(f, ""),
+            RemappingType::Empty => write!(f, ""),
+        }
     }
 }

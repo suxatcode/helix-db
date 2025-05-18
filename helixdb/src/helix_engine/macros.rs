@@ -270,8 +270,79 @@ pub mod macros {
                         e
                     )))
                 }
-            };
-            item
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! identifier_remapping {
+        ($remapping_vals:expr, $var_name:expr, $field_name:expr =>  $identifier_value:expr) => {
+            match &$var_name {
+                Ok(item) => {
+                    // TODO: ref?
+
+                    let value = match item.check_property($field_name) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(GraphError::ConversionError(format!(
+                                "Error Decoding: {:?}",
+                                "Invalid node".to_string()
+                            )))
+                        }
+                    };
+                    let value_remapping = Remapping::new(
+                        false,
+                        Some($identifier_value.to_string()),
+                        Some(ReturnValue::from(value)),
+                    );
+                    $remapping_vals.borrow_mut().insert(
+                        item.id(),
+                        ResponseRemapping::new(
+                            HashMap::from([($field_name.to_string(), value_remapping)]),
+                            false,
+                        ),
+                    );
+                    Ok(())
+                }
+                Err(e) => Err(GraphError::ConversionError(format!(
+                    "Error Decoding: {:?}",
+                    e
+                ))),
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! value_remapping {
+        ($remapping_vals:expr, $var_name:expr, $field_name:expr =>  $value:expr) => {
+            match $var_name {
+                Ok(item) => {
+                    // TODO: ref?
+                    let old_value = match item.check_property($field_name) {
+                        Ok(val) => val,
+                        Err(e) => {
+                            return Err(GraphError::ConversionError(format!(
+                                "Error Decoding: {:?}",
+                                "Invalid node".to_string()
+                            )))
+                        }
+                    };
+                    let old_value_remapping =
+                        Remapping::new(false, Some(value), Some(ReturnValue::from(old_value)));
+                    $remapping_vals.borrow_mut().insert(
+                        item.id(),
+                        ResponseRemapping::new(
+                            HashMap::from([($old_name.to_string(), old_value_remapping)]),
+                            false,
+                        ),
+                    );
+                    Ok(()) // Return the Ok value
+                }
+                Err(e) => Err(GraphError::ConversionError(format!(
+                    "Error Decoding: {:?}",
+                    e
+                ))),
+            }
         };
     }
 }

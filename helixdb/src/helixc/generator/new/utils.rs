@@ -255,8 +255,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
-use helixdb::{field_remapping, traversal_remapping};
-use helixdb::helix_engine::graph_core::ops::util::map::MapAdapter;
+use helixdb::{field_remapping, identifier_remapping, traversal_remapping, exclude_field};
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{
     helix_engine::graph_core::ops::{
