@@ -70,19 +70,18 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
     let user_nodes = G::new(Arc::clone(&db), &txn)
         .n_from_type("User")
         .out("Knows")
+        .filter_ref(|val, txn| {
+            if let Ok(val) = val {
+                Ok(val.check_property("age").map_or(false, |v| *v > 29)
+                    && val.check_property("age").map_or(false, |v| *v < 41))
+            } else {
+                Ok(false)
+            }
+        })
         .collect_to::<Vec<_>>();
     return_vals.insert(
         "user_nodes".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(
-            G::new_from(Arc::clone(&db), &txn, user_nodes)
-                .map_traversal(|item, txn| {
-                    identifier_remapping!(remapping_vals, item, "name" => "name")?;
-                    identifier_remapping!(remapping_vals, item, "age" => "age")?;
-                    item
-                })
-                .collect_to::<Vec<_>>(),
-            remapping_vals,
-        ),
+        ReturnValue::from_traversal_value_array_with_mixin(user_nodes, remapping_vals),
     );
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();

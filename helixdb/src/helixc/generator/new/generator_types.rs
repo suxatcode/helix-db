@@ -226,6 +226,7 @@ pub enum Statement {
     ForEach(ForEach),
     Literal(GenRef<String>),
     Identifier(GenRef<String>),
+    BoExp(BoExp),
 }
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -236,6 +237,7 @@ impl Display for Statement {
             Statement::ForEach(foreach) => write!(f, "{}", foreach),
             Statement::Literal(literal) => write!(f, "{}", literal),
             Statement::Identifier(identifier) => write!(f, "{}", identifier),
+            Statement::BoExp(bo) => write!(f, "{}", bo),
         }
     }
 }
@@ -285,16 +287,16 @@ impl Display for BoExp {
                     .iter()
                     .map(|s| format!("{}", s))
                     .collect::<Vec<_>>();
-                write!(f, "{}", tr.join(" && "))
+                write!(f, "Ok({})", tr.join(" && "))
             }
             BoExp::Or(traversals) => {
                 let tr = traversals
                     .iter()
                     .map(|s| format!("{}", s))
                     .collect::<Vec<_>>();
-                write!(f, "{}", tr.join(" || "))
+                write!(f, "Ok({})", tr.join(" || "))
             }
-            BoExp::Expr(traversal) => write!(f, "{}", traversal),
+            BoExp::Expr(traversal) => write!(f, "Ok({})", traversal),
         }
     }
 }

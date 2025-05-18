@@ -5,8 +5,9 @@ use colored::Colorize;
 use crate::{
     helixc::{
         generator::new::{
+            bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
-                Assignment as GeneratedAssignment, Parameter as GeneratedParameter,
+                Assignment as GeneratedAssignment, BoExp, Parameter as GeneratedParameter,
                 Query as GeneratedQuery, ReturnValue, ReturnValueExpr, Source as GeneratedSource,
                 Statement as GeneratedStatement,
             },
@@ -17,7 +18,8 @@ use crate::{
             source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-                Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType,
+                Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType, Where,
+                WhereRef,
             },
             utils::{
                 GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
@@ -856,12 +858,58 @@ impl<'a> Ctx<'a> {
             //     // Search returns nodes that contain the vectors
             //     Type::Nodes(None)
             // }
-            // And(v) | Or(v) => {
-            //     for e in v {
-            //         self.infer_expr_type(e, scope, q, parent_ty.clone());
-            //     }
-            //     Type::Boolean
-            // }
+            And(v) => {
+                let exprs = v
+                    .iter()
+                    .map(|expr| {
+                        let (_, stmt) =
+                            self.infer_expr_type(expr, scope, q, parent_ty.clone(), None);
+                        assert!(
+                            stmt.is_some(),
+                            "incorrect stmt should've been caught by `infer_expr_type`"
+                        );
+                        assert!(
+                            matches!(stmt, Some(GeneratedStatement::Traversal(_))),
+                            "stmt that is not a traversal should've been caught by `infer_expr_type`"
+                        );
+                        if let Some(GeneratedStatement::Traversal(tr)) = stmt {
+                            return tr.clone()
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                (
+                    Type::Boolean,
+                    Some(GeneratedStatement::BoExp(BoExp::And(exprs))),
+                )
+            }
+            Or(v) => {
+                let exprs = v
+                    .iter()
+                    .map(|expr| {
+                        let (_, stmt) =
+                            self.infer_expr_type(expr, scope, q, parent_ty.clone(), None);
+                        assert!(
+                            stmt.is_some(),
+                            "incorrect stmt should've been caught by `infer_expr_type`"
+                        );
+                        assert!(
+                            matches!(stmt, Some(GeneratedStatement::Traversal(_))),
+                            "stmt that is not a traversal should've been caught by `infer_expr_type`"
+                        );
+                        if let Some(GeneratedStatement::Traversal(tr)) = stmt  {
+                            return tr
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                (
+                    Type::Boolean,
+                    Some(GeneratedStatement::BoExp(BoExp::Or(exprs))),
+                )
+            }
             _ => {
                 println!("Unknown expression: {:?}", expr);
                 todo!()
@@ -964,7 +1012,18 @@ impl<'a> Ctx<'a> {
                 )
             }
             // anonymous will be the traversal type rather than the start type
-            StartNode::Anonymous => parent_ty.unwrap_or(Type::Unknown),
+            StartNode::Anonymous => {
+                assert!(
+                    parent_ty.is_some(),
+                    "None parent type should've been caught"
+                );
+                let parent = parent_ty.unwrap();
+
+                gen_traversal.traversal_type =
+                    TraversalType::Nested(GenRef::Std("val".to_string())); // TODO: ensure this default is stable
+                gen_traversal.source_step = Separator::Empty(SourceStep::Anonymous);
+                parent
+            }
         };
 
         // Track excluded fields for property validation
@@ -1049,11 +1108,33 @@ impl<'a> Ctx<'a> {
                 }
 
                 StepType::Where(expr) => {
-                    self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()), None);
+                    let (_, stmt) =
+                        self.infer_expr_type(expr, scope, q, Some(cur_ty.clone()), None);
                     // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
+                    assert!(stmt.is_some());
+                    let stmt = stmt.unwrap();
+                    match stmt {
+                        GeneratedStatement::Traversal(tr) => {
+                            gen_traversal
+                                .steps
+                                .push(Separator::Period(GeneratedStep::Where(Where::Ref(
+                                    WhereRef {
+                                        expr: BoExp::Expr(tr),
+                                    },
+                                ))));
+                        }
+                        GeneratedStatement::BoExp(expr) => {
+                            gen_traversal
+                                .steps
+                                .push(Separator::Period(GeneratedStep::Where(Where::Ref(
+                                    WhereRef { expr },
+                                ))));
+                        }
+                        _ => unreachable!(),
+                    }
                 }
-
+                // TODO implement inserting bool step for each
                 StepType::BooleanOperation(b_op) => {
                     let step = previous_step.unwrap();
                     let property_type = match &b_op.op {
@@ -1162,6 +1243,97 @@ impl<'a> Ctx<'a> {
                     // self.infer_expr_type(expr, scope, q);
                     // Where/boolean ops don't change the element type,
                     // so `cur_ty` stays the same.
+                    let op = match &b_op.op {
+                        BooleanOpType::LessThanOrEqual(expr) => {
+                            // assert!()
+                            let v = match expr.expr {
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Lte(Lte { value: v })
+                        }
+                        BooleanOpType::LessThan(expr) => {
+                            let v = match expr.expr {
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Lt(Lt { value: v })
+                        }
+                        BooleanOpType::GreaterThanOrEqual(expr) => {
+                            let v = match expr.expr {
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Gte(Gte { value: v })
+                        }
+                        BooleanOpType::GreaterThan(expr) => {
+                            let v = match expr.expr {
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Gt(Gt { value: v })
+                        }
+                        BooleanOpType::Equal(expr) => {
+                            let v = match &expr.expr {
+                                ExpressionType::BooleanLiteral(b) => {
+                                    GeneratedValue::Primitive(GenRef::Std(b.to_string()))
+                                }
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::StringLiteral(s) => {
+                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Eq(Eq { value: v })
+                        }
+                        BooleanOpType::NotEqual(expr) => {
+                            let v = match &expr.expr {
+                                ExpressionType::BooleanLiteral(b) => {
+                                    GeneratedValue::Primitive(GenRef::Std(b.to_string()))
+                                }
+                                ExpressionType::IntegerLiteral(i) => {
+                                    GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                                }
+                                ExpressionType::FloatLiteral(f) => {
+                                    GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::StringLiteral(s) => {
+                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                }
+                                _ => unreachable!("Cannot reach here"),
+                            };
+                            BoolOp::Neq(Neq { value: v })
+                        }
+                        _ => unreachable!("shouldve been caught eariler"),
+                    };
+                    gen_traversal
+                        .steps
+                        .push(Separator::Period(GeneratedStep::BoolOp(op)));
                 }
 
                 StepType::Update(update) => {
@@ -1898,7 +2070,7 @@ impl<'a> Ctx<'a> {
             variable_name: "item".to_string(), // TODO: Hack for now, need to check how this will work with closure
             is_inner,
             remappings,
-            should_spread: false
+            should_spread: false,
         }
     }
 }

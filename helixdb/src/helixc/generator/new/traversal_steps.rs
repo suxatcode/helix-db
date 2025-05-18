@@ -95,12 +95,10 @@ impl Display for Traversal {
             }
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
-                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)?;
-                write!(f, "{}", self.source_step)?;
+                write!(f, "{}", nested)?; // this should be var name default val
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                write!(f, "\n    .collect_to::<Vec<_>>()")?;
                 Ok(())
             }
             TraversalType::Empty => panic!("Should not be empty"),
@@ -252,7 +250,10 @@ pub enum Where {
 }
 impl Display for Where {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match self {
+            Where::Ref(wr) => write!(f, "{}", wr),
+            Where::Mut(wm) => write!(f, "{}", wm),
+        }
     }
 }
 
@@ -264,7 +265,7 @@ impl Display for WhereRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "filter_ref(||val, txn|{{
+            "filter_ref(|val, txn|{{
                 if let Ok(val) = val {{ 
                     {}
                 }} else {{

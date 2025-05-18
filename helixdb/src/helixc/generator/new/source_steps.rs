@@ -19,6 +19,7 @@ pub enum SourceStep {
     NFromType(NFromType),
     EFromID(EFromID),
     EFromType(EFromType),
+    Anonymous,
     Empty,
 }
 
@@ -147,6 +148,7 @@ impl Display for SourceStep {
             SourceStep::NFromType(n_from_type) => write!(f, "{}", n_from_type),
             SourceStep::EFromID(e_from_id) => write!(f, "{}", e_from_id),
             SourceStep::EFromType(e_from_type) => write!(f, "{}", e_from_type),
+            SourceStep::Anonymous => write!(f, ""),
             SourceStep::Empty => panic!("Should not be empty"),
         }
     }

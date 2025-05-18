@@ -15,7 +15,16 @@ pub enum BoolOp {
 }
 impl Display for BoolOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ".map_or(false, |v| *v{}))", self)
+        let s = match self {
+            BoolOp::Gt(gt) => format!("{}", gt),
+            BoolOp::Gte(gte) => format!("{}", gte),
+            BoolOp::Lt(lt) => format!("{}", lt),
+            BoolOp::Lte(lte) => format!("{}", lte),
+            BoolOp::Eq(eq) => format!("{}", eq),
+            BoolOp::Neq(neq) => format!("{}", neq),
+            BoolOp::Contains(cont) => unimplemented!(),
+        };
+        write!(f, "map_or(false, |v| *v{})", s)
     }
 }
 #[derive(Clone)]
