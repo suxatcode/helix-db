@@ -17,4 +17,4 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Continue with build process
-cargo build --release --offline && cargo install --path .
+cargo build --release --offline && cargo install --offline --path .

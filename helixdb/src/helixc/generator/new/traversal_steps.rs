@@ -87,9 +87,12 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
+write!(f, "\n    .collect_to::<Vec<_>>();")?;
                 write!(
                     f,
-                    "G::new_mut_from(Arc::clone(&db), &mut txn, update_tr.inner)",
+                    "G::new_mut_from(Arc::clone(&db), &mut txn, update_tr)", // TODO: make
+                                                                                      // this less
+                                                                                      // scrappy
                 )?;
                 write!(f, "\n    .update({})", write_properties(&fields))?;
                 write!(f, "\n    .collect_to::<Vec<_>>()")?;

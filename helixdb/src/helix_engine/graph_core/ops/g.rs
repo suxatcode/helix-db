@@ -79,14 +79,15 @@ impl G {
     pub fn new_mut_from<'a, 'b>(
         storage: Arc<HelixGraphStorage>,
         txn: &'b mut RwTxn<'a>,
-        iter: impl Iterator<Item = Result<TraversalVal, GraphError>>
+        // iter: impl Iterator<Item = Result<TraversalVal, GraphError>>
+        vals: Vec<TraversalVal>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         RwTraversalIterator {
-            inner: iter,
+            // inner: iter,
+            inner: vals.into_iter().map(|val| Ok(val)),
             storage,
-            txn
+            txn,
         }
-
     }
 
     pub fn bulk_add_e(

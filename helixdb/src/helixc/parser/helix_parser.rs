@@ -269,11 +269,11 @@ pub struct BatchAddVector {
 pub enum StartNode {
     Node {
         node_type: String,
-        ids: Option<Vec<String>>,
+        ids: Option<Vec<IdType>>,
     },
     Edge {
         edge_type: String,
-        ids: Option<Vec<String>>,
+        ids: Option<Vec<IdType>>,
     },
     Identifier(String),
     Anonymous,
@@ -1451,7 +1451,21 @@ impl HelixParser {
                         Rule::id_args => {
                             ids = Some(
                                 p.into_inner()
-                                    .map(|id| id.as_str().to_string())
+                                    .map(|id| {
+                                        let id = id.into_inner().next().unwrap();
+                                        match id.as_rule() {
+                                            Rule::identifier => {
+                                                IdType::Identifier(id.as_str().to_string())
+                                            }
+                                            Rule::string_literal => {
+                                                IdType::Literal(id.as_str().to_string())
+                                            }
+                                            other => {
+                                                println!("{:?}", other);
+                                                panic!("Should be identifier or string literal")
+                                            }
+                                        }
+                                    })
                                     .collect::<Vec<_>>(),
                             );
                         }
@@ -1472,7 +1486,21 @@ impl HelixParser {
                         Rule::id_args => {
                             ids = Some(
                                 p.into_inner()
-                                    .map(|id| id.as_str().to_string())
+                                    .map(|id| {
+                                        let id = id.into_inner().next().unwrap();
+                                        match id.as_rule() {
+                                            Rule::identifier => {
+                                                IdType::Identifier(id.as_str().to_string())
+                                            }
+                                            Rule::string_literal => {
+                                                IdType::Literal(id.as_str().to_string())
+                                            }
+                                            other => {
+                                                println!("{:?}", other);
+                                                panic!("Should be identifier or string literal")
+                                            }
+                                        }
+                                    })
                                     .collect::<Vec<_>>(),
                             );
                         }

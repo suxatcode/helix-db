@@ -497,7 +497,7 @@ impl<'a> Ctx<'a> {
             Identifier(name) => match scope.get(name.as_str()) {
                 Some(t) => (
                     t.clone(),
-                    Some(GeneratedStatement::Identifier(GenRef::Ref(name.clone()))),
+                    Some(GeneratedStatement::Identifier(GenRef::Std(name.clone()))),
                 ),
                 None => {
                     self.push_query_err(
@@ -895,7 +895,10 @@ impl<'a> Ctx<'a> {
                 if let Some(ids) = ids {
                     assert!(ids.len() == 1, "multiple ids not supported yet");
                     gen_traversal.source_step = Separator::Period(SourceStep::NFromID(NFromID {
-                        id: GenRef::Literal(ids[0].clone()),
+                        id: match ids[0].clone() {
+                            IdType::Identifier(i) => GenRef::Std(format!("data.{}",i)),
+                            IdType::Literal(s) => GenRef::Std(s),
+                        },
                         label: GenRef::Literal(node_type.clone()),
                     }));
                 } else {
@@ -920,7 +923,10 @@ impl<'a> Ctx<'a> {
                 if let Some(ids) = ids {
                     assert!(ids.len() == 1, "multiple ids not supported yet");
                     gen_traversal.source_step = Separator::Period(SourceStep::EFromID(EFromID {
-                        id: GenRef::Literal(ids[0].clone()),
+                        id: match ids[0].clone() {
+                            IdType::Identifier(i) => GenRef::Std(format!("data.{}",i)),
+                            IdType::Literal(s) => GenRef::Std(s),
+                        },
                         label: GenRef::Literal(edge_type.clone()),
                     }));
                 } else {
@@ -1158,8 +1164,7 @@ impl<'a> Ctx<'a> {
 
                 StepType::Update(update) => {
                     // Update returns the same type (nodes/edges) it started with.
-
-                    match tr.steps.last() {
+                    match tr.steps.iter().nth_back(1) {
                         Some(step) => match &step.step {
                             StepType::Node(gs) => {
                                 let node_ty = gs.get_item_type().unwrap();
@@ -1269,7 +1274,10 @@ impl<'a> Ctx<'a> {
                                     field.key.clone(),
                                     match &field.value.value {
                                         FieldValueType::Identifier(i) => {
-                                            GeneratedValue::Identifier(GenRef::Std(i.clone()))
+                                            GeneratedValue::Identifier(GenRef::Std(format!(
+                                                "data.{}",
+                                                i.clone()
+                                            )))
                                         }
                                         FieldValueType::Literal(l) => match l {
                                             Value::String(s) => {
@@ -1279,7 +1287,38 @@ impl<'a> Ctx<'a> {
                                                 other.to_string(),
                                             )),
                                         },
-                                        _ => panic!("Should be primitive or value"),
+                                        FieldValueType::Expression(e) => match &e.expr {
+                                            ExpressionType::Identifier(i) => {
+                                                GeneratedValue::Identifier(GenRef::Std(format!(
+                                                    "data.{}",
+                                                    i.clone()
+                                                )))
+                                            }
+                                            ExpressionType::StringLiteral(i) => {
+                                                GeneratedValue::Primitive(GenRef::Std(
+                                                    i.to_string(),
+                                                ))
+                                            }
+
+                                            ExpressionType::IntegerLiteral(i) => {
+                                                GeneratedValue::Primitive(GenRef::Std(
+                                                    i.to_string(),
+                                                ))
+                                            }
+                                            ExpressionType::FloatLiteral(i) => {
+                                                GeneratedValue::Primitive(GenRef::Std(
+                                                    i.to_string(),
+                                                ))
+                                            }
+                                            v => {
+                                                println!("ID {:?}", v);
+                                                panic!("expr be primitive or value")
+                                            }
+                                        },
+                                        v => {
+                                            println!("{:?}", v);
+                                            panic!("Should be primitive or value")
+                                        }
                                     },
                                 )
                             })
@@ -1332,6 +1371,14 @@ impl<'a> Ctx<'a> {
                 }
             }
             previous_step = Some(step.clone());
+        }
+        match gen_traversal.traversal_type {
+            TraversalType::Mut | TraversalType::Update(_) => {
+                if let Some(gen_query) = gen_query {
+                    gen_query.is_mut = true;
+                }
+            }
+            _ => {}
         }
 
         cur_ty

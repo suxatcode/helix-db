@@ -16,6 +16,7 @@ where
     RefLiteral(T),
     Unknown,
     Std(T),
+    Id(String),
 }
 
 impl<T> Display for GenRef<T>
@@ -35,6 +36,7 @@ where
             GenRef::MutDeRef(t) => write!(f, "mut *{}", t),
             GenRef::RefLiteral(t) => write!(f, "ref {}", t),
             GenRef::Unknown => write!(f, ""),
+            GenRef::Id(id) => write!(f, "data.{}", id),
         }
     }
 }
@@ -56,6 +58,7 @@ where
             GenRef::RefLiteral(t) => t,
             GenRef::Unknown => panic!("Cannot get inner of unknown"),
             GenRef::Std(t) => t,
+            GenRef::Id(t) => panic!("Cannot get inner of unknown"),
         }
     }
 }
@@ -76,6 +79,7 @@ where
             GenRef::MutDeRef(t) => write!(f, "MutDeRef({})", t),
             GenRef::RefLiteral(t) => write!(f, "RefLiteral({})", t),
             GenRef::Unknown => write!(f, "Unknown"),
+            GenRef::Id(id) => write!(f, "String({})", id),
         }
     }
 }
@@ -84,6 +88,7 @@ impl From<GenRef<String>> for String {
         match value {
             GenRef::Literal(s) => format!("\"{}\"", s),
             GenRef::Std(s) => format!("\"{}\"", s),
+            GenRef::Ref(s) => format!("\"{}\"", s),
             _ => {
                 println!("Cannot convert to string: {:?}", value);
                 panic!("Cannot convert to string")
@@ -206,7 +211,7 @@ impl Display for RustType {
             RustType::F32 => write!(f, "f32"),
             RustType::F64 => write!(f, "f64"),
             RustType::Bool => write!(f, "bool"),
-            RustType::Uuid => unimplemented!(),
+            RustType::Uuid => write!(f, "String"), // TODO: Change this for actual UUID
             RustType::Date => unimplemented!(),
         }
     }
@@ -262,16 +267,17 @@ use helixdb::{
             add_e::{AddEAdapter, EdgeType},
             add_n::AddNAdapter,
             e::EAdapter,
-            e_from_id::EFromId,
+            e_from_id::EFromIdAdapter,
             e_from_type::EFromTypeAdapter,
             n::NAdapter,
-            n_from_id::NFromId,
+            n_from_id::NFromIdAdapter,
             n_from_type::NFromTypeAdapter,
         },
         tr_val::{Traversable, TraversalVal},
         util::{
             dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
-            filter_ref::FilterRefAdapter, range::RangeAdapter, update::Update,
+            filter_ref::FilterRefAdapter, range::RangeAdapter, update::UpdateAdapter,
+            map::MapAdapter,
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
     },
