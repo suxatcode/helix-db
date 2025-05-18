@@ -14,6 +14,8 @@ pub struct InstanceInfo {
     pub started_at: String,
     pub available_endpoints: Vec<String>,
     pub binary_path: PathBuf,
+    pub label: String,
+    pub running: bool,
 }
 
 pub struct InstanceManager {
@@ -88,6 +90,8 @@ impl InstanceManager {
             started_at: chrono::Local::now().to_rfc3339(),
             available_endpoints: endpoints,
             binary_path: cached_binary,
+            label: "".to_string(),
+            running: true,
         };
 
         // Save instance info
@@ -133,6 +137,8 @@ impl InstanceManager {
                 started_at: chrono::Local::now().to_rfc3339(),
                 available_endpoints: instance.available_endpoints,
                 binary_path: instance.binary_path,
+                label: "".to_string(),
+                running: true,
             };
 
             // Update instance info
@@ -169,7 +175,7 @@ impl InstanceManager {
     pub fn stop_instance(&self, instance_id: &str) -> io::Result<()> {
         let mut instances = self.list_instances()?;
         if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
-            let instance = instances.remove(pos);
+            instances[pos].running = false;
             #[cfg(unix)]
             unsafe {
                 libc::kill(instance.pid as i32, libc::SIGTERM);
@@ -192,22 +198,9 @@ impl InstanceManager {
     pub fn stop_all_instances(&self) -> io::Result<()> {
         let instances = self.list_instances()?;
         for instance in instances {
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(instance.pid as i32, libc::SIGTERM);
-            }
-            #[cfg(windows)]
-            {
-                use windows::Win32::System::Threading::{
-                    OpenProcess, TerminateProcess, PROCESS_TERMINATE,
-                };
-                let handle = unsafe { OpenProcess(PROCESS_TERMINATE, false.into(), instance.pid) };
-                if let Ok(handle) = handle {
-                    unsafe { TerminateProcess(handle, 0) };
-                }
-            }
+            self.stop_instance(&instance.id)?;
         }
-        self.save_instances(&Vec::new())?;
+        self.save_instances(instances)?;
         Ok(())
     }
 
@@ -228,3 +221,4 @@ impl InstanceManager {
         Ok(())
     }
 }
+

@@ -57,9 +57,6 @@ pub struct DeployCommand {
     #[clap(short, long, help = "The output path")]
     pub output: Option<String>,
 
-    #[clap(short, long, help = "Should build for local machine")]
-    pub local: bool,
-
     #[clap(short, long, help = "Port to run the instance on")]
     pub port: Option<u16>,
 }
@@ -72,9 +69,6 @@ pub struct CompileCommand {
 
     #[clap(short, long, help = "The output path")]
     pub output: Option<String>,
-
-    #[clap(short, long, help = "Should generate python bindings")]
-    pub gen_py: bool,
 
     // #[clap(short, long, help = "The target platform")]
     // pub target: Option<String>,

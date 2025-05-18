@@ -6,8 +6,6 @@ use crate::{
     instance_manager::InstanceManager,
     utils::*,
 };
-use clap::Parser;
-use colored::*;
 use helixdb::{
     helix_engine::graph_core::config::Config,
     ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
@@ -17,7 +15,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-
+use clap::Parser;
+use colored::*;
 use spinners::{Spinner, Spinners};
 
 pub mod args;
@@ -92,14 +91,6 @@ fn main() {
                 }
             };
 
-            let local = command.local;
-
-            if !local {
-                println!("{}", "Building for remote instance is not supported yet, use --local flag to build for local machine".yellow().bold());
-                println!("└── Example: helix deploy --local");
-                return;
-            }
-
             let files = match check_and_read_files(&path) {
                 Ok(files) if !files.is_empty() => files,
                 Ok(_) => {
@@ -135,112 +126,109 @@ fn main() {
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
-            // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
-            if local {
-                let file_path = PathBuf::from(&output).join("src/queries.rs");
-                match fs::write(file_path, code.content) {
-                    Ok(_) => {
-                        println!("{}", "Successfully wrote queries file".green().bold());
-                    }
-                    Err(e) => {
-                        println!("{}", "Failed to write queries file".red().bold());
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
+            let file_path = PathBuf::from(&output).join("src/queries.rs");
+            match fs::write(file_path, code.content) {
+                Ok(_) => {
+                    println!("{}", "Successfully wrote queries file".green().bold());
                 }
+                Err(e) => {
+                    println!("{}", "Failed to write queries file".red().bold());
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
 
-                let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
+            let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
 
-                // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
-                let config_path = PathBuf::from(&output).join("src/config.hx.json");
-                fs::copy(PathBuf::from(path + "/config.hx.json"), config_path).unwrap();
+            // copy config.hx.json to ~/.helix/repo/helix-db/helix-container/config.hx.json
+            let config_path = PathBuf::from(&output).join("src/config.hx.json");
+            fs::copy(PathBuf::from(path + "/config.hx.json"), config_path).unwrap();
 
-                // check rust code
-                let mut runner = Command::new("cargo");
-                runner
-                    .arg("check")
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .current_dir(PathBuf::from(&output));
+            // check rust code
+            let mut runner = Command::new("cargo");
+            runner
+                .arg("check")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .current_dir(PathBuf::from(&output));
 
-                match runner.output() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        sp.stop_with_message(format!(
+            match runner.output() {
+                Ok(_) => {}
+                Err(e) => {
+                    sp.stop_with_message(format!(
                             "{}",
                             "Failed to check Rust code".red().bold()
-                        ));
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
+                    ));
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
                 }
+            }
 
-                let mut runner = Command::new("cargo");
-                runner
-                    .arg("build")
-                    .arg("--release")
-                    .current_dir(PathBuf::from(&output)) // TODO: build only in helix-container/ dir
-                    .env("RUSTFLAGS", "-Awarnings");
+            let mut runner = Command::new("cargo");
+            runner
+                .arg("build")
+                .arg("--release")
+                .current_dir(PathBuf::from(&output)) // TODO: build only in helix-container/ dir
+                .env("RUSTFLAGS", "-Awarnings");
 
-                match runner.output() {
-                    Ok(output) => {
-                        if output.status.success() {
-                            sp.stop_with_message(format!(
+            match runner.output() {
+                Ok(output) => {
+                    if output.status.success() {
+                        sp.stop_with_message(format!(
                                 "{}",
                                 "Successfully built Helix".green().bold()
-                            ));
-                        } else {
-                            sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            if !stderr.is_empty() {
-                                println!("└── {} {}", "Error:\n".red().bold(), stderr);
-                            }
-                            return;
-                        }
-                    }
-                    Err(e) => {
+                        ));
+                    } else {
                         sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
-                        println!("└── {} {}", "Error:".red().bold(), e);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        if !stderr.is_empty() {
+                            println!("└── {} {}", "Error:\n".red().bold(), stderr);
+                        }
                         return;
                     }
                 }
+                Err(e) => {
+                    sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
 
-                let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
+            let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
 
-                let instance_manager = InstanceManager::new().unwrap();
+            let instance_manager = InstanceManager::new().unwrap();
 
-                let binary_path = dirs::home_dir()
-                    .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
-                    .unwrap();
+            let binary_path = dirs::home_dir()
+                .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
+                .unwrap();
 
-                let endpoints: Vec<String> = code
-                    .source
-                    .queries
-                    .iter()
-                    .map(|q| to_snake_case(&q.name))
-                    .collect();
+            let endpoints: Vec<String> = code
+                .source
+                .queries
+                .iter()
+                .map(|q| to_snake_case(&q.name))
+                .collect();
 
-                match instance_manager.start_instance(&binary_path, port, endpoints) {
-                    Ok(instance) => {
-                        sp.stop_with_message(format!(
+            match instance_manager.start_instance(&binary_path, port, endpoints) {
+                Ok(instance) => {
+                    sp.stop_with_message(format!(
                             "{}",
                             "Successfully started Helix instance".green().bold()
-                        ));
-                        println!("└── Instance ID: {}", instance.id);
-                        println!("└── Port: {}", instance.port);
-                        println!("└── Available endpoints:");
-                        for endpoint in instance.available_endpoints {
-                            println!("    └── /{}", endpoint);
-                        }
+                    ));
+                    println!("└── Instance ID: {}", instance.id);
+                    println!("└── Port: {}", instance.port);
+                    println!("└── Available endpoints:");
+                    for endpoint in instance.available_endpoints {
+                        println!("    └── /{}", endpoint);
                     }
-                    Err(e) => {
-                        sp.stop_with_message(format!(
+                }
+                Err(e) => {
+                    sp.stop_with_message(format!(
                             "{}",
                             "Failed to start Helix instance".red().bold()
-                        ));
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
+                    ));
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
                 }
             }
         }
@@ -716,3 +704,4 @@ fn main() {
         }
     }
 }
+
