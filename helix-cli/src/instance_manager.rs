@@ -41,7 +41,7 @@ impl InstanceManager {
         })
     }
 
-    pub fn start_instance(
+    pub fn init_start_instance(
         &self,
         source_binary: &Path,
         port: u16,
@@ -94,24 +94,22 @@ impl InstanceManager {
             running: true,
         };
 
-        // Save instance info
-        self.save_instance(&instance)?;
+        let mut instances = self.list_instances()?;
+        instances.push(instance.clone());
+        let _ = self.save_instances(&instances);
 
         Ok(instance)
     }
 
-    pub fn restart_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
-        if let Some(instance) = self.get_instance(instance_id)? {
-            // Check if binary exists
-            if !instance.binary_path.exists() {
-                return Ok(None);
-            }
-            let data_dir = instance.binary_path.clone().join("data");
+    pub fn start_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
+        if let Some(mut instance) = self.get_instance(instance_id)? {
+            if !instance.binary_path.exists() { return Ok(None); }
+            //let data_dir = instance.binary_path.clone().join("data");
             // make sure data dir exists
             let data_dir = self.cache_dir.join("data").join(&instance_id);
             fs::create_dir_all(&data_dir)?;
 
-            // Create log file for this instance
+            // create log file for this instance
             let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
             let log_file = OpenOptions::new()
                 .create(true)
@@ -130,21 +128,11 @@ impl InstanceManager {
 
             let child = command.spawn()?;
 
-            let new_instance = InstanceInfo {
-                id: instance.id,
-                pid: child.id(),
-                port: instance.port,
-                started_at: chrono::Local::now().to_rfc3339(),
-                available_endpoints: instance.available_endpoints,
-                binary_path: instance.binary_path,
-                label: "".to_string(),
-                running: true,
-            };
+            instance.running = true;
 
-            // Update instance info
-            self.save_instance(&new_instance)?;
+            // TODO: update "self.instances" here
 
-            Ok(Some(new_instance))
+            Ok(Some(instance))
         } else {
             Ok(None)
         }
@@ -172,13 +160,16 @@ impl InstanceManager {
         Ok(instances)
     }
 
-    pub fn stop_instance(&self, instance_id: &str) -> io::Result<()> {
+    pub fn stop_instance(&self, instance_id: &str) -> io::Result<bool> {
         let mut instances = self.list_instances()?;
         if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
+            if !instances[pos].running {
+                return Ok(false);
+            }
             instances[pos].running = false;
             #[cfg(unix)]
             unsafe {
-                libc::kill(instance.pid as i32, libc::SIGTERM);
+                libc::kill(instances[pos].pid as i32, libc::SIGTERM);
             }
             #[cfg(windows)]
             {
@@ -190,24 +181,28 @@ impl InstanceManager {
                     unsafe { TerminateProcess(handle, 0) };
                 }
             }
-            self.save_instances(&instances)?;
+            let _ = self.save_instances(&instances)?;
         }
-        Ok(())
+        Ok(true)
+    }
+
+    pub fn running_instances(&self) -> io::Result<bool> {
+        let instances = self.list_instances()?;
+        for instance in instances {
+            if instance.running {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     pub fn stop_all_instances(&self) -> io::Result<()> {
         let instances = self.list_instances()?;
         for instance in instances {
-            self.stop_instance(&instance.id)?;
+            let _ = self.stop_instance(&instance.id)?;
         }
-        self.save_instances(instances)?;
         Ok(())
-    }
-
-    fn save_instance(&self, instance: &InstanceInfo) -> io::Result<()> {
-        let mut instances = self.list_instances()?;
-        instances.push(instance.clone());
-        self.save_instances(&instances)
     }
 
     fn save_instances(&self, instances: &[InstanceInfo]) -> io::Result<()> {
