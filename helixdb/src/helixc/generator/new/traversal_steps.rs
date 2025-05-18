@@ -1,4 +1,3 @@
-
 use crate::helixc::generator::new::utils::write_properties;
 
 use super::{
@@ -116,6 +115,8 @@ impl Display for Step {
             Step::OrderBy(order_by) => write!(f, "{}", order_by),
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
             Step::Remapping(remapping) => write!(f, "{}", remapping),
+
+            Step::Update(update) => write!(f, "{}", update),
         }
     }
 }
@@ -223,7 +224,6 @@ impl Display for OrderBy {
     }
 }
 
-
 #[derive(Clone)]
 pub struct Update {
     pub fields: Vec<(String, GeneratedValue)>,
@@ -235,4 +235,3 @@ impl Display for Update {
         write!(f, ".update({})", write_properties(&self.fields))
     }
 }
-
