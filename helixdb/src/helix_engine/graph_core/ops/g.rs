@@ -76,6 +76,19 @@ impl G {
         }
     }
 
+    pub fn new_mut_from<'a, 'b>(
+        storage: Arc<HelixGraphStorage>,
+        txn: &'b mut RwTxn<'a>,
+        iter: impl Iterator<Item = Result<TraversalVal, GraphError>>
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+        RwTraversalIterator {
+            inner: iter,
+            storage,
+            txn
+        }
+
+    }
+
     pub fn bulk_add_e(
         storage: Arc<HelixGraphStorage>,
         mut edges: Vec<(u128, u128, u128)>,

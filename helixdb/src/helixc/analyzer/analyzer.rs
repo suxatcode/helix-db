@@ -2,25 +2,30 @@
 
 use colored::Colorize;
 
-use crate::helixc::{
-    generator::new::{
-        generator_types::{
-            Assignment as GeneratedAssignment, Parameter as GeneratedParameter,
-            Query as GeneratedQuery, ReturnValue, ReturnValueExpr, Source as GeneratedSource,
-            Statement as GeneratedStatement,
+use crate::{
+    helixc::{
+        generator::new::{
+            generator_types::{
+                Assignment as GeneratedAssignment, Parameter as GeneratedParameter,
+                Query as GeneratedQuery, ReturnValue, ReturnValueExpr, Source as GeneratedSource,
+                Statement as GeneratedStatement,
+            },
+            object_remapping_generation::{
+                ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
+                RemappingType, TraversalRemapping, ValueRemapping,
+            },
+            source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
+            traversal_steps::{
+                In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
+                Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType,
+            },
+            utils::{
+                GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
+            },
         },
-        object_remapping_generation::{
-            ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
-            RemappingType, TraversalRemapping, ValueRemapping,
-        },
-        source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
-        traversal_steps::{
-            In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-            Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType,
-        },
-        utils::{GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator},
+        parser::{helix_parser::*, location::Loc},
     },
-    parser::{helix_parser::*, location::Loc},
+    protocol::value::Value,
 };
 
 use std::{
@@ -1153,7 +1158,7 @@ impl<'a> Ctx<'a> {
 
                 StepType::Update(update) => {
                     // Update returns the same type (nodes/edges) it started with.
-                    
+
                     match tr.steps.last() {
                         Some(step) => match &step.step {
                             StepType::Node(gs) => {
@@ -1255,7 +1260,31 @@ impl<'a> Ctx<'a> {
                             }
                         },
                     };
-
+                    gen_traversal.traversal_type = TraversalType::Update(
+                        update
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                (
+                                    field.key.clone(),
+                                    match &field.value.value {
+                                        FieldValueType::Identifier(i) => {
+                                            GeneratedValue::Identifier(GenRef::Std(i.clone()))
+                                        }
+                                        FieldValueType::Literal(l) => match l {
+                                            Value::String(s) => {
+                                                GeneratedValue::Literal(GenRef::Literal(s.clone()))
+                                            }
+                                            other => GeneratedValue::Primitive(GenRef::Std(
+                                                other.to_string(),
+                                            )),
+                                        },
+                                        _ => panic!("Should be primitive or value"),
+                                    },
+                                )
+                            })
+                            .collect(),
+                    );
                     excluded.clear();
                 }
 

@@ -32,6 +32,26 @@ pub enum Value {
     Object(HashMap<String, Value>),
     Empty,
 }
+impl Value {
+    pub fn to_string(&self) -> String {
+        match self {
+            Value::String(s) => s.to_string(),
+            Value::F32(f) => f.to_string(),
+            Value::F64(f) => f.to_string(),
+            Value::I8(i) => i.to_string(),
+            Value::I16(i) => i.to_string(),
+            Value::I32(i) => i.to_string(),
+            Value::I64(i) => i.to_string(),
+            Value::U8(u) => u.to_string(),
+            Value::U16(u) => u.to_string(),
+            Value::U32(u) => u.to_string(),
+            Value::U64(u) => u.to_string(),
+            Value::U128(u) => u.to_string(),
+            Value::Boolean(b) => b.to_string(),
+            _ => panic!("Not primitive"),
+        }
+    }
+}
 
 impl PartialEq<i32> for Value {
     fn eq(&self, other: &i32) -> bool {

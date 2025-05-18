@@ -138,6 +138,7 @@ pub enum GeneratedValue {
     // needed?
     Literal(GenRef<String>),
     Identifier(GenRef<String>),
+    Primitive(GenRef<String>),
     Unknown,
 }
 
@@ -145,6 +146,7 @@ impl Display for GeneratedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GeneratedValue::Literal(value) => write!(f, "\"{}\"", value),
+            GeneratedValue::Primitive(value) => write!(f, "{}", value),
             GeneratedValue::Identifier(value) => write!(f, "{}", value),
             GeneratedValue::Unknown => write!(f, ""),
         }

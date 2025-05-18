@@ -17,26 +17,26 @@ pub enum TraversalType {
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
     // FromVar(GenRef<String>),
-    Update,
+    Update(Vec<(String, GeneratedValue)>),
     Empty,
 }
-impl Display for TraversalType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TraversalType::FromVar => write!(f, ""),
-            TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), &txn)"),
+// impl Display for TraversalType {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             TraversalType::FromVar => write!(f, ""),
+//             TraversalType::Ref => write!(f, "G::new(Arc::clone(&db), &txn)"),
 
-            TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), &mut txn)"),
-            TraversalType::Nested(nested) => {
-                assert!(nested.inner().len() > 0, "Empty nested traversal name");
-                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)
-            }
-            TraversalType::Update => write!(f, ""),
-            // TraversalType::FromVar(var) => write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var),
-            TraversalType::Empty => panic!("Should not be empty"),
-        }
-    }
-}
+//             TraversalType::Mut => write!(f, "G::new_mut(Arc::clone(&db), &mut txn)"),
+//             TraversalType::Nested(nested) => {
+//                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
+//                 write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)
+//             }
+//             TraversalType::Update => write!(f, ""),
+//             // TraversalType::FromVar(var) => write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var),
+//             TraversalType::Empty => panic!("Should not be empty"),
+//         }
+//     }
+// }
 
 #[derive(Clone)]
 pub struct Traversal {
@@ -47,15 +47,55 @@ pub struct Traversal {
 
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.traversal_type)?;
-        write!(f, "{}", self.source_step)?;
-        for step in &self.steps {
-            write!(f, "\n{}", step)?;
-        }
-        if let TraversalType::FromVar = self.traversal_type {
-            write!(f, "")
-        } else {
-            write!(f, "\n    .collect_to::<Vec<_>>()")
+        match &self.traversal_type {
+            TraversalType::FromVar => write!(f, ""),
+            TraversalType::Ref => {
+                write!(f, "G::new(Arc::clone(&db), &txn)")?;
+                write!(f, "{}", self.source_step)?;
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
+                Ok(())
+            }
+
+            TraversalType::Mut => {
+                write!(f, "G::new_mut(Arc::clone(&db), &mut txn)")?;
+                write!(f, "{}", self.source_step)?;
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
+                Ok(())
+            }
+            TraversalType::Nested(nested) => {
+                assert!(nested.inner().len() > 0, "Empty nested traversal name");
+                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", nested)?;
+                write!(f, "{}", self.source_step)?;
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
+                Ok(())
+            }
+            TraversalType::Empty => panic!("Should not be empty"),
+            TraversalType::Update(fields) => {
+                // inner scope
+                write!(f, "{{")?;
+                write!(f, "let update_tr = G::new(Arc::clone(&db), &txn)")?;
+                write!(f, "{}", self.source_step)?;
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                write!(
+                    f,
+                    "G::new_mut_from(Arc::clone(&db), &mut txn, update_tr.inner)",
+                )?;
+                write!(f, "\n    .update({})", write_properties(&fields))?;
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
+                write!(f, "}}")?;
+                Ok(())
+            }
         }
     }
 }
@@ -93,9 +133,6 @@ pub enum Step {
 
     // object
     Remapping(Remapping),
-
-    // update
-    Update(Update),
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -115,8 +152,6 @@ impl Display for Step {
             Step::OrderBy(order_by) => write!(f, "{}", order_by),
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
             Step::Remapping(remapping) => write!(f, "{}", remapping),
-
-            Step::Update(update) => write!(f, "{}", update),
         }
     }
 }
@@ -221,17 +256,5 @@ pub struct OrderBy {
 impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
-    }
-}
-
-#[derive(Clone)]
-pub struct Update {
-    pub fields: Vec<(String, GeneratedValue)>,
-}
-
-impl Display for Update {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "G::new_mut_from(Arc::clone(&db), &mut txn,)")?;
-        write!(f, ".update({})", write_properties(&self.fields))
     }
 }
