@@ -1,4 +1,5 @@
 use crate::args::*;
+use crate::instance_manager::InstanceInfo;
 use colored::*;
 use helixdb::helixc::{
     analyzer::{analyzer::analyze, types::Source as HelixSource},
@@ -303,3 +304,22 @@ pub fn generate(files: &Vec<DirEntry>) -> Result<Content, CliError> {
         .push_str(&generator.generate_source(&analyzed_source));
     Ok(content)
 }
+
+pub fn print_instnace(instance: &InstanceInfo) {
+    let rg: bool = instance.running;
+    println!(
+        "{} {}{}",
+        if rg { "Instance ID:".green().bold() } else { "Instance ID:".yellow().bold() },
+        if rg { instance.id.green().bold() } else { instance.id.yellow().bold() },
+        if rg { "".to_string().bold() } else { " (not running)".to_string().yellow().bold() },
+    );
+    println!("└── Label: {}", instance.label);
+    println!("└── Port: {}", instance.port);
+    println!("└── Available endpoints:");
+    instance.available_endpoints
+        .iter()
+        .for_each(|ep|
+            println!("    └── /{}", ep)
+        );
+}
+

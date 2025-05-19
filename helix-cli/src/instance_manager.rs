@@ -1,9 +1,12 @@
+use super::args::CliError;
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 use dirs;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -56,7 +59,6 @@ impl InstanceManager {
         let data_dir = self.cache_dir.join("data").join(&instance_id);
         fs::create_dir_all(&data_dir)?;
 
-        // Create log file for this instance
         let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
         let log_file = OpenOptions::new()
             .create(true)
@@ -101,41 +103,57 @@ impl InstanceManager {
         Ok(instance)
     }
 
-    pub fn start_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
-        if let Some(mut instance) = self.get_instance(instance_id)? {
-            if !instance.binary_path.exists() { return Ok(None); }
-            //let data_dir = instance.binary_path.clone().join("data");
-            // make sure data dir exists
-            let data_dir = self.cache_dir.join("data").join(&instance_id);
-            fs::create_dir_all(&data_dir)?;
+    pub fn start_instance(&self, instance_id: &str) -> Result<Option<InstanceInfo>, CliError> {
+        let mut instance = match self.get_instance(instance_id)? {
+            Some(instance) => instance,
+            None => return Err(CliError::New(format!("No instance found with id {}", instance_id)))
+        };
 
-            // create log file for this instance
-            let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
-            let log_file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .append(true)
-                .open(log_file)?;
-
-            let mut command = Command::new(&instance.binary_path);
-            command.env("PORT", instance.port.to_string());
-            command
-                .env("HELIX_DAEMON", "1")
-                .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
-                .env("HELIX_PORT", instance.port.to_string())
-                .stdout(Stdio::from(log_file.try_clone()?))
-                .stderr(Stdio::from(log_file));
-
-            let child = command.spawn()?;
-
-            instance.running = true;
-
-            // TODO: update "self.instances" here
-
-            Ok(Some(instance))
-        } else {
-            Ok(None)
+        if !instance.binary_path.exists() {
+            return Err(CliError::New(format!("Binary not found for instance {}: {:?}",
+                        instance_id, instance.binary_path)));
         }
+
+        let data_dir = self.cache_dir.join("data").join(instance_id);
+        if !data_dir.exists() {
+            fs::create_dir_all(&data_dir).map_err(|e| {
+                CliError::New(format!("Failed to create data directory for {}: {}", instance_id, e))
+            })?;
+        }
+
+        let log_file = self.logs_dir.join(format!("instance_{}.log", instance_id));
+        let log_file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(log_file)
+            .map_err(|e| CliError::New(format!("Failed to open log file: {}", e)))?;
+
+        // Configure and spawn the process
+        let mut command = Command::new(&instance.binary_path);
+        command.env("PORT", instance.port.to_string());
+        command
+            .env("HELIX_DAEMON", "1")
+            .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
+            .env("HELIX_PORT", instance.port.to_string())
+            .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
+                CliError::New(format!("Failed to clone log file: {}", e))
+            })?))
+        .stderr(Stdio::from(log_file));
+
+        // Spawn the child process
+        let child = command.spawn().map_err(|e| {
+            CliError::New(format!("Failed to spawn process for {}: {}", instance_id, e))
+        })?;
+
+        // Update instance state
+        instance.pid = child.id();
+        instance.running = true;
+
+        // Update and save the changed instance
+        self.update_instance(&instance)?;
+
+        Ok(Some(instance))
     }
 
     fn get_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
@@ -160,7 +178,7 @@ impl InstanceManager {
         Ok(instances)
     }
 
-    pub fn stop_instance(&self, instance_id: &str) -> io::Result<bool> {
+    pub fn stop_instance(&self, instance_id: &str) -> Result<bool, CliError> {
         let mut instances = self.list_instances()?;
         if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
             if !instances[pos].running {
@@ -182,11 +200,12 @@ impl InstanceManager {
                 }
             }
             let _ = self.save_instances(&instances)?;
+            return Ok(true);
         }
-        Ok(true)
+        Ok(false)
     }
 
-    pub fn running_instances(&self) -> io::Result<bool> {
+    pub fn running_instances(&self) -> Result<bool, CliError> {
         let instances = self.list_instances()?;
         for instance in instances {
             if instance.running {
@@ -197,15 +216,7 @@ impl InstanceManager {
         Ok(false)
     }
 
-    pub fn stop_all_instances(&self) -> io::Result<()> {
-        let instances = self.list_instances()?;
-        for instance in instances {
-            let _ = self.stop_instance(&instance.id)?;
-        }
-        Ok(())
-    }
-
-    fn save_instances(&self, instances: &[InstanceInfo]) -> io::Result<()> {
+    fn save_instances(&self, instances: &[InstanceInfo]) -> Result<(), CliError> {
         let contents = sonic_rs::to_string(instances)?;
         let mut file = OpenOptions::new()
             .write(true)
@@ -214,6 +225,18 @@ impl InstanceManager {
             .open(&self.instances_file)?;
         file.write_all(contents.as_bytes())?;
         Ok(())
+    }
+
+    fn update_instance(&self, updated_instance: &InstanceInfo) -> Result<(), CliError> {
+        let mut instances = self.list_instances()?;
+
+        if let Some(pos) = instances.iter().position(|i| i.id == updated_instance.id) {
+            instances[pos] = updated_instance.clone();
+        } else {
+            instances.push(updated_instance.clone());
+        }
+
+        self.save_instances(&instances)
     }
 }
 

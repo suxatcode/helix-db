@@ -215,13 +215,7 @@ fn main() {
                             "{}",
                             "Successfully started Helix instance".green().bold()
                     ));
-                    println!("└── Instance ID: {}", instance.id);
-                    println!("└── Label: {}", instance.label);
-                    println!("└── Port: {}", instance.port);
-                    println!("└── Available endpoints:");
-                    for endpoint in instance.available_endpoints {
-                        println!("    └── /{}", endpoint);
-                    }
+                    print_instnace(&instance);
                 }
                 Err(e) => {
                     sp.stop_with_message(format!(
@@ -242,19 +236,8 @@ fn main() {
                         println!("No running Helix instances");
                         return;
                     }
-                    println!("Helix instances:");
                     for instance in instances {
-                        println!("Instance ID: {}",
-                            if instance.running { instance.id.to_string().green().bold() }
-                            else { instance.id.to_string().yellow().bold() }
-                        );
-                        println!("└── Label: {}", instance.label);
-                        println!("└── Running: {}", instance.running);
-                        println!("└── Port: {}", instance.port);
-                        println!("└── Available endpoints:");
-                        for endpoint in instance.available_endpoints {
-                            println!("    └── /{}", endpoint);
-                        }
+                        print_instnace(&instance);
                         println!();
                     }
                 }
@@ -269,21 +252,31 @@ fn main() {
             match instance_manager.list_instances() {
                 Ok(instances) => {
                     if !instance_manager.running_instances().unwrap() {
-                        println!("No running Helix instances");
+                        println!("{}", "No running Helix instances".bold());
                         return;
                     }
                     if command.all {
-                        match instance_manager.stop_all_instances() {
-                            Ok(_) => {
-                                println!("{}", "Stopping all Helix instances".green().bold());
-                                for instance in instances {
-                                    println!("└── {} {}", "ID:".green().bold(), instance.id);
+                        println!("{}", "Stopping all running Helix instances".bold());
+                        instances.iter().for_each(|instance| {
+                            if instance.running {
+                                match instance_manager.stop_instance(instance.id.as_str()) {
+                                    Ok(_) => {
+                                        println!(
+                                            "└── {} {}", "ID:".yellow().bold(),
+                                            instance.id.yellow().bold()
+                                        );
+                                    }
+                                    Err(e) => {
+                                        println!(
+                                            "{} {}, {}",
+                                            "Failed to stop instance:".red().bold(),
+                                            instance.id.red().bold(),
+                                            e,
+                                        );
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                println!("{} {}", "Failed to stop instances:".red().bold(), e)
-                            }
-                        }
+                        });
                     } else if let Some(instance_id) = command.instance_id {
                         match instance_manager.stop_instance(&instance_id) {
                             Ok(false) => {
@@ -322,13 +315,7 @@ fn main() {
                         "{}",
                         "Successfully started Helix instance".green().bold()
                     ));
-                    println!("└── Instance ID: {}", instance.id);
-                    println!("└── Label: {}", instance.label);
-                    println!("└── Port: {}", instance.port);
-                    println!("└── Available endpoints:");
-                    for endpoint in instance.available_endpoints {
-                        println!("    └── /{}", endpoint);
-                    }
+                    print_instnace(&instance);
                 }
                 Ok(None) => {
                     sp.stop_with_message(format!(
@@ -341,7 +328,7 @@ fn main() {
                     );
                 }
                 Err(e) => {
-                    sp.stop_with_message(format!("{}", "Failed to restart instance".red().bold()));
+                    sp.stop_with_message(format!("{}", "Failed to start instance".red().bold()));
                     println!("└── {} {}", "Error:".red().bold(), e);
                 }
             }
