@@ -69,12 +69,12 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     let user_nodes = G::new(Arc::clone(&db), &txn)
         .n_from_type("User")
-        .out("Knows")
         .filter_ref(|val, txn| {
             if let Ok(val) = val {
-                Ok(val.check_property("age").map_or(false, |v| *v > 29)
-                    || val.check_property("age").map_or(false, |v| *v < 41)
-                        && val.check_property("age").map_or(false, |v| *v == 32))
+                Ok(G::new_from(Arc::clone(&db), txn, vec![val.clone()])
+                    .out("Knows")
+                    .count()
+                    .gt(&0))
             } else {
                 Ok(false)
             }

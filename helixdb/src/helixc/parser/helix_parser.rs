@@ -239,7 +239,7 @@ pub enum ExpressionType {
     IntegerLiteral(i32),
     FloatLiteral(f64),
     BooleanLiteral(bool),
-    Exists(Box<Traversal>),
+    Exists(Box<Expression>),
     BatchAddVector(BatchAddVector),
     AddVector(AddVector),
     AddNode(AddNode),
@@ -1295,10 +1295,14 @@ impl HelixParser {
             }),
             Rule::exists => Ok(Expression {
                 loc: expression.loc(),
-                expr: ExpressionType::Exists(Box::new(
-                    self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
-                )),
+                expr: ExpressionType::Exists(Box::new(Expression {
+                    loc: expression.loc(),
+                    expr: ExpressionType::Traversal(Box::new(
+                        self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
+                    )),
+                })),
             }),
+
             _ => unreachable!(),
         }
     }
@@ -1338,10 +1342,13 @@ impl HelixParser {
                     .ok_or_else(|| ParserError::from("Missing exists traversal"))?;
                 Ok(Expression {
                     loc: pair.loc(),
-                    expr: ExpressionType::Exists(Box::new(match traversal.as_rule() {
-                        Rule::traversal => self.parse_traversal(traversal)?,
-                        Rule::id_traversal => self.parse_traversal(traversal)?,
-                        _ => unreachable!(),
+                    expr: ExpressionType::Exists(Box::new(Expression {
+                        loc: pair.loc(),
+                        expr: ExpressionType::Traversal(Box::new(match traversal.as_rule() {
+                            Rule::traversal => self.parse_traversal(traversal)?,
+                            Rule::id_traversal => self.parse_traversal(traversal)?,
+                            _ => unreachable!(),
+                        })),
                     })),
                 })
             }

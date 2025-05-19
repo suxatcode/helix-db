@@ -19,7 +19,7 @@ use crate::{
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
                 Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType, Where,
-                WhereRef,
+                WhereExists, WhereRef,
             },
             utils::{
                 GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
@@ -530,7 +530,7 @@ impl<'a> Ctx<'a> {
             ),
             Empty => (Type::Unknown, None),
 
-            Traversal(tr) | Exists(tr) => {
+            Traversal(tr) => {
                 let mut gen_traversal = GeneratedTraversal::default();
                 let final_ty =
                     self.check_traversal(tr, scope, q, parent_ty, &mut gen_traversal, gen_query);
@@ -903,6 +903,23 @@ impl<'a> Ctx<'a> {
                     Some(GeneratedStatement::BoExp(BoExp::Or(exprs))),
                 )
             }
+            Exists(expr) => {
+                let (_, stmt) = self.infer_expr_type(expr, scope, q, parent_ty, gen_query);
+                assert!(stmt.is_some());
+                assert!(matches!(stmt, Some(GeneratedStatement::Traversal(_))));
+                let expr = match stmt.unwrap() {
+                    GeneratedStatement::Traversal(mut tr) => {
+                        tr.traversal_type =
+                            TraversalType::NestedFrom(GenRef::Std("val".to_string()));
+                        tr
+                    }
+                    _ => unreachable!(),
+                };
+                (
+                    Type::Boolean,
+                    Some(GeneratedStatement::BoExp(BoExp::Exists(expr))),
+                )
+            }
             _ => {
                 println!("Unknown expression: {:?}", expr);
                 todo!()
@@ -1120,9 +1137,10 @@ impl<'a> Ctx<'a> {
                         GeneratedStatement::BoExp(expr) => {
                             gen_traversal
                                 .steps
-                                .push(Separator::Period(GeneratedStep::Where(Where::Ref(
-                                    WhereRef { expr },
-                                ))));
+                                .push(Separator::Period(GeneratedStep::Where(match expr {
+                                    BoExp::Exists(tr) => Where::Exists(WhereExists { tr }),
+                                    _ => Where::Ref(WhereRef { expr }),
+                                })));
                         }
                         _ => unreachable!(),
                     }

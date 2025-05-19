@@ -19,6 +19,7 @@ pub enum TraversalType {
     Ref,
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
+    NestedFrom(GenRef<String>),
     // FromVar(GenRef<String>),
     Update(Vec<(String, GeneratedValue)>),
     Empty,
@@ -96,6 +97,14 @@ impl Display for Traversal {
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
                 write!(f, "{}", nested)?; // this should be var name default val
+                for step in &self.steps {
+                    write!(f, "\n{}", step)?;
+                }
+                Ok(())
+            }
+            TraversalType::NestedFrom(nested) => {
+                assert!(nested.inner().len() > 0, "Empty nested traversal name");
+                write!(f, "G::new_from(Arc::clone(&db), txn, vec![{}.clone()])", nested)?;
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
@@ -245,18 +254,39 @@ impl Display for InE {
 
 #[derive(Clone)]
 pub enum Where {
+    Exists(WhereExists),
     Ref(WhereRef),
     Mut(WhereMut),
 }
 impl Display for Where {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Where::Exists(ex) =>  write!(f, "{}", ex),
             Where::Ref(wr) => write!(f, "{}", wr),
             Where::Mut(wm) => write!(f, "{}", wm),
         }
     }
 }
 
+#[derive(Clone)]
+pub struct WhereExists {
+    pub tr: Traversal,
+}
+impl Display for WhereExists {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "filter_ref(|val, txn|{{
+                if let Ok(val) = val {{ 
+                    Ok({}.count().gt(&0))
+                }} else {{
+                    Ok(false)
+                }}
+            }})",
+            self.tr
+        )
+    }
+}
 #[derive(Clone)]
 pub struct WhereRef {
     pub expr: BoExp,
@@ -283,7 +313,7 @@ pub struct WhereMut {
 }
 impl Display for WhereMut {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "NOT IMPLEMENTED")
+        unimplemented!();
     }
 }
 

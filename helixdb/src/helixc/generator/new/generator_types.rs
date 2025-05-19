@@ -275,8 +275,7 @@ impl Display for Drop {
 pub enum BoExp {
     And(Vec<BoExp>),
     Or(Vec<BoExp>),
-    // Not(Traversal),
-    // Eq(Traversal, Traversal),
+    Exists(Traversal),
     Expr(Traversal),
 }
 impl Display for BoExp {
@@ -296,6 +295,7 @@ impl Display for BoExp {
                     .collect::<Vec<_>>();
                 write!(f, "{}", tr.join(" || "))
             }
+            BoExp::Exists(traversal) => write!(f, "{}", traversal),
             BoExp::Expr(traversal) => write!(f, "{}", traversal),
         }
     }
