@@ -46,6 +46,9 @@ pub enum CommandType {
 
     /// Ingest data into Helix
     Ingest(IngestCommand),
+
+    /// Give an instance a short description
+    Label(LabelCommand)
 }
 
 #[derive(Debug, Args)]
@@ -157,7 +160,16 @@ pub struct IngestCommand {
     pub use_ssl: bool,
 }
 
-// TODO: make this better or don't use a custom CliError thing
+#[derive(Debug, Args)]
+#[clap(name = "label", about = "Give an instance a short description")]
+pub struct LabelCommand {
+    #[clap(help = "Instance ID to label")]
+    pub instance_id: String,
+
+    #[clap(help = "Short description to label")]
+    pub label: String,
+}
+
 #[derive(Debug)]
 pub enum CliError {
     Io(std::io::Error),
@@ -200,3 +212,4 @@ impl From<sonic_rs::Error> for CliError {
         CliError::New(e.to_string())
     }
 }
+

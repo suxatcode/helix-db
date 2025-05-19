@@ -334,6 +334,21 @@ fn main() {
             }
         }
 
+        CommandType::Label(command) => {
+            let instance_manager = InstanceManager::new().unwrap();
+            let instance_id = command.instance_id;
+            let label = command.label;
+            match instance_manager.set_label(&instance_id, &label) {
+                Ok(false) => {
+                    println!("{} {}", "Instance not found".red().bold(), instance_id)
+                }
+                Ok(true) => {
+                    println!("{} {}", "Labled".green().bold(), instance_id)
+                }
+                Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
+            }
+        }
+
         CommandType::Compile(command) => {
             let path = if let Some(p) = &command.path {
                 p

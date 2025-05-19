@@ -135,7 +135,8 @@ impl InstanceManager {
         command
             .env("HELIX_DAEMON", "1")
             .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
-            .env("HELIX_PORT", instance.port.to_string())
+            .env("HELIX_PORT", instance.port.to_string()) // TODO: needs to find a new port and
+                                                          // update if curr is not available
             .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
                 CliError::New(format!("Failed to clone log file: {}", e))
             })?))
@@ -237,6 +238,16 @@ impl InstanceManager {
         }
 
         self.save_instances(&instances)
+    }
+
+    pub fn set_label(&self, instance_id: &str, label: &str) -> Result<bool, CliError> {
+        let mut instances = self.list_instances()?;
+        if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
+            instances[pos].label = label.to_string();
+            self.save_instances(&instances);
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
