@@ -1,4 +1,7 @@
-use super::args::CliError;
+use super::{
+    args::CliError,
+    utils::find_available_port,
+};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
@@ -8,6 +11,7 @@ use std::{
 use dirs;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use colored::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstanceInfo {
@@ -129,29 +133,32 @@ impl InstanceManager {
             .open(log_file)
             .map_err(|e| CliError::New(format!("Failed to open log file: {}", e)))?;
 
-        // Configure and spawn the process
+        let port = match find_available_port(instance.port) {
+            Some(port) => port,
+            None => {
+                return Err(CliError::New(format!("{}", "Could not find an available port!".red().bold())));
+            }
+        };
+        instance.port = port;
+
         let mut command = Command::new(&instance.binary_path);
         command.env("PORT", instance.port.to_string());
         command
             .env("HELIX_DAEMON", "1")
             .env("HELIX_DATA_DIR", data_dir.to_str().unwrap())
-            .env("HELIX_PORT", instance.port.to_string()) // TODO: needs to find a new port and
-                                                          // update if curr is not available
+            .env("HELIX_PORT", instance.port.to_string())
             .stdout(Stdio::from(log_file.try_clone().map_err(|e| {
                 CliError::New(format!("Failed to clone log file: {}", e))
             })?))
         .stderr(Stdio::from(log_file));
 
-        // Spawn the child process
         let child = command.spawn().map_err(|e| {
             CliError::New(format!("Failed to spawn process for {}: {}", instance_id, e))
         })?;
 
-        // Update instance state
         instance.pid = child.id();
         instance.running = true;
 
-        // Update and save the changed instance
         self.update_instance(&instance)?;
 
         Ok(Some(instance))
@@ -244,7 +251,7 @@ impl InstanceManager {
         let mut instances = self.list_instances()?;
         if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
             instances[pos].label = label.to_string();
-            self.save_instances(&instances);
+            self.save_instances(&instances)?;
             return Ok(true);
         }
         Ok(false)
