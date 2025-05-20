@@ -63,7 +63,7 @@ impl HelixGraphStorage {
         // Configure and open LMDB environment
         let graph_env = unsafe {
             EnvOpenOptions::new()
-                .map_size(config.vector_config.db_max_size.unwrap_or(100) * 1024 * 1024 * 1024) // 10GB max
+                .map_size(config.db_max_size_gb.unwrap_or(100) * 1024 * 1024 * 1024) // GB
                 .max_dbs(20)
                 .max_readers(200)
 

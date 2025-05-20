@@ -14,9 +14,6 @@ pub struct VectorConfig {
 
     // Size of dynamic candidate list for graph search
     pub ef_search: Option<usize>,
-
-    // Database in GB
-    pub db_max_size: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,6 +25,10 @@ pub struct GraphConfig {
 pub struct Config {
     pub vector_config: VectorConfig,
     pub graph_config: GraphConfig,
+
+    // Database in GB
+    pub db_max_size_gb: Option<usize>,
+
     // // Path to the database
     // pub db_path: String,
 
@@ -42,11 +43,11 @@ impl Config {
                 m: Some(m),
                 ef_construction: Some(ef_construction),
                 ef_search: Some(ef_search),
-                db_max_size: Some(db_max_size),
             },
             graph_config: GraphConfig {
                 secondary_indices: None,
             },
+            db_max_size_gb: Some(db_max_size),
         }
     }
 
@@ -66,11 +67,13 @@ impl Config {
     "vector_config": {
         "m": 16,
         "ef_construction": 128,
-        "ef_search": 768,
-        "db_max_size": 100
+        "ef_search": 768
     },
     "graph_config": {
         "secondary_indices": []
+    }
+    "config": {
+        "db_max_size_gb": 10
     }
 }
 "#
@@ -85,11 +88,11 @@ impl Default for Config {
                 m: Some(25),
                 ef_construction: Some(512),
                 ef_search: Some(768),
-                db_max_size: Some(10_000),
             },
             graph_config: GraphConfig {
                 secondary_indices: None,
             },
+            db_max_size_gb: Some(10),
         }
     }
 }
