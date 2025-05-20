@@ -10,7 +10,7 @@ use pest::{
 use pest_derive::Parser;
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
+    fmt::{Debug, Display},
     io::Write,
     path::Path,
 };
@@ -117,6 +117,7 @@ pub enum FieldType {
     Array(Box<FieldType>),
     Identifier(String),
     Object(HashMap<String, FieldType>),
+    // Closure(String, HashMap<String, FieldType>),
 }
 
 impl PartialEq for FieldType {
@@ -139,6 +140,7 @@ impl PartialEq for FieldType {
             (FieldType::Array(a), FieldType::Array(b)) => a == b,
             (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
             (FieldType::Object(a), FieldType::Object(b)) => a == b,
+            // (FieldType::Closure(a, b), FieldType::Closure(c, d)) => a == c && b == d,
             _ => false,
         }
     }
@@ -171,6 +173,7 @@ impl Display for FieldType {
                 }
                 write!(f, "}}")
             }
+            // FieldType::Closure(a, b) => write!(f, "Closure({})", a),
         }
     }
 }

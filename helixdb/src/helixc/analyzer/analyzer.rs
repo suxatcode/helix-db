@@ -259,7 +259,7 @@ impl<'a> Ctx<'a> {
                     }
 
                     let (rhs_ty, stmt) =
-                        self.infer_expr_type(&assign.value, &scope, q, None, Some(&mut query));
+                        self.infer_expr_type(&assign.value, &mut scope, q, None, Some(&mut query));
                     scope.insert(assign.variable.as_str(), rhs_ty);
                     assert!(stmt.is_some(), "Assignment statement should be generated");
                     let assignment = GeneratedStatement::Assignment(GeneratedAssignment {
@@ -327,7 +327,7 @@ impl<'a> Ctx<'a> {
                 Drop(expr) => {
                     // Nothing special right now; still type‑check sub‑expressions
                     query.is_mut = true;
-                    self.infer_expr_type(expr, &scope, q, None, Some(&mut query));
+                    self.infer_expr_type(expr, &mut scope, q, None, Some(&mut query));
                 }
 
                 SearchVector(expr) => {
@@ -363,7 +363,7 @@ impl<'a> Ctx<'a> {
                         if let StatementType::Assignment(a) = &body_stmt.statement {
                             let (t, _) = self.infer_expr_type(
                                 &a.value,
-                                &body_scope,
+                                &mut body_scope,
                                 q,
                                 None,
                                 Some(&mut query),
@@ -391,7 +391,7 @@ impl<'a> Ctx<'a> {
             );
         }
         for ret in &q.return_values {
-            let (_, stmt) = self.infer_expr_type(ret, &scope, q, None, Some(&mut query));
+            let (_, stmt) = self.infer_expr_type(ret, &mut scope, q, None, Some(&mut query));
 
             assert!(stmt.is_some(), "RETURN value should be a valid expression");
             match stmt.unwrap() {
@@ -493,7 +493,7 @@ impl<'a> Ctx<'a> {
     fn infer_expr_type(
         &mut self,
         expression: &'a Expression,
-        scope: &HashMap<&'a str, Type>,
+        scope: &mut HashMap<&'a str, Type>,
         q: &'a Query,
         parent_ty: Option<Type>,
         gen_query: Option<&mut GeneratedQuery>,
@@ -939,7 +939,7 @@ impl<'a> Ctx<'a> {
     fn check_traversal(
         &mut self,
         tr: &'a Traversal,
-        scope: &HashMap<&'a str, Type>,
+        scope: &mut HashMap<&'a str, Type>,
         q: &'a Query,
         parent_ty: Option<Type>,
         gen_traversal: &mut GeneratedTraversal,
@@ -1120,7 +1120,16 @@ impl<'a> Ctx<'a> {
                     //         "move the object to the end of the traversal",
                     //     );
                     // }
-                    self.validate_object(&cur_ty, tr, obj, &excluded, q, gen_traversal, None);
+                    self.validate_object(
+                        &cur_ty,
+                        tr,
+                        obj,
+                        &excluded,
+                        q,
+                        gen_traversal,
+                        None,
+                        scope,
+                    );
                 }
 
                 StepType::Where(expr) => {
@@ -1565,15 +1574,19 @@ impl<'a> Ctx<'a> {
                         );
                     }
                     // Add identifier to a temporary scope so inner uses pass
-                    // let mut tmp_scope = scope.clone();
-                    // tmp_scope.insert(cl.identifier.as_str(), cur_ty.clone());
-                    // // Walk the object literal
-                    // let obj_expr = Expression::Object(Object {
-                    //     fields: cl.object.fields.clone(),
-                    //     should_spread: cl.object.should_spread,
-                    // });
-                    // self.infer_expr_type(&obj_expr, &tmp_scope, q);
-                    // cur_ty = Type::Unknown;
+                    scope.insert(cl.identifier.as_str(), cur_ty.clone()); // If true then already exists so return error
+                    let obj = &cl.object;
+                    self.validate_object(
+                        &cur_ty,
+                        tr,
+                        obj,
+                        &excluded,
+                        q,
+                        gen_traversal,
+                        None,
+                        scope,
+                    );
+                    scope.remove(cl.identifier.as_str()); 
                 }
 
                 StepType::SearchVector(_) => {
@@ -1699,54 +1712,32 @@ impl<'a> Ctx<'a> {
         q: &'a Query,
         gen_traversal: &mut GeneratedTraversal,
         gen_query: Option<&mut GeneratedQuery>,
+        scope: &mut HashMap<&'a str, Type>,
     ) {
         println!("{:?}", cur_ty);
         match &cur_ty {
             Type::Nodes(Some(node_ty)) => {
                 if let Some(field_set) = self.node_fields.get(node_ty.as_str()).cloned() {
                     // if there is only one field then it is a property access
-                    if obj.fields.len() == 1 {
-                        let field = match &obj.fields[0].value.value {
-                            FieldValueType::Identifier(lit) => lit.clone(),
-                            field_type => {
-                                self.push_query_err(
-                                    q,
-                                    obj.fields[0].loc.clone(),
-                                    format!(
-                                        "field access `{:?}` must be a valid field name",
-                                        field_type
-                                    ),
-                                    "check the schema for valid field names",
-                                );
-                                return;
+                    if obj.fields.len() == 1
+                        && matches!(obj.fields[0].value.value, FieldValueType::Identifier(_))
+                    {
+                        match &obj.fields[0].value.value {
+                            FieldValueType::Identifier(lit) => {
+                                gen_traversal.steps.push(Separator::Period(
+                                    GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
+                                ));
                             }
+                            _ => unreachable!(),
                         };
-                        gen_traversal
-                            .steps
-                            .push(Separator::Period(GeneratedStep::PropertyFetch(
-                                GenRef::Literal(field),
-                            )));
-                    } else if obj.fields.len() > 1 {
+                    } else if obj.fields.len() > 0 {
                         // if there are multiple fields then it is a field remapping
                         // push object remapping where
-                        let remapping = self.parse_object_remapping(
-                            &obj.fields,
-                            q,
-                            false,
-                            &HashMap::new(),
-                            "item",
-                        );
-                        println!(
-                            "MULTIPL FIELDS DOING REMAPPING {}",
-                            gen_traversal.steps.len()
-                        );
+                        let remapping =
+                            self.parse_object_remapping(&obj.fields, q, false, scope, "item");
                         gen_traversal
                             .steps
                             .push(Separator::Period(GeneratedStep::Remapping(remapping)));
-                        println!(
-                            "MULTIPL FIELDS DOING REMAPPING {}",
-                            gen_traversal.steps.len()
-                        );
                     } else {
                         // error
                         self.push_query_err(
@@ -1797,7 +1788,7 @@ impl<'a> Ctx<'a> {
                 }
             }
             Type::Anonymous(ty) => {
-                self.validate_object(ty, tr, obj, excluded, q, gen_traversal, gen_query);
+                self.validate_object(ty, tr, obj, excluded, q, gen_traversal, gen_query, scope);
             }
             _ => {
                 self.push_query_err(
@@ -2079,14 +2070,20 @@ impl<'a> Ctx<'a> {
                     format!("remove the exclusion of `{}`", key),
                     Fix::new(span.clone(), Some(loc.clone()), Some(String::new())),
                 );
-            } else if !field_set.contains_key(key.as_str()) {
-                println!("location {:?}", value.loc);
-                self.push_query_err(
-                    q,
-                    value.loc.clone(),
-                    format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
-                    "check the schema field names",
-                );
+            } else {
+                match &value.value {
+                    FieldValueType::Identifier(identifier)
+                        if !field_set.contains_key(identifier.as_str()) =>
+                    {
+                        self.push_query_err(
+                            q,
+                            value.loc.clone(),
+                            format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
+                            "check the schema field names",
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -2096,7 +2093,7 @@ impl<'a> Ctx<'a> {
         obj: &'a Vec<FieldAddition>,
         q: &'a Query,
         is_inner: bool,
-        scope: &HashMap<&'a str, Type>,
+        scope: &mut HashMap<&'a str, Type>,
         var_name: &str,
     ) -> Remapping {
         // for each field
@@ -2128,7 +2125,7 @@ impl<'a> Ctx<'a> {
                                 let mut inner_traversal = GeneratedTraversal::default();
                                 self.check_traversal(
                                     &traversal,
-                                    &HashMap::new(),
+                                    scope,
                                     q,
                                     None,
                                     &mut inner_traversal,
