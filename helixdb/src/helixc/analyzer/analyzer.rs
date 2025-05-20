@@ -150,6 +150,9 @@ impl<'a> Ctx<'a> {
             })
             .collect();
 
+        let mut output = GeneratedSource::default();
+        output.src = src.source.clone();
+
         Self {
             node_set: src.node_schemas.iter().map(|n| n.name.1.as_str()).collect(),
             vector_set: src.vector_schemas.iter().map(|v| v.name.as_str()).collect(),
@@ -163,7 +166,7 @@ impl<'a> Ctx<'a> {
             vector_fields,
             src,
             diagnostics: Vec::new(),
-            output: GeneratedSource::default(),
+            output,
         }
     }
 
@@ -1260,48 +1263,60 @@ impl<'a> Ctx<'a> {
                     let op = match &b_op.op {
                         BooleanOpType::LessThanOrEqual(expr) => {
                             // assert!()
-                            let v = match expr.expr {
+                            let v = match &expr.expr {
                                 ExpressionType::IntegerLiteral(i) => {
                                     GeneratedValue::Primitive(GenRef::Std(i.to_string()))
                                 }
                                 ExpressionType::FloatLiteral(f) => {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
                             BoolOp::Lte(Lte { value: v })
                         }
                         BooleanOpType::LessThan(expr) => {
-                            let v = match expr.expr {
+                            let v = match &expr.expr {
                                 ExpressionType::IntegerLiteral(i) => {
                                     GeneratedValue::Primitive(GenRef::Std(i.to_string()))
                                 }
                                 ExpressionType::FloatLiteral(f) => {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
                             BoolOp::Lt(Lt { value: v })
                         }
                         BooleanOpType::GreaterThanOrEqual(expr) => {
-                            let v = match expr.expr {
+                            let v = match &expr.expr {
                                 ExpressionType::IntegerLiteral(i) => {
                                     GeneratedValue::Primitive(GenRef::Std(i.to_string()))
                                 }
                                 ExpressionType::FloatLiteral(f) => {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
                             BoolOp::Gte(Gte { value: v })
                         }
                         BooleanOpType::GreaterThan(expr) => {
-                            let v = match expr.expr {
+                            let v = match &expr.expr {
                                 ExpressionType::IntegerLiteral(i) => {
                                     GeneratedValue::Primitive(GenRef::Std(i.to_string()))
                                 }
                                 ExpressionType::FloatLiteral(f) => {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
+                                }
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1321,7 +1336,13 @@ impl<'a> Ctx<'a> {
                                 ExpressionType::StringLiteral(s) => {
                                     GeneratedValue::Primitive(GenRef::Std(s.to_string()))
                                 }
-                                _ => unreachable!("Cannot reach here"),
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                }
+                                other => {
+                                    println!("ID {:?}", other);
+                                    panic!("expr be primitive or value")
+                                }
                             };
                             BoolOp::Eq(Eq { value: v })
                         }
@@ -1338,6 +1359,9 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::StringLiteral(s) => {
                                     GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                }
+                                ExpressionType::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1798,45 +1822,136 @@ impl<'a> Ctx<'a> {
         use GraphStepType::*;
         match (&gs.step, cur_ty.base()) {
             // Node‑to‑Edge
-            (OutE(label), Type::Nodes(_)) => {
+            (OutE(label), Type::Nodes(Some(node_label))) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::OutE(GeneratedOutE {
                         label: GenRef::Literal(label.clone()),
                     })));
-                Some(Type::Edges(Some(label.to_string())))
+                let edge = self.edge_map.get(label.as_str());
+                if edge.is_none() {
+                    self.push_query_err(
+                        q,
+                        gs.loc.clone(),
+                        format!("`{}` is not a valid edge type", label),
+                        "check the schema for valid edge types",
+                    );
+                    return None;
+                }
+                match edge.unwrap().from.1 == node_label.clone() {
+                    true => Some(Type::Edges(Some(label.to_string()))),
+                    false => {
+                        self.push_query_err(
+                            q,
+                            gs.loc.clone(),
+                            format!(
+                                "`{}` is not a valid outgoing edge type for node of type `{}`",
+                                label, node_label
+                            ),
+                            "check the schema for valid edge types",
+                        );
+                        None
+                    }
+                }
             }
-            (InE(label), Type::Nodes(_)) => {
+            (InE(label), Type::Nodes(Some(node_label))) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::InE(GeneratedInE {
                         label: GenRef::Literal(label.clone()),
                     })));
-                Some(Type::Edges(Some(label.to_string())))
+                let edge = self.edge_map.get(label.as_str());
+                if edge.is_none() {
+                    self.push_query_err(
+                        q,
+                        gs.loc.clone(),
+                        format!("`{}` is not a valid edge type", label),
+                        "check the schema for valid edge types",
+                    );
+                    return None;
+                }
+
+                match edge.unwrap().to.1 == node_label.clone() {
+                    true => Some(Type::Edges(Some(label.to_string()))),
+                    false => {
+                        self.push_query_err(
+                            q,
+                            gs.loc.clone(),
+                            format!("`{}` is not a valid edge type", label),
+                            "check the schema for valid edge types",
+                        );
+                        None
+                    }
+                }
             }
 
             // Node‑to‑Node
-            (Out(label), Type::Nodes(_)) => {
+            (Out(label), Type::Nodes(Some(node_label))) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::Out(GeneratedOut {
                         label: GenRef::Literal(label.clone()),
                     })));
                 let edge = self.edge_map.get(label.as_str());
-                assert!(edge.is_some()); // make sure is caught
-                let node_label = edge.unwrap().to.1.clone();
-                Some(Type::Nodes(Some(node_label)))
+                // assert!(edge.is_some()); // make sure is caught
+                if edge.is_none() {
+                    self.push_query_err(
+                        q,
+                        gs.loc.clone(),
+                        format!("`{}` is not a valid edge type", label),
+                        "check the schema for valid edge types",
+                    );
+                    return None;
+                }
+                match edge.unwrap().from.1 == node_label.clone() {
+                    true => Some(Type::Nodes(Some(edge.unwrap().to.1.clone()))),
+                    false => {
+                        self.push_query_err(
+                            q,
+                            gs.loc.clone(),
+                            format!(
+                                "`{}` is not a valid outgoing edge type for node of type `{}`",
+                                label, node_label
+                            ),
+                            "check the schema for valid edge types",
+                        );
+                        None
+                    }
+                }
             }
-            (In(label), Type::Nodes(_)) => {
+            (In(label), Type::Nodes(Some(node_label))) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::In(GeneratedIn {
                         label: GenRef::Literal(label.clone()),
                     })));
                 let edge = self.edge_map.get(label.as_str());
-                assert!(edge.is_some());
-                let node_label = edge.unwrap().from.1.clone();
-                Some(Type::Nodes(Some(node_label)))
+                // assert!(edge.is_some());
+                if edge.is_none() {
+                    self.push_query_err(
+                        q,
+                        gs.loc.clone(),
+                        format!("`{}` is not a valid edge type", label),
+                        "check the schema for valid edge types",
+                    );
+                    return None;
+                }
+
+                match edge.unwrap().to.1 == node_label.clone() {
+                    true => Some(Type::Nodes(Some(edge.unwrap().from.1.clone()))),
+                    false => {
+                        self.push_query_err(
+                            q,
+                            gs.loc.clone(),
+                            format!(
+                                "`{}` is not a valid edge type for node of type `{}`",
+                                label, node_label
+                            ),
+                            "check the schema for valid edge types",
+                        );
+                        None
+                    }
+                }
             }
 
             // Edge‑to‑Node
@@ -1965,6 +2080,7 @@ impl<'a> Ctx<'a> {
                     Fix::new(span.clone(), Some(loc.clone()), Some(String::new())),
                 );
             } else if !field_set.contains_key(key.as_str()) {
+                println!("location {:?}", value.loc);
                 self.push_query_err(
                     q,
                     value.loc.clone(),

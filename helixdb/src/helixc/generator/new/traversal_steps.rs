@@ -61,7 +61,6 @@ pub struct Traversal {
 
 impl Display for Traversal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        println!("LENGHT {} {:?} ", self.steps.len(), self.traversal_type);
         match &self.traversal_type {
             TraversalType::FromVar(var) => {
                 write!(f, "G::new_from(Arc::clone(&db), &txn, {}.clone())", var)?;
@@ -76,9 +75,6 @@ impl Display for Traversal {
                 write!(f, "G::new(Arc::clone(&db), &txn)")?;
                 write!(f, "{}", self.source_step)?;
                 for step in &self.steps {
-                    match step.inner() {
-                        s => println!("{:?}", s),
-                    }
                     write!(f, "\n{}", step)?;
                 }
                 write!(f, "\n    .collect_to::<Vec<_>>()")?;
