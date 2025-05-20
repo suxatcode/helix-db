@@ -57,7 +57,6 @@ impl Config {
         }
         let config = std::fs::read_to_string(input_path)?;
         let config = sonic_rs::from_str::<Config>(&config)?;
-        println!("config: {:?}", config);
 
         Ok(config)
     }
