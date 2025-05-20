@@ -117,14 +117,23 @@ start_vector = { "V" ~ ("<" ~ type_args ~ ">")? ~ ("(" ~ id_args ~ ")")? }
 // ---------------------------------------------------------------------
 // Traversal steps
 // ---------------------------------------------------------------------
-graph_step   = {
-    "OutE" ~ ("<" ~ type_args ~ ">")?
-  | "InE" ~ ("<" ~ type_args ~ ">")?
-  | "FromN" ~ ("<" ~ type_args ~ ">")?
-  | "ToN" ~ ("<" ~ type_args ~ ">")?
-  | "Out" ~ ("<" ~ type_args ~ ">")?
-  | "In" ~ ("<" ~ type_args ~ ">")?
+graph_step = {
+  out_e
+  | in_e
+  | from_n
+  | to_n
+  | out
+  | in_nodes
+  | shortest_path
 }
+out_e ={  "OutE" ~ ("<" ~ type_args ~ ">")?}
+in_e ={ "InE" ~ ("<" ~ type_args ~ ">")?}
+from_n ={ "FromN"}
+to_n ={ "ToN"}
+out ={ "Out" ~ ("<" ~ type_args ~ ">")?}
+in_nodes ={ "In" ~ ("<" ~ type_args ~ ">")?}
+shortest_path ={ "ShortestPath" ~ ("<" ~ type_args ~ ">")? ~ to_from}
+
 
 // ---------------------------------------------------------------------
 // Util steps

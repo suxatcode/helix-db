@@ -1,5 +1,7 @@
 use std::fmt::{self, Debug, Display};
 
+use crate::helixc::parser::helix_parser::IdType;
+
 #[derive(Clone)]
 pub enum GenRef<T>
 where
@@ -96,6 +98,15 @@ impl From<GenRef<String>> for String {
         }
     }
 }
+impl From<IdType> for GenRef<String> {
+    fn from(value: IdType) -> Self {
+        match value {
+            IdType::Literal(s) => GenRef::Literal(s),
+            IdType::Identifier(s) => GenRef::Id(s),
+        }
+    }
+}
+
 
 // TODO: probably move to protocol
 #[derive(Clone)]

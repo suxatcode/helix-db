@@ -31,6 +31,7 @@ pub enum GraphError {
     InvalidNode,
     ConfigFileNotFound,
     SliceLengthError,
+    ShortestPathNotFound
 }
 
 impl fmt::Display for GraphError {
@@ -58,6 +59,7 @@ impl fmt::Display for GraphError {
             GraphError::ConfigFileNotFound => write!(f, "Config file not found"),
             GraphError::SliceLengthError => write!(f, "Slice length error"),
             GraphError::VectorError(msg) => write!(f, "Vector error: {}", msg),
+            GraphError::ShortestPathNotFound => write!(f, "Shortest path not found"),
         }
     }
 }

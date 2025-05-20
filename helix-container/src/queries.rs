@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use get_routes::handler;
+use helixdb::helix_engine::graph_core::ops::util::paths::ShortestPathAdapter;
 use helixdb::helix_engine::vector_core::vector::HVector;
 use helixdb::{exclude_field, field_remapping, identifier_remapping, traversal_remapping};
 use helixdb::{
@@ -55,6 +56,8 @@ pub struct Knows {
 #[derive(Serialize, Deserialize)]
 pub struct get_userInput {
     pub name: String,
+    pub to_id: String,
+    pub from_id: String,
 }
 #[handler]
 pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
@@ -80,9 +83,15 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
             }
         })
         .collect_to::<Vec<_>>();
+    let shortest_path = G::new_from(Arc::clone(&db), &txn, user_nodes)
+        .shortest_path(None, Some(data.from_id), None)
+        .collect_to::<Vec<_>>();
     return_vals.insert(
         "user_nodes".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(user_nodes, remapping_vals),
+        ReturnValue::from_traversal_value_array_with_mixin(
+            G::new_from(Arc::clone(&db), &txn, user_nodes).collect_to::<Vec<_>>(),
+            remapping_vals,
+        ),
     );
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();

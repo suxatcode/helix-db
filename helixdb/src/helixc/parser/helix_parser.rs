@@ -350,25 +350,35 @@ pub struct GraphStep {
 
 #[derive(Debug, Clone)]
 pub enum GraphStepType {
-    Out(Option<String>),
-    In(Option<String>),
+    Out(String),
+    In(String),
 
     FromN,
     ToN,
 
-    OutE(Option<String>),
-    InE(Option<String>),
+    OutE(String),
+    InE(String),
+
+    ShortestPath(ShortestPath),
 }
 impl GraphStep {
     pub fn get_item_type(&self) -> Option<String> {
         match &self.step {
-            GraphStepType::Out(Some(s)) => Some(s.clone()),
-            GraphStepType::In(Some(s)) => Some(s.clone()),
-            GraphStepType::OutE(Some(s)) => Some(s.clone()),
-            GraphStepType::InE(Some(s)) => Some(s.clone()),
+            GraphStepType::Out(s) => Some(s.clone()),
+            GraphStepType::In(s) => Some(s.clone()),
+            GraphStepType::OutE(s) => Some(s.clone()),
+            GraphStepType::InE(s) => Some(s.clone()),
             _ => None,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ShortestPath {
+    pub loc: Loc,
+    pub from: Option<IdType>,
+    pub to: Option<IdType>,
+    pub type_arg: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1603,40 +1613,150 @@ impl HelixParser {
     }
 
     fn parse_graph_step(&self, pair: Pair<Rule>) -> GraphStep {
-        let rule_str = pair.as_str();
-        let types = pair
-            .clone()
-            .into_inner()
-            .next()
-            .map(|p| p.as_str().to_string());
-
-        match rule_str {
-            s if s.starts_with("OutE") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::OutE(types),
-            },
-            s if s.starts_with("InE") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::InE(types),
-            },
-            s if s.starts_with("FromN") => GraphStep {
+        let types = |pair: &Pair<Rule>| {
+            pair.clone()
+                .into_inner()
+                .next()
+                .map(|p| p.as_str().to_string())
+                .ok_or_else(|| ParserError::from("Expected type".to_string()))
+                .unwrap()
+        }; // TODO: change to error
+        let pair = pair.into_inner().next().unwrap(); // TODO: change to error
+        match pair.as_rule() {
+            // s if s.starts_with("OutE") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::OutE(types),
+            // },
+            // s if s.starts_with("InE") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::InE(types),
+            // },
+            // s if s.starts_with("FromN") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::FromN,
+            // },
+            // s if s.starts_with("ToN") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::ToN,
+            // },
+            // s if s.starts_with("Out") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::Out(types),
+            // },
+            // s if s.starts_with("In") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::In(types),
+            // },
+            // _ => {
+            //     println!("rule_str: {:?}", rule_str);
+            //     unreachable!()
+            // }
+            Rule::out_e => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::OutE(types),
+                }
+            }
+            Rule::in_e => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::InE(types),
+                }
+            }
+            Rule::from_n => GraphStep {
                 loc: pair.loc(),
                 step: GraphStepType::FromN,
             },
-            s if s.starts_with("ToN") => GraphStep {
+            Rule::to_n => GraphStep {
                 loc: pair.loc(),
                 step: GraphStepType::ToN,
             },
-            s if s.starts_with("Out") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::Out(types),
-            },
-            s if s.starts_with("In") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::In(types),
-            },
+            Rule::out => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::Out(types),
+                }
+            }
+            Rule::in_nodes => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::In(types),
+                }
+            }
+            Rule::shortest_path => {
+                let mut inner = pair.clone().into_inner().next().unwrap().into_inner();
+                println!("inner: {:?}", inner);
+
+                let (type_arg, from, to) =
+                    inner.fold((None, None, None), |(type_arg, from, to), p| {
+                        println!("p: {:?}", p);
+                        match p.as_rule() {
+                            Rule::type_args => (
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                                from,
+                                to,
+                            ),
+                            Rule::from => (
+                                type_arg,
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                                to,
+                            ),
+                            Rule::to => (
+                                type_arg,
+                                from,
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                            ),
+                            _ => (type_arg, from, to),
+                        }
+                    });
+                println!("from: {:?}, to: {:?}", from, to);
+
+                // TODO: add error handling and check about IdType as might not always be data.
+                // possibly use stack to keep track of variables and use them via precedence and then check on type
+                // e.g. if valid variable and is param then use data. otherwise use plain identifier
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::ShortestPath(ShortestPath {
+                        loc: pair.loc(),
+                        from: from.map(|id| IdType::Identifier(id)),
+                        to: to.map(|id| IdType::Identifier(id)),
+                        type_arg,
+                    }),
+                }
+            }
             _ => {
-                println!("rule_str: {:?}", rule_str);
+                println!("rule_str: {:?}", pair.as_str());
                 unreachable!()
             }
         }

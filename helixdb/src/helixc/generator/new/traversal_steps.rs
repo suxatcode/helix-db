@@ -104,7 +104,11 @@ impl Display for Traversal {
             }
             TraversalType::NestedFrom(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
-                write!(f, "G::new_from(Arc::clone(&db), txn, vec![{}.clone()])", nested)?;
+                write!(
+                    f,
+                    "G::new_from(Arc::clone(&db), txn, vec![{}.clone()])",
+                    nested
+                )?;
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
@@ -168,6 +172,9 @@ pub enum Step {
 
     // object
     Remapping(Remapping),
+
+    // shortest path
+    ShortestPath(ShortestPath),
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -187,6 +194,7 @@ impl Display for Step {
             Step::OrderBy(order_by) => write!(f, "{}", order_by),
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
             Step::Remapping(remapping) => write!(f, "{}", remapping),
+            Step::ShortestPath(shortest_path) => write!(f, "{}", shortest_path),
         }
     }
 }
@@ -208,6 +216,7 @@ impl Debug for Step {
             Step::OrderBy(order_by) => write!(f, "OrderBy"),
             Step::BoolOp(bool_op) => write!(f, "Bool"),
             Step::Remapping(remapping) => write!(f, "Remapping"),
+            Step::ShortestPath(shortest_path) => write!(f, "ShortestPath"),
         }
     }
 }
@@ -261,7 +270,7 @@ pub enum Where {
 impl Display for Where {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Where::Exists(ex) =>  write!(f, "{}", ex),
+            Where::Exists(ex) => write!(f, "{}", ex),
             Where::Ref(wr) => write!(f, "{}", wr),
             Where::Mut(wm) => write!(f, "{}", wm),
         }
@@ -336,5 +345,29 @@ pub struct OrderBy {
 impl Display for OrderBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "order_by({}, HelixOrder::{})", self.property, self.order)
+    }
+}
+
+#[derive(Clone)]
+pub struct ShortestPath {
+    pub label: Option<GenRef<String>>,
+    pub from: Option<GenRef<String>>,
+    pub to: Option<GenRef<String>>,
+}
+impl Display for ShortestPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "shortest_path({}, {}, {})",
+            self.label
+                .clone()
+                .map_or("None".to_string(), |label| format!("Some({})", label)),
+            self.from
+                .clone()
+                .map_or("None".to_string(), |from| format!("Some({})", from)),
+            self.to
+                .clone()
+                .map_or("None".to_string(), |to| format!("Some({})", to))
+        )
     }
 }

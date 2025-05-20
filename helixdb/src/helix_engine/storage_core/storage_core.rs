@@ -554,65 +554,65 @@ impl StorageMethods for HelixGraphStorage {
 //         from_id: &u128,
 //         to_id: &u128,
 //     ) -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-//         let mut queue = VecDeque::with_capacity(32);
-//         let mut visited = HashSet::with_capacity(64);
-//         let mut parent: HashMap<u128, (u128, Edge)> = HashMap::with_capacity(32);
-//         queue.push_back(*from_id);
-//         visited.insert(*from_id);
+    //     let mut queue = VecDeque::with_capacity(32);
+    //     let mut visited = HashSet::with_capacity(64);
+    //     let mut parent: HashMap<u128, (u128, Edge)> = HashMap::with_capacity(32);
+    //     queue.push_back(*from_id);
+    //     visited.insert(*from_id);
 
-//         let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
-//                                 start_id: &u128,
-//                                 end_id: &u128|
-//          -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
-//             let mut nodes = Vec::with_capacity(parent.len());
-//             let mut edges = Vec::with_capacity(parent.len() - 1);
+    //     let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
+    //                             start_id: &u128,
+    //                             end_id: &u128|
+    //      -> Result<(Vec<Node>, Vec<Edge>), GraphError> {
+    //         let mut nodes = Vec::with_capacity(parent.len());
+    //         let mut edges = Vec::with_capacity(parent.len() - 1);
 
-//             let mut current = end_id;
+    //         let mut current = end_id;
 
-//             while current != start_id {
-//                 nodes.push(self.get_node(txn, current)?);
+    //         while current != start_id {
+    //             nodes.push(self.get_node(txn, current)?);
 
-//                 let (prev_node, edge) = &parent[current];
-//                 edges.push(edge.clone());
-//                 current = prev_node;
-//             }
+    //             let (prev_node, edge) = &parent[current];
+    //             edges.push(edge.clone());
+    //             current = prev_node;
+    //         }
 
-//             nodes.push(self.get_node(txn, start_id)?);
+    //         nodes.push(self.get_node(txn, start_id)?);
 
-//             Ok((nodes, edges))
-//         };
+    //         Ok((nodes, edges))
+    //     };
 
-//         while let Some(current_id) = queue.pop_front() {
-//             let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
-//             let iter = self
-//                 .out_edges_db
-//                 .lazily_decode_data()
-//                 .prefix_iter(&txn, &out_prefix)?;
+    //     while let Some(current_id) = queue.pop_front() {
+    //         let out_prefix = Self::out_edge_key(&current_id, edge_label, None);
+    //         let iter = self
+    //             .out_edges_db
+    //             .lazily_decode_data()
+    //             .prefix_iter(&txn, &out_prefix)?;
 
-//             for result in iter {
-//                 let (key, value) = result?;
-//                 let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
+    //         for result in iter {
+    //             let (key, value) = result?;
+    //             let to_node = Self::get_u128_from_bytes(&key[out_prefix.len()..])?;
 
-//                 if !visited.contains(&to_node) {
-//                     visited.insert(to_node);
-//                     let edge_id = decode_u128!(value);
-//                     let edge = self.get_edge(&txn, &edge_id)?;
-//                     parent.insert(to_node, (current_id, edge));
+    //             if !visited.contains(&to_node) {
+    //                 visited.insert(to_node);
+    //                 let edge_id = decode_u128!(value);
+    //                 let edge = self.get_edge(&txn, &edge_id)?;
+    //                 parent.insert(to_node, (current_id, edge));
 
-//                     if to_node == *to_id {
-//                         return reconstruct_path(&parent, from_id, to_id);
-//                     }
+    //                 if to_node == *to_id {
+    //                     return reconstruct_path(&parent, from_id, to_id);
+    //                 }
 
-//                     queue.push_back(to_node);
-//                 }
-//             }
-//         }
+    //                 queue.push_back(to_node);
+    //             }
+    //         }
+    //     }
 
-//         Err(GraphError::from(format!(
-//             "No path found between {} and {}",
-//             from_id, to_id
-//         )))
-//     }
+    //     Err(GraphError::from(format!(
+    //         "No path found between {} and {}",
+    //         from_id, to_id
+    //     )))
+    // }
 
 //     fn shortest_mutual_path(
 //         &self,

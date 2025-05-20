@@ -18,14 +18,17 @@ use crate::{
             source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-                Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType, Where,
-                WhereExists, WhereRef,
+                ShortestPath as GeneratedShortestPath, Step as GeneratedStep,
+                Traversal as GeneratedTraversal, TraversalType, Where, WhereExists, WhereRef,
             },
             utils::{
                 GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
             },
         },
-        parser::{helix_parser::*, location::Loc},
+        parser::{
+            helix_parser::{ShortestPath, *},
+            location::Loc,
+        },
     },
     protocol::value::Value,
 };
@@ -1795,7 +1798,7 @@ impl<'a> Ctx<'a> {
         use GraphStepType::*;
         match (&gs.step, cur_ty.base()) {
             // Node‑to‑Edge
-            (OutE(Some(label)), Type::Nodes(_)) => {
+            (OutE(label), Type::Nodes(_)) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::OutE(GeneratedOutE {
@@ -1803,7 +1806,7 @@ impl<'a> Ctx<'a> {
                     })));
                 Some(Type::Edges(Some(label.to_string())))
             }
-            (InE(Some(label)), Type::Nodes(_)) => {
+            (InE(label), Type::Nodes(_)) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::InE(GeneratedInE {
@@ -1813,18 +1816,18 @@ impl<'a> Ctx<'a> {
             }
 
             // Node‑to‑Node
-            (Out(Some(label)), Type::Nodes(_)) => {
+            (Out(label), Type::Nodes(_)) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::Out(GeneratedOut {
                         label: GenRef::Literal(label.clone()),
                     })));
                 let edge = self.edge_map.get(label.as_str());
-                assert!(edge.is_some());
+                assert!(edge.is_some()); // make sure is caught
                 let node_label = edge.unwrap().to.1.clone();
                 Some(Type::Nodes(Some(node_label)))
             }
-            (In(Some(label)), Type::Nodes(_)) => {
+            (In(label), Type::Nodes(_)) => {
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::In(GeneratedIn {
@@ -1858,6 +1861,38 @@ impl<'a> Ctx<'a> {
                 )))
             }
 
+            (ShortestPath(sp), Type::Nodes(_)) => {
+                println!("ShortestPath {:?}", sp);
+                let type_arg = match sp.type_arg.clone() {
+                    Some(type_arg) => Some(GenRef::Std(type_arg)),
+                    None => None,
+                };
+                // check edge type is valid
+                traversal
+                    .steps
+                    .push(Separator::Period(GeneratedStep::ShortestPath(
+                        match (sp.from.clone(), sp.to.clone()) {
+                            // TODO: get rid of clone
+                            (Some(from), Some(to)) => GeneratedShortestPath {
+                                label: type_arg,
+                                from: Some(GenRef::from(from)),
+                                to: Some(GenRef::from(to)),
+                            },
+                            (Some(from), None) => GeneratedShortestPath {
+                                label: type_arg,
+                                from: Some(GenRef::from(from)),
+                                to: None,
+                            },
+                            (None, Some(to)) => GeneratedShortestPath {
+                                label: type_arg,
+                                from: None,
+                                to: Some(GenRef::from(to)),
+                            },
+                            (None, None) => panic!("Invalid shortest path"),
+                        },
+                    )));
+                Some(Type::Unknown)
+            }
             // Anything else is illegal
             _ => {
                 self.push_query_err(
