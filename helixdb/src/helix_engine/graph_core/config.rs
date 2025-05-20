@@ -37,7 +37,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(m: usize, ef_construction: usize, ef_search: usize, db_max_size: usize) -> Self {
+    pub fn new(m: usize, ef_construction: usize, ef_search: usize, db_max_size_gb: usize) -> Self {
         Self {
             vector_config: VectorConfig {
                 m: Some(m),
