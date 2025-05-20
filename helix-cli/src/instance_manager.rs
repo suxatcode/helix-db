@@ -87,7 +87,7 @@ impl InstanceManager {
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(error_log_file));
 
-        let child = command.spawn().unwrap(); // unwrap here to crash incase helix can't start
+        let child = command.spawn()?;
 
         let instance = InstanceInfo {
             id: instance_id,
