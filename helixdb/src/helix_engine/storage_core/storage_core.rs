@@ -59,10 +59,16 @@ impl HelixGraphStorage {
     pub fn new(path: &str, config: Config) -> Result<HelixGraphStorage, GraphError> {
         fs::create_dir_all(path)?;
 
+        let db_size = if config.db_max_size_gb.unwrap_or(100) >= 10000 {
+            99999
+        } else {
+            config.db_max_size_gb.unwrap_or(100)
+        };
+
         // Configure and open LMDB environment
         let graph_env = unsafe {
             EnvOpenOptions::new()
-                .map_size(config.db_max_size_gb.unwrap_or(100) * 1024 * 1024 * 1024) // GB
+                .map_size(db_size * 1024 * 1024 * 1024) // GB
                 .max_dbs(20)
                 .max_readers(200)
 
