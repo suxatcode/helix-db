@@ -59,8 +59,8 @@ impl HelixGraphStorage {
     pub fn new(path: &str, config: Config) -> Result<HelixGraphStorage, GraphError> {
         fs::create_dir_all(path)?;
 
-        let db_size = if config.db_max_size_gb.unwrap_or(100) >= 10000 {
-            99999
+        let db_size = if config.db_max_size_gb.unwrap_or(100) >= 9999 {
+            9998
         } else {
             config.db_max_size_gb.unwrap_or(100)
         };
