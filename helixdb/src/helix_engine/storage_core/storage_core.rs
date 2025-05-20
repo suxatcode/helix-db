@@ -33,7 +33,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-
 use super::storage_methods::{BasicStorageMethods, DBMethods};
 
 // Database names for different stores
