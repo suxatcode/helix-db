@@ -210,11 +210,10 @@ impl HelixGraphStorage {
         key
     }
 
-    // key = from-node(16) | label-id(4) | chunk-no(2)   ← 22 B
+    // key = from-node(16) | label-id(4)                 ← 20 B
     // val = to-node(16)  | edge-id(16)                  ← 32 B (DUPFIXED)
     #[inline(always)]
     pub fn out_edge_key(from_node_id: &u128, label: &[u8; 4]) -> [u8; 20] {
-        // 2 end bytes for chunk number
         let mut key = [0u8; 20];
         key[0..16].copy_from_slice(&from_node_id.to_be_bytes());
         key[16..20].copy_from_slice(label);
@@ -223,7 +222,6 @@ impl HelixGraphStorage {
 
     #[inline(always)]
     pub fn in_edge_key(to_node_id: &u128, label: &[u8; 4]) -> [u8; 20] {
-        // 2 end bytes for chunk number
         let mut key = [0u8; 20];
         key[0..16].copy_from_slice(&to_node_id.to_be_bytes());
         key[16..20].copy_from_slice(label);
