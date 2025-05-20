@@ -119,8 +119,8 @@ pub trait ShortestPathAdapter<'a, I>: Iterator<Item = Result<TraversalVal, Graph
     fn shortest_path(
         self,
         edge_label: Option<&'a str>,
-        from: Option<u128>,
-        to: Option<u128>,
+        from: Option<&'a u128>,
+        to: Option<&'a u128>,
     ) -> RoTraversalIterator<'a, ShortestPathIterator<'a, I>>
     where
         I: 'a;
@@ -132,8 +132,8 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPath
     fn shortest_path(
         self,
         edge_label: Option<&'a str>,
-        from: Option<u128>,
-        to: Option<u128>,
+        from: Option<&'a u128>,
+        to: Option<&'a u128>,
     ) -> RoTraversalIterator<'a, ShortestPathIterator<'a, I>>
     where
         I: 'a,
@@ -145,8 +145,8 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPath
             inner: ShortestPathIterator {
                 iter: self.inner,
                 path_type: match (from, to) {
-                    (Some(from), None) => PathType::From(from),
-                    (None, Some(to)) => PathType::To(to),
+                    (Some(from), None) => PathType::From(*from),
+                    (None, Some(to)) => PathType::To(*to),
                     _ => panic!("Invalid shortest path"),
                 },
                 edge_label,

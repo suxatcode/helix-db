@@ -57,7 +57,7 @@ impl<'a> Iterator for NFromId<'a, RwTxn<'a>> {
 pub trait NFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
     type OutputIter: Iterator<Item = Result<TraversalVal, GraphError>>;
 
-    fn n_from_id(self, id: u128) -> Self::OutputIter;
+    fn n_from_id(self, id: &u128) -> Self::OutputIter;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a>
@@ -65,12 +65,12 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a
 {
     type OutputIter = RoTraversalIterator<'a, NFromId<'a, RoTxn<'a>>>;
 
-    fn n_from_id(self, id: u128) -> Self::OutputIter {
+    fn n_from_id(self, id: &u128) -> Self::OutputIter {
         let n_from_id = NFromId {
             iter: std::iter::once(Ok(TraversalVal::Empty)),
             storage: Arc::clone(&self.storage),
             txn: self.txn,
-            id,
+            id: *id,
         };
 
         RoTraversalIterator {

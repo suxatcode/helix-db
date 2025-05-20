@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ops::Deref;
 
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
@@ -7,8 +8,14 @@ use serde::{
 };
 use sonic_rs::{Deserialize, Serialize};
 // pub type ID = String;
-pub struct ID {
-    id: String,
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(transparent)]
+// #[serde(transparent)]
+pub struct ID(u128);
+impl ID {
+    pub fn inner(&self) -> u128 {
+        self.0
+    }
 }
 
 impl Serialize for ID {
@@ -16,10 +23,7 @@ impl Serialize for ID {
     where
         S: Serializer,
     {
-        match uuid::Uuid::parse_str(&self.id) {
-            Ok(uuid) => serializer.serialize_u128(uuid.as_u128()),
-            Err(e) => Err(Error::custom(e)),
-        }
+        serializer.serialize_u128(self.0)
     }
 }
 
@@ -32,13 +36,14 @@ impl<'de> Visitor<'de> for IDVisitor {
         formatter.write_str("a valid UUID")
     }
 
-    fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        Ok(ID {
-            id: uuid::Uuid::from_u128(v).to_string(),
-        })
+        match uuid::Uuid::parse_str(v) {
+            Ok(uuid) => Ok(ID(uuid.as_u128())),
+            Err(e) => Err(E::custom(e.to_string())),
+        }
     }
 }
 impl<'de> Deserialize<'de> for ID {
@@ -46,6 +51,26 @@ impl<'de> Deserialize<'de> for ID {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_u128(IDVisitor)
+        deserializer.deserialize_str(IDVisitor)
+    }
+}
+
+impl Deref for ID {
+    type Target = u128;
+    #[inline]
+    fn deref(&self) -> &u128 {
+        &self.0
+    }
+}
+
+impl From<u128> for ID {
+    fn from(id: u128) -> Self {
+        ID(id)
+    }
+}
+
+impl From<ID> for u128 {
+    fn from(id: ID) -> Self {
+        id.0
     }
 }

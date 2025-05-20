@@ -64,7 +64,7 @@ impl Display for Traversal {
         println!("LENGHT {} {:?} ", self.steps.len(), self.traversal_type);
         match &self.traversal_type {
             TraversalType::FromVar(var) => {
-                write!(f, "G::new_from(Arc::clone(&db), &txn, {})", var)?;
+                write!(f, "G::new_from(Arc::clone(&db), &txn, {}.clone())", var)?;
                 write!(f, "{}", self.source_step)?;
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
@@ -364,10 +364,10 @@ impl Display for ShortestPath {
                 .map_or("None".to_string(), |label| format!("Some({})", label)),
             self.from
                 .clone()
-                .map_or("None".to_string(), |from| format!("Some({})", from)),
+                .map_or("None".to_string(), |from| format!("Some(&{})", from)),
             self.to
                 .clone()
-                .map_or("None".to_string(), |to| format!("Some({})", to))
+                .map_or("None".to_string(), |to| format!("Some(&{})", to))
         )
     }
 }

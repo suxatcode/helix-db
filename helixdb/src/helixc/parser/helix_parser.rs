@@ -160,7 +160,7 @@ impl Display for FieldType {
             FieldType::U64 => write!(f, "U64"),
             FieldType::U128 => write!(f, "U128"),
             FieldType::Boolean => write!(f, "Boolean"),
-            FieldType::Uuid => todo!(),
+            FieldType::Uuid => write!(f, "ID"),
             FieldType::Date => todo!(),
             FieldType::Array(t) => write!(f, "Array({})", t),
             FieldType::Identifier(s) => write!(f, "{}", s),
@@ -1478,7 +1478,6 @@ impl HelixParser {
                                                 IdType::Literal(id.as_str().to_string())
                                             }
                                             other => {
-                                                println!("{:?}", other);
                                                 panic!("Should be identifier or string literal")
                                             }
                                         }
@@ -1689,11 +1688,9 @@ impl HelixParser {
             }
             Rule::shortest_path => {
                 let mut inner = pair.clone().into_inner().next().unwrap().into_inner();
-                println!("inner: {:?}", inner);
 
                 let (type_arg, from, to) =
                     inner.fold((None, None, None), |(type_arg, from, to), p| {
-                        println!("p: {:?}", p);
                         match p.as_rule() {
                             Rule::type_args => (
                                 Some(
@@ -1740,7 +1737,6 @@ impl HelixParser {
                             _ => (type_arg, from, to),
                         }
                     });
-                println!("from: {:?}, to: {:?}", from, to);
 
                 // TODO: add error handling and check about IdType as might not always be data.
                 // possibly use stack to keep track of variables and use them via precedence and then check on type

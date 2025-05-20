@@ -222,7 +222,7 @@ impl Display for RustType {
             RustType::F32 => write!(f, "f32"),
             RustType::F64 => write!(f, "f64"),
             RustType::Bool => write!(f, "bool"),
-            RustType::Uuid => write!(f, "String"), // TODO: Change this for actual UUID
+            RustType::Uuid => write!(f, "ID"), // TODO: Change this for actual UUID
             RustType::Date => unimplemented!(),
         }
     }
@@ -286,7 +286,7 @@ use helixdb::{
         util::{
             dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
             filter_ref::FilterRefAdapter, range::RangeAdapter, update::UpdateAdapter,
-            map::MapAdapter,
+            map::MapAdapter, paths::ShortestPathAdapter,
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
     },
@@ -298,7 +298,7 @@ use helixdb::{
     protocol::response::Response,
     protocol::traversal_value::TraversalValue,
     protocol::{
-        filterable::Filterable, remapping::Remapping, return_values::ReturnValue, value::Value,
+        filterable::Filterable, remapping::Remapping, return_values::ReturnValue, value::Value, id::ID,
     },
 };
 use sonic_rs::{Deserialize, Serialize};

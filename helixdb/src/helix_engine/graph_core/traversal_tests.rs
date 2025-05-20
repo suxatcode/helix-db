@@ -7,6 +7,7 @@ use std::{
 
 use crate::protocol::{
     filterable::Filterable,
+    id::ID,
     items::{Edge, Node},
     traversal_value::TraversalValue,
     value::Value,
@@ -32,6 +33,7 @@ use crate::{
 };
 use heed3::RoTxn;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
 use super::ops::{
@@ -66,7 +68,7 @@ fn test_add_n() {
 
     assert_eq!(nodes.first().unwrap().label(), "person");
 
-    // If we haven’t dropped txn, ensure no borrows exist before commit
+    // If we haven't dropped txn, ensure no borrows exist before commit
     txn.commit().unwrap();
 }
 
@@ -165,7 +167,7 @@ fn test_out() {
     //     .filter_map(|node| node.ok())
     //     .collect::<Vec<_>>();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out("knows")
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
@@ -216,7 +218,7 @@ fn test_out_e() {
     let txn = storage.graph_env.read_txn().unwrap();
     println!("processing");
     let edges = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out_e("knows")
         .collect_to::<Vec<_>>();
     println!("edges: {}", edges.len());
@@ -256,7 +258,7 @@ fn test_in() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person2.id())
+        .n_from_id(&person2.id())
         .in_("knows")
         .collect_to::<Vec<_>>();
 
@@ -300,7 +302,7 @@ fn test_in_e() {
     let txn = storage.graph_env.read_txn().unwrap();
 
     let edges = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person2.id())
+        .n_from_id(&person2.id())
         .in_e("knows")
         .collect_to::<Vec<_>>();
 
@@ -372,7 +374,7 @@ fn test_complex_traversal() {
     let txn = storage.graph_env.read_txn().unwrap();
 
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out("knows")
         .collect_to::<Vec<_>>();
 
@@ -410,7 +412,7 @@ fn test_count_single_node() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person.id())
+        .n_from_id(&person.id())
         .count();
 
     assert_eq!(count, 1);
@@ -487,7 +489,7 @@ fn test_count_mixed_steps() {
 
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out("knows")
         .count();
 
@@ -613,7 +615,7 @@ fn test_n_from_id() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(node_id)
+        .n_from_id(&node_id)
         .collect_to::<Vec<_>>();
 
     assert_eq!(count.len(), 1);
@@ -646,7 +648,7 @@ fn test_n_from_id_with_traversal() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out("knows")
         .collect_to::<Vec<_>>();
 
@@ -702,7 +704,7 @@ fn test_n_from_id_nonexistent() {
     let (storage, _temp_dir) = setup_test_db();
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(100)
+        .n_from_id(&100)
         .collect_to::<Vec<_>>();
     assert!(nodes.is_empty());
 }
@@ -762,7 +764,7 @@ fn test_n_from_id_chain_operations() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(person1.id())
+        .n_from_id(&person1.id())
         .out("knows")
         .out("likes")
         .collect_to::<Vec<_>>();
@@ -1405,4 +1407,32 @@ fn huge_traversal() {
     //     storage.graph_env.real_disk_size()
     // );
     assert!(false);
+}
+
+#[test]
+fn test_with_id_type() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "name" => "test" }, None)
+        .collect_to_val();
+    txn.commit().unwrap();
+    #[derive(Serialize, Deserialize, Debug)]
+    struct Input {
+        id: ID,
+        name: String,
+    }
+
+    let input = sonic_rs::from_slice::<Input>(
+        format!("{{\"id\":\"{}\",\"name\":\"test\"}}", uuid::Uuid::from_u128(node.id()).to_string()).as_bytes(),
+    )
+    .unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&input.id)
+        .collect_to::<Vec<_>>();
+
+    assert_eq!(traversal.len(), 1);
+    assert_eq!(traversal[0].id(), input.id.inner());
 }
