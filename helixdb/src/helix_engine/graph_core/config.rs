@@ -47,7 +47,7 @@ impl Config {
             graph_config: GraphConfig {
                 secondary_indices: None,
             },
-            db_max_size_gb: Some(db_max_size),
+            db_max_size_gb: Some(db_max_size_gb),
         }
     }
 
@@ -71,10 +71,8 @@ impl Config {
     },
     "graph_config": {
         "secondary_indices": []
-    }
-    "config": {
-        "db_max_size_gb": 10
-    }
+    },
+    "db_max_size_gb": 10
 }
 "#
         .to_string()
