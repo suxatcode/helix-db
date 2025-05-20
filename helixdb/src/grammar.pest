@@ -7,12 +7,12 @@ source = { SOI ~ (node_def | edge_def | vector_def | query_def)* ~ EOI }
 // ---------------------------------------------------------------------
 // Schema definitions
 // ---------------------------------------------------------------------
-vector_def = { "V::" ~ identifier_upper ~ node_body }
-node_def   = { "N::" ~ identifier_upper ~ node_body }
+vector_def = { "V::" ~ identifier_upper ~ node_body? }
+node_def   = { "N::" ~ identifier_upper ~ node_body? }
 edge_def   = { "E::" ~ identifier_upper ~ edge_body }
 
 node_body  = { "{" ~ field_defs ~ "}" }
-edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ "," ~ properties ~ "}" }
+edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ "To:" ~ identifier_upper ~ ("," ~ properties)? ~ "}" }
 field_def  = { index? ~ identifier ~ ":" ~ param_type }
 field_defs = { (field_def ~ ",")* ~ (field_def ~ ","?)? }
 index= { "INDEX" }
