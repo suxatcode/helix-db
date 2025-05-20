@@ -75,6 +75,21 @@ impl<'a, 'b, I: Iterator> RwTraversalIterator<'a, 'b, I> {
     {
         self.inner.filter_map(|item| item.ok()).collect::<B>()
     }
+
+    pub fn collect_to_val(self) -> TraversalVal
+    where
+        I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    {
+        match self
+            .inner
+            .filter_map(|item| item.ok())
+            .collect::<Vec<_>>()
+            .first()
+        {
+            Some(val) => val.clone(),
+            None => TraversalVal::Empty,
+        }
+    }
 }
 // pub trait TraversalIteratorMut<'a> {
 //     type Inner: Iterator<Item = Result<TraversalVal, GraphError>>;
