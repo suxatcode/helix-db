@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 helixdb = { path = "../helixdb" }
-get_routes = { path = "../get_routes" }
 inventory = "0.3.16"
 rand = "0.9.1"
 dirs = "5.0.1"

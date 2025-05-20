@@ -1788,15 +1788,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "get_routes"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.98",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2029,7 +2020,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
- "get_routes",
  "helixdb",
  "inventory",
  "rand 0.9.1",

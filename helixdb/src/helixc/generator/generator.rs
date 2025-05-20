@@ -48,7 +48,7 @@ impl CodeGenerator {
         output.push_str("use std::cell::RefCell;\n");
         output.push_str("use std::sync::Arc;\n");
         output.push_str("use std::time::Instant;\n\n");
-        output.push_str("use get_routes::handler;\n");
+        output.push_str("use helixdb::helix_gateway::get_routes::handler;\n");
         output.push_str("use helixdb::helix_engine::vector_core::vector::HVector;\n");
         output.push_str("use helixdb::{\n");
         output.push_str("    node_matches,\n");

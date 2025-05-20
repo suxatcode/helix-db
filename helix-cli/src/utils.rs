@@ -311,9 +311,9 @@ pub fn print_instnace(instance: &InstanceInfo) {
         "{} {}{}",
         if rg { "Instance ID:".green().bold() } else { "Instance ID:".yellow().bold() },
         if rg { instance.id.green().bold() } else { instance.id.yellow().bold() },
-        if rg { "".to_string().bold() } else { " (not running)".to_string().yellow().bold() },
+        if rg { " (running)".to_string().green().bold() } else { " (not running)".to_string().yellow().bold() },
     );
-    println!("└── Label: {}", instance.label);
+    println!("└── Label: {}", instance.label.underline());
     println!("└── Port: {}", instance.port);
     println!("└── Available endpoints:");
     instance.available_endpoints
