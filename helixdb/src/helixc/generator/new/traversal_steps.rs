@@ -146,7 +146,7 @@ impl Default for Traversal {
             traversal_type: TraversalType::Ref,
             source_step: Separator::Empty(SourceStep::Empty),
             steps: vec![],
-            should_collect: ShouldCollect::No,
+            should_collect: ShouldCollect::ToVec,
         }
     }
 }

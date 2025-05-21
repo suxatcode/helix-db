@@ -1294,6 +1294,7 @@ impl<'a> Ctx<'a> {
                     gen_traversal
                         .steps
                         .push(Separator::Period(GeneratedStep::BoolOp(op)));
+                    gen_traversal.should_collect = ShouldCollect::No;
                 }
 
                 StepType::Update(update) => {
@@ -1809,7 +1810,7 @@ impl<'a> Ctx<'a> {
                     self.push_query_err(
                         q,
                         gs.loc.clone(),
-                        format!("`{}` is not a valid edge type", label),
+                        format!("Edge of type `{}` does not exist", label),
                         "check the schema for valid edge types",
                     );
                     return None;
@@ -1821,7 +1822,7 @@ impl<'a> Ctx<'a> {
                             q,
                             gs.loc.clone(),
                             format!(
-                                "`{}` is not a valid outgoing edge type for node of type `{}`",
+                                "Edge of type `{}` exists but it is not a valid outgoing edge type for node of type `{}`",
                                 label, node_label
                             ),
                             "check the schema for valid edge types",
@@ -1841,7 +1842,7 @@ impl<'a> Ctx<'a> {
                     self.push_query_err(
                         q,
                         gs.loc.clone(),
-                        format!("`{}` is not a valid edge type", label),
+                        format!("Edge of type `{}` does not exist", label),
                         "check the schema for valid edge types",
                     );
                     return None;
@@ -1853,7 +1854,7 @@ impl<'a> Ctx<'a> {
                         self.push_query_err(
                             q,
                             gs.loc.clone(),
-                            format!("`{}` is not a valid edge type", label),
+                            format!("Edge of type `{}` does not exist", label),
                             "check the schema for valid edge types",
                         );
                         None
@@ -1874,7 +1875,7 @@ impl<'a> Ctx<'a> {
                     self.push_query_err(
                         q,
                         gs.loc.clone(),
-                        format!("`{}` is not a valid edge type", label),
+                        format!("Edge of type `{}` does not exist", label),
                         "check the schema for valid edge types",
                     );
                     return None;
@@ -1886,7 +1887,7 @@ impl<'a> Ctx<'a> {
                             q,
                             gs.loc.clone(),
                             format!(
-                                "`{}` is not a valid outgoing edge type for node of type `{}`",
+                                "Edge of type `{}` exists but it is not a valid outgoing edge type for node of type `{}`",
                                 label, node_label
                             ),
                             "check the schema for valid edge types",
@@ -1907,7 +1908,7 @@ impl<'a> Ctx<'a> {
                     self.push_query_err(
                         q,
                         gs.loc.clone(),
-                        format!("`{}` is not a valid edge type", label),
+                        format!("Edge of type `{}` does not exist", label),
                         "check the schema for valid edge types",
                     );
                     return None;
@@ -1920,7 +1921,7 @@ impl<'a> Ctx<'a> {
                             q,
                             gs.loc.clone(),
                             format!(
-                                "`{}` is not a valid edge type for node of type `{}`",
+                                "Edge of type `{}` exists but it is not a valid incoming edge type for node of type `{}`",
                                 label, node_label
                             ),
                             "check the schema for valid edge types",

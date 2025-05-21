@@ -47,8 +47,19 @@ pub struct User {
     pub age: i32,
 }
 
+pub struct Users {
+    pub name: String,
+    pub age: i32,
+}
+
 pub struct Knows {
     pub from: User,
+    pub to: User,
+    pub since: i32,
+}
+
+pub struct Know {
+    pub from: Users,
     pub to: User,
     pub since: i32,
 }
@@ -83,13 +94,11 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         .collect_to::<Vec<_>>();
     return_vals.insert("old_users".to_string(), ReturnValue::from_traversal_value_array_with_mixin(G::new_from(Arc::clone(&db), &txn, old_users.clone())
 
-.map_traversal(|u, txn| { identifier_remapping!(remapping_vals, u.clone(), "age" => "age")?;
-traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::clone(&db), txn, vec![u.clone()])
+.map_traversal(|us, txn| { identifier_remapping!(remapping_vals, us.clone(), "age" => "age")?;
+traversal_remapping!(remapping_vals, us.clone(), "username" => G::new_from(Arc::clone(&db), txn, vec![us.clone()])
 
-.check_property("name")
-    .collect_to::<Vec<_>>())?;
- Ok(u) })
-    .collect_to::<Vec<_>>(), remapping_vals));
+.check_property("name").collect_to::<Vec<_>>())?;
+ Ok(us) }).collect_to::<Vec<_>>(), remapping_vals));
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
