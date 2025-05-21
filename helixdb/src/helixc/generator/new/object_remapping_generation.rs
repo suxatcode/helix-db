@@ -14,7 +14,7 @@ impl Display for TraversalRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "traversal_remapping!(remapping_vals, {}, \"{}\" => {})",
+            "traversal_remapping!(remapping_vals, {}.clone(), \"{}\" => {})",
             self.variable_name, self.new_field, self.new_value
         )
     }
@@ -31,7 +31,7 @@ impl Display for FieldRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "field_remapping!(remapping_vals, {}, \"{}\" => \"{}\")",
+            "field_remapping!(remapping_vals, {}.clone(), \"{}\" => \"{}\")",
             self.variable_name, self.field_name, self.new_name
         )
     }
@@ -98,7 +98,7 @@ impl Display for ValueRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "value_remapping!(remapping_vals, {}, \"{}\" => {})",
+            "value_remapping!(remapping_vals, {}.clone(), \"{}\" => {})",
             self.variable_name, self.field_name, self.value
         )
     }
@@ -114,7 +114,7 @@ impl Display for IdentifierRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "identifier_remapping!(remapping_vals, {}, \"{}\" => \"{}\")",
+            "identifier_remapping!(remapping_vals, {}.clone(), \"{}\" => \"{}\")",
             self.variable_name, self.field_name, self.identifier_value
         )
     }
@@ -153,7 +153,7 @@ impl Display for Remapping {
             ),
             false => write!(
                 f,
-                "map_traversal(|{}, txn| {{ {}?;\n {} }})",
+                "map_traversal(|{}, txn| {{ {}?;\n Ok({}) }})",
                 self.variable_name,
                 self.remappings
                     .iter()
@@ -166,6 +166,18 @@ impl Display for Remapping {
     }
 }
 
+// #[derive(Clone)]
+// pub struct ClosureRemapping {
+//     pub is_inner: bool,
+//     pub should_spread: bool,
+//     pub variable_name: String,
+//     pub remappings: Vec<RemappingType>,
+// }
+// impl Display for ClosureRemapping {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{}", self.remapping)
+//     }
+// }
 // if there is only one field then it is a property access
 // if more than one field then iterate over the fields
 // for each field, if the field value is an identifier then it is is a field remapping

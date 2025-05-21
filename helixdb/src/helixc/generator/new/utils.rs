@@ -108,7 +108,6 @@ impl From<IdType> for GenRef<String> {
 }
 
 
-// TODO: probably move to protocol
 #[derive(Clone)]
 pub enum Order {
     Asc,
@@ -286,7 +285,7 @@ use helixdb::{
         util::{
             dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
             filter_ref::FilterRefAdapter, range::RangeAdapter, update::UpdateAdapter,
-            map::MapAdapter, paths::ShortestPathAdapter,
+            map::MapAdapter, paths::ShortestPathAdapter, props::PropsAdapter,
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
     },

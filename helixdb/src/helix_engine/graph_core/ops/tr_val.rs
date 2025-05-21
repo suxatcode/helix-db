@@ -16,6 +16,7 @@ pub enum TraversalVal {
     Vector(HVector),
     Count(Count),
     Path((Vec<Node>, Vec<Edge>)),
+    Value(Value),
     // Lazy(Lazy<'a, Bytes>),
     Empty,
 }

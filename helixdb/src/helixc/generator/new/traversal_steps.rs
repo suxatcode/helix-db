@@ -170,6 +170,9 @@ pub enum Step {
     // object
     Remapping(Remapping),
 
+    // closure
+    // Closure(ClosureRemapping),
+
     // shortest path
     ShortestPath(ShortestPath),
 }

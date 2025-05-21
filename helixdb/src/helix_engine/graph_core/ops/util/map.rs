@@ -16,13 +16,16 @@ pub struct Map<'a, I, F> {
 impl<'a, I, F> Iterator for Map<'a, I, F>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(I::Item, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
+    F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
 {
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(item) = self.iter.next() {
-            return Some((self.f)(item, &self.txn));
+            return match item {
+                Ok(item) => Some((self.f)(item, &self.txn)),
+                Err(e) => return Some(Err(e)),
+            };
         }
         None
     }
@@ -36,7 +39,7 @@ pub trait MapAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Si
         f: F,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: FnMut(Result<TraversalVal, GraphError>, &RoTxn<'a>) -> Result<TraversalVal, GraphError>;
+        F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> MapAdapter<'a>
@@ -47,7 +50,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> MapAdapter<'a>
         f: F,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: FnMut(I::Item, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
+        F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
     {
         RoTraversalIterator {
             inner: Map {

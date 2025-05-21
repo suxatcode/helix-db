@@ -24,7 +24,7 @@ use helixdb::{
         util::{
             dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
             filter_ref::FilterRefAdapter, map::MapAdapter, paths::ShortestPathAdapter,
-            range::RangeAdapter, update::UpdateAdapter,
+            props::PropsAdapter, range::RangeAdapter, update::UpdateAdapter,
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
     },
@@ -81,21 +81,14 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
             }
         })
         .collect_to::<Vec<_>>();
-    return_vals.insert(
-        "old_users".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(
-            G::new_from(Arc::clone(&db), &txn, old_users.clone())
-                .map_traversal(|u, txn| {
-                    traversal_remapping!(remapping_vals, u, "username" => 
-            G::new_from(Arc::clone(&db), &txn, vec![u.unwrap().clone()])
-            .check_property("name")
-            .collect_to::<Vec<_>>())?;
-                    u
-                })
-                .collect_to::<Vec<_>>(),
-            remapping_vals,
-        ),
-    );
+    return_vals.insert("old_users".to_string(), ReturnValue::from_traversal_value_array_with_mixin(G::new_from(Arc::clone(&db), &txn, old_users.clone())
+
+.map_traversal(|u, txn| { traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::clone(&db), txn, vec![u.clone()])
+
+.check_property("name")
+    .collect_to::<Vec<_>>())?;
+ Ok(u) })
+    .collect_to::<Vec<_>>(), remapping_vals));
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())

@@ -1599,7 +1599,7 @@ impl<'a> Ctx<'a> {
                     //     })));
                     scope.remove(cl.identifier.as_str());
                     // gen_traversal.traversal_type =
-                    //     TraversalType::NestedFrom(GenRef::Std(var));
+                    //     TraversalType::Nested(GenRef::Std(var));
                 }
 
                 StepType::SearchVector(_) => {
@@ -2181,10 +2181,13 @@ impl<'a> Ctx<'a> {
                             &traversal,
                             scope,
                             q,
-                            None,
+                            None, // TODO: should pass parent type here
                             &mut inner_traversal,
                             None,
                         );
+                        inner_traversal.traversal_type = TraversalType::NestedFrom(GenRef::Std(
+                            var_name.to_string(),
+                        ));
                         RemappingType::TraversalRemapping(TraversalRemapping {
                             variable_name: var_name.to_string(),
                             new_field: key.clone(),
@@ -2203,7 +2206,9 @@ impl<'a> Ctx<'a> {
                                     &mut inner_traversal,
                                     None,
                                 );
-
+                                inner_traversal.traversal_type = TraversalType::NestedFrom(
+                                    GenRef::Std(var_name.to_string()),
+                                );
                                 RemappingType::TraversalRemapping(TraversalRemapping {
                                     variable_name: var_name.to_string(),
                                     new_field: key.clone(),
