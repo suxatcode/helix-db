@@ -22,7 +22,7 @@ properties = { "Properties" ~ ":" ~ "{" ~ field_defs? ~ "}" }
 // ---------------------------------------------------------------------
 // Query definitions
 // ---------------------------------------------------------------------
-query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt }
+query_def    = { "QUERY" ~ identifier ~ query_params ~ "=>" ~ query_body ~ return_stmt } // TODO: possible optional return stmt
 query_params = { "(" ~ (param_def ~ ("," ~ param_def)*)? ~ ")" }
 param_def    = { identifier ~ ":" ~ param_type }
 query_body   = { (get_stmt | AddN | AddV | BatchAddV | AddE | drop | for_loop)* }
@@ -39,7 +39,8 @@ step                = { "::" ~ (graph_step | where_step | closure_step | object_
 last_step           = { "::" ~ (bool_operations | update) }
 // change this for loop to be able to take traversals etc in the future. 
 for_loop            = { "FOR" ~ for_argument ~ "IN" ~ identifier ~ "{" ~ query_body ~ "}" }
-for_argument        = { identifier | object_destructuring }
+for_argument        = { object_access | object_destructuring | identifier }
+object_access       = { identifier ~ "." ~ identifier }
 object_destructuring = { "{" ~ identifier ~ ("," ~ identifier)* ~ "}" }
 
 // ---------------------------------------------------------------------

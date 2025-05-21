@@ -172,8 +172,7 @@ impl Display for FieldType {
                     write!(f, "{}: {}", k, v)?;
                 }
                 write!(f, "}}")
-            }
-            // FieldType::Closure(a, b) => write!(f, "Closure({})", a),
+            } // FieldType::Closure(a, b) => write!(f, "Closure({})", a),
         }
     }
 }
@@ -222,10 +221,17 @@ pub struct Assignment {
 
 #[derive(Debug, Clone)]
 pub struct ForLoop {
-    pub variables: Vec<String>,
-    pub in_variable: String,
+    pub variable: ForLoopVars,
+    pub in_variable: (Loc, String),
     pub statements: Vec<Statement>,
     pub loc: Loc,
+}
+
+#[derive(Debug, Clone)]
+pub enum ForLoopVars {
+    Identifier { name: String, loc: Loc },
+    ObjectAccess { name: String, field: String, loc: Loc },
+    ObjectDestructuring { fields: Vec<(Loc, String)>, loc: Loc },
 }
 
 #[derive(Debug, Clone)]
@@ -471,8 +477,8 @@ pub struct EdgeConnection {
 
 #[derive(Debug, Clone)]
 pub enum IdType {
-    Literal(String),
-    Identifier(String),
+    Literal { value: String, loc: Loc },
+    Identifier { value: String, loc: Loc },
 }
 
 #[derive(Debug, Clone)]
@@ -499,11 +505,11 @@ impl From<Value> for ValueType {
 impl From<IdType> for String {
     fn from(id_type: IdType) -> String {
         match id_type {
-            IdType::Literal(mut s) => {
-                s.retain(|c| c != '"');
-                s
+            IdType::Literal { mut value, loc } => {
+                value.retain(|c| c != '"');
+                value
             }
-            IdType::Identifier(s) => s,
+            IdType::Identifier { value, loc } => value,
         }
     }
 }
@@ -511,7 +517,10 @@ impl From<IdType> for String {
 impl From<String> for IdType {
     fn from(mut s: String) -> IdType {
         s.retain(|c| c != '"');
-        IdType::Literal(s)
+        IdType::Literal {
+            value: s,
+            loc: Loc::empty(),
+        }
     }
 }
 
@@ -574,18 +583,18 @@ impl HelixParser {
             let mut remaining = HashSet::new();
             for pair in pairs {
                 match pair.as_rule() {
-                    Rule::node_def => parser
-                        .source
-                        .node_schemas
-                        .push(parser.parse_node_def(pair)?),
-                    Rule::edge_def => parser
-                        .source
-                        .edge_schemas
-                        .push(parser.parse_edge_def(pair)?),
-                    Rule::vector_def => parser
-                        .source
-                        .vector_schemas
-                        .push(parser.parse_vector_def(pair)?),
+                    Rule::node_def => {
+                        let node_schema = parser.parse_node_def(pair, file.name.clone())?;
+                        parser.source.node_schemas.push(node_schema);
+                    }
+                    Rule::edge_def => {
+                        let edge_schema = parser.parse_edge_def(pair, file.name.clone())?;
+                        parser.source.edge_schemas.push(edge_schema);
+                    }
+                    Rule::vector_def => {
+                        let vector_schema = parser.parse_vector_def(pair, file.name.clone())?;
+                        parser.source.vector_schemas.push(vector_schema);
+                    }
                     Rule::query_def => {
                         // parser.source.queries.push(parser.parse_query_def(pairs.next().unwrap())?),
                         remaining.insert(pair);
@@ -597,7 +606,7 @@ impl HelixParser {
 
             for pair in remaining {
                 // println!("{:?}", parser.source);
-                parser.source.queries.push(parser.parse_query_def(pair)?);
+                parser.source.queries.push(parser.parse_query_def(pair, file.name.clone())?);
             }
 
             // parse all schemas first then parse queries using self
@@ -611,25 +620,25 @@ impl HelixParser {
         Ok(source)
     }
 
-    fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
+    fn parse_node_def(&self, pair: Pair<Rule>, filepath: String) -> Result<NodeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(NodeSchema {
             name: (pair.loc(), name),
             fields,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
-    fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
+    fn parse_vector_def(&self, pair: Pair<Rule>, filepath: String) -> Result<VectorSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(VectorSchema {
             name,
             fields,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
@@ -733,7 +742,7 @@ impl HelixParser {
         })
     }
 
-    fn parse_edge_def(&self, pair: Pair<Rule>) -> Result<EdgeSchema, ParserError> {
+    fn parse_edge_def(&self, pair: Pair<Rule>, filepath: String) -> Result<EdgeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let body = pairs.next().unwrap();
@@ -754,7 +763,7 @@ impl HelixParser {
             from,
             to,
             properties,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
     fn parse_properties(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
@@ -768,7 +777,7 @@ impl HelixParser {
             })
     }
 
-    fn parse_query_def(&self, pair: Pair<Rule>) -> Result<Query, ParserError> {
+    fn parse_query_def(&self, pair: Pair<Rule>, filepath: String) -> Result<Query, ParserError> {
         let original_query = pair.clone().as_str().to_string();
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
@@ -783,7 +792,7 @@ impl HelixParser {
             statements,
             return_values,
             original_query,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
@@ -882,33 +891,48 @@ impl HelixParser {
 
     fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
         let mut pairs = pair.clone().into_inner();
-        let mut variables = Vec::new();
-        let mut in_variable = String::new();
         // parse the arguments
-
         let argument = pairs.next().unwrap().clone().into_inner().next().unwrap();
-        match argument.as_rule() {
+        let argument_loc = argument.loc();
+        let variable = match argument.as_rule() {
             Rule::object_destructuring => {
-                for p in argument.into_inner() {
-                    variables.push(p.as_str().to_string());
+                let fields = argument
+                    .into_inner()
+                    .into_iter()
+                    .map(|p| (p.loc(), p.as_str().to_string()))
+                    .collect();
+                ForLoopVars::ObjectDestructuring {
+                    fields,
+                    loc: argument_loc,
                 }
             }
-            Rule::identifier => {
-                variables.push(argument.as_str().to_string());
+            Rule::object_access => {
+                let mut inner = argument.clone().into_inner();
+                let object_name = inner.next().unwrap().as_str().to_string();
+                let field_name = inner.next().unwrap().as_str().to_string();
+                ForLoopVars::ObjectAccess {
+                    name: object_name,
+                    field: field_name,
+                    loc: argument_loc,
+                }
             }
+            Rule::identifier => ForLoopVars::Identifier {
+                name: argument.as_str().to_string(),
+                loc: argument_loc,
+            },
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected rule in ForLoop: {:?}",
                     argument.as_rule()
                 )));
             }
-        }
+        };
 
         // parse the in
         let in_ = pairs.next().unwrap().clone();
-        match in_.as_rule() {
+        let in_variable = match in_.as_rule() {
             Rule::identifier => {
-                in_variable.push_str(in_.as_str());
+                (in_.loc(), in_.as_str().to_string())
             }
             _ => {
                 return Err(ParserError::from(format!(
@@ -916,12 +940,12 @@ impl HelixParser {
                     in_.as_rule()
                 )));
             }
-        }
+        };
         // parse the body
         let statements = self.parse_query_body(pairs.next().unwrap())?;
 
         Ok(ForLoop {
-            variables,
+            variable,
             in_variable,
             statements,
             loc: pair.loc(),
@@ -1207,9 +1231,15 @@ impl HelixParser {
             .next()
             .ok_or_else(|| ParserError::from("Missing ID"))?;
         match p.as_rule() {
-            Rule::identifier => Ok(Some(IdType::Identifier(p.as_str().to_string()))),
+            Rule::identifier => Ok(Some(IdType::Identifier {
+                value: p.as_str().to_string(),
+                loc: p.loc(),
+            })),
             Rule::string_literal | Rule::inner_string => {
-                Ok(Some(IdType::from(p.as_str().to_string())))
+                Ok(Some(IdType::Literal {
+                    value: p.as_str().to_string(),
+                    loc: p.loc(),
+                }))
             }
             _ => Err(ParserError::from(format!(
                 "Unexpected rule in parse_id_args: {:?}",
@@ -1475,10 +1505,16 @@ impl HelixParser {
                                         let id = id.into_inner().next().unwrap();
                                         match id.as_rule() {
                                             Rule::identifier => {
-                                                IdType::Identifier(id.as_str().to_string())
+                                                IdType::Identifier {
+                                                    value: id.as_str().to_string(),
+                                                    loc: id.loc(),
+                                                }
                                             }
                                             Rule::string_literal => {
-                                                IdType::Literal(id.as_str().to_string())
+                                                IdType::Literal {
+                                                    value: id.as_str().to_string(),
+                                                    loc: id.loc(),
+                                                }
                                             }
                                             other => {
                                                 panic!("Should be identifier or string literal")
@@ -1509,10 +1545,16 @@ impl HelixParser {
                                         let id = id.into_inner().next().unwrap();
                                         match id.as_rule() {
                                             Rule::identifier => {
-                                                IdType::Identifier(id.as_str().to_string())
+                                                IdType::Identifier {
+                                                    value: id.as_str().to_string(),
+                                                    loc: id.loc(),
+                                                }
                                             }
                                             Rule::string_literal => {
-                                                IdType::Literal(id.as_str().to_string())
+                                                IdType::Literal {
+                                                    value: id.as_str().to_string(),
+                                                    loc: id.loc(),
+                                                }
                                             }
                                             other => {
                                                 println!("{:?}", other);
@@ -1748,8 +1790,14 @@ impl HelixParser {
                     loc: pair.loc(),
                     step: GraphStepType::ShortestPath(ShortestPath {
                         loc: pair.loc(),
-                        from: from.map(|id| IdType::Identifier(id)),
-                        to: to.map(|id| IdType::Identifier(id)),
+                        from: from.map(|id| IdType::Identifier {
+                            value: id,
+                            loc: pair.loc(),
+                        }),
+                        to: to.map(|id| IdType::Identifier {
+                            value: id,
+                            loc: pair.loc(),
+                        }),
                         type_arg,
                     }),
                 }

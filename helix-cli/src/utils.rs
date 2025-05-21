@@ -256,7 +256,8 @@ fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
     let files = files
         .iter()
         .map(|file| {
-            let name = file.file_name().to_string_lossy().into_owned();
+            let name = file.path().to_string_lossy().into_owned();
+            println!("{}", name);
             let content = fs::read_to_string(file.path()).unwrap();
             HxFile { name, content }
         })
@@ -286,7 +287,8 @@ fn analyze_source(source: Source) -> Result<GeneratedSource, CliError> {
     let (diagnostics, source) = analyze(&source);
     if !diagnostics.is_empty() {
         for diag in diagnostics {
-            println!("{}", diag.render(&source.src, "queries.hx"));
+            let filepath = diag.filepath.clone().unwrap_or("queries.hx".to_string());
+            println!("{}", diag.render(&source.src, &filepath));
         }
         return Err(CliError::CompileFailed);
     }

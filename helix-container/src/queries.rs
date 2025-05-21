@@ -94,3 +94,32 @@ traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::c
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct nodesData {
+    pub name: String,
+    pub id: ID,
+}
+#[derive(Serialize, Deserialize)]
+pub struct get_user_with_friendsInput {
+    pub nodes: nodesData,
+}
+#[handler]
+pub fn get_user_with_friends(
+    input: &HandlerInput,
+    response: &mut Response,
+) -> Result<(), GraphError> {
+    let data: get_user_with_friendsInput = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    return_vals.insert("success".to_string(), ReturnValue::from("success"));
+
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}

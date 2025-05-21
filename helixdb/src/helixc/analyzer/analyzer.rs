@@ -46,7 +46,7 @@ pub struct Diagnostic {
     pub location: Loc,
     pub message: String,
     pub hint: Option<String>,
-    pub filename: Option<String>,
+    pub filepath: Option<String>,
     pub severity: DiagnosticSeverity,
     pub fix: Option<Fix>,
 }
@@ -68,18 +68,19 @@ impl Diagnostic {
         hint: Option<String>,
         fix: Option<Fix>,
     ) -> Self {
+        let filepath = location.filepath.clone();
         Self {
             location,
             message: message.into(),
             hint,
             fix,
-            filename: None,
+            filepath,
             severity,
         }
     }
 
-    pub fn render(&self, src: &str, filename: &str) -> String {
-        pretty::render(self, src, filename)
+    pub fn render(&self, src: &str, filepath: &str) -> String {
+        pretty::render(self, src, filepath)
     }
 }
 
@@ -345,18 +346,74 @@ impl<'a> Ctx<'a> {
 
                 ForLoop(fl) => {
                     // Ensure the collection exists
-                    if !scope.contains_key(fl.in_variable.as_str()) {
+                    if !scope.contains_key(fl.in_variable.1.as_str()) {
                         self.push_query_err(
                             q,
                             fl.loc.clone(),
-                            format!("`{}` is not defined in the current scope", fl.in_variable),
+                            format!("`{}` is not defined in the current scope", fl.in_variable.1),
                             "add a statement assigning it before the loop",
                         );
                     }
                     // Add loop vars to new child scope and walk the body
                     let mut body_scope = scope.clone();
-                    for v in &fl.variables {
-                        body_scope.insert(v.as_str(), Type::Unknown);
+                    // find param from fl.in_variable
+                    let param = q.parameters.iter().find(|p| p.name.1 == fl.in_variable.1);
+                    match &fl.variable {
+                        ForLoopVars::Identifier { name, loc: _ } => {
+                            body_scope.insert(name.as_str(), Type::Unknown);
+                        }
+                        ForLoopVars::ObjectAccess {
+                            name,
+                            field,
+                            loc: _,
+                        } => {
+                            body_scope.insert(name.as_str(), Type::Unknown);
+                        }
+                        ForLoopVars::ObjectDestructuring { fields, loc } => {
+                            // TODO: check if fields are valid
+                            if let Some(p) = param {
+                                match &p.param_type.1 {
+                                    FieldType::Array(inner) => {
+                                        if let FieldType::Object(param_fields) = inner.as_ref() {
+                                            for (field_loc, field_name) in fields {
+                                                if !param_fields.contains_key(field_name.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        field_loc.clone(),
+                                                        format!("`{}` is not a field of the inner type of `{}`", field_name, fl.in_variable.1),
+                                                        format!("check the object fields of the parameter `{}`", fl.in_variable.1),
+                                                    );
+                                                }
+                                                body_scope
+                                                    .insert(field_name.as_str(), Type::Unknown);
+                                            }
+                                        } else {
+                                            self.push_query_err(
+                                                q,
+                                                fl.in_variable.0.clone(),
+                                                format!("the inner type of `{}` is not an object", fl.in_variable.1),
+                                                "object destructuring only works with arrays of objects",
+                                            );
+                                        }
+                                    }
+                                    _ => {
+                                        self.push_query_err(
+                                            q,
+                                            fl.in_variable.0.clone(),
+                                            format!("`{}` is not an array", fl.in_variable.1),
+                                            "object destructuring only works with arrays of objects",
+                                        );
+                                    }
+                                }
+                            } else {
+                                self.push_query_err(
+                                        q,
+                                        fl.in_variable.0.clone(),
+                                        format!("`{}` does not refer to a parameter", fl.in_variable.1),
+                                        "add a parameter to the query definition or use an existing parameter",
+                                    );
+                            }
+                        }
                     }
                     for body_stmt in &fl.statements {
                         // Recursive walk (but without infinite nesting for now)
@@ -384,7 +441,7 @@ impl<'a> Ctx<'a> {
             let end = q.loc.end.clone();
             self.push_query_warn(
                 q,
-                Loc::new(end.clone(), end, q.loc.span.clone()),
+                Loc::new(q.loc.filepath.clone(), end.clone(), end, q.loc.span.clone()),
                 "query has no RETURN clause".to_string(),
                 "add `RETURN <expr>` at the end",
                 None,
@@ -446,7 +503,7 @@ impl<'a> Ctx<'a> {
     }
     fn push_query_err(&mut self, q: &Query, loc: Loc, msg: String, hint: impl Into<String>) {
         self.diagnostics.push(Diagnostic::new(
-            loc,
+            Loc::new(q.loc.filepath.clone(), loc.start, loc.end, loc.span),
             format!("{} (in QUERY named `{}`)", msg, q.name),
             DiagnosticSeverity::Error,
             Some(hint.into()),
@@ -463,7 +520,7 @@ impl<'a> Ctx<'a> {
         fix: Fix,
     ) {
         self.diagnostics.push(Diagnostic::new(
-            loc,
+            Loc::new(q.loc.filepath.clone(), loc.start, loc.end, loc.span),
             format!("{} (in QUERY named `{}`)", msg, q.name),
             DiagnosticSeverity::Error,
             Some(hint.into()),
@@ -480,7 +537,7 @@ impl<'a> Ctx<'a> {
         fix: Option<Fix>,
     ) {
         self.diagnostics.push(Diagnostic::new(
-            loc,
+            Loc::new(q.loc.filepath.clone(), loc.start, loc.end, loc.span),
             format!("{} (in QUERY named `{}`)", msg, q.name),
             DiagnosticSeverity::Warning,
             Some(hint.into()),
@@ -687,10 +744,10 @@ impl<'a> Ctx<'a> {
 
                         let to = match &add.connection.to_id {
                             Some(id) => match id {
-                                IdType::Identifier(id) => {
-                                    GenRef::Ref(format!("data.{}", id.clone()))
+                                IdType::Identifier { value, loc } => {
+                                    GenRef::Ref(format!("data.{}", value.clone()))
                                 }
-                                IdType::Literal(id) => GenRef::Literal(id.clone()),
+                                IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                             },
                             _ => {
                                 self.push_query_err(
@@ -704,8 +761,8 @@ impl<'a> Ctx<'a> {
                         };
                         let from = match &add.connection.from_id {
                             Some(id) => match id {
-                                IdType::Identifier(id) => GenRef::Ref(id.clone()),
-                                IdType::Literal(id) => GenRef::Literal(id.clone()),
+                                IdType::Identifier { value, loc } => GenRef::Ref(value.clone()),
+                                IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                             },
                             _ => {
                                 self.push_query_err(
@@ -958,10 +1015,24 @@ impl<'a> Ctx<'a> {
                 }
                 if let Some(ids) = ids {
                     assert!(ids.len() == 1, "multiple ids not supported yet");
+                    // check id exists in scope
                     gen_traversal.source_step = Separator::Period(SourceStep::NFromID(NFromID {
                         id: match ids[0].clone() {
-                            IdType::Identifier(i) => GenRef::Std(format!("data.{}", i)),
-                            IdType::Literal(s) => GenRef::Std(s),
+                            IdType::Identifier { value: i, loc } => {
+                                if !scope.contains_key(i.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        loc,
+                                        format!("variable named `{}` is not in scope", i),
+                                        format!(
+                                            "declare {} in the current scope or fix the typo",
+                                            i
+                                        ),
+                                    );
+                                }
+                                GenRef::Std(format!("data.{}", i))
+                            }
+                            IdType::Literal { value: s, loc } => GenRef::Std(s),
                         },
                         label: GenRef::Literal(node_type.clone()),
                     }));
@@ -988,8 +1059,21 @@ impl<'a> Ctx<'a> {
                     assert!(ids.len() == 1, "multiple ids not supported yet");
                     gen_traversal.source_step = Separator::Period(SourceStep::EFromID(EFromID {
                         id: match ids[0].clone() {
-                            IdType::Identifier(i) => GenRef::Std(format!("data.{}", i)),
-                            IdType::Literal(s) => GenRef::Std(s),
+                            IdType::Identifier { value: i, loc } => {
+                                if !scope.contains_key(i.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        loc,
+                                        format!("variable named `{}` is not in scope", i),
+                                        format!(
+                                            "declare {} in the current scope or fix the typo",
+                                            i
+                                        ),
+                                    );
+                                }
+                                GenRef::Std(format!("data.{}", i))
+                            }
+                            IdType::Literal { value: s, loc } => GenRef::Std(s),
                         },
                         label: GenRef::Literal(edge_type.clone()),
                     }));
@@ -2185,9 +2269,8 @@ impl<'a> Ctx<'a> {
                             &mut inner_traversal,
                             None,
                         );
-                        inner_traversal.traversal_type = TraversalType::NestedFrom(GenRef::Std(
-                            var_name.to_string(),
-                        ));
+                        inner_traversal.traversal_type =
+                            TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
                         RemappingType::TraversalRemapping(TraversalRemapping {
                             variable_name: var_name.to_string(),
                             new_field: key.clone(),
@@ -2206,9 +2289,8 @@ impl<'a> Ctx<'a> {
                                     &mut inner_traversal,
                                     None,
                                 );
-                                inner_traversal.traversal_type = TraversalType::NestedFrom(
-                                    GenRef::Std(var_name.to_string()),
-                                );
+                                inner_traversal.traversal_type =
+                                    TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
                                 RemappingType::TraversalRemapping(TraversalRemapping {
                                     variable_name: var_name.to_string(),
                                     new_field: key.clone(),

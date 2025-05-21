@@ -101,8 +101,8 @@ impl From<GenRef<String>> for String {
 impl From<IdType> for GenRef<String> {
     fn from(value: IdType) -> Self {
         match value {
-            IdType::Literal(s) => GenRef::Literal(s),
-            IdType::Identifier(s) => GenRef::Id(s),
+            IdType::Literal { value: s, loc } => GenRef::Literal(s),
+            IdType::Identifier { value: s, loc } => GenRef::Id(s),
         }
     }
 }
