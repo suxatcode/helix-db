@@ -101,7 +101,7 @@ pub struct NFromID {
 impl Display for NFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: possibly add label for runtime label checking?
-        write!(f, "n_from_id(&{})", self.id)
+        write!(f, "n_from_id({})", self.id)
     }
 }
 
@@ -122,7 +122,7 @@ pub struct EFromID {
 }
 impl Display for EFromID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "e_from_id(&{})", self.id)
+        write!(f, "e_from_id({})", self.id)
     }
 }
 

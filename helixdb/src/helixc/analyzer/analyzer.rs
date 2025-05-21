@@ -7,7 +7,8 @@ use crate::{
         generator::new::{
             bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
-                Assignment as GeneratedAssignment, BoExp, Parameter as GeneratedParameter,
+                Assignment as GeneratedAssignment, BoExp, ForEach as GeneratedForEach,
+                ForLoopInVariable, ForVariable, Parameter as GeneratedParameter,
                 Query as GeneratedQuery, ReturnValue, ReturnValueExpr, Source as GeneratedSource,
                 Statement as GeneratedStatement,
             },
@@ -244,193 +245,17 @@ impl<'a> Ctx<'a> {
         for param in &q.parameters {
             scope.insert(param.name.1.as_str(), Type::from(&param.param_type.1));
         }
-
-        use StatementType::*;
         for stmt in &q.statements {
-            match &stmt.statement {
-                Assignment(assign) => {
-                    if scope.contains_key(assign.variable.as_str()) {
-                        self.push_query_err(
-                            q,
-                            assign.loc.clone(),
-                            format!("variable `{}` is already declared", assign.variable),
-                            "rename the new variable or remove the previous definition",
-                        );
-                        continue;
-                    }
-
-                    let (rhs_ty, stmt) =
-                        self.infer_expr_type(&assign.value, &mut scope, q, None, Some(&mut query));
-                    scope.insert(assign.variable.as_str(), rhs_ty);
-                    assert!(stmt.is_some(), "Assignment statement should be generated");
-                    let assignment = GeneratedStatement::Assignment(GeneratedAssignment {
-                        variable: GenRef::Std(assign.variable.clone()),
-                        value: Box::new(stmt.unwrap()),
-                    });
-                    query.statements.push(assignment);
-                }
-
-                AddNode(add) => {
-                    query.is_mut = true;
-                    if let Some(ref ty) = add.node_type {
-                        if !self.node_set.contains(ty.as_str()) {
-                            self.push_query_err(
-                                q,
-                                add.loc.clone(),
-                                format!("`AddN<{}>` refers to unknown node type", ty),
-                                "declare the node schema first",
-                            );
-                        }
-                    }
-                }
-
-                AddEdge(add) => {
-                    query.is_mut = true;
-                    if let Some(ref ty) = add.edge_type {
-                        if !self.edge_map.contains_key(ty.as_str()) {
-                            self.push_query_err(
-                                q,
-                                add.loc.clone(),
-                                format!("`AddE<{}>` refers to unknown edge type", ty),
-                                "declare the edge schema first",
-                            );
-                        }
-                    }
-                }
-
-                AddVector(add) => {
-                    query.is_mut = true;
-                    if let Some(ref ty) = add.vector_type {
-                        if !self.vector_set.contains(ty.as_str()) {
-                            self.push_query_err(
-                                q,
-                                add.loc.clone(),
-                                format!("vector type `{}` has not been declared", ty),
-                                "add a `V::{}` schema first",
-                            );
-                        }
-                    }
-                }
-
-                BatchAddVector(add) => {
-                    if let Some(ref ty) = add.vector_type {
-                        if !self.vector_set.contains(ty.as_str()) {
-                            self.push_query_err(
-                                q,
-                                add.loc.clone(),
-                                format!("vector type `{}` has not been declared", ty),
-                                "add a `V::{}` schema first",
-                            );
-                        }
-                    }
-                }
-
-                Drop(expr) => {
-                    // Nothing special right now; still type‑check sub‑expressions
-                    query.is_mut = true;
-                    self.infer_expr_type(expr, &mut scope, q, None, Some(&mut query));
-                }
-
-                SearchVector(expr) => {
-                    if let Some(ref ty) = expr.vector_type {
-                        if !self.vector_set.contains(ty.as_str()) {
-                            self.push_query_err(
-                                q,
-                                expr.loc.clone(),
-                                format!("vector type `{}` has not been declared", ty),
-                                "add a `V::{}` schema first",
-                            );
-                        }
-                    }
-                }
-
-                ForLoop(fl) => {
-                    // Ensure the collection exists
-                    if !scope.contains_key(fl.in_variable.1.as_str()) {
-                        self.push_query_err(
-                            q,
-                            fl.loc.clone(),
-                            format!("`{}` is not defined in the current scope", fl.in_variable.1),
-                            "add a statement assigning it before the loop",
-                        );
-                    }
-                    // Add loop vars to new child scope and walk the body
-                    let mut body_scope = scope.clone();
-                    // find param from fl.in_variable
-                    let param = q.parameters.iter().find(|p| p.name.1 == fl.in_variable.1);
-                    match &fl.variable {
-                        ForLoopVars::Identifier { name, loc: _ } => {
-                            body_scope.insert(name.as_str(), Type::Unknown);
-                        }
-                        ForLoopVars::ObjectAccess {
-                            name,
-                            field,
-                            loc: _,
-                        } => {
-                            body_scope.insert(name.as_str(), Type::Unknown);
-                        }
-                        ForLoopVars::ObjectDestructuring { fields, loc } => {
-                            // TODO: check if fields are valid
-                            if let Some(p) = param {
-                                match &p.param_type.1 {
-                                    FieldType::Array(inner) => {
-                                        if let FieldType::Object(param_fields) = inner.as_ref() {
-                                            for (field_loc, field_name) in fields {
-                                                if !param_fields.contains_key(field_name.as_str()) {
-                                                    self.push_query_err(
-                                                        q,
-                                                        field_loc.clone(),
-                                                        format!("`{}` is not a field of the inner type of `{}`", field_name, fl.in_variable.1),
-                                                        format!("check the object fields of the parameter `{}`", fl.in_variable.1),
-                                                    );
-                                                }
-                                                body_scope
-                                                    .insert(field_name.as_str(), Type::Unknown);
-                                            }
-                                        } else {
-                                            self.push_query_err(
-                                                q,
-                                                fl.in_variable.0.clone(),
-                                                format!("the inner type of `{}` is not an object", fl.in_variable.1),
-                                                "object destructuring only works with arrays of objects",
-                                            );
-                                        }
-                                    }
-                                    _ => {
-                                        self.push_query_err(
-                                            q,
-                                            fl.in_variable.0.clone(),
-                                            format!("`{}` is not an array", fl.in_variable.1),
-                                            "object destructuring only works with arrays of objects",
-                                        );
-                                    }
-                                }
-                            } else {
-                                self.push_query_err(
-                                        q,
-                                        fl.in_variable.0.clone(),
-                                        format!("`{}` does not refer to a parameter", fl.in_variable.1),
-                                        "add a parameter to the query definition or use an existing parameter",
-                                    );
-                            }
-                        }
-                    }
-                    for body_stmt in &fl.statements {
-                        // Recursive walk (but without infinite nesting for now)
-                        if let StatementType::Assignment(a) = &body_stmt.statement {
-                            let (t, _) = self.infer_expr_type(
-                                &a.value,
-                                &mut body_scope,
-                                q,
-                                None,
-                                Some(&mut query),
-                            );
-                            body_scope.insert(a.variable.as_str(), t);
-                        }
-                    }
-                }
-
-                _ => { /* SearchVector handled above; others TBD */ }
+            let statement = self.walk_statements(&mut scope, q, &mut query, stmt);
+            if statement.is_some() {
+                query.statements.push(statement.unwrap());
+            } else {
+                self.push_query_err(
+                    q,
+                    stmt.loc.clone(),
+                    "invalid statement".to_string(),
+                    "add a valid statement",
+                );
             }
         }
 
@@ -1030,9 +855,9 @@ impl<'a> Ctx<'a> {
                                         ),
                                     );
                                 }
-                                GenRef::Std(format!("data.{}", i))
+                                GenRef::Ref(format!("data.{}", i))
                             }
-                            IdType::Literal { value: s, loc } => GenRef::Std(s),
+                            IdType::Literal { value: s, loc } => GenRef::Ref(s), // TODO: handle string
                         },
                         label: GenRef::Literal(node_type.clone()),
                     }));
@@ -2390,6 +2215,511 @@ impl<'a> Ctx<'a> {
             is_inner,
             remappings,
             should_spread: false,
+        }
+    }
+
+    fn walk_statements(
+        &mut self,
+        scope: &mut HashMap<&'a str, Type>,
+        q: &'a Query,
+        query: &mut GeneratedQuery,
+        statement: &'a Statement,
+    ) -> Option<GeneratedStatement> {
+        use StatementType::*;
+        match &statement.statement {
+            Assignment(assign) => {
+                if scope.contains_key(assign.variable.as_str()) {
+                    self.push_query_err(
+                        q,
+                        assign.loc.clone(),
+                        format!("variable `{}` is already declared", assign.variable),
+                        "rename the new variable or remove the previous definition",
+                    );
+                }
+
+                let (rhs_ty, stmt) =
+                    self.infer_expr_type(&assign.value, scope, q, None, Some(query));
+                scope.insert(assign.variable.as_str(), rhs_ty);
+                assert!(stmt.is_some(), "Assignment statement should be generated");
+                let assignment = GeneratedStatement::Assignment(GeneratedAssignment {
+                    variable: GenRef::Std(assign.variable.clone()),
+                    value: Box::new(stmt.unwrap()),
+                });
+                // query.statements.push(assignment.clone());
+                Some(assignment)
+            }
+
+            AddNode(add) => {
+                if let Some(ref ty) = add.node_type {
+                    if !self.node_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            add.loc.clone(),
+                            format!("`AddN<{}>` refers to unknown node type", ty),
+                            "declare the node schema first",
+                        );
+                    }
+                    let label = GenRef::Literal(ty.clone());
+                    // Validate fields if both type and fields are present
+                    if let Some(fields) = &add.fields {
+                        // Get the field set before validation
+                        // TODO: Check field types
+                        let field_set = self.node_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains_key(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!("`{}` is not a field of node `{}`", field_name, ty),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
+                        let properties = fields
+                            .iter()
+                            .map(|(field_name, value)| {
+                                (
+                                    field_name.clone(),
+                                    match value {
+                                        ValueType::Literal(l) => {
+                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        }
+                                        ValueType::Identifier(i) => {
+                                            // when doing object field access would need to include object here
+                                            GeneratedValue::Identifier(GenRef::Std(format!(
+                                                "data.{}",
+                                                i.clone()
+                                            )))
+                                        }
+                                        v => {
+                                            self.push_query_err(
+                                                q,
+                                                add.loc.clone(),
+                                                format!("`{:?}` is not a valid field value", v),
+                                                "use a literal or identifier",
+                                            );
+                                            GeneratedValue::Unknown
+                                        }
+                                    },
+                                )
+                            })
+                            .collect();
+                        let add_n = AddN {
+                            label,
+                            properties,
+                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: Separator::Period(SourceStep::AddN(add_n)),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                        });
+
+                        query.is_mut = true;
+                        // query.statements.push(stmt.clone());
+                        return Some(stmt);
+                    }
+                }
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddN` must have a node type".to_string(),
+                    "add a node type",
+                );
+                None
+            }
+
+            AddEdge(add) => {
+                if let Some(ref ty) = add.edge_type {
+                    if !self.edge_map.contains_key(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            add.loc.clone(),
+                            format!("`AddE<{}>` refers to unknown edge type", ty),
+                            "declare the edge schema first",
+                        );
+                    }
+                    let label = GenRef::Literal(ty.clone());
+                    // Validate fields if both type and fields are present
+                    if let Some(fields) = &add.fields {
+                        // Get the field set before validation
+                        let field_set = self.edge_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains_key(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!("`{}` is not a field of edge `{}`", field_name, ty),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
+                        let properties = fields
+                            .iter()
+                            .map(|(field_name, value)| {
+                                (
+                                    field_name.clone(),
+                                    match value {
+                                        ValueType::Literal(l) => {
+                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        }
+                                        ValueType::Identifier(i) => GeneratedValue::Identifier(
+                                            GenRef::Std(format!("data.{}", i.clone())),
+                                        ),
+                                        v => {
+                                            self.push_query_err(
+                                                q,
+                                                add.loc.clone(),
+                                                format!("`{:?}` is not a valid field value", v),
+                                                "use a literal or identifier",
+                                            );
+                                            GeneratedValue::Unknown
+                                        }
+                                    },
+                                )
+                            })
+                            .collect();
+
+                        let to = match &add.connection.to_id {
+                            Some(id) => match id {
+                                IdType::Identifier { value, loc } => {
+                                    GenRef::Ref(format!("data.{}", value.clone()))
+                                }
+                                IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            },
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    add.loc.clone(),
+                                    "`AddE` must have a to id".to_string(),
+                                    "add a to id",
+                                );
+                                GenRef::Unknown
+                            }
+                        };
+                        let from = match &add.connection.from_id {
+                            Some(id) => match id {
+                                IdType::Identifier { value, loc } => GenRef::Ref(value.clone()),
+                                IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            },
+                            _ => {
+                                self.push_query_err(
+                                    q,
+                                    add.loc.clone(),
+                                    "`AddE` must have a from id".to_string(),
+                                    "add a from id",
+                                );
+                                GenRef::Unknown
+                            }
+                        };
+                        let add_e = AddE {
+                            to,
+                            from,
+                            label,
+                            properties,
+                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: Separator::Period(SourceStep::AddE(add_e)),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                        });
+                        query.is_mut = true;
+                        // query.statements.push(stmt.clone());
+                        return Some(stmt);
+                    }
+                }
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddE` must have an edge type".to_string(),
+                    "add an edge type",
+                );
+                None
+            }
+
+            AddVector(add) => {
+                if let Some(ref ty) = add.vector_type {
+                    if !self.vector_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            add.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            format!("add a `V::{}` schema first", ty),
+                        );
+                    }
+                    // Validate vector fields
+                    if let Some(fields) = &add.fields {
+                        let field_set = self.vector_fields.get(ty.as_str()).cloned();
+                        if let Some(field_set) = field_set {
+                            for (field_name, _) in fields {
+                                if !field_set.contains_key(field_name.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        add.loc.clone(),
+                                        format!(
+                                            "`{}` is not a field of vector `{}`",
+                                            field_name, ty
+                                        ),
+                                        "check the schema field names",
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(vec_data) = &add.data {
+                            let label = GenRef::Literal(ty.clone());
+                            let properties = fields
+                                .iter()
+                                .map(|(field_name, value)| {
+                                    (
+                                        field_name.clone(),
+                                        match value {
+                                            ValueType::Literal(l) => {
+                                                GeneratedValue::Literal(GenRef::from(l.clone()))
+                                            }
+                                            ValueType::Identifier(i) => GeneratedValue::Identifier(
+                                                GenRef::Std(format!("data.{}", i.clone())),
+                                            ),
+                                            v => {
+                                                self.push_query_err(
+                                                    q,
+                                                    add.loc.clone(),
+                                                    format!("`{:?}` is not a valid field value", v),
+                                                    "use a literal or identifier",
+                                                );
+                                                GeneratedValue::Unknown
+                                            }
+                                        },
+                                    )
+                                })
+                                .collect();
+                            let vec = match vec_data {
+                                VectorData::Vector(v) => {
+                                    GeneratedValue::Literal(GenRef::Ref(format!(
+                                        "[{}]",
+                                        v.iter()
+                                            .map(|f| f.to_string())
+                                            .collect::<Vec<String>>()
+                                            .join(",")
+                                    )))
+                                }
+                                VectorData::Identifier(i) => {
+                                    GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                }
+                            };
+                            let add_v = AddV {
+                                vec,
+                                label,
+                                properties,
+                            };
+                            let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                                source_step: Separator::Period(SourceStep::AddV(add_v)),
+                                steps: vec![],
+                                traversal_type: TraversalType::Mut,
+                            });
+
+                            query.is_mut = true;
+                            // query.statements.push(stmt.clone());
+                            return Some(stmt);
+                        }
+                    }
+                }
+                self.push_query_err(
+                    q,
+                    add.loc.clone(),
+                    "`AddV` must have a vector type".to_string(),
+                    "add a vector type",
+                );
+                None
+            }
+            BatchAddVector(add) => {
+                if let Some(ref ty) = add.vector_type {
+                    if !self.vector_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            add.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            "add a `V::{}` schema first",
+                        );
+                    }
+                }
+                None
+            }
+
+            Drop(expr) => {
+                // Nothing special right now; still type‑check sub‑expressions
+                query.is_mut = true;
+                let (_, stmt) = self.infer_expr_type(expr, scope, q, None, Some(query));
+                // query.statements.push(stmt.clone().unwrap());
+                stmt
+            }
+
+            SearchVector(expr) => {
+                if let Some(ref ty) = expr.vector_type {
+                    if !self.vector_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            expr.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            "add a `V::{}` schema first",
+                        );
+                    }
+                }
+                None // TODO: Implement
+            }
+
+            ForLoop(fl) => {
+                // Ensure the collection exists
+                if !scope.contains_key(fl.in_variable.1.as_str()) {
+                    self.push_query_err(
+                        q,
+                        fl.loc.clone(),
+                        format!("`{}` is not defined in the current scope", fl.in_variable.1),
+                        "add a statement assigning it before the loop",
+                    );
+                }
+                // Add loop vars to new child scope and walk the body
+                let mut body_scope = scope.clone();
+                let mut for_loop_in_variable: ForLoopInVariable = ForLoopInVariable::Empty;
+                // find param from fl.in_variable
+                let param = q.parameters.iter().find(|p| p.name.1 == fl.in_variable.1);
+
+                if param.is_none() {
+                    match scope.contains_key(fl.in_variable.1.as_str()) {
+                        true => {
+                            for_loop_in_variable = ForLoopInVariable::Identifier(GenRef::Std(
+                                fl.in_variable.1.clone(),
+                            ));
+                        }
+                        false => {
+                            self.push_query_err(
+                                q,
+                                fl.loc.clone(),
+                                format!("`{}` is not a parameter", fl.in_variable.1),
+                                "add a parameter to the query",
+                            );
+                        }
+                    }
+                } else {
+                    for_loop_in_variable =
+                        ForLoopInVariable::Parameter(GenRef::Std(fl.in_variable.1.clone()));
+                }
+                let mut for_variable: ForVariable = ForVariable::Empty;
+
+                match &fl.variable {
+                    ForLoopVars::Identifier { name, loc: _ } => {
+                        body_scope.insert(name.as_str(), Type::Unknown);
+                        for_variable = ForVariable::Identifier(GenRef::Std(name.clone()));
+                    }
+                    ForLoopVars::ObjectAccess {
+                        name,
+                        field,
+                        loc: _,
+                    } => {
+                        body_scope.insert(name.as_str(), Type::Unknown);
+                        for_variable =
+                            ForVariable::ObjectDestructure(vec![GenRef::Std(name.clone())]);
+                    }
+                    ForLoopVars::ObjectDestructuring { fields, loc } => {
+                        // TODO: check if fields are valid
+                        match &param {
+                            Some(p) => {
+                                for_loop_in_variable =
+                                    ForLoopInVariable::Parameter(GenRef::Std(p.name.1.clone()));
+                                match &p.param_type.1 {
+                                    FieldType::Array(inner) => match inner.as_ref() {
+                                        FieldType::Object(param_fields) => {
+                                            for (field_loc, field_name) in fields {
+                                                if !param_fields.contains_key(field_name.as_str()) {
+                                                    self.push_query_err(
+                                                                q,
+                                                                field_loc.clone(),
+                                                                format!("`{}` is not a field of the inner type of `{}`", field_name, fl.in_variable.1),
+                                                                format!("check the object fields of the parameter `{}`", fl.in_variable.1),
+                                                            );
+                                                }
+                                                body_scope
+                                                    .insert(field_name.as_str(), Type::Unknown);
+                                            }
+                                            for_variable = ForVariable::ObjectDestructure(
+                                                fields
+                                                    .iter()
+                                                    .map(|(_, f)| GenRef::Std(f.clone()))
+                                                    .collect(),
+                                            );
+                                        }
+                                        _ => {
+                                            self.push_query_err(
+                                                        q,
+                                                        fl.in_variable.0.clone(),
+                                                        format!("the inner type of `{}` is not an object", fl.in_variable.1),
+                                                        "object destructuring only works with arrays of objects",
+                                                    );
+                                        }
+                                    },
+
+                                    _ => {
+                                        self.push_query_err(
+                                            q,
+                                            fl.in_variable.0.clone(),
+                                            format!("`{}` is not an array", fl.in_variable.1),
+                                            "object destructuring only works with arrays of objects",
+                                        );
+                                    }
+                                }
+                            }
+                            None => match scope.contains_key(fl.in_variable.1.as_str()) {
+                                true => {
+                                    // TODO: Check fields
+                                    for_variable = ForVariable::ObjectDestructure(
+                                        fields
+                                            .iter()
+                                            .map(|(_, f)| GenRef::Std(f.clone()))
+                                            .collect(),
+                                    );
+                                }
+                                false => {
+                                    self.push_query_err(
+                                        q,
+                                        fl.in_variable.0.clone(),
+                                        format!(
+                                            "`{}` is not defined in the current scope",
+                                            fl.in_variable.1
+                                        ),
+                                        "add a statement assigning it before the loop",
+                                    );
+                                }
+                            },
+                        }
+                    }
+                }
+                let mut statements = Vec::new();
+                for body_stmt in &fl.statements {
+                    // Recursive walk (but without infinite nesting for now)
+
+                    let stmt = self.walk_statements(&mut body_scope, q, query, body_stmt);
+                    if stmt.is_some() {
+                        statements.push(stmt.unwrap());
+                    }
+                }
+
+                let stmt = GeneratedStatement::ForEach(GeneratedForEach {
+                    for_variables: for_variable,
+                    in_variable: for_loop_in_variable,
+                    statements: statements,
+                });
+                // query.statements.push(stmt.clone());
+                Some(stmt)
+            }
+
+            _ => {
+                /* SearchVector handled above; others TBD */
+                None
+            }
         }
     }
 }

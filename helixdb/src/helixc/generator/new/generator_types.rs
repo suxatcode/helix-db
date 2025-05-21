@@ -164,7 +164,10 @@ impl Display for Query {
         writeln!(f, "    Ok(data) => data,")?;
         writeln!(f, "    Err(err) => return Err(GraphError::from(err)),")?;
         writeln!(f, "}};\n")?;
-        writeln!(f, "let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();")?;
+        writeln!(
+            f,
+            "let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();"
+        )?;
 
         writeln!(f, "let db = Arc::clone(&input.graph.storage);")?;
         // if mut then get write txn
@@ -219,6 +222,7 @@ impl Display for Parameter {
     }
 }
 
+#[derive(Clone)]
 pub enum Statement {
     Assignment(Assignment),
     Drop(Drop),
@@ -241,6 +245,7 @@ impl Display for Statement {
         }
     }
 }
+#[derive(Clone)]
 pub struct Assignment {
     pub variable: GenRef<String>,
     pub value: Box<Statement>,
@@ -251,15 +256,68 @@ impl Display for Assignment {
     }
 }
 
+#[derive(Clone)]
 pub struct ForEach {
-    // TODO: IMPLEMENT
+    pub for_variables: ForVariable,
+    pub in_variable: ForLoopInVariable,
+    pub statements: Vec<Statement>,
 }
 impl Display for ForEach {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match &self.for_variables {
+            ForVariable::ObjectDestructure(variables) => {
+                write!(
+                    f,
+                    "for data in data.{}",
+                    // self.in_variable,
+                    // variables
+                    //     .iter()
+                    //     .map(|v| format!("{}", v))
+                    //     .collect::<Vec<_>>()
+                    //     .join(", "),
+                    self.in_variable
+                )?;
+            }
+            ForVariable::Identifier(variable) => {
+                write!(f, "for data in {}", self.in_variable)?;
+            }
+            ForVariable::Empty => {
+                assert!(false, "For variable is empty");
+            }
+        }
+        write!(f, " {{\n")?;
+        for statement in &self.statements {
+            write!(f, "    {};\n", statement)?;
+        }
+        write!(f, "}}\n")
     }
 }
 
+#[derive(Clone)]
+pub enum ForVariable {
+    ObjectDestructure(Vec<GenRef<String>>),
+    Identifier(GenRef<String>),
+    Empty,
+}
+#[derive(Debug, Clone)]
+pub enum ForLoopInVariable {
+    Identifier(GenRef<String>),
+    Parameter(GenRef<String>),
+    Empty,
+}
+impl Display for ForLoopInVariable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ForLoopInVariable::Identifier(identifier) => write!(f, "{}", identifier),
+            ForLoopInVariable::Parameter(parameter) => write!(f, "{}", parameter),
+            ForLoopInVariable::Empty => {
+                assert!(false, "For loop in variable is empty");
+                write!(f, "_")
+            }
+        }
+    }
+}
+#[derive(Clone)]
 pub struct Drop {
     pub expression: Traversal,
 }

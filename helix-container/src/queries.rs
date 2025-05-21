@@ -96,13 +96,19 @@ traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::c
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct nodesData {
-    pub name: String,
+pub struct vecsData {
     pub id: ID,
+    pub name: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct nodesData {
+    pub id: ID,
+    pub vecs: Vec<vecsData>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct get_user_with_friendsInput {
-    pub nodes: nodesData,
+    pub nodes: Vec<nodesData>,
+    pub user_id: ID,
 }
 #[handler]
 pub fn get_user_with_friends(
@@ -118,6 +124,19 @@ pub fn get_user_with_friends(
     let db = Arc::clone(&input.graph.storage);
     let txn = db.graph_env.read_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    for data in data.nodes {
+        let user_nodes = G::new(Arc::clone(&db), &txn)
+            .n_from_id(&data.id)
+            .out("Knows")
+            .collect_to::<Vec<_>>();
+        for data in data.vecs {
+            let user_node = G::new(Arc::clone(&db), &txn)
+                .n_from_id(&data.id)
+                .out("Knows")
+                .collect_to::<Vec<_>>();
+        }
+    }
+
     return_vals.insert("success".to_string(), ReturnValue::from("success"));
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
