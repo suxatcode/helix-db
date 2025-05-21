@@ -59,11 +59,17 @@ impl Display for ExcludeField {
 #[derive(Clone)]
 pub struct ClosureFieldRemapping {
     pub variable_name: String,
+    pub parent_variable_name: String,
     pub remapping: Remapping,
 }
 impl Display for ClosureFieldRemapping {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // assert that closure mappings are not excluded fields?
+        write!(
+            f,
+            "let {} = {};",
+            self.variable_name, self.parent_variable_name
+        )?;
         write!(f, "{}", self.remapping)
     }
 }

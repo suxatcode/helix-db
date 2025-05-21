@@ -108,6 +108,7 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
+                write!(f, "\n    .collect_to::<Vec<_>>()")?;
                 Ok(())
             }
             TraversalType::Empty => panic!("Should not be empty"),

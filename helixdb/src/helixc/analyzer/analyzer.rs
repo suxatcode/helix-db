@@ -1129,6 +1129,7 @@ impl<'a> Ctx<'a> {
                         gen_traversal,
                         None,
                         scope,
+                        None,
                     );
                 }
 
@@ -1585,8 +1586,20 @@ impl<'a> Ctx<'a> {
                         gen_traversal,
                         None,
                         scope,
+                        Some(&cl.identifier),
                     );
-                    scope.remove(cl.identifier.as_str()); 
+
+                    // gen_traversal
+                    //     .steps
+                    //     .push(Separator::Period(GeneratedStep::Remapping(Remapping {
+                    //         is_inner: false,
+                    //         should_spread: false,
+                    //         variable_name: cl.identifier.clone(),
+                    //         remappings: (),
+                    //     })));
+                    scope.remove(cl.identifier.as_str());
+                    // gen_traversal.traversal_type =
+                    //     TraversalType::NestedFrom(GenRef::Std(var));
                 }
 
                 StepType::SearchVector(_) => {
@@ -1713,6 +1726,7 @@ impl<'a> Ctx<'a> {
         gen_traversal: &mut GeneratedTraversal,
         gen_query: Option<&mut GeneratedQuery>,
         scope: &mut HashMap<&'a str, Type>,
+        var_name: Option<&str>,
     ) {
         println!("{:?}", cur_ty);
         match &cur_ty {
@@ -1724,17 +1738,29 @@ impl<'a> Ctx<'a> {
                     {
                         match &obj.fields[0].value.value {
                             FieldValueType::Identifier(lit) => {
+                                // gen_traversal.steps.push(Separator::Period(
+                                //     GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
+                                // ));
                                 gen_traversal.steps.push(Separator::Period(
                                     GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
                                 ));
                             }
                             _ => unreachable!(),
-                        };
+                        }
                     } else if obj.fields.len() > 0 {
                         // if there are multiple fields then it is a field remapping
                         // push object remapping where
-                        let remapping =
-                            self.parse_object_remapping(&obj.fields, q, false, scope, "item");
+                        let remapping = match var_name {
+                            Some(var_name) => {
+                                self.parse_object_remapping(&obj.fields, q, false, scope, var_name)
+                            }
+                            None => {
+                                self.parse_object_remapping(&obj.fields, q, false, scope, "item")
+                            }
+                        };
+                        // gen_traversal
+                        //     .steps
+                        //     .push(Separator::Period(GeneratedStep::Remapping(remapping)));
                         gen_traversal
                             .steps
                             .push(Separator::Period(GeneratedStep::Remapping(remapping)));
@@ -1748,29 +1774,65 @@ impl<'a> Ctx<'a> {
                         );
                     }
 
-                    self.validate_object_fields(
-                        obj,
-                        &field_set,
-                        &excluded,
-                        q,
-                        node_ty,
-                        "node",
-                        Some(tr.loc.clone()),
-                    );
+                    // self.validate_object_fields(
+                    //     obj,
+                    //     &field_set,
+                    //     &excluded,
+                    //     q,
+                    //     node_ty,
+                    //     "node",
+                    //     Some(tr.loc.clone()),
+                    // );
                 }
             }
             Type::Edges(Some(edge_ty)) => {
                 // for (key, val) in &obj.fields {
                 if let Some(field_set) = self.edge_fields.get(edge_ty.as_str()).cloned() {
-                    self.validate_object_fields(
-                        obj,
-                        &field_set,
-                        &excluded,
-                        q,
-                        edge_ty,
-                        "edge",
-                        Some(tr.loc.clone()),
-                    );
+                    // if there is only one field then it is a property access
+                    if obj.fields.len() == 1
+                        && matches!(obj.fields[0].value.value, FieldValueType::Identifier(_))
+                    {
+                        match &obj.fields[0].value.value {
+                            FieldValueType::Identifier(lit) => {
+                                // gen_traversal.steps.push(Separator::Period(
+                                //     GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
+                                // ));
+                                gen_traversal.steps.push(Separator::Period(
+                                    GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
+                                ));
+                            }
+                            _ => unreachable!(),
+                        };
+                    } else if obj.fields.len() > 0 {
+                        // if there are multiple fields then it is a field remapping
+                        // push object remapping where
+                        let remapping =
+                            self.parse_object_remapping(&obj.fields, q, false, scope, "item");
+                        // gen_traversal
+                        //     .steps
+                        //     .push(Separator::Period(GeneratedStep::Remapping(remapping)));
+                        gen_traversal
+                            .steps
+                            .push(Separator::Period(GeneratedStep::Remapping(remapping)));
+                    } else {
+                        // error
+                        self.push_query_err(
+                            q,
+                            obj.fields[0].value.loc.clone(),
+                            "object must have at least one field".to_string(),
+                            "object must have at least one field".to_string(),
+                        );
+                    }
+
+                    // self.validate_object_fields(
+                    //     obj,
+                    //     &field_set,
+                    //     &excluded,
+                    //     q,
+                    //     node_ty,
+                    //     "node",
+                    //     Some(tr.loc.clone()),
+                    // );
                 }
             }
             Type::Vector(Some(vector_ty)) => {
@@ -1788,7 +1850,17 @@ impl<'a> Ctx<'a> {
                 }
             }
             Type::Anonymous(ty) => {
-                self.validate_object(ty, tr, obj, excluded, q, gen_traversal, gen_query, scope);
+                self.validate_object(
+                    ty,
+                    tr,
+                    obj,
+                    excluded,
+                    q,
+                    gen_traversal,
+                    gen_query,
+                    scope,
+                    var_name,
+                );
             }
             _ => {
                 self.push_query_err(
@@ -2114,7 +2186,7 @@ impl<'a> Ctx<'a> {
                             None,
                         );
                         RemappingType::TraversalRemapping(TraversalRemapping {
-                            variable_name: key.clone(),
+                            variable_name: var_name.to_string(),
                             new_field: key.clone(),
                             new_value: inner_traversal,
                         })
@@ -2225,8 +2297,9 @@ impl<'a> Ctx<'a> {
                 // cast to a remapping type
             })
             .collect();
+
         Remapping {
-            variable_name: "item".to_string(), // TODO: Hack for now, need to check how this will work with closure
+            variable_name: var_name.to_string(),
             is_inner,
             remappings,
             should_spread: false,
