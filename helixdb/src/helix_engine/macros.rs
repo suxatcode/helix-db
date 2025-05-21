@@ -199,7 +199,7 @@ pub mod macros {
                     false,
                 ),
             );
-            Ok($var_name) // Return the Ok value
+            Ok::<TraversalVal, GraphError>($var_name) // Return the Ok value
         }};
     }
 
@@ -248,8 +248,8 @@ pub mod macros {
     #[macro_export]
     macro_rules! identifier_remapping {
         ($remapping_vals:expr, $var_name:expr, $field_name:expr =>  $identifier_value:expr) => {{
-            let value = match item.check_property($field_name) {
-                Ok(val) => val,
+            let value = match $var_name.check_property($field_name) {
+                Ok(val) => val.clone(), // TODO: try and remove clone
                 Err(e) => {
                     return Err(GraphError::ConversionError(format!(
                         "Error Decoding: {:?}",
@@ -269,7 +269,7 @@ pub mod macros {
                     false,
                 ),
             );
-            Ok(())
+            Ok::<TraversalVal, GraphError>($var_name)
         }};
     }
 

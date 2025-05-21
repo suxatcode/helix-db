@@ -83,7 +83,8 @@ pub fn get_user(input: &HandlerInput, response: &mut Response) -> Result<(), Gra
         .collect_to::<Vec<_>>();
     return_vals.insert("old_users".to_string(), ReturnValue::from_traversal_value_array_with_mixin(G::new_from(Arc::clone(&db), &txn, old_users.clone())
 
-.map_traversal(|u, txn| { traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::clone(&db), txn, vec![u.clone()])
+.map_traversal(|u, txn| { identifier_remapping!(remapping_vals, u.clone(), "age" => "age")?;
+traversal_remapping!(remapping_vals, u.clone(), "username" => G::new_from(Arc::clone(&db), txn, vec![u.clone()])
 
 .check_property("name")
     .collect_to::<Vec<_>>())?;
