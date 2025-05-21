@@ -20,9 +20,8 @@ pub enum TraversalType {
     Mut,
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
     NestedFrom(GenRef<String>),
-    // FromVar(GenRef<String>),
-    Update(Vec<(String, GeneratedValue)>),
     Empty,
+    Update(Vec<(String, GeneratedValue)>),
 }
 impl Debug for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,12 +50,28 @@ impl Debug for TraversalType {
 //         }
 //     }
 // }
+#[derive(Clone)]
+pub enum ShouldCollect {
+    ToVec,
+    ToVal,
+    No,
+}
+impl Display for ShouldCollect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ShouldCollect::ToVec => write!(f, ".collect_to::<Vec<_>>()"),
+            ShouldCollect::ToVal => write!(f, ".collect_to::<_>()"),
+            ShouldCollect::No => write!(f, ""),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Traversal {
     pub traversal_type: TraversalType,
     pub source_step: Separator<SourceStep>,
     pub steps: Vec<Separator<Step>>,
+    pub should_collect: ShouldCollect,
 }
 
 impl Display for Traversal {
@@ -68,8 +83,6 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                write!(f, "\n    .collect_to::<Vec<_>>()")?;
-                Ok(())
             }
             TraversalType::Ref => {
                 write!(f, "G::new(Arc::clone(&db), &txn)")?;
@@ -77,8 +90,6 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                write!(f, "\n    .collect_to::<Vec<_>>()")?;
-                Ok(())
             }
 
             TraversalType::Mut => {
@@ -87,8 +98,6 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                write!(f, "\n    .collect_to::<Vec<_>>()")?;
-                Ok(())
             }
             TraversalType::Nested(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
@@ -96,7 +105,6 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                Ok(())
             }
             TraversalType::NestedFrom(nested) => {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
@@ -108,12 +116,9 @@ impl Display for Traversal {
                 for step in &self.steps {
                     write!(f, "\n{}", step)?;
                 }
-                write!(f, "\n    .collect_to::<Vec<_>>()")?;
-                Ok(())
             }
             TraversalType::Empty => panic!("Should not be empty"),
-            TraversalType::Update(fields) => {
-                // inner scope
+            TraversalType::Update(properties) => {
                 write!(f, "{{")?;
                 write!(f, "let update_tr = G::new(Arc::clone(&db), &txn)")?;
                 write!(f, "{}", self.source_step)?;
@@ -127,12 +132,12 @@ impl Display for Traversal {
                                                                              // this less
                                                                              // scrappy
                 )?;
-                write!(f, "\n    .update({})", write_properties(&fields))?;
+                write!(f, "\n    .update({})", write_properties(&properties))?;
                 write!(f, "\n    .collect_to::<Vec<_>>()")?;
                 write!(f, "}}")?;
-                Ok(())
             }
         }
+        write!(f, "{}", self.should_collect)
     }
 }
 impl Default for Traversal {
@@ -141,6 +146,7 @@ impl Default for Traversal {
             traversal_type: TraversalType::Ref,
             source_step: Separator::Empty(SourceStep::Empty),
             steps: vec![],
+            should_collect: ShouldCollect::No,
         }
     }
 }

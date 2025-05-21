@@ -4,8 +4,8 @@ use std::{collections::HashMap, fmt::Display};
 use crate::protocol::value::Value;
 
 use super::{
-    traversal_steps::Traversal,
-    utils::{write_headers, GenRef, GeneratedType, GeneratedValue},
+    traversal_steps::{ShouldCollect, Traversal},
+    utils::{write_headers, write_properties, GenRef, GeneratedType, GeneratedValue},
 };
 
 pub struct Source {
@@ -323,7 +323,7 @@ pub struct Drop {
 }
 impl Display for Drop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.drop()", self.expression)
+        write!(f, "{}.drop();", self.expression)
     }
 }
 

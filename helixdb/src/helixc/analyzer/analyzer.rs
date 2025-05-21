@@ -7,10 +7,10 @@ use crate::{
         generator::new::{
             bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
-                Assignment as GeneratedAssignment, BoExp, ForEach as GeneratedForEach,
-                ForLoopInVariable, ForVariable, Parameter as GeneratedParameter,
-                Query as GeneratedQuery, ReturnValue, ReturnValueExpr, Source as GeneratedSource,
-                Statement as GeneratedStatement,
+                Assignment as GeneratedAssignment, BoExp, Drop as GeneratedDrop,
+                ForEach as GeneratedForEach, ForLoopInVariable, ForVariable,
+                Parameter as GeneratedParameter, Query as GeneratedQuery, ReturnValue,
+                ReturnValueExpr, Source as GeneratedSource, Statement as GeneratedStatement,
             },
             object_remapping_generation::{
                 ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
@@ -19,7 +19,7 @@ use crate::{
             source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-                ShortestPath as GeneratedShortestPath, Step as GeneratedStep,
+                ShortestPath as GeneratedShortestPath, ShouldCollect, Step as GeneratedStep,
                 Traversal as GeneratedTraversal, TraversalType, Where, WhereExists, WhereRef,
             },
             utils::{
@@ -498,6 +498,7 @@ impl<'a> Ctx<'a> {
                             source_step: Separator::Period(SourceStep::AddN(add_n)),
                             steps: vec![],
                             traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
                         });
                         if let Some(gen_query) = gen_query {
                             gen_query.is_mut = true;
@@ -610,6 +611,7 @@ impl<'a> Ctx<'a> {
                             source_step: Separator::Period(SourceStep::AddE(add_e)),
                             steps: vec![],
                             traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
                         });
                         if let Some(gen_query) = gen_query {
                             gen_query.is_mut = true;
@@ -703,6 +705,7 @@ impl<'a> Ctx<'a> {
                                 source_step: Separator::Period(SourceStep::AddV(add_v)),
                                 steps: vec![],
                                 traversal_type: TraversalType::Mut,
+                                should_collect: ShouldCollect::ToVec,
                             });
                             if let Some(gen_query) = gen_query {
                                 gen_query.is_mut = true;
@@ -1455,6 +1458,7 @@ impl<'a> Ctx<'a> {
                             })
                             .collect(),
                     );
+                    gen_traversal.should_collect = ShouldCollect::No;
                     excluded.clear();
                 }
 
@@ -2315,6 +2319,7 @@ impl<'a> Ctx<'a> {
                             source_step: Separator::Period(SourceStep::AddN(add_n)),
                             steps: vec![],
                             traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
                         });
 
                         query.is_mut = true;
@@ -2427,6 +2432,7 @@ impl<'a> Ctx<'a> {
                             source_step: Separator::Period(SourceStep::AddE(add_e)),
                             steps: vec![],
                             traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
                         });
                         query.is_mut = true;
                         // query.statements.push(stmt.clone());
@@ -2520,6 +2526,7 @@ impl<'a> Ctx<'a> {
                                 source_step: Separator::Period(SourceStep::AddV(add_v)),
                                 steps: vec![],
                                 traversal_type: TraversalType::Mut,
+                                should_collect: ShouldCollect::ToVec,
                             });
 
                             query.is_mut = true;
@@ -2555,7 +2562,13 @@ impl<'a> Ctx<'a> {
                 query.is_mut = true;
                 let (_, stmt) = self.infer_expr_type(expr, scope, q, None, Some(query));
                 // query.statements.push(stmt.clone().unwrap());
-                stmt
+                assert!(stmt.is_some());
+                if let Some(GeneratedStatement::Traversal(mut tr)) = stmt {
+                    tr.should_collect = ShouldCollect::No;
+                    Some(GeneratedStatement::Drop(GeneratedDrop { expression: tr }))
+                } else {
+                    panic!("Drop should only be applied to traversals");
+                }
             }
 
             SearchVector(expr) => {
