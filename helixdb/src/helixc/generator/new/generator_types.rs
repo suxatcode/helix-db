@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{collections::HashMap, fmt::Display};
 
-use crate::protocol::value::Value;
+use crate::{helixc::parser::helix_parser::FieldPrefix, protocol::value::Value};
 
 use super::{
     traversal_steps::{ShouldCollect, Traversal},
@@ -71,50 +71,62 @@ impl Display for Source {
     }
 }
 
+#[derive(Clone)]
 pub struct NodeSchema {
     pub name: String,
-    pub properties: Vec<(String, GeneratedType)>,
+    pub properties: Vec<SchemaProperty>,
 }
 impl Display for NodeSchema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pub struct {} {{\n", self.name)?;
-        for (name, ty) in &self.properties {
-            write!(f, "    pub {}: {},\n", name, ty)?;
+        for property in &self.properties {
+            write!(f, "    pub {}: {},\n", property.name, property.field_type)?;
         }
         write!(f, "}}\n")
     }
 }
 
+#[derive(Clone)]
 pub struct EdgeSchema {
     pub name: String,
     pub from: String,
     pub to: String,
-    pub properties: Vec<(String, GeneratedType)>,
+    pub properties: Vec<SchemaProperty>,
 }
 impl Display for EdgeSchema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pub struct {} {{\n", self.name)?;
         write!(f, "    pub from: {},\n", self.from)?;
         write!(f, "    pub to: {},\n", self.to)?;
-        for (name, ty) in &self.properties {
-            write!(f, "    pub {}: {},\n", name, ty)?;
+        for property in &self.properties {
+            write!(f, "    pub {}: {},\n", property.name, property.field_type)?;
         }
         write!(f, "}}\n")
     }
 }
 
+#[derive(Clone)]
 pub struct VectorSchema {
     pub name: String,
-    pub properties: Vec<(String, GeneratedType)>,
+    pub properties: Vec<SchemaProperty>,
 }
 impl Display for VectorSchema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pub struct {} {{\n", self.name)?;
-        for (name, ty) in &self.properties {
-            write!(f, "    pub {}: {},\n", name, ty)?;
+        for property in &self.properties {
+            write!(f, "    pub {}: {},\n", property.name, property.field_type)?;
         }
         write!(f, "}}\n")
     }
+}
+
+#[derive(Clone)]
+pub struct SchemaProperty {
+    pub name: String,
+    pub field_type: GeneratedType,
+    pub default_value: Option<GeneratedValue>,
+    // pub is_optional: bool,
+    pub is_index: FieldPrefix,
 }
 
 pub struct Query {

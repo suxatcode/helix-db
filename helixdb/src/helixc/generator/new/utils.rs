@@ -137,7 +137,7 @@ pub fn write_properties(properties: &Vec<(String, GeneratedValue)>) -> String {
 pub fn write_secondary_indices(secondary_indices: &Option<Vec<String>>) -> String {
     match secondary_indices {
         Some(indices) => format!(
-            "Some(&[{}]",
+            "Some(&[{}])",
             indices
                 .iter()
                 .map(|idx| format!("\"{}\"", idx))
@@ -164,6 +164,16 @@ impl Display for GeneratedValue {
             GeneratedValue::Primitive(value) => write!(f, "{}", value),
             GeneratedValue::Identifier(value) => write!(f, "{}", value),
             GeneratedValue::Unknown => write!(f, ""),
+        }
+    }
+}
+impl Debug for GeneratedValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GeneratedValue::Literal(value) => write!(f, "Literal({})", value),
+            GeneratedValue::Primitive(value) => write!(f, "Primitive({})", value),
+            GeneratedValue::Identifier(value) => write!(f, "Identifier({})", value),
+            GeneratedValue::Unknown => write!(f, "Unknown"),
         }
     }
 }

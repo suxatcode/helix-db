@@ -520,20 +520,47 @@ pub enum IdType {
 
 #[derive(Debug, Clone)]
 pub enum ValueType {
-    Literal(Value),
-    Identifier(String),
-    Object(Object),
+    Literal {
+        value: Value,
+        loc: Loc,
+    },
+    Identifier {
+        value: String,
+        loc: Loc,
+    },
+    Object {
+        fields: HashMap<String, ValueType>,
+        loc: Loc,
+    },
 }
 
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
         match value {
-            Value::String(s) => ValueType::Literal(Value::String(s)),
-            Value::I32(i) => ValueType::Literal(Value::I32(i)),
-            Value::F64(f) => ValueType::Literal(Value::F64(f)),
-            Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
-            Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
-            Value::Empty => ValueType::Literal(Value::Empty),
+            Value::String(s) => ValueType::Literal {
+                value: Value::String(s),
+                loc: Loc::empty(),
+            },
+            Value::I32(i) => ValueType::Literal {
+                value: Value::I32(i),
+                loc: Loc::empty(),
+            },
+            Value::F64(f) => ValueType::Literal {
+                value: Value::F64(f),
+                loc: Loc::empty(),
+            },
+            Value::Boolean(b) => ValueType::Literal {
+                value: Value::Boolean(b),
+                loc: Loc::empty(),
+            },
+            Value::Array(arr) => ValueType::Literal {
+                value: Value::Array(arr),
+                loc: Loc::empty(),
+            },
+            Value::Empty => ValueType::Literal {
+                value: Value::Empty,
+                loc: Loc::empty(),
+            },
             _ => unreachable!(),
         }
     }
@@ -1299,7 +1326,10 @@ impl HelixParser {
                                 value_pair.as_str() == "true",
                             ))),
                             Rule::identifier => {
-                                Ok(ValueType::Identifier(value_pair.as_str().to_string()))
+                                Ok(ValueType::Identifier {
+                                    value: value_pair.as_str().to_string(),
+                                    loc: value_pair.loc(),
+                                })
                             }
                             _ => Err(ParserError::from("Invalid property value type")),
                         }?

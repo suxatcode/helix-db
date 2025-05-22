@@ -1,17 +1,10 @@
 use super::super::tr_val::TraversalVal;
 use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RwTraversalIterator,
-        types::GraphError,
-    },
+    helix_engine::{graph_core::traversal_iter::RwTraversalIterator, types::GraphError},
     protocol::{
         filterable::Filterable,
-        items::{
-            v6_uuid,
-            Node,
-            SerializedNode
-        },
-        value::Value
+        items::{v6_uuid, Node, SerializedNode},
+        value::Value,
     },
 };
 use heed3::PutFlags;
@@ -33,7 +26,7 @@ pub trait AddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         self,
         label: &'a str,
         properties: Vec<(String, Value)>,
-        secondary_indices: Option<&'a [String]>,
+        secondary_indices: Option<&'a [&str]>,
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>>;
 }
 
@@ -44,7 +37,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         self,
         label: &'a str,
         properties: Vec<(String, Value)>,
-        secondary_indices: Option<&'a [String]>,
+        secondary_indices: Option<&'a [&str]>,
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
         let node = Node {
             id: v6_uuid(),
@@ -69,8 +62,8 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             Err(e) => result = Err(GraphError::from(e)),
         }
 
-        for index in &secondary_indices {
-            match self.storage.secondary_indices.get(index.as_str()) {
+        for index in secondary_indices {
+            match self.storage.secondary_indices.get(index) {
                 Some(db) => {
                     let key = match node.check_property(&index) {
                         Ok(value) => value,

@@ -36,7 +36,7 @@ use crate::{
 
 use std::{
     collections::{HashMap, HashSet},
-    ops::ControlFlow,
+    ops::{ControlFlow, Deref},
 };
 
 use super::{fix::Fix, pretty};
@@ -443,13 +443,22 @@ impl<'a> Ctx<'a> {
                         );
                     }
                     let label = GenRef::Literal(ty.clone());
+
+                    let node_in_schema = self
+                        .output
+                        .nodes
+                        .iter()
+                        .find(|n| n.name == ty.as_str())
+                        .unwrap()
+                        .clone();
+
                     // Validate fields if both type and fields are present
                     if let Some(fields) = &add.fields {
                         // Get the field set before validation
                         // TODO: Check field types
                         let field_set = self.node_fields.get(ty.as_str()).cloned();
                         if let Some(field_set) = field_set {
-                            for (field_name, _) in fields {
+                            for (field_name, value) in fields {
                                 if !field_set.contains_key(field_name.as_str()) {
                                     self.push_query_err(
                                         q,
@@ -458,22 +467,32 @@ impl<'a> Ctx<'a> {
                                         "check the schema field names",
                                     );
                                 }
+                                if let ValueType::Identifier { value, loc } = value {
+                                    if !scope.contains_key(value.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            loc.clone(),
+                                            format!("`{}` is not in scope", value),
+                                            "declare it earlier or fix the typo",
+                                        );
+                                    }
+                                }
                             }
                         }
-                        let properties = fields
+                        let mut properties: HashMap<String, GeneratedValue> = fields
                             .iter()
                             .map(|(field_name, value)| {
                                 (
                                     field_name.clone(),
                                     match value {
-                                        ValueType::Literal(l) => {
-                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        ValueType::Literal { value, loc } => {
+                                            GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
-                                        ValueType::Identifier(i) => {
+                                        ValueType::Identifier { value, loc } => {
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
-                                                i.clone()
+                                                value.clone()
                                             )))
                                         }
                                         v => {
@@ -489,11 +508,40 @@ impl<'a> Ctx<'a> {
                                 )
                             })
                             .collect();
+
+                        let default_properties = node_in_schema
+                            .properties
+                            .iter()
+                            .filter_map(|p| p.default_value.clone().map(|v| (p.name.clone(), v)))
+                            .collect::<Vec<(String, GeneratedValue)>>();
+
+                        for (field_name, default_value) in default_properties {
+                            if !properties.contains_key(field_name.as_str()) {
+                                properties.insert(field_name, default_value);
+                            }
+                        }
+
+                        let secondary_indices = {
+                            let secondary_indices = node_in_schema
+                                .properties
+                                .iter()
+                                .filter_map(|p| {
+                                    matches!(p.is_index, FieldPrefix::Index)
+                                        .then_some(p.name.clone())
+                                })
+                                .collect::<Vec<_>>();
+                            match secondary_indices.is_empty() {
+                                true => None,
+                                false => Some(secondary_indices),
+                            }
+                        };
+
                         let add_n = AddN {
                             label,
-                            properties,
-                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                            properties: properties.into_iter().collect(),
+                            secondary_indices,
                         };
+
                         let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                             source_step: Separator::Period(SourceStep::AddN(add_n)),
                             steps: vec![],
@@ -503,7 +551,6 @@ impl<'a> Ctx<'a> {
                         if let Some(gen_query) = gen_query {
                             gen_query.is_mut = true;
                         }
-
                         return (Type::Nodes(Some(ty.to_string())), Some(stmt));
                     }
                 }
@@ -513,7 +560,7 @@ impl<'a> Ctx<'a> {
                     "`AddN` must have a node type".to_string(),
                     "add a node type",
                 );
-                (Type::Nodes(None), None)
+                return (Type::Nodes(None), None);
             }
             AddEdge(add) => {
                 if let Some(ref ty) = add.edge_type {
@@ -548,12 +595,15 @@ impl<'a> Ctx<'a> {
                                 (
                                     field_name.clone(),
                                     match value {
-                                        ValueType::Literal(l) => {
-                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        ValueType::Literal { value, loc } => {
+                                            GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
-                                        ValueType::Identifier(i) => GeneratedValue::Identifier(
-                                            GenRef::Std(format!("data.{}", i.clone())),
-                                        ),
+                                        ValueType::Identifier { value, loc } => {
+                                            GeneratedValue::Identifier(GenRef::Std(format!(
+                                                "data.{}",
+                                                value.clone()
+                                            )))
+                                        }
                                         v => {
                                             self.push_query_err(
                                                 q,
@@ -663,12 +713,15 @@ impl<'a> Ctx<'a> {
                                     (
                                         field_name.clone(),
                                         match value {
-                                            ValueType::Literal(l) => {
-                                                GeneratedValue::Literal(GenRef::from(l.clone()))
+                                            ValueType::Literal { value, loc } => {
+                                                GeneratedValue::Literal(GenRef::from(value.clone()))
                                             }
-                                            ValueType::Identifier(i) => GeneratedValue::Identifier(
-                                                GenRef::Std(format!("data.{}", i.clone())),
-                                            ),
+                                            ValueType::Identifier { value, loc } => {
+                                                GeneratedValue::Identifier(GenRef::Std(format!(
+                                                    "data.{}",
+                                                    value.clone()
+                                                )))
+                                            }
                                             v => {
                                                 self.push_query_err(
                                                     q,
@@ -2265,13 +2318,22 @@ impl<'a> Ctx<'a> {
                         );
                     }
                     let label = GenRef::Literal(ty.clone());
+
+                    let node_in_schema = self
+                        .output
+                        .nodes
+                        .iter()
+                        .find(|n| n.name == ty.as_str())
+                        .unwrap()
+                        .clone();
+
                     // Validate fields if both type and fields are present
                     if let Some(fields) = &add.fields {
                         // Get the field set before validation
                         // TODO: Check field types
                         let field_set = self.node_fields.get(ty.as_str()).cloned();
                         if let Some(field_set) = field_set {
-                            for (field_name, _) in fields {
+                            for (field_name, value) in fields {
                                 if !field_set.contains_key(field_name.as_str()) {
                                     self.push_query_err(
                                         q,
@@ -2280,22 +2342,32 @@ impl<'a> Ctx<'a> {
                                         "check the schema field names",
                                     );
                                 }
+                                if let ValueType::Identifier { value, loc } = value {
+                                    if !scope.contains_key(value.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            loc.clone(),
+                                            format!("`{}` is not in scope", value),
+                                            "declare it earlier or fix the typo",
+                                        );
+                                    }
+                                }
                             }
                         }
-                        let properties = fields
+                        let mut properties: HashMap<String, GeneratedValue> = fields
                             .iter()
                             .map(|(field_name, value)| {
                                 (
                                     field_name.clone(),
                                     match value {
-                                        ValueType::Literal(l) => {
-                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        ValueType::Literal { value, loc } => {
+                                            GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
-                                        ValueType::Identifier(i) => {
+                                        ValueType::Identifier { value, loc } => {
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
-                                                i.clone()
+                                                value.clone()
                                             )))
                                         }
                                         v => {
@@ -2311,20 +2383,48 @@ impl<'a> Ctx<'a> {
                                 )
                             })
                             .collect();
+
+                        let default_properties = node_in_schema
+                            .properties
+                            .iter()
+                            .filter_map(|p| p.default_value.clone().map(|v| (p.name.clone(), v)))
+                            .collect::<Vec<(String, GeneratedValue)>>();
+
+                        for (field_name, default_value) in default_properties {
+                            if !properties.contains_key(field_name.as_str()) {
+                                properties.insert(field_name, default_value);
+                            }
+                        }
+
+                        let secondary_indices = {
+                            let secondary_indices = node_in_schema
+                                .properties
+                                .iter()
+                                .filter_map(|p| {
+                                    matches!(p.is_index, FieldPrefix::Index)
+                                        .then_some(p.name.clone())
+                                })
+                                .collect::<Vec<_>>();
+                            match secondary_indices.is_empty() {
+                                true => None,
+                                false => Some(secondary_indices),
+                            }
+                        };
+
                         let add_n = AddN {
                             label,
-                            properties,
-                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                            properties: properties.into_iter().collect(),
+                            secondary_indices,
                         };
+
                         let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                             source_step: Separator::Period(SourceStep::AddN(add_n)),
                             steps: vec![],
                             traversal_type: TraversalType::Mut,
                             should_collect: ShouldCollect::ToVec,
                         });
-
                         query.is_mut = true;
-                        // query.statements.push(stmt.clone());
+
                         return Some(stmt);
                     }
                 }
@@ -2370,12 +2470,15 @@ impl<'a> Ctx<'a> {
                                 (
                                     field_name.clone(),
                                     match value {
-                                        ValueType::Literal(l) => {
-                                            GeneratedValue::Literal(GenRef::from(l.clone()))
+                                        ValueType::Literal { value, loc } => {
+                                            GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
-                                        ValueType::Identifier(i) => GeneratedValue::Identifier(
-                                            GenRef::Std(format!("data.{}", i.clone())),
-                                        ),
+                                        ValueType::Identifier { value, loc } => {
+                                            GeneratedValue::Identifier(GenRef::Std(format!(
+                                                "data.{}",
+                                                value.clone()
+                                            )))
+                                        }
                                         v => {
                                             self.push_query_err(
                                                 q,
@@ -2485,12 +2588,15 @@ impl<'a> Ctx<'a> {
                                     (
                                         field_name.clone(),
                                         match value {
-                                            ValueType::Literal(l) => {
-                                                GeneratedValue::Literal(GenRef::from(l.clone()))
+                                            ValueType::Literal { value, loc } => {
+                                                GeneratedValue::Literal(GenRef::from(value.clone()))
                                             }
-                                            ValueType::Identifier(i) => GeneratedValue::Identifier(
-                                                GenRef::Std(format!("data.{}", i.clone())),
-                                            ),
+                                            ValueType::Identifier { value, loc } => {
+                                                GeneratedValue::Identifier(GenRef::Std(format!(
+                                                    "data.{}",
+                                                    value.clone()
+                                                )))
+                                            }
                                             v => {
                                                 self.push_query_err(
                                                     q,

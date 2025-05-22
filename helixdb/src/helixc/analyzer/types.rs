@@ -4,14 +4,15 @@ use crate::helixc::{
     generator::new::{
         generator_types::{
             Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema,
-            NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter,
+            NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter, SchemaProperty,
             Statement as GeneratedStatement, VectorSchema as GeneratedVectorSchema,
         },
         traversal_steps::Traversal as GeneratedTraversal,
-        utils::{GenRef, GeneratedType, RustType as GeneratedRustType},
+        utils::{GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType},
     },
     parser::helix_parser::{
-        Assignment, EdgeSchema, FieldType, NodeSchema, Parameter, VectorSchema,
+        Assignment, DefaultValue, EdgeSchema, FieldPrefix, FieldType, NodeSchema, Parameter,
+        VectorSchema,
     },
 };
 
@@ -22,7 +23,12 @@ impl From<NodeSchema> for GeneratedNodeSchema {
             properties: generated
                 .fields
                 .into_iter()
-                .map(|f| (f.name, f.field_type.into()))
+                .map(|f| SchemaProperty {
+                    name: f.name,
+                    field_type: f.field_type.into(),
+                    default_value: f.defaults.map(|d| d.into()),
+                    is_index: FieldPrefix::Index,
+                })
                 .collect(),
         }
     }
@@ -37,7 +43,12 @@ impl From<EdgeSchema> for GeneratedEdgeSchema {
             properties: generated.properties.map_or(vec![], |fields| {
                 fields
                     .into_iter()
-                    .map(|f| (f.name, f.field_type.into()))
+                    .map(|f| SchemaProperty {
+                        name: f.name,
+                        field_type: f.field_type.into(),
+                        default_value: f.defaults.map(|d| d.into()),
+                        is_index: FieldPrefix::Index,
+                    })
                     .collect()
             }),
         }
@@ -51,7 +62,12 @@ impl From<VectorSchema> for GeneratedVectorSchema {
             properties: generated
                 .fields
                 .into_iter()
-                .map(|f| (f.name, f.field_type.into()))
+                .map(|f| SchemaProperty {
+                    name: f.name,
+                    field_type: f.field_type.into(),
+                    default_value: f.defaults.map(|d| d.into()),
+                    is_index: FieldPrefix::Index,
+                })
                 .collect(),
         }
     }
@@ -198,6 +214,27 @@ impl From<FieldType> for GeneratedType {
                 println!("unimplemented: {:?}", generated);
                 unimplemented!()
             }
+        }
+    }
+}
+
+impl From<DefaultValue> for GeneratedValue {
+    fn from(generated: DefaultValue) -> Self {
+        match generated {
+            DefaultValue::String(s) => GeneratedValue::Primitive(GenRef::Std(s)),
+            DefaultValue::F32(f) => GeneratedValue::Primitive(GenRef::Std(f.to_string())),
+            DefaultValue::F64(f) => GeneratedValue::Primitive(GenRef::Std(f.to_string())),
+            DefaultValue::I8(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::I16(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::I32(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::I64(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::U8(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::U16(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::U32(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::U64(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::U128(i) => GeneratedValue::Primitive(GenRef::Std(i.to_string())),
+            DefaultValue::Boolean(b) => GeneratedValue::Primitive(GenRef::Std(b.to_string())),
+            DefaultValue::Empty => GeneratedValue::Unknown,
         }
     }
 }
