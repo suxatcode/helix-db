@@ -49,10 +49,10 @@ impl G {
         }
     }
 
-    pub fn new_mut<'a, 'b>(
+    pub fn new_mut<'scope, 'env>(
         storage: Arc<HelixGraphStorage>,
-        txn: &'b mut RwTxn<'a>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+        txn: &'scope mut RwTxn<'env>,
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         Self: Sized,
     {
@@ -76,12 +76,13 @@ impl G {
         }
     }
 
-    pub fn new_mut_from<'a, 'b>(
+    pub fn new_mut_from<'scope, 'env>(
         storage: Arc<HelixGraphStorage>,
-        txn: &'b mut RwTxn<'a>,
+        txn: &'scope mut RwTxn<'env>,
         // iter: impl Iterator<Item = Result<TraversalVal, GraphError>>
         vals: Vec<TraversalVal>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    {
         RwTraversalIterator {
             // inner: iter,
             inner: vals.into_iter().map(|val| Ok(val)),

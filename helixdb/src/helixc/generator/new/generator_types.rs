@@ -202,6 +202,11 @@ impl Display for Query {
         for return_value in &self.return_values {
             write!(f, "    {}\n", return_value)?;
         }
+
+        // commit the transaction
+        if self.is_mut {
+            writeln!(f, "    txn.commit().unwrap();")?;
+        }
         // closes the handler function
         write!(
             f,
@@ -257,6 +262,14 @@ impl Display for Statement {
         }
     }
 }
+
+#[derive(Clone)]
+pub enum IdentifierType {
+    Primitive,
+    Traversal,
+    Empty,
+}
+
 #[derive(Clone)]
 pub struct Assignment {
     pub variable: GenRef<String>,
@@ -335,7 +348,15 @@ pub struct Drop {
 }
 impl Display for Drop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.drop();", self.expression)
+        write!(
+            f,
+            "Drop::<Vec<_>>::drop_traversal(
+                {}.collect::<Vec<_>>(),
+                Arc::clone(&db),
+                &mut txn,
+            )?;",
+            self.expression
+        )
     }
 }
 
@@ -381,7 +402,7 @@ impl Display for ReturnValue {
             ReturnType::Literal(name) => {
                 write!(
                     f,
-                    "    return_vals.insert({}.to_string(), ReturnValue::from({}));\n",
+                    "    return_vals.insert({}.to_string(), ReturnValue::from(Value::from({})));\n",
                     name, self.value
                 )
             }
@@ -394,6 +415,7 @@ impl Display for ReturnValue {
         }
     }
 }
+
 impl ReturnValue {
     pub fn new_literal(value: GenRef<String>) -> Self {
         Self {

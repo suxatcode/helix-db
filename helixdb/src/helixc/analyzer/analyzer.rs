@@ -8,7 +8,7 @@ use crate::{
             bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
                 Assignment as GeneratedAssignment, BoExp, Drop as GeneratedDrop,
-                ForEach as GeneratedForEach, ForLoopInVariable, ForVariable,
+                ForEach as GeneratedForEach, ForLoopInVariable, ForVariable, IdentifierType,
                 Parameter as GeneratedParameter, Query as GeneratedQuery, ReturnValue,
                 ReturnValueExpr, Source as GeneratedSource, Statement as GeneratedStatement,
             },
@@ -291,10 +291,31 @@ impl<'a> Ctx<'a> {
                     }
                 },
                 GeneratedStatement::Identifier(id) => {
-                    query.return_values.push(ReturnValue::new_named(
-                        id.clone(),
-                        ReturnValueExpr::Identifier(id.clone()),
-                    ));
+                    let identifier_end_type = match scope.get(id.inner().as_str()) {
+                        Some(t) => t.clone(),
+                        None => {
+                            self.push_query_err(
+                                q,
+                                ret.loc.clone(),
+                                format!("variable named `{}` is not in scope", id),
+                                "declare it earlier or fix the typo",
+                            );
+                            Type::Unknown
+                        }
+                    };
+                    match identifier_end_type {
+                        Type::Scalar(_) => {
+                            query
+                                .return_values
+                                .push(ReturnValue::new_literal(id.clone()));
+                        }
+                        _ => {
+                            query.return_values.push(ReturnValue::new_named(
+                                id.clone(),
+                                ReturnValueExpr::Identifier(id.clone()),
+                            ));
+                        }
+                    }
                 }
                 GeneratedStatement::Literal(l) => {
                     query
@@ -1033,6 +1054,7 @@ impl<'a> Ctx<'a> {
                     gen_traversal
                         .steps
                         .push(Separator::Period(GeneratedStep::Count));
+                    gen_traversal.should_collect = ShouldCollect::No;
                 }
 
                 StepType::Exclude(ex) => {
@@ -2299,6 +2321,7 @@ impl<'a> Ctx<'a> {
                     self.infer_expr_type(&assign.value, scope, q, None, Some(query));
                 scope.insert(assign.variable.as_str(), rhs_ty);
                 assert!(stmt.is_some(), "Assignment statement should be generated");
+
                 let assignment = GeneratedStatement::Assignment(GeneratedAssignment {
                     variable: GenRef::Std(assign.variable.clone()),
                     value: Box::new(stmt.unwrap()),
@@ -2672,6 +2695,7 @@ impl<'a> Ctx<'a> {
                 assert!(stmt.is_some());
                 if let Some(GeneratedStatement::Traversal(mut tr)) = stmt {
                     tr.should_collect = ShouldCollect::No;
+                    // tr.traversal_type = TraversalType::Mut;
                     Some(GeneratedStatement::Drop(GeneratedDrop { expression: tr }))
                 } else {
                     panic!("Drop should only be applied to traversals");

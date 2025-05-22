@@ -11,6 +11,8 @@ use std::{
     fmt::{self, Display},
 };
 
+use super::id::ID;
+
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
 #[derive(Clone, PartialEq, Debug)]
@@ -591,6 +593,13 @@ impl From<JsonValue> for Value {
             }
             JsonValue::Null => Value::Empty,
         }
+    }
+}
+
+impl From<ID> for Value {
+    #[inline]
+    fn from(id: ID) -> Self {
+        Value::String(id.to_string())
     }
 }
 

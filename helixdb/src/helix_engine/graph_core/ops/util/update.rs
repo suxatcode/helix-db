@@ -27,24 +27,20 @@ where
     }
 }
 
-pub trait UpdateAdapter<'a, 'b>: Iterator + Sized {
+pub trait UpdateAdapter<'scope, 'env>: Iterator + Sized {
     fn update(
         self,
         props: Vec<(String, Value)>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        'b: 'a;
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter<'a, 'b>
-    for RwTraversalIterator<'a, 'b, I>
+impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter<'scope, 'env>
+    for RwTraversalIterator<'scope, 'env, I>
 {
     fn update(
         self,
         props: Vec<(String, Value)>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        'b: 'a,
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     {
         let storage = self.storage.clone();
 

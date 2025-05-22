@@ -144,7 +144,6 @@ fn unwrap_object(
         name,
         obj.iter()
             .map(|(field_name, field_type)| {
-                println!("{:?}", field_type);
                 match field_type {
                     FieldType::Object(obj) => {
                         unwrap_object(format!("{}Data", field_name), obj, sub_parameters);

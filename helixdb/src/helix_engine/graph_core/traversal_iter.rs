@@ -43,14 +43,14 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterat
         self.inner.filter_map(|item| item.ok()).take(1).next()
     }
 }
-pub struct RwTraversalIterator<'a, 'b, I> {
+pub struct RwTraversalIterator<'scope, 'env, I> {
     pub inner: I,
     pub storage: Arc<HelixGraphStorage>,
-    pub txn: &'b mut RwTxn<'a>,
+    pub txn: &'scope mut RwTxn<'env>,
 }
 
 // implementing iterator for TraversalIterator
-impl<'a, 'b, I> Iterator for RwTraversalIterator<'a, 'b, I>
+impl<'scope, 'env, I> Iterator for RwTraversalIterator<'scope, 'env, I>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -60,8 +60,8 @@ where
         self.inner.next()
     }
 }
-impl<'a, 'b, I: Iterator> RwTraversalIterator<'a, 'b, I> {
-    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'b mut RwTxn<'a>, inner: I) -> Self {
+impl<'scope, 'env, I: Iterator> RwTraversalIterator<'scope, 'env, I> {
+    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'scope mut RwTxn<'env>, inner: I) -> Self {
         Self {
             inner,
             storage,
@@ -86,7 +86,7 @@ impl<'a, 'b, I: Iterator> RwTraversalIterator<'a, 'b, I> {
             .collect::<Vec<_>>()
             .first()
         {
-            Some(val) => val.clone(),
+            Some(val) => val.clone(), // TODO: Remove clone
             None => TraversalVal::Empty,
         }
     }
