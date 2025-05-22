@@ -92,9 +92,36 @@ pub struct EdgeSchema {
 
 #[derive(Debug, Clone)]
 pub struct Field {
+    pub prefix: FieldPrefix,
+    pub defaults: Option<DefaultValue>,
     pub name: String,
     pub field_type: FieldType,
     pub loc: Loc,
+}
+
+#[derive(Debug, Clone)]
+pub enum DefaultValue {
+    String(String),
+    F32(f32),
+    F64(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Boolean(bool),
+    Empty,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldPrefix {
+    Index,
+    Optional,
+    Empty,
 }
 
 #[derive(Debug, Clone)]
@@ -229,9 +256,19 @@ pub struct ForLoop {
 
 #[derive(Debug, Clone)]
 pub enum ForLoopVars {
-    Identifier { name: String, loc: Loc },
-    ObjectAccess { name: String, field: String, loc: Loc },
-    ObjectDestructuring { fields: Vec<(Loc, String)>, loc: Loc },
+    Identifier {
+        name: String,
+        loc: Loc,
+    },
+    ObjectAccess {
+        name: String,
+        field: String,
+        loc: Loc,
+    },
+    ObjectDestructuring {
+        fields: Vec<(Loc, String)>,
+        loc: Loc,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -606,7 +643,10 @@ impl HelixParser {
 
             for pair in remaining {
                 // println!("{:?}", parser.source);
-                parser.source.queries.push(parser.parse_query_def(pair, file.name.clone())?);
+                parser
+                    .source
+                    .queries
+                    .push(parser.parse_query_def(pair, file.name.clone())?);
             }
 
             // parse all schemas first then parse queries using self
@@ -620,7 +660,11 @@ impl HelixParser {
         Ok(source)
     }
 
-    fn parse_node_def(&self, pair: Pair<Rule>, filepath: String) -> Result<NodeSchema, ParserError> {
+    fn parse_node_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<NodeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
@@ -631,7 +675,11 @@ impl HelixParser {
         })
     }
 
-    fn parse_vector_def(&self, pair: Pair<Rule>, filepath: String) -> Result<VectorSchema, ParserError> {
+    fn parse_vector_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<VectorSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
@@ -722,12 +770,16 @@ impl HelixParser {
     fn parse_field_def(&self, pair: Pair<Rule>) -> Result<Field, ParserError> {
         let mut pairs = pair.clone().into_inner();
         // structure is index? ~ identifier ~ ":" ~ param_type
-        let index: bool = match pairs.clone().next().unwrap().as_rule() {
+        let prefix: FieldPrefix = match pairs.clone().next().unwrap().as_rule() {
             Rule::index => {
                 pairs.next().unwrap();
-                true
+                FieldPrefix::Index
             }
-            _ => false,
+            // Rule::optional => {
+            //     pairs.next().unwrap();
+            //     FieldPrefix::Optional
+            // }
+            _ => FieldPrefix::Empty,
         };
         let name = pairs.next().unwrap().as_str().to_string();
 
@@ -735,14 +787,86 @@ impl HelixParser {
             pairs.next().unwrap().into_inner().next().unwrap(),
             Some(&self.source),
         )?;
+
+        let defaults = match pairs.next() {
+            Some(pair) => {
+                if pair.as_rule() == Rule::default {
+                    let default_value = match pair.into_inner().next() {
+                        Some(pair) => match pair.as_rule() {
+                            Rule::string_literal => DefaultValue::String(pair.as_str().to_string()),
+                            Rule::float => {
+                                match field_type {
+                                    FieldType::F32 => {
+                                        DefaultValue::F32(pair.as_str().parse::<f32>().unwrap())
+                                    }
+                                    FieldType::F64 => {
+                                        DefaultValue::F64(pair.as_str().parse::<f64>().unwrap())
+                                    }
+                                    _ => unreachable!(), // throw error
+                                }
+                            }
+                            Rule::integer => {
+                                match field_type {
+                                    FieldType::I8 => {
+                                        DefaultValue::I8(pair.as_str().parse::<i8>().unwrap())
+                                    }
+                                    FieldType::I16 => {
+                                        DefaultValue::I16(pair.as_str().parse::<i16>().unwrap())
+                                    }
+                                    FieldType::I32 => {
+                                        DefaultValue::I32(pair.as_str().parse::<i32>().unwrap())
+                                    }
+                                    FieldType::I64 => {
+                                        DefaultValue::I64(pair.as_str().parse::<i64>().unwrap())
+                                    }
+                                    FieldType::U8 => {
+                                        DefaultValue::U8(pair.as_str().parse::<u8>().unwrap())
+                                    }
+                                    FieldType::U16 => {
+                                        DefaultValue::U16(pair.as_str().parse::<u16>().unwrap())
+                                    }
+                                    FieldType::U32 => {
+                                        DefaultValue::U32(pair.as_str().parse::<u32>().unwrap())
+                                    }
+                                    FieldType::U64 => {
+                                        DefaultValue::U64(pair.as_str().parse::<u64>().unwrap())
+                                    }
+                                    FieldType::U128 => {
+                                        DefaultValue::U128(pair.as_str().parse::<u128>().unwrap())
+                                    }
+                                    _ => unreachable!(), // throw error
+                                }
+                            }
+                            Rule::boolean => {
+                                DefaultValue::Boolean(pair.as_str().parse::<bool>().unwrap())
+                            }
+                            _ => unreachable!(), // throw error
+                        },
+                        None => DefaultValue::Empty,
+                    };
+                    Some(default_value)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        println!("defaults: {:?}", defaults);
+
         Ok(Field {
+            prefix,
+            defaults,
             name,
             field_type,
             loc: pair.loc(),
         })
     }
 
-    fn parse_edge_def(&self, pair: Pair<Rule>, filepath: String) -> Result<EdgeSchema, ParserError> {
+    fn parse_edge_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<EdgeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let body = pairs.next().unwrap();
@@ -756,7 +880,10 @@ impl HelixParser {
             let pair = body_pairs.next().unwrap();
             (pair.loc(), pair.as_str().to_string())
         };
-        let properties = Some(self.parse_properties(body_pairs.next().unwrap())?);
+        let properties = match body_pairs.next() {
+            Some(pair) => Some(self.parse_properties(pair)?),
+            None => None,
+        };
 
         Ok(EdgeSchema {
             name: (pair.loc(), name),
@@ -931,9 +1058,7 @@ impl HelixParser {
         // parse the in
         let in_ = pairs.next().unwrap().clone();
         let in_variable = match in_.as_rule() {
-            Rule::identifier => {
-                (in_.loc(), in_.as_str().to_string())
-            }
+            Rule::identifier => (in_.loc(), in_.as_str().to_string()),
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected rule in ForLoop: {:?}",
@@ -1235,12 +1360,10 @@ impl HelixParser {
                 value: p.as_str().to_string(),
                 loc: p.loc(),
             })),
-            Rule::string_literal | Rule::inner_string => {
-                Ok(Some(IdType::Literal {
-                    value: p.as_str().to_string(),
-                    loc: p.loc(),
-                }))
-            }
+            Rule::string_literal | Rule::inner_string => Ok(Some(IdType::Literal {
+                value: p.as_str().to_string(),
+                loc: p.loc(),
+            })),
             _ => Err(ParserError::from(format!(
                 "Unexpected rule in parse_id_args: {:?}",
                 p.as_rule()
@@ -1504,18 +1627,14 @@ impl HelixParser {
                                     .map(|id| {
                                         let id = id.into_inner().next().unwrap();
                                         match id.as_rule() {
-                                            Rule::identifier => {
-                                                IdType::Identifier {
-                                                    value: id.as_str().to_string(),
-                                                    loc: id.loc(),
-                                                }
-                                            }
-                                            Rule::string_literal => {
-                                                IdType::Literal {
-                                                    value: id.as_str().to_string(),
-                                                    loc: id.loc(),
-                                                }
-                                            }
+                                            Rule::identifier => IdType::Identifier {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            Rule::string_literal => IdType::Literal {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
                                             other => {
                                                 panic!("Should be identifier or string literal")
                                             }
@@ -1544,18 +1663,14 @@ impl HelixParser {
                                     .map(|id| {
                                         let id = id.into_inner().next().unwrap();
                                         match id.as_rule() {
-                                            Rule::identifier => {
-                                                IdType::Identifier {
-                                                    value: id.as_str().to_string(),
-                                                    loc: id.loc(),
-                                                }
-                                            }
-                                            Rule::string_literal => {
-                                                IdType::Literal {
-                                                    value: id.as_str().to_string(),
-                                                    loc: id.loc(),
-                                                }
-                                            }
+                                            Rule::identifier => IdType::Identifier {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            Rule::string_literal => IdType::Literal {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
                                             other => {
                                                 println!("{:?}", other);
                                                 panic!("Should be identifier or string literal")
