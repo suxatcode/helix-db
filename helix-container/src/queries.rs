@@ -46,6 +46,7 @@ pub struct Record {
     pub data: String,
 }
 
+<<<<<<< HEAD
 
 
 #[derive(Serialize, Deserialize)]
@@ -67,12 +68,22 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     let record = G::new(Arc::clone(&db), &txn)
 .n_from_id(&data.id).collect_to::<Vec<_>>();
         return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record, remapping_vals));
+=======
+#[handler]
+pub fn count_records(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    let count = G::new(Arc::clone(&db), &txn).n_from_type("Record").count();
+    return_vals.insert("count".to_string(), ReturnValue::from(Value::from(count)));
+>>>>>>> 8b3e1b22cd11c95020ba6a32a96f625036efca30
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
+<<<<<<< HEAD
 pub struct create_recordInput {
 
 pub data: String
@@ -145,6 +156,30 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
                 &mut txn,
             )?;
         return_vals.insert("NONE".to_string(), ReturnValue::from(Value::from("NONE")));
+=======
+pub struct delete_recordInput {
+    pub id: ID,
+}
+#[handler]
+pub fn delete_record(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: delete_recordInput = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    Drop::<Vec<_>>::drop_traversal(
+        G::new(Arc::clone(&db), &txn)
+            .n_from_id(&data.id)
+            .collect::<Vec<_>>(),
+        Arc::clone(&db),
+        &mut txn,
+    )?;
+    return_vals.insert("NONE".to_string(), ReturnValue::from(Value::from("NONE")));
+>>>>>>> 8b3e1b22cd11c95020ba6a32a96f625036efca30
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
@@ -152,6 +187,7 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
 }
 
 #[derive(Serialize, Deserialize)]
+<<<<<<< HEAD
 pub struct count_recordsInput {
 
 
@@ -178,6 +214,8 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
 }
 
 #[derive(Serialize, Deserialize)]
+=======
+>>>>>>> 8b3e1b22cd11c95020ba6a32a96f625036efca30
 pub struct update_recordInput {
 
 pub id: ID,
@@ -200,6 +238,89 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     .update(props! { "data" => data.data })
     .collect_to::<Vec<_>>()};
         return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record, remapping_vals));
+
+    txn.commit().unwrap();
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct scan_recordsInput {
+    pub limit: i32,
+    pub offset: i32,
+}
+#[handler]
+pub fn scan_records(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: scan_recordsInput = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    let records = G::new(Arc::clone(&db), &txn)
+        .n_from_type("Record")
+        .collect_to::<Vec<_>>();
+    return_vals.insert(
+        "records".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(records, remapping_vals),
+    );
+
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct read_recordInput {
+    pub id: ID,
+}
+#[handler]
+pub fn read_record(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: read_recordInput = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    let record = G::new(Arc::clone(&db), &txn)
+        .n_from_id(&data.id)
+        .collect_to::<Vec<_>>();
+    return_vals.insert(
+        "record".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(record, remapping_vals),
+    );
+
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct create_recordInput {
+    pub data: String,
+}
+#[handler]
+pub fn create_record(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: create_recordInput = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    let record = G::new_mut(Arc::clone(&db), &mut txn)
+        .add_n("Record", props! { "data" => data.data }, None)
+        .collect_to::<Vec<_>>();
+    return_vals.insert(
+        "record".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(record, remapping_vals),
+    );
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();

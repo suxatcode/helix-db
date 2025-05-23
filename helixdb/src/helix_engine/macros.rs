@@ -130,55 +130,6 @@ pub mod macros {
     }
 
     #[macro_export]
-    macro_rules! decode_str {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => std::str::from_utf8(v)?,
-                Err(e) => {
-                    return Err(GraphError::ConversionError(format!(
-                        "Error Decoding: {:?}",
-                        e
-                    )))
-                }
-            }
-        };
-    }
-
-    #[macro_export]
-    macro_rules! decode_string {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => String::from_utf8(v.to_vec())?,
-                Err(e) => {
-                    return Err(GraphError::ConversionError(format!(
-                        "Error Decoding: {:?}",
-                        e
-                    )))
-                }
-            }
-        };
-    }
-
-    #[macro_export]
-    macro_rules! decode_u128 {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => {
-                    let mut arr = [0u8; 16];
-                    arr.copy_from_slice(v);
-                    u128::from_le_bytes(arr) // TODO: from_be_bytes??
-                }
-                Err(e) => {
-                    return Err(GraphError::ConversionError(format!(
-                        "Error Decoding: {:?}",
-                        e
-                    )))
-                }
-            }
-        };
-    }
-
-    #[macro_export]
     macro_rules! field_remapping {
         ($remapping_vals:expr, $var_name:expr, $old_name:expr => $new_name:expr) => {{
             let old_value = match $var_name.check_property($old_name) {

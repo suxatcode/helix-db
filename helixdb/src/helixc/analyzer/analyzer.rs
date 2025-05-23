@@ -311,7 +311,7 @@ impl<'a> Ctx<'a> {
                         Type::Scalar(_) => {
                             query
                                 .return_values
-                                .push(ReturnValue::new_literal(id.clone()));
+                                .push(ReturnValue::new_named_literal(id.clone(), id.clone()));
                         }
                         _ => {
                             query.return_values.push(ReturnValue::new_named(
@@ -324,7 +324,7 @@ impl<'a> Ctx<'a> {
                 GeneratedStatement::Literal(l) => {
                     query
                         .return_values
-                        .push(ReturnValue::new_literal(l.clone()));
+                        .push(ReturnValue::new_literal(l.clone(), l.clone()));
                 }
                 _ => {
                     self.push_query_err(

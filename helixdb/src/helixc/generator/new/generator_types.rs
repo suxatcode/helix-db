@@ -149,18 +149,20 @@ impl Display for Query {
             write!(f, "}}\n")?;
         }
         // prints top level parameters (e.g. (docs: {doc: String, id: String}))
-        writeln!(f, "#[derive(Serialize, Deserialize)]")?;
-        writeln!(f, "pub struct {}Input {{\n", self.name)?;
-        write!(
-            f,
-            "{}",
-            self.parameters
-                .iter()
-                .map(|p| format!("{}", p))
-                .collect::<Vec<_>>()
-                .join(",\n")
-        )?;
-        write!(f, "\n}}\n")?;
+        if !self.parameters.is_empty() {
+            writeln!(f, "#[derive(Serialize, Deserialize)]")?;
+            writeln!(f, "pub struct {}Input {{\n", self.name)?;
+            write!(
+                f,
+                "{}",
+                self.parameters
+                    .iter()
+                    .map(|p| format!("{}", p))
+                    .collect::<Vec<_>>()
+                    .join(",\n")
+            )?;
+            write!(f, "\n}}\n")?;
+        }
 
         write!(f, "#[handler]\n")?; // Handler macro
 
@@ -168,18 +170,20 @@ impl Display for Query {
         write!(f, "pub fn {} (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {{\n", self.name)?;
 
         // prints basic query items
-        write!(
-            f,
-            "let data: {}Input = match sonic_rs::from_slice(&input.request.body) {{\n",
-            self.name
-        )?;
-        writeln!(f, "    Ok(data) => data,")?;
-        writeln!(f, "    Err(err) => return Err(GraphError::from(err)),")?;
-        writeln!(f, "}};\n")?;
-        writeln!(
-            f,
-            "let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();"
-        )?;
+        if !self.parameters.is_empty() {
+            write!(
+                f,
+                "let data: {}Input = match sonic_rs::from_slice(&input.request.body) {{\n",
+                self.name
+            )?;
+            writeln!(f, "    Ok(data) => data,")?;
+            writeln!(f, "    Err(err) => return Err(GraphError::from(err)),")?;
+            writeln!(f, "}};\n")?;
+            writeln!(
+                f,
+                "let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();"
+            )?;
+        }
 
         writeln!(f, "let db = Arc::clone(&input.graph.storage);")?;
         // if mut then get write txn
@@ -406,6 +410,13 @@ impl Display for ReturnValue {
                     name, self.value
                 )
             }
+            ReturnType::NamedLiteral(name) => {
+                write!(
+                    f,
+                    "    return_vals.insert(\"{}\".to_string(), ReturnValue::from(Value::from({})));\n",
+                    name, self.value
+                )
+            }
             ReturnType::NamedExpr(name) => {
                 write!(f, "    return_vals.insert({}.to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals));\n", String::from(name.clone()), self.value)
             }
@@ -417,10 +428,16 @@ impl Display for ReturnValue {
 }
 
 impl ReturnValue {
-    pub fn new_literal(value: GenRef<String>) -> Self {
+    pub fn new_literal(name: GenRef<String>, value: GenRef<String>) -> Self {
         Self {
             value: ReturnValueExpr::Value(value.clone()),
-            return_type: ReturnType::Literal(value),
+            return_type: ReturnType::Literal(name),
+        }
+    }
+    pub fn new_named_literal(name: GenRef<String>, value: GenRef<String>) -> Self {
+        Self {
+            value: ReturnValueExpr::Value(value.clone()),
+            return_type: ReturnType::NamedLiteral(name),
         }
     }
     pub fn new_named(name: GenRef<String>, value: ReturnValueExpr) -> Self {
@@ -440,6 +457,7 @@ impl ReturnValue {
 #[derive(Clone)]
 pub enum ReturnType {
     Literal(GenRef<String>),
+    NamedLiteral(GenRef<String>),
     NamedExpr(GenRef<String>),
     UnnamedExpr,
 }

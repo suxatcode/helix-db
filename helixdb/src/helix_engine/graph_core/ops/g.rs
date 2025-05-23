@@ -4,7 +4,6 @@ use heed3::{types::Bytes, PutFlags, RoTxn, RwTxn};
 use itertools::Itertools;
 
 use crate::{
-    decode_str,
     helix_engine::{
         graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
