@@ -222,12 +222,14 @@ impl<'a> Ctx<'a> {
         for param in &q.parameters {
             if let FieldType::Identifier(ref id) = param.param_type.1 {
                 if self.is_valid_identifier(q, param.param_type.0.clone(), id.as_str()) {
-                    self.push_query_err(
-                        q,
-                        param.param_type.0.clone(),
-                        format!("unknown type `{}` for parameter `{}`", id, param.name.1),
-                        "declare or use a matching schema object or use a primitive type",
-                    );
+                    if !self.node_set.contains(id.as_str()) {
+                        self.push_query_err(
+                            q,
+                            param.param_type.0.clone(),
+                            format!("unknown type `{}` for parameter `{}`", id, param.name.1),
+                            "declare or use a matching schema object or use a primitive type",
+                        );
+                    }
                 }
             }
             // constructs parameters and sub‑parameters for generator
@@ -950,15 +952,17 @@ impl<'a> Ctx<'a> {
                         id: match ids[0].clone() {
                             IdType::Identifier { value: i, loc } => {
                                 if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        loc,
-                                        format!("variable named `{}` is not in scope", i),
-                                        format!(
-                                            "declare {} in the current scope or fix the typo",
-                                            i
-                                        ),
-                                    );
+                                    if !scope.contains_key(i.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            loc,
+                                            format!("variable named `{}` is not in scope", i),
+                                            format!(
+                                                "declare {} in the current scope or fix the typo",
+                                                i
+                                            ),
+                                        );
+                                    }
                                 }
                                 GenRef::Ref(format!("data.{}", i))
                             }
@@ -991,15 +995,17 @@ impl<'a> Ctx<'a> {
                         id: match ids[0].clone() {
                             IdType::Identifier { value: i, loc } => {
                                 if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        loc,
-                                        format!("variable named `{}` is not in scope", i),
-                                        format!(
-                                            "declare {} in the current scope or fix the typo",
-                                            i
-                                        ),
-                                    );
+                                    if !scope.contains_key(i.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            loc,
+                                            format!("variable named `{}` is not in scope", i),
+                                            format!(
+                                                "declare {} in the current scope or fix the typo",
+                                                i
+                                            ),
+                                        );
+                                    }
                                 }
                                 GenRef::Std(format!("data.{}", i))
                             }
