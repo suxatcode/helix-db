@@ -60,13 +60,13 @@ evaluates_to_anything = {
   | none
   | traversal
   | id_traversal
-  | identifier
   | string_literal
   | float
   | integer
   | boolean
   | and
   | or
+  | identifier
 }
 
 // ---------------------------------------------------------------------

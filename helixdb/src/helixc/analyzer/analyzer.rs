@@ -221,7 +221,7 @@ impl<'a> Ctx<'a> {
         // -------------------------------------------------
         for param in &q.parameters {
             if let FieldType::Identifier(ref id) = param.param_type.1 {
-                if !self.node_set.contains(id.as_str()) && !self.vector_set.contains(id.as_str()) {
+                if self.is_valid_identifier(q, param.param_type.0.clone(), id.as_str()) {
                     self.push_query_err(
                         q,
                         param.param_type.0.clone(),
@@ -279,6 +279,7 @@ impl<'a> Ctx<'a> {
             match stmt.unwrap() {
                 GeneratedStatement::Traversal(traversal) => match &traversal.source_step.inner() {
                     SourceStep::Identifier(v) => {
+                        self.is_valid_identifier(q, ret.loc.clone(), v.inner().as_str());
                         query.return_values.push(ReturnValue::new_named(
                             v.clone(),
                             ReturnValueExpr::Traversal(traversal.clone()),
@@ -291,6 +292,7 @@ impl<'a> Ctx<'a> {
                     }
                 },
                 GeneratedStatement::Identifier(id) => {
+                    self.is_valid_identifier(q, ret.loc.clone(), id.inner().as_str());
                     let identifier_end_type = match scope.get(id.inner().as_str()) {
                         Some(t) => t.clone(),
                         None => {
@@ -405,21 +407,25 @@ impl<'a> Ctx<'a> {
         use ExpressionType::*;
         let expr = &expression.expr;
         match expr {
-            Identifier(name) => match scope.get(name.as_str()) {
-                Some(t) => (
-                    t.clone(),
-                    Some(GeneratedStatement::Identifier(GenRef::Std(name.clone()))),
-                ),
-                None => {
-                    self.push_query_err(
-                        q,
-                        expression.loc.clone(),
-                        format!("variable named `{}` is not in scope", name),
-                        "declare it earlier or fix the typo",
-                    );
-                    (Type::Unknown, None)
+            Identifier(name) => {
+                self.is_valid_identifier(q, expression.loc.clone(), name.as_str());
+                match scope.get(name.as_str()) {
+                    Some(t) => (
+                        t.clone(),
+                        Some(GeneratedStatement::Identifier(GenRef::Std(name.clone()))),
+                    ),
+
+                    None => {
+                        self.push_query_err(
+                            q,
+                            expression.loc.clone(),
+                            format!("variable named `{}` is not in scope", name),
+                            "declare it earlier or fix the typo",
+                        );
+                        (Type::Unknown, None)
+                    }
                 }
-            },
+            }
 
             IntegerLiteral(i) => (
                 Type::Scalar(FieldType::I32),
@@ -489,13 +495,15 @@ impl<'a> Ctx<'a> {
                                     );
                                 }
                                 if let ValueType::Identifier { value, loc } = value {
-                                    if !scope.contains_key(value.as_str()) {
-                                        self.push_query_err(
-                                            q,
-                                            loc.clone(),
-                                            format!("`{}` is not in scope", value),
-                                            "declare it earlier or fix the typo",
-                                        );
+                                    if self.is_valid_identifier(q, loc.clone(), value.as_str()) {
+                                        if !scope.contains_key(value.as_str()) {
+                                            self.push_query_err(
+                                                q,
+                                                loc.clone(),
+                                                format!("`{}` is not in scope", value),
+                                                "declare it earlier or fix the typo",
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -510,6 +518,11 @@ impl<'a> Ctx<'a> {
                                             GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
                                         ValueType::Identifier { value, loc } => {
+                                            self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            );
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
@@ -620,6 +633,11 @@ impl<'a> Ctx<'a> {
                                             GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
                                         ValueType::Identifier { value, loc } => {
+                                            self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            );
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
                                                 value.clone()
@@ -642,6 +660,7 @@ impl<'a> Ctx<'a> {
                         let to = match &add.connection.to_id {
                             Some(id) => match id {
                                 IdType::Identifier { value, loc } => {
+                                    self.is_valid_identifier(q, loc.clone(), value.as_str());
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
@@ -658,7 +677,10 @@ impl<'a> Ctx<'a> {
                         };
                         let from = match &add.connection.from_id {
                             Some(id) => match id {
-                                IdType::Identifier { value, loc } => GenRef::Ref(value.clone()),
+                                IdType::Identifier { value, loc } => {
+                                    self.is_valid_identifier(q, loc.clone(), value.as_str());
+                                    GenRef::Ref(format!("data.{}", value.clone()))
+                                }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                             },
                             _ => {
@@ -738,6 +760,11 @@ impl<'a> Ctx<'a> {
                                                 GeneratedValue::Literal(GenRef::from(value.clone()))
                                             }
                                             ValueType::Identifier { value, loc } => {
+                                                self.is_valid_identifier(
+                                                    q,
+                                                    loc.clone(),
+                                                    value.as_str(),
+                                                );
                                                 GeneratedValue::Identifier(GenRef::Std(format!(
                                                     "data.{}",
                                                     value.clone()
@@ -767,6 +794,7 @@ impl<'a> Ctx<'a> {
                                     )))
                                 }
                                 VectorData::Identifier(i) => {
+                                    self.is_valid_identifier(q, add.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Ref(i.clone()))
                                 }
                             };
@@ -921,7 +949,7 @@ impl<'a> Ctx<'a> {
                     gen_traversal.source_step = Separator::Period(SourceStep::NFromID(NFromID {
                         id: match ids[0].clone() {
                             IdType::Identifier { value: i, loc } => {
-                                if !scope.contains_key(i.as_str()) {
+                                if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
                                     self.push_query_err(
                                         q,
                                         loc,
@@ -962,7 +990,7 @@ impl<'a> Ctx<'a> {
                     gen_traversal.source_step = Separator::Period(SourceStep::EFromID(EFromID {
                         id: match ids[0].clone() {
                             IdType::Identifier { value: i, loc } => {
-                                if !scope.contains_key(i.as_str()) {
+                                if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
                                     self.push_query_err(
                                         q,
                                         loc,
@@ -990,28 +1018,31 @@ impl<'a> Ctx<'a> {
             }
 
             StartNode::Identifier(identifier) => {
-                scope.get(identifier.as_str()).cloned().map_or_else(
-                    || {
-                        self.push_query_err(
-                            q,
-                            tr.loc.clone(),
-                            format!("variable named `{}` is not in scope", identifier),
-                            format!(
-                                "declare {} in the current scope or fix the typo",
-                                identifier
-                            ),
-                        );
-                        Type::Unknown
-                    },
-                    |var_type| {
-                        gen_traversal.traversal_type =
-                            TraversalType::FromVar(GenRef::Std(identifier.clone()));
-                        gen_traversal.source_step = Separator::Empty(SourceStep::Identifier(
-                            GenRef::Std(identifier.clone()),
-                        ));
-                        var_type.clone()
-                    },
-                )
+                match self.is_valid_identifier(q, tr.loc.clone(), identifier.as_str()) {
+                    true => scope.get(identifier.as_str()).cloned().map_or_else(
+                        || {
+                            self.push_query_err(
+                                q,
+                                tr.loc.clone(),
+                                format!("variable named `{}` is not in scope", identifier),
+                                format!(
+                                    "declare {} in the current scope or fix the typo",
+                                    identifier
+                                ),
+                            );
+                            Type::Unknown
+                        },
+                        |var_type| {
+                            gen_traversal.traversal_type =
+                                TraversalType::FromVar(GenRef::Std(identifier.clone()));
+                            gen_traversal.source_step = Separator::Empty(SourceStep::Identifier(
+                                GenRef::Std(identifier.clone()),
+                            ));
+                            var_type.clone()
+                        },
+                    ),
+                    false => Type::Unknown,
+                }
             }
             // anonymous will be the traversal type rather than the start type
             StartNode::Anonymous => {
@@ -1184,6 +1215,7 @@ impl<'a> Ctx<'a> {
                         _ => None,
                     };
                     if let Some(FieldValueType::Identifier(field_name)) = &field_name {
+                        self.is_valid_identifier(q, b_op.loc.clone(), field_name.as_str());
                         match &cur_ty {
                             Type::Nodes(Some(node_ty)) => {
                                 let field_set = self.node_fields.get(node_ty.as_str()).cloned();
@@ -1268,6 +1300,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
@@ -1283,6 +1316,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
@@ -1298,6 +1332,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
@@ -1313,6 +1348,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
@@ -1334,6 +1370,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 other => {
@@ -1358,6 +1395,7 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
+                                    self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Std(i.to_string()))
                                 }
                                 _ => unreachable!("Cannot reach here"),
@@ -1484,6 +1522,11 @@ impl<'a> Ctx<'a> {
                                     field.key.clone(),
                                     match &field.value.value {
                                         FieldValueType::Identifier(i) => {
+                                            self.is_valid_identifier(
+                                                q,
+                                                field.value.loc.clone(),
+                                                i.as_str(),
+                                            );
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
                                                 i.clone()
@@ -1499,6 +1542,11 @@ impl<'a> Ctx<'a> {
                                         },
                                         FieldValueType::Expression(e) => match &e.expr {
                                             ExpressionType::Identifier(i) => {
+                                                self.is_valid_identifier(
+                                                    q,
+                                                    e.loc.clone(),
+                                                    i.as_str(),
+                                                );
                                                 GeneratedValue::Identifier(GenRef::Std(format!(
                                                     "data.{}",
                                                     i.clone()
@@ -1727,6 +1775,11 @@ impl<'a> Ctx<'a> {
                     {
                         match &obj.fields[0].value.value {
                             FieldValueType::Identifier(lit) => {
+                                self.is_valid_identifier(
+                                    q,
+                                    obj.fields[0].value.loc.clone(),
+                                    lit.as_str(),
+                                );
                                 // gen_traversal.steps.push(Separator::Period(
                                 //     GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
                                 // ));
@@ -1783,6 +1836,11 @@ impl<'a> Ctx<'a> {
                     {
                         match &obj.fields[0].value.value {
                             FieldValueType::Identifier(lit) => {
+                                self.is_valid_identifier(
+                                    q,
+                                    obj.fields[0].value.loc.clone(),
+                                    lit.as_str(),
+                                );
                                 // gen_traversal.steps.push(Separator::Period(
                                 //     GeneratedStep::PropertyFetch(GenRef::Literal(lit.clone())),
                                 // ));
@@ -2133,16 +2191,22 @@ impl<'a> Ctx<'a> {
                 );
             } else {
                 match &value.value {
-                    FieldValueType::Identifier(identifier)
-                        if !field_set.contains_key(identifier.as_str()) =>
-                    {
-                        self.push_query_err(
-                            q,
-                            value.loc.clone(),
-                            format!("`{}` is not a field of {} `{}`", key, type_kind, type_name),
-                            "check the schema field names",
-                        );
+                    FieldValueType::Identifier(identifier) => {
+                        if self.is_valid_identifier(q, value.loc.clone(), identifier.as_str()) {
+                            if !field_set.contains_key(identifier.as_str()) {
+                                self.push_query_err(
+                                    q,
+                                    value.loc.clone(),
+                                    format!(
+                                        "`{}` is not a field of {} `{}`",
+                                        key, type_kind, type_name
+                                    ),
+                                    "check the schema field names",
+                                );
+                            }
+                        }
                     }
+
                     _ => {}
                 }
             }
@@ -2234,6 +2298,7 @@ impl<'a> Ctx<'a> {
                                 })
                             }
                             ExpressionType::Identifier(identifier) => {
+                                self.is_valid_identifier(q, expr.loc.clone(), identifier.as_str());
                                 RemappingType::IdentifierRemapping(IdentifierRemapping {
                                     variable_name: var_name.to_string(),
                                     field_name: key.clone(),
@@ -2260,6 +2325,7 @@ impl<'a> Ctx<'a> {
                         })
                     }
                     FieldValueType::Identifier(identifier) => {
+                        self.is_valid_identifier(q, value.loc.clone(), identifier.as_str());
                         RemappingType::IdentifierRemapping(IdentifierRemapping {
                             variable_name: var_name.to_string(),
                             field_name: key.clone(),
@@ -2366,13 +2432,15 @@ impl<'a> Ctx<'a> {
                                     );
                                 }
                                 if let ValueType::Identifier { value, loc } = value {
-                                    if !scope.contains_key(value.as_str()) {
-                                        self.push_query_err(
-                                            q,
-                                            loc.clone(),
-                                            format!("`{}` is not in scope", value),
-                                            "declare it earlier or fix the typo",
-                                        );
+                                    if self.is_valid_identifier(q, loc.clone(), value.as_str()) {
+                                        if !scope.contains_key(value.as_str()) {
+                                            self.push_query_err(
+                                                q,
+                                                loc.clone(),
+                                                format!("`{}` is not in scope", value),
+                                                "declare it earlier or fix the typo",
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -2387,6 +2455,11 @@ impl<'a> Ctx<'a> {
                                             GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
                                         ValueType::Identifier { value, loc } => {
+                                            self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            );
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
@@ -2497,6 +2570,11 @@ impl<'a> Ctx<'a> {
                                             GeneratedValue::Literal(GenRef::from(value.clone()))
                                         }
                                         ValueType::Identifier { value, loc } => {
+                                            self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            );
                                             GeneratedValue::Identifier(GenRef::Std(format!(
                                                 "data.{}",
                                                 value.clone()
@@ -2519,6 +2597,7 @@ impl<'a> Ctx<'a> {
                         let to = match &add.connection.to_id {
                             Some(id) => match id {
                                 IdType::Identifier { value, loc } => {
+                                    self.is_valid_identifier(q, loc.clone(), value.as_str());
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
@@ -2535,7 +2614,10 @@ impl<'a> Ctx<'a> {
                         };
                         let from = match &add.connection.from_id {
                             Some(id) => match id {
-                                IdType::Identifier { value, loc } => GenRef::Ref(value.clone()),
+                                IdType::Identifier { value, loc } => {
+                                    self.is_valid_identifier(q, loc.clone(), value.as_str());
+                                    GenRef::Ref(format!("data.{}", value.clone()))
+                                }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                             },
                             _ => {
@@ -2615,6 +2697,11 @@ impl<'a> Ctx<'a> {
                                                 GeneratedValue::Literal(GenRef::from(value.clone()))
                                             }
                                             ValueType::Identifier { value, loc } => {
+                                                self.is_valid_identifier(
+                                                    q,
+                                                    loc.clone(),
+                                                    value.as_str(),
+                                                );
                                                 GeneratedValue::Identifier(GenRef::Std(format!(
                                                     "data.{}",
                                                     value.clone()
@@ -2644,6 +2731,7 @@ impl<'a> Ctx<'a> {
                                     )))
                                 }
                                 VectorData::Identifier(i) => {
+                                    self.is_valid_identifier(q, add.loc.clone(), i.as_str());
                                     GeneratedValue::Identifier(GenRef::Ref(i.clone()))
                                 }
                             };
@@ -2735,6 +2823,7 @@ impl<'a> Ctx<'a> {
                 if param.is_none() {
                     match scope.contains_key(fl.in_variable.1.as_str()) {
                         true => {
+                            self.is_valid_identifier(q, fl.loc.clone(), fl.in_variable.1.as_str());
                             for_loop_in_variable = ForLoopInVariable::Identifier(GenRef::Std(
                                 fl.in_variable.1.clone(),
                             ));
@@ -2756,6 +2845,7 @@ impl<'a> Ctx<'a> {
 
                 match &fl.variable {
                     ForLoopVars::Identifier { name, loc: _ } => {
+                        self.is_valid_identifier(q, fl.loc.clone(), name.as_str());
                         body_scope.insert(name.as_str(), Type::Unknown);
                         for_variable = ForVariable::Identifier(GenRef::Std(name.clone()));
                     }
@@ -2864,6 +2954,22 @@ impl<'a> Ctx<'a> {
                 /* SearchVector handled above; others TBD */
                 None
             }
+        }
+    }
+
+    fn is_valid_identifier(&mut self, q: &Query, loc: Loc, name: &str) -> bool {
+        match name {
+            "true" | "false" | "NONE" | "String" | "Boolean" | "F32" | "F64" | "I8" | "I16"
+            | "I32" | "I64" | "U8" | "U16" | "U32" | "U64" | "U128" | "Uuid" | "Date" => {
+                self.push_query_err(
+                    q,
+                    loc.clone(),
+                    format!("`{}` is not a valid identifier", name),
+                    "use a valid identifier",
+                );
+                false
+            }
+            _ => true,
         }
     }
 }
