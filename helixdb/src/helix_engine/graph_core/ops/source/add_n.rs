@@ -82,10 +82,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                     }
                 }
                 None => {
-                    // result = Err(GraphError::New(format!(
-                    //     "Secondary Index {} not found",
-                    //     index
-                    // )));
+                    result = Err(GraphError::New(format!(
+                        "Secondary Index {} not found",
+                        index
+                    )));
                 }
             }
         }
