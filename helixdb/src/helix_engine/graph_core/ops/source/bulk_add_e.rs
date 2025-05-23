@@ -74,7 +74,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
             match SerializedEdge::encode_edge(&Edge {
                 id: *e_id,
                 label: "knows".to_string(),
-                properties: HashMap::new(),
+                properties: None,
                 from_node: *e_from,
                 to_node: *e_to,
             }) {

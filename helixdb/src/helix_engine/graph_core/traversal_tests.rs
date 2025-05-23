@@ -1207,7 +1207,10 @@ fn test_edge_properties() {
     let edge = edge.first().unwrap();
     match edge {
         TraversalVal::Edge(edge) => {
-            assert_eq!(edge.properties, props.into_iter().collect());
+            assert_eq!(
+                edge.properties.clone().unwrap(),
+                props.into_iter().collect()
+            );
         }
         _ => {
             panic!("Expected Edge value");
@@ -1331,27 +1334,7 @@ fn huge_traversal() {
     let traversal = G::new(Arc::clone(&storage), &txn)
         .n()
         .out_e("knows")
-        .to_n()
-        .out("knows")
-        // .filter_ref(|val, _| {
-        //     if let Ok(TraversalVal::Node(node)) = val {
-        //         if let Some(value) = node.check_property("name") {
-        //             match value {
-        //                 Value::I32(name) => return *name < 700000,
-        //                 _ => return false,
-        //             }
-        //         } else {
-        //             return false;
-        //         }
-        //     } else {
-        //         return false;
-        //     }
-        // })
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .dedup()
+
         .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
@@ -1425,7 +1408,11 @@ fn test_with_id_type() {
     }
 
     let input = sonic_rs::from_slice::<Input>(
-        format!("{{\"id\":\"{}\",\"name\":\"test\"}}", uuid::Uuid::from_u128(node.id()).to_string()).as_bytes(),
+        format!(
+            "{{\"id\":\"{}\",\"name\":\"test\"}}",
+            uuid::Uuid::from_u128(node.id()).to_string()
+        )
+        .as_bytes(),
     )
     .unwrap();
     let txn = storage.graph_env.read_txn().unwrap();

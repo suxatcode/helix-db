@@ -59,7 +59,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         let edge = Edge {
             id: id.unwrap_or(v6_uuid()),
             label: label.to_string(),
-            properties: properties.into_iter().collect(),
+            properties: Some(properties.into_iter().collect()),
             from_node,
             to_node,
         };

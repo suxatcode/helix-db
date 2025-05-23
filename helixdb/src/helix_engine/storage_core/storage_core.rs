@@ -122,31 +122,6 @@ impl HelixGraphStorage {
         })
     }
 
-    #[inline(always)]
-    pub fn new_node(label: &str, properties: impl IntoIterator<Item = (String, Value)>) -> Node {
-        Node {
-            id: v6_uuid(),
-            label: label.to_string(),
-            properties: HashMap::from_iter(properties),
-        }
-    }
-
-    #[inline(always)]
-    pub fn new_edge(
-        label: &str,
-        from_node: u128,
-        to_node: u128,
-        properties: impl IntoIterator<Item = (String, Value)>,
-    ) -> Edge {
-        Edge {
-            id: v6_uuid(),
-            label: label.to_string(),
-            from_node,
-            to_node,
-            properties: HashMap::from_iter(properties),
-        }
-    }
-
     pub fn get_random_node(&self, txn: &RoTxn) -> Result<Node, GraphError> {
         match self.nodes_db.first(&txn)? {
             Some((_, data)) => Ok(bincode::deserialize(data)?),

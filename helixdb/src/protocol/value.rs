@@ -425,26 +425,34 @@ pub mod properties_format {
 
     #[inline]
     pub fn serialize<S>(
-        properties: &HashMap<String, Value>,
+        properties: &Option<HashMap<String, Value>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(properties.len()))?;
-        for (k, v) in properties {
-            map.serialize_entry(k, v)?;
+        match properties {
+            Some(properties) => {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(properties.len()))?;
+                for (k, v) in properties {
+                    map.serialize_entry(k, v)?;
+                }
+                map.end()
+            }
+            None => serializer.serialize_none(),
         }
-        map.end()
     }
 
     #[inline]
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<String, Value>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<HashMap<String, Value>>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        HashMap::deserialize(deserializer)
+        match Option::<HashMap<String, Value>>::deserialize(deserializer) {
+            Ok(properties) => Ok(properties),
+            Err(e) => Err(e),
+        }
     }
 }
 

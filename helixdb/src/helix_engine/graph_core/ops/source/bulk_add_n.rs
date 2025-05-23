@@ -59,7 +59,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                 let node = Node {
                     id: *node,
                     label: "user".to_string(),
-                    properties: HashMap::new(),
+                    properties: None,
                 };
 
                 let id = node.id;

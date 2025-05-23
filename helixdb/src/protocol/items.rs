@@ -12,8 +12,8 @@ pub struct Node {
     #[serde(skip)]
     pub id: u128,
     pub label: String,
-    #[serde(with = "properties_format")]
-    pub properties: HashMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, Value>>,
 }
 
 impl Eq for Node {}
@@ -32,27 +32,13 @@ impl PartialOrd for Node {
 
 impl Node {
     pub const NUM_PROPERTIES: usize = 2;
-    pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().as_u128(),
-            label: label.to_string(),
-            properties: HashMap::from_iter(properties),
-        }
-    }
-    pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().as_u128(),
-            label: label.to_string(),
-            properties: HashMap::from_iter(properties),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct SerializedNode {
     pub label: String,
-    #[serde(with = "properties_format")]
-    pub properties: HashMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, Value>>,
 }
 
 impl SerializedNode {
@@ -68,7 +54,7 @@ impl SerializedNode {
                     label: node.label,
                     properties: node.properties,
                 };
-                Ok(node)
+                Ok(node) // ERROR REACHING END OF FILE EARLs
             }
             Err(e) => Err(GraphError::ConversionError(format!(
                 "Error deserializing node: {}",
@@ -78,11 +64,16 @@ impl SerializedNode {
     }
 
     pub fn encode_node(node: &Node) -> Result<Vec<u8>, GraphError> {
+        let node = SerializedNode {
+            label: node.label.clone(),
+            properties: node.properties.clone(),
+        };
+
         let cfg = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_big_endian();
 
-        cfg.serialize(node)
+        cfg.serialize(&node)
             .map_err(|e| GraphError::ConversionError(format!("Error serializing node: {}", e)))
     }
 }
@@ -120,7 +111,8 @@ pub struct Edge {
     pub from_node: u128,
     pub to_node: u128,
     #[serde(with = "properties_format")]
-    pub properties: HashMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, Value>>,
 }
 
 impl Eq for Edge {}
@@ -139,25 +131,6 @@ impl PartialOrd for Edge {
 
 impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
-    pub fn new(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self {
-            id: v6_uuid(),
-            label: label.to_string(),
-            from_node: 0,
-            to_node: 0,
-            properties: HashMap::from_iter(properties),
-        }
-    }
-
-    pub fn new_with_id(label: &str, properties: Vec<(String, Value)>) -> Self {
-        Self {
-            id: v6_uuid(),
-            label: label.to_string(),
-            from_node: 0,
-            to_node: 0,
-            properties: HashMap::from_iter(properties),
-        }
-    }
 }
 
 impl std::fmt::Display for Edge {
@@ -194,7 +167,8 @@ pub struct SerializedEdge {
     pub from_node: u128,
     pub to_node: u128,
     #[serde(with = "properties_format")]
-    pub properties: HashMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, Value>>,
 }
 
 impl SerializedEdge {
@@ -222,11 +196,17 @@ impl SerializedEdge {
     }
 
     pub fn encode_edge(edge: &Edge) -> Result<Vec<u8>, GraphError> {
+        let edge = SerializedEdge {
+            label: edge.label.clone(),
+            from_node: edge.from_node,
+            to_node: edge.to_node,
+            properties: edge.properties.clone(),
+        };
         let cfg = bincode::DefaultOptions::new()
             .with_fixint_encoding()
             .with_big_endian();
 
-        cfg.serialize(edge)
+        cfg.serialize(&edge)
             .map_err(|e| GraphError::ConversionError(format!("Error serializing edge: {}", e)))
     }
 }
