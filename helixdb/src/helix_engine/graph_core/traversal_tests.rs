@@ -1347,12 +1347,33 @@ fn huge_traversal() {
     let now = Instant::now();
     let traversal = G::new(Arc::clone(&storage), &txn)
         .n_from_type("user")
-        // .out_e("knows")
+        .out_e("knows")
+        .to_n()
+        .out("knows")
+        // .filter_ref(|val, _| {
+        //     if let Ok(TraversalVal::Node(node)) = val {
+        //         if let Some(value) = node.check_property("name") {
+        //             match value {
+        //                 Value::I32(name) => return *name < 700000,
+        //                 _ => return false,
+        //             }
+        //         } else {
+        //             return false;
+        //         }
+        //     } else {
+        //         return false;
+        //     }
+        // })
+        .out("knows")
+        .out("knows")
+        .out("knows")
+        .out("knows")
+        .dedup()
 
         .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
-    // println!("traversal: {:?}", traversal);
+    println!("traversal: {:?}", traversal);
     println!(
         "size of mdb file on disk: {:?}",
         storage.graph_env.real_disk_size()
