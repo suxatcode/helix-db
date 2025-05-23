@@ -7,11 +7,8 @@ use crate::{
     },
     protocol::{
         filterable::Filterable,
-        items::{v6_uuid, SerializedEdge, SerializedNode},
-        label_hash::hash_label,
-    },
-    protocol::{
         items::{Edge, Node},
+        label_hash::hash_label,
         value::Value,
     },
 };
@@ -31,8 +28,6 @@ const DB_OUT_EDGES: &str = "out_edges"; // For outgoing edge indices (o:)
 const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
 // Key prefixes for different types of data
-
-
 
 pub struct HelixGraphStorage {
     pub graph_env: Env<WithTls>,
@@ -278,7 +273,7 @@ impl StorageMethods for HelixGraphStorage {
             Some(data) => data,
             None => return Err(GraphError::NodeNotFound),
         };
-        let node: Node = match SerializedNode::decode_node(&node, *id) {
+        let node: Node = match Node::decode_node(&node, *id) {
             Ok(node) => node,
             Err(e) => return Err(e),
         };
@@ -291,13 +286,12 @@ impl StorageMethods for HelixGraphStorage {
             Some(data) => data,
             None => return Err(GraphError::EdgeNotFound),
         };
-        let edge: Edge = match SerializedEdge::decode_edge(&edge, *id) {
+        let edge: Edge = match Edge::decode_edge(&edge, *id) {
             Ok(edge) => edge,
             Err(e) => return Err(e),
         };
         Ok(edge)
     }
-
 
     // LEAVE FOR NOW
     // fn get_node_by_secondary_index(

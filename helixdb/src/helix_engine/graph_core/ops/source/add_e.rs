@@ -5,7 +5,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::hnsw::HNSW,
     },
     protocol::{
-        items::{v6_uuid, Edge, SerializedEdge},
+        items::{v6_uuid, Edge},
         label_hash::hash_label,
         value::Value,
     },
@@ -76,7 +76,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             }
         }
 
-        match SerializedEdge::encode_edge(&edge) {
+        match edge.encode_edge() {
             Ok(bytes) => {
                 if let Err(e) = self.storage.edges_db.put_with_flags(
                     self.txn,

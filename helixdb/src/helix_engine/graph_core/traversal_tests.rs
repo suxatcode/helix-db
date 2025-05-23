@@ -5,14 +5,17 @@ use std::{
     time::Instant,
 };
 
-use crate::protocol::{
-    filterable::Filterable,
-    id::ID,
-    items::{Edge, Node},
-    traversal_value::TraversalValue,
-    value::Value,
+use crate::{helix_engine::graph_core::ops::source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter}, props};
+use crate::{
+    helix_engine::graph_core::ops::source::n_from_type::NFromTypeAdapter,
+    protocol::{
+        filterable::Filterable,
+        id::ID,
+        items::{Edge, Node},
+        traversal_value::TraversalValue,
+        value::Value,
+    },
 };
-use crate::{helix_engine::graph_core::ops::source::bulk_add_e::BulkAddEAdapter, props};
 use crate::{
     helix_engine::{
         graph_core::ops::{
@@ -62,11 +65,22 @@ fn test_add_n() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let nodes = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("person", props! {}, None)
+        .add_n("person", props! {"name" => "John"}, None)
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
 
-    assert_eq!(nodes.first().unwrap().label(), "person");
+    let node = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&nodes.first().unwrap().id())
+        .collect_to::<Vec<_>>();
+    assert_eq!(node.first().unwrap().label(), "person");
+    println!("node: {:?}", node.first().unwrap());
+
+    assert_eq!(node.first().unwrap().id(), nodes.first().unwrap().id());
+    assert_eq!(
+        *node.first().unwrap().check_property("name").unwrap(),
+        Value::String("John".to_string())
+    );
+    println!("node: {:?}", node.first().unwrap());
 
     // If we haven't dropped txn, ensure no borrows exist before commit
     txn.commit().unwrap();
@@ -423,7 +437,7 @@ fn test_count_node_array() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
     let _ = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("p   erson", props!(), None)
+        .add_n("person", props!(), None)
         .collect_to::<Vec<_>>();
     let _ = G::new_mut(Arc::clone(&storage), &mut txn)
         .add_n("person", props!(), None)
@@ -435,7 +449,7 @@ fn test_count_node_array() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .count();
     assert_eq!(count, 3);
 }
@@ -515,7 +529,7 @@ fn test_range_subset() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(1, 3) // Take nodes at index 1 and 2
         .count();
 
@@ -568,7 +582,7 @@ fn test_range_chaining() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 3) // Take first 3 nodes
         .out("knows") // Get their outgoing nodes
         .collect_to::<Vec<_>>();
@@ -582,7 +596,7 @@ fn test_range_empty() {
 
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 0) // Take first 3 nodes
         .collect_to::<Vec<_>>();
 
@@ -594,7 +608,7 @@ fn test_count_empty() {
     let (storage, _temp_dir) = setup_test_db();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 0) // Take first 3 nodes
         .count();
 
@@ -845,7 +859,7 @@ fn test_filter_nodes() {
     let txn = storage.graph_env.read_txn().unwrap();
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| {
             if let Ok(TraversalVal::Node(node)) = val {
                 if let Ok(value) = node.check_property("age") {
@@ -889,7 +903,7 @@ fn test_filter_macro_single_argument() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| has_name(val))
         .collect_to::<Vec<_>>();
     assert_eq!(traversal.len(), 2);
@@ -937,7 +951,7 @@ fn test_filter_macro_multiple_arguments() {
 
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| age_greater_than(val, 27))
         .collect_to::<Vec<_>>();
 
@@ -1000,7 +1014,7 @@ fn test_filter_edges() {
     }
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .e()
+        .e_from_type("knows")
         .filter_ref(|val, _| recent_edge(val, 2021))
         .collect_to::<Vec<_>>();
 
@@ -1020,7 +1034,7 @@ fn test_filter_empty_result() {
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| {
             if let Ok(TraversalVal::Node(node)) = val {
                 if let Ok(value) = node.check_property("age") {
@@ -1086,7 +1100,7 @@ fn test_filter_chain() {
     }
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| has_name(val))
         .filter_ref(|val, _| age_greater_than(val, 27))
         .collect_to::<Vec<_>>();
@@ -1287,11 +1301,11 @@ fn huge_traversal() {
 
     for i in 0..100_000 {
         // nodes.push(Node::new("person", props! { "name" => i}));
-        nodes.push((v6_uuid()));
+        nodes.push(v6_uuid());
     }
     println!("time taken to initialise nodes: {:?}", start.elapsed());
     start = Instant::now();
-    nodes.sort();
+
     println!("time taken to sort nodes: {:?}", start.elapsed());
     start = Instant::now();
     let now = Instant::now();
@@ -1332,13 +1346,13 @@ fn huge_traversal() {
     let txn = storage.graph_env.read_txn().unwrap();
     let now = Instant::now();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
-        .out_e("knows")
+        .n_from_type("user")
+        // .out_e("knows")
 
         .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
-    println!("traversal: {:?}", traversal);
+    // println!("traversal: {:?}", traversal);
     println!(
         "size of mdb file on disk: {:?}",
         storage.graph_env.real_disk_size()

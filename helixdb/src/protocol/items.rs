@@ -12,7 +12,7 @@ pub struct Node {
     #[serde(skip)]
     pub id: u128,
     pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub properties: Option<HashMap<String, Value>>,
 }
 
@@ -32,19 +32,49 @@ impl PartialOrd for Node {
 
 impl Node {
     pub const NUM_PROPERTIES: usize = 2;
+
+    pub fn decode_node(bytes: &[u8], id: u128) -> Result<Node, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            // .with_fixint_encoding()
+            .with_big_endian();
+
+        match cfg.deserialize::<Node>(bytes) {
+            Ok(node) => {
+                let node = Node {
+                    id,
+                    label: node.label,
+                    properties: node.properties,
+                };
+                Ok(node) // ERROR REACHING END OF FILE EARLs
+            }
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing node: {}",
+                e
+            ))),
+        }
+    }
+
+    pub fn encode_node(self) -> Result<Vec<u8>, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            // .with_fixint_encoding()
+            .with_big_endian();
+
+        cfg.serialize(&self)
+            .map_err(|e| GraphError::ConversionError(format!("Error serializing node: {}", e)))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct SerializedNode {
     pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub properties: Option<HashMap<String, Value>>,
 }
 
 impl SerializedNode {
     pub fn decode_node(bytes: &[u8], id: u128) -> Result<Node, GraphError> {
         let cfg = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
+            // .with_fixint_encoding()
             .with_big_endian();
 
         match cfg.deserialize::<SerializedNode>(bytes) {
@@ -70,7 +100,7 @@ impl SerializedNode {
         };
 
         let cfg = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
+            // .with_fixint_encoding()
             .with_big_endian();
 
         cfg.serialize(&node)
@@ -110,8 +140,7 @@ pub struct Edge {
     pub label: String,
     pub from_node: u128,
     pub to_node: u128,
-    #[serde(with = "properties_format")]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub properties: Option<HashMap<String, Value>>,
 }
 
@@ -131,6 +160,38 @@ impl PartialOrd for Edge {
 
 impl Edge {
     pub const NUM_PROPERTIES: usize = 4;
+
+    pub fn decode_edge(bytes: &[u8], id: u128) -> Result<Edge, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            // .with_fixint_encoding()
+            .with_big_endian();
+
+        match cfg.deserialize::<Edge>(bytes) {
+            Ok(edge) => {
+                let edge = Edge {
+                    id,
+                    label: edge.label,
+                    from_node: edge.from_node,
+                    to_node: edge.to_node,
+                    properties: edge.properties,
+                };
+                Ok(edge)
+            }
+            Err(e) => Err(GraphError::ConversionError(format!(
+                "Error deserializing edge: {}",
+                e
+            ))),
+        }
+    }
+
+    pub fn encode_edge(&self) -> Result<Vec<u8>, GraphError> {
+        let cfg = bincode::DefaultOptions::new()
+            // .with_fixint_encoding()
+            .with_big_endian();
+
+        cfg.serialize(self)
+            .map_err(|e| GraphError::ConversionError(format!("Error serializing edge: {}", e)))
+    }
 }
 
 impl std::fmt::Display for Edge {
@@ -158,56 +219,6 @@ impl std::fmt::Debug for Edge {
             uuid::Uuid::from_u128(self.to_node).to_string(),
             self.properties
         )
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
-pub struct SerializedEdge {
-    pub label: String,
-    pub from_node: u128,
-    pub to_node: u128,
-    #[serde(with = "properties_format")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<HashMap<String, Value>>,
-}
-
-impl SerializedEdge {
-    pub fn decode_edge(bytes: &[u8], id: u128) -> Result<Edge, GraphError> {
-        let cfg = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
-            .with_big_endian();
-
-        match cfg.deserialize::<SerializedEdge>(bytes) {
-            Ok(edge) => {
-                let edge = Edge {
-                    id,
-                    label: edge.label,
-                    from_node: edge.from_node,
-                    to_node: edge.to_node,
-                    properties: edge.properties,
-                };
-                Ok(edge)
-            }
-            Err(e) => Err(GraphError::ConversionError(format!(
-                "Error deserializing edge: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn encode_edge(edge: &Edge) -> Result<Vec<u8>, GraphError> {
-        let edge = SerializedEdge {
-            label: edge.label.clone(),
-            from_node: edge.from_node,
-            to_node: edge.to_node,
-            properties: edge.properties.clone(),
-        };
-        let cfg = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
-            .with_big_endian();
-
-        cfg.serialize(&edge)
-            .map_err(|e| GraphError::ConversionError(format!("Error serializing edge: {}", e)))
     }
 }
 

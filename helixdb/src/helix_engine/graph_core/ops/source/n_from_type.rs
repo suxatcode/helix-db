@@ -14,7 +14,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, Node, SerializedNode},
+        items::{Edge, Node},
         label_hash::hash_label,
     },
 };
@@ -35,12 +35,15 @@ impl<'a> Iterator for NFromType<'a> {
         while let Some(value) = self.iter.next() {
             let (key_, value) = value.unwrap();
             match value.decode() {
-                Ok(value) => match SerializedNode::decode_node(&value, key_) {
+                Ok(value) => match Node::decode_node(&value, key_) {
                     Ok(node) => match &node.label {
                         label if label == self.label => return Some(Ok(TraversalVal::Node(node))),
                         _ => continue,
                     },
-                    Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+                    Err(e) => {
+                        println!("{} Error decoding node: {:?}", line!(), e);
+                        return Some(Err(GraphError::ConversionError(e.to_string())));
+                    }
                 },
                 Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
             }

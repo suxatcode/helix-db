@@ -14,7 +14,7 @@ use crate::{
     },
     protocol::{
         filterable::{Filterable, FilterableType},
-        items::{Edge, SerializedEdge},
+        items::{Edge},
         label_hash::hash_label,
     },
 };
@@ -35,7 +35,7 @@ impl<'a> Iterator for EFromType<'a> {
         while let Some(value) = self.iter.next() {
             let (key, value) = value.unwrap();
             match value.decode() {
-                Ok(value) => match SerializedEdge::decode_edge(&value, key) {
+                Ok(value) => match Edge::decode_edge(&value, key) {
                     Ok(edge) => match &edge.label {
                         label if label == self.label => return Some(Ok(TraversalVal::Edge(edge))),
                         _ => continue,
