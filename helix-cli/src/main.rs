@@ -5,7 +5,7 @@ use crate::{
 };
 use clap::Parser;
 use colored::*;
-use helixdb::helix_engine::graph_core::config::Config;
+use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
 use spinners::{Spinner, Spinners};
 use std::fmt::Write;
 use std::{
