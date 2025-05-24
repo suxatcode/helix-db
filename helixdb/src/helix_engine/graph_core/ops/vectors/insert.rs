@@ -1,3 +1,5 @@
+use heed3::RoTxn;
+
 use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
@@ -27,18 +29,19 @@ pub trait InsertVAdapter<'a, 'b>:
     fn insert_v<F>(
         self,
         vec: &Vec<f64>,
-        fields: Option<HashMap<String, Value>>,
+        label: &str,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 
     fn insert_vs<F>(
         self,
         vecs: &Vec<Vec<f64>>,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a, 'b>
@@ -47,10 +50,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
     fn insert_v<F>(
         self,
         query: &Vec<f64>,
-        fields: Option<HashMap<String, Value>>,
+        label: &str,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool,
+        F: Fn(&HVector, &RoTxn) -> bool,
     {
         let vector = self
             .storage
@@ -74,10 +78,10 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
     fn insert_vs<F>(
         self,
         vecs: &Vec<Vec<f64>>,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool,
+        F: Fn(&HVector, &RoTxn) -> bool,
     {
         let txn = self.txn;
         let storage = Arc::clone(&self.storage);

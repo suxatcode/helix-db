@@ -10,7 +10,7 @@ use pest::{
 use pest_derive::Parser;
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Display,
+    fmt::{Debug, Display},
     io::Write,
     path::Path,
 };
@@ -92,9 +92,36 @@ pub struct EdgeSchema {
 
 #[derive(Debug, Clone)]
 pub struct Field {
+    pub prefix: FieldPrefix,
+    pub defaults: Option<DefaultValue>,
     pub name: String,
     pub field_type: FieldType,
     pub loc: Loc,
+}
+
+#[derive(Debug, Clone)]
+pub enum DefaultValue {
+    String(String),
+    F32(f32),
+    F64(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Boolean(bool),
+    Empty,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldPrefix {
+    Index,
+    Optional,
+    Empty,
 }
 
 #[derive(Debug, Clone)]
@@ -112,9 +139,12 @@ pub enum FieldType {
     U64,
     U128,
     Boolean,
+    Uuid,
+    Date,
     Array(Box<FieldType>),
     Identifier(String),
     Object(HashMap<String, FieldType>),
+    // Closure(String, HashMap<String, FieldType>),
 }
 
 impl PartialEq for FieldType {
@@ -133,9 +163,11 @@ impl PartialEq for FieldType {
             (FieldType::U64, FieldType::U64) => true,
             (FieldType::U128, FieldType::U128) => true,
             (FieldType::Boolean, FieldType::Boolean) => true,
+            (FieldType::Uuid, FieldType::Uuid) => true,
             (FieldType::Array(a), FieldType::Array(b)) => a == b,
             (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
             (FieldType::Object(a), FieldType::Object(b)) => a == b,
+            // (FieldType::Closure(a, b), FieldType::Closure(c, d)) => a == c && b == d,
             _ => false,
         }
     }
@@ -157,6 +189,8 @@ impl Display for FieldType {
             FieldType::U64 => write!(f, "U64"),
             FieldType::U128 => write!(f, "U128"),
             FieldType::Boolean => write!(f, "Boolean"),
+            FieldType::Uuid => write!(f, "ID"),
+            FieldType::Date => todo!(),
             FieldType::Array(t) => write!(f, "Array({})", t),
             FieldType::Identifier(s) => write!(f, "{}", s),
             FieldType::Object(m) => {
@@ -165,7 +199,7 @@ impl Display for FieldType {
                     write!(f, "{}: {}", k, v)?;
                 }
                 write!(f, "}}")
-            }
+            } // FieldType::Closure(a, b) => write!(f, "Closure({})", a),
         }
     }
 }
@@ -214,10 +248,27 @@ pub struct Assignment {
 
 #[derive(Debug, Clone)]
 pub struct ForLoop {
-    pub variables: Vec<String>,
-    pub in_variable: String,
+    pub variable: ForLoopVars,
+    pub in_variable: (Loc, String),
     pub statements: Vec<Statement>,
     pub loc: Loc,
+}
+
+#[derive(Debug, Clone)]
+pub enum ForLoopVars {
+    Identifier {
+        name: String,
+        loc: Loc,
+    },
+    ObjectAccess {
+        name: String,
+        field: String,
+        loc: Loc,
+    },
+    ObjectDestructuring {
+        fields: Vec<(Loc, String)>,
+        loc: Loc,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -234,7 +285,7 @@ pub enum ExpressionType {
     IntegerLiteral(i32),
     FloatLiteral(f64),
     BooleanLiteral(bool),
-    Exists(Box<Traversal>),
+    Exists(Box<Expression>),
     BatchAddVector(BatchAddVector),
     AddVector(AddVector),
     AddNode(AddNode),
@@ -263,14 +314,14 @@ pub struct BatchAddVector {
 #[derive(Debug, Clone)]
 pub enum StartNode {
     Node {
-        types: Option<Vec<String>>,
-        ids: Option<Vec<String>>,
+        node_type: String,
+        ids: Option<Vec<IdType>>,
     },
     Edge {
-        types: Option<Vec<String>>,
-        ids: Option<Vec<String>>,
+        edge_type: String,
+        ids: Option<Vec<IdType>>,
     },
-    Variable(String),
+    Identifier(String),
     Anonymous,
 }
 
@@ -295,10 +346,28 @@ pub enum StepType {
     AddEdge(AddEdge),
     SearchVector(String),
 }
-
+impl PartialEq<StepType> for StepType {
+    fn eq(&self, other: &StepType) -> bool {
+        match (self, other) {
+            (&StepType::Node(_), &StepType::Node(_)) => true,
+            (&StepType::Edge(_), &StepType::Edge(_)) => true,
+            (&StepType::Where(_), &StepType::Where(_)) => true,
+            (&StepType::BooleanOperation(_), &StepType::BooleanOperation(_)) => true,
+            (&StepType::Count, &StepType::Count) => true,
+            (&StepType::Update(_), &StepType::Update(_)) => true,
+            (&StepType::Object(_), &StepType::Object(_)) => true,
+            (&StepType::Exclude(_), &StepType::Exclude(_)) => true,
+            (&StepType::Closure(_), &StepType::Closure(_)) => true,
+            (&StepType::Range(_), &StepType::Range(_)) => true,
+            (&StepType::AddEdge(_), &StepType::AddEdge(_)) => true,
+            (&StepType::SearchVector(_), &StepType::SearchVector(_)) => true,
+            _ => false,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct FieldAddition {
-    pub name: String,
+    pub key: String,
     pub value: FieldValue,
     pub loc: Loc,
 }
@@ -327,14 +396,35 @@ pub struct GraphStep {
 
 #[derive(Debug, Clone)]
 pub enum GraphStepType {
-    Out(Option<Vec<String>>),
-    In(Option<Vec<String>>),
+    Out(String),
+    In(String),
 
     FromN,
     ToN,
 
-    OutE(Option<Vec<String>>),
-    InE(Option<Vec<String>>),
+    OutE(String),
+    InE(String),
+
+    ShortestPath(ShortestPath),
+}
+impl GraphStep {
+    pub fn get_item_type(&self) -> Option<String> {
+        match &self.step {
+            GraphStepType::Out(s) => Some(s.clone()),
+            GraphStepType::In(s) => Some(s.clone()),
+            GraphStepType::OutE(s) => Some(s.clone()),
+            GraphStepType::InE(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ShortestPath {
+    pub loc: Loc,
+    pub from: Option<IdType>,
+    pub to: Option<IdType>,
+    pub type_arg: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -367,6 +457,7 @@ pub struct SearchVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
     pub k: Option<EvaluatesToNumber>,
+    pub pre_filter: Option<Box<Expression>>,
 }
 
 #[derive(Debug, Clone)]
@@ -424,26 +515,53 @@ pub struct EdgeConnection {
 
 #[derive(Debug, Clone)]
 pub enum IdType {
-    Literal(String),
-    Identifier(String),
+    Literal { value: String, loc: Loc },
+    Identifier { value: String, loc: Loc },
 }
 
 #[derive(Debug, Clone)]
 pub enum ValueType {
-    Literal(Value),
-    Identifier(String),
-    Object(Object),
+    Literal {
+        value: Value,
+        loc: Loc,
+    },
+    Identifier {
+        value: String,
+        loc: Loc,
+    },
+    Object {
+        fields: HashMap<String, ValueType>,
+        loc: Loc,
+    },
 }
 
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
         match value {
-            Value::String(s) => ValueType::Literal(Value::String(s)),
-            Value::I32(i) => ValueType::Literal(Value::I32(i)),
-            Value::F64(f) => ValueType::Literal(Value::F64(f)),
-            Value::Boolean(b) => ValueType::Literal(Value::Boolean(b)),
-            Value::Array(arr) => ValueType::Literal(Value::Array(arr)),
-            Value::Empty => ValueType::Literal(Value::Empty),
+            Value::String(s) => ValueType::Literal {
+                value: Value::String(s),
+                loc: Loc::empty(),
+            },
+            Value::I32(i) => ValueType::Literal {
+                value: Value::I32(i),
+                loc: Loc::empty(),
+            },
+            Value::F64(f) => ValueType::Literal {
+                value: Value::F64(f),
+                loc: Loc::empty(),
+            },
+            Value::Boolean(b) => ValueType::Literal {
+                value: Value::Boolean(b),
+                loc: Loc::empty(),
+            },
+            Value::Array(arr) => ValueType::Literal {
+                value: Value::Array(arr),
+                loc: Loc::empty(),
+            },
+            Value::Empty => ValueType::Literal {
+                value: Value::Empty,
+                loc: Loc::empty(),
+            },
             _ => unreachable!(),
         }
     }
@@ -452,11 +570,11 @@ impl From<Value> for ValueType {
 impl From<IdType> for String {
     fn from(id_type: IdType) -> String {
         match id_type {
-            IdType::Literal(mut s) => {
-                s.retain(|c| c != '"');
-                s
+            IdType::Literal { mut value, loc } => {
+                value.retain(|c| c != '"');
+                value
             }
-            IdType::Identifier(s) => s,
+            IdType::Identifier { value, loc } => value,
         }
     }
 }
@@ -464,20 +582,24 @@ impl From<IdType> for String {
 impl From<String> for IdType {
     fn from(mut s: String) -> IdType {
         s.retain(|c| c != '"');
-        IdType::Literal(s)
+        IdType::Literal {
+            value: s,
+            loc: Loc::empty(),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Update {
     pub fields: Vec<FieldAddition>,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
 pub struct Object {
     pub loc: Loc,
     // TODO: Change this to be a vec of structs where the enums holds the name and value
-    pub fields: Vec<(String, FieldValue)>,
+    pub fields: Vec<FieldAddition>,
     pub should_spread: bool,
 }
 
@@ -526,18 +648,18 @@ impl HelixParser {
             let mut remaining = HashSet::new();
             for pair in pairs {
                 match pair.as_rule() {
-                    Rule::node_def => parser
-                        .source
-                        .node_schemas
-                        .push(parser.parse_node_def(pair)?),
-                    Rule::edge_def => parser
-                        .source
-                        .edge_schemas
-                        .push(parser.parse_edge_def(pair)?),
-                    Rule::vector_def => parser
-                        .source
-                        .vector_schemas
-                        .push(parser.parse_vector_def(pair)?),
+                    Rule::node_def => {
+                        let node_schema = parser.parse_node_def(pair, file.name.clone())?;
+                        parser.source.node_schemas.push(node_schema);
+                    }
+                    Rule::edge_def => {
+                        let edge_schema = parser.parse_edge_def(pair, file.name.clone())?;
+                        parser.source.edge_schemas.push(edge_schema);
+                    }
+                    Rule::vector_def => {
+                        let vector_schema = parser.parse_vector_def(pair, file.name.clone())?;
+                        parser.source.vector_schemas.push(vector_schema);
+                    }
                     Rule::query_def => {
                         // parser.source.queries.push(parser.parse_query_def(pairs.next().unwrap())?),
                         remaining.insert(pair);
@@ -549,7 +671,10 @@ impl HelixParser {
 
             for pair in remaining {
                 // println!("{:?}", parser.source);
-                parser.source.queries.push(parser.parse_query_def(pair)?);
+                parser
+                    .source
+                    .queries
+                    .push(parser.parse_query_def(pair, file.name.clone())?);
             }
 
             // parse all schemas first then parse queries using self
@@ -563,25 +688,33 @@ impl HelixParser {
         Ok(source)
     }
 
-    fn parse_node_def(&self, pair: Pair<Rule>) -> Result<NodeSchema, ParserError> {
+    fn parse_node_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<NodeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(NodeSchema {
             name: (pair.loc(), name),
             fields,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
-    fn parse_vector_def(&self, pair: Pair<Rule>) -> Result<VectorSchema, ParserError> {
+    fn parse_vector_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<VectorSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let fields = self.parse_node_body(pairs.next().unwrap())?;
         Ok(VectorSchema {
             name,
             fields,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
@@ -655,6 +788,7 @@ impl HelixParser {
                 Ok(FieldType::Object(fields))
             }
             Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
+            Rule::ID_TYPE => Ok(FieldType::Uuid),
             _ => {
                 unreachable!()
             }
@@ -663,20 +797,104 @@ impl HelixParser {
 
     fn parse_field_def(&self, pair: Pair<Rule>) -> Result<Field, ParserError> {
         let mut pairs = pair.clone().into_inner();
+        // structure is index? ~ identifier ~ ":" ~ param_type
+        let prefix: FieldPrefix = match pairs.clone().next().unwrap().as_rule() {
+            Rule::index => {
+                pairs.next().unwrap();
+                FieldPrefix::Index
+            }
+            // Rule::optional => {
+            //     pairs.next().unwrap();
+            //     FieldPrefix::Optional
+            // }
+            _ => FieldPrefix::Empty,
+        };
         let name = pairs.next().unwrap().as_str().to_string();
 
         let field_type = self.parse_field_type(
             pairs.next().unwrap().into_inner().next().unwrap(),
             Some(&self.source),
         )?;
+
+        let defaults = match pairs.next() {
+            Some(pair) => {
+                if pair.as_rule() == Rule::default {
+                    let default_value = match pair.into_inner().next() {
+                        Some(pair) => match pair.as_rule() {
+                            Rule::string_literal => DefaultValue::String(pair.as_str().to_string()),
+                            Rule::float => {
+                                match field_type {
+                                    FieldType::F32 => {
+                                        DefaultValue::F32(pair.as_str().parse::<f32>().unwrap())
+                                    }
+                                    FieldType::F64 => {
+                                        DefaultValue::F64(pair.as_str().parse::<f64>().unwrap())
+                                    }
+                                    _ => unreachable!(), // throw error
+                                }
+                            }
+                            Rule::integer => {
+                                match field_type {
+                                    FieldType::I8 => {
+                                        DefaultValue::I8(pair.as_str().parse::<i8>().unwrap())
+                                    }
+                                    FieldType::I16 => {
+                                        DefaultValue::I16(pair.as_str().parse::<i16>().unwrap())
+                                    }
+                                    FieldType::I32 => {
+                                        DefaultValue::I32(pair.as_str().parse::<i32>().unwrap())
+                                    }
+                                    FieldType::I64 => {
+                                        DefaultValue::I64(pair.as_str().parse::<i64>().unwrap())
+                                    }
+                                    FieldType::U8 => {
+                                        DefaultValue::U8(pair.as_str().parse::<u8>().unwrap())
+                                    }
+                                    FieldType::U16 => {
+                                        DefaultValue::U16(pair.as_str().parse::<u16>().unwrap())
+                                    }
+                                    FieldType::U32 => {
+                                        DefaultValue::U32(pair.as_str().parse::<u32>().unwrap())
+                                    }
+                                    FieldType::U64 => {
+                                        DefaultValue::U64(pair.as_str().parse::<u64>().unwrap())
+                                    }
+                                    FieldType::U128 => {
+                                        DefaultValue::U128(pair.as_str().parse::<u128>().unwrap())
+                                    }
+                                    _ => unreachable!(), // throw error
+                                }
+                            }
+                            Rule::boolean => {
+                                DefaultValue::Boolean(pair.as_str().parse::<bool>().unwrap())
+                            }
+                            _ => unreachable!(), // throw error
+                        },
+                        None => DefaultValue::Empty,
+                    };
+                    Some(default_value)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
+        println!("defaults: {:?}", defaults);
+
         Ok(Field {
+            prefix,
+            defaults,
             name,
             field_type,
             loc: pair.loc(),
         })
     }
 
-    fn parse_edge_def(&self, pair: Pair<Rule>) -> Result<EdgeSchema, ParserError> {
+    fn parse_edge_def(
+        &self,
+        pair: Pair<Rule>,
+        filepath: String,
+    ) -> Result<EdgeSchema, ParserError> {
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
         let body = pairs.next().unwrap();
@@ -690,14 +908,17 @@ impl HelixParser {
             let pair = body_pairs.next().unwrap();
             (pair.loc(), pair.as_str().to_string())
         };
-        let properties = Some(self.parse_properties(body_pairs.next().unwrap())?);
+        let properties = match body_pairs.next() {
+            Some(pair) => Some(self.parse_properties(pair)?),
+            None => None,
+        };
 
         Ok(EdgeSchema {
             name: (pair.loc(), name),
             from,
             to,
             properties,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
     fn parse_properties(&self, pair: Pair<Rule>) -> Result<Vec<Field>, ParserError> {
@@ -711,7 +932,7 @@ impl HelixParser {
             })
     }
 
-    fn parse_query_def(&self, pair: Pair<Rule>) -> Result<Query, ParserError> {
+    fn parse_query_def(&self, pair: Pair<Rule>, filepath: String) -> Result<Query, ParserError> {
         let original_query = pair.clone().as_str().to_string();
         let mut pairs = pair.clone().into_inner();
         let name = pairs.next().unwrap().as_str().to_string();
@@ -726,7 +947,7 @@ impl HelixParser {
             statements,
             return_values,
             original_query,
-            loc: pair.loc(),
+            loc: pair.loc_with_filepath(filepath),
         })
     }
 
@@ -825,46 +1046,59 @@ impl HelixParser {
 
     fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
         let mut pairs = pair.clone().into_inner();
-        let mut variables = Vec::new();
-        let mut in_variable = String::new();
         // parse the arguments
-
         let argument = pairs.next().unwrap().clone().into_inner().next().unwrap();
-        match argument.as_rule() {
+        let argument_loc = argument.loc();
+        let variable = match argument.as_rule() {
             Rule::object_destructuring => {
-                for p in argument.into_inner() {
-                    variables.push(p.as_str().to_string());
+                let fields = argument
+                    .into_inner()
+                    .into_iter()
+                    .map(|p| (p.loc(), p.as_str().to_string()))
+                    .collect();
+                ForLoopVars::ObjectDestructuring {
+                    fields,
+                    loc: argument_loc,
                 }
             }
-            Rule::identifier => {
-                variables.push(argument.as_str().to_string());
+            Rule::object_access => {
+                let mut inner = argument.clone().into_inner();
+                let object_name = inner.next().unwrap().as_str().to_string();
+                let field_name = inner.next().unwrap().as_str().to_string();
+                ForLoopVars::ObjectAccess {
+                    name: object_name,
+                    field: field_name,
+                    loc: argument_loc,
+                }
             }
+            Rule::identifier => ForLoopVars::Identifier {
+                name: argument.as_str().to_string(),
+                loc: argument_loc,
+            },
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected rule in ForLoop: {:?}",
                     argument.as_rule()
                 )));
             }
-        }
+        };
 
         // parse the in
         let in_ = pairs.next().unwrap().clone();
-        match in_.as_rule() {
-            Rule::identifier => {
-                in_variable.push_str(in_.as_str());
-            }
+        let in_variable = match in_.as_rule() {
+            Rule::identifier => (in_.loc(), in_.as_str().to_string()),
             _ => {
                 return Err(ParserError::from(format!(
                     "Unexpected rule in ForLoop: {:?}",
                     in_.as_rule()
                 )));
             }
-        }
+        };
         // parse the body
         let statements = self.parse_query_body(pairs.next().unwrap())?;
 
         Ok(ForLoop {
-            variables,
+            variable,
             in_variable,
             statements,
             loc: pair.loc(),
@@ -949,6 +1183,7 @@ impl HelixParser {
         let mut vector_type = None;
         let mut data = None;
         let mut k = None;
+        let mut pre_filter = None;
         for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -963,41 +1198,29 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
-                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule()
-                {
-                    Rule::integer => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::I32(
-                                p.as_str()
-                                    .to_string()
-                                    .parse::<i32>()
-                                    .map_err(|_| ParserError::from("Invalid integer value"))?,
-                            ),
-                        });
-                    }
-                    Rule::float => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::F64(
-                                p.as_str()
-                                    .to_string()
-                                    .parse::<f64>()
-                                    .map_err(|_| ParserError::from("Invalid float value"))?,
-                            ),
-                        });
-                    }
-                    Rule::identifier => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
-                        });
-                    }
-                    _ => unreachable!(),
-                },
+                Rule::integer => {
+                    k = Some(EvaluatesToNumber {
+                        loc: p.loc(),
+                        value: EvaluatesToNumberType::I32(
+                            p.as_str()
+                                .to_string()
+                                .parse::<i32>()
+                                .map_err(|_| ParserError::from("Invalid integer value"))?,
+                        ),
+                    });
+                }
+                Rule::identifier => {
+                    k = Some(EvaluatesToNumber {
+                        loc: p.loc(),
+                        value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
+                    });
+                }
+                Rule::pre_filter => {
+                    pre_filter = Some(Box::new(self.parse_expression(p)?));
+                }
                 _ => {
                     return Err(ParserError::from(format!(
-                        "Unexpected rule in AddV: {:?} => {:?}",
+                        "Unexpected rule in SearchV: {:?} => {:?}",
                         p.as_rule(),
                         p,
                     )))
@@ -1010,6 +1233,7 @@ impl HelixParser {
             vector_type,
             data,
             k,
+            pre_filter,
         })
     }
 
@@ -1092,9 +1316,10 @@ impl HelixParser {
                             Rule::boolean => Ok(ValueType::from(Value::Boolean(
                                 value_pair.as_str() == "true",
                             ))),
-                            Rule::identifier => {
-                                Ok(ValueType::Identifier(value_pair.as_str().to_string()))
-                            }
+                            Rule::identifier => Ok(ValueType::Identifier {
+                                value: value_pair.as_str().to_string(),
+                                loc: value_pair.loc(),
+                            }),
                             _ => Err(ParserError::from("Invalid property value type")),
                         }?
                     }
@@ -1150,10 +1375,14 @@ impl HelixParser {
             .next()
             .ok_or_else(|| ParserError::from("Missing ID"))?;
         match p.as_rule() {
-            Rule::identifier => Ok(Some(IdType::Identifier(p.as_str().to_string()))),
-            Rule::string_literal | Rule::inner_string => {
-                Ok(Some(IdType::from(p.as_str().to_string())))
-            }
+            Rule::identifier => Ok(Some(IdType::Identifier {
+                value: p.as_str().to_string(),
+                loc: p.loc(),
+            })),
+            Rule::string_literal | Rule::inner_string => Ok(Some(IdType::Literal {
+                value: p.as_str().to_string(),
+                loc: p.loc(),
+            })),
             _ => Err(ParserError::from(format!(
                 "Unexpected rule in parse_id_args: {:?}",
                 p.as_rule()
@@ -1251,10 +1480,14 @@ impl HelixParser {
             }),
             Rule::exists => Ok(Expression {
                 loc: expression.loc(),
-                expr: ExpressionType::Exists(Box::new(
-                    self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
-                )),
+                expr: ExpressionType::Exists(Box::new(Expression {
+                    loc: expression.loc(),
+                    expr: ExpressionType::Traversal(Box::new(
+                        self.parse_anon_traversal(expression.into_inner().next().unwrap())?,
+                    )),
+                })),
             }),
+
             _ => unreachable!(),
         }
     }
@@ -1294,10 +1527,13 @@ impl HelixParser {
                     .ok_or_else(|| ParserError::from("Missing exists traversal"))?;
                 Ok(Expression {
                     loc: pair.loc(),
-                    expr: ExpressionType::Exists(Box::new(match traversal.as_rule() {
-                        Rule::traversal => self.parse_traversal(traversal)?,
-                        Rule::id_traversal => self.parse_traversal(traversal)?,
-                        _ => unreachable!(),
+                    expr: ExpressionType::Exists(Box::new(Expression {
+                        loc: pair.loc(),
+                        expr: ExpressionType::Traversal(Box::new(match traversal.as_rule() {
+                            Rule::traversal => self.parse_traversal(traversal)?,
+                            Rule::id_traversal => self.parse_traversal(traversal)?,
+                            _ => unreachable!(),
+                        })),
                     })),
                 })
             }
@@ -1396,55 +1632,79 @@ impl HelixParser {
         match pair.as_rule() {
             Rule::start_node => {
                 let pairs = pair.into_inner();
-                let mut types = None;
+                let mut node_type = String::new();
                 let mut ids = None;
                 for p in pairs {
                     match p.as_rule() {
                         Rule::type_args => {
-                            types = Some(
-                                p.into_inner()
-                                    .map(|t| t.as_str().to_string())
-                                    .collect::<Vec<_>>(),
-                            );
+                            node_type = p.into_inner().next().unwrap().as_str().to_string();
+                            // WATCH
                         }
                         Rule::id_args => {
                             ids = Some(
                                 p.into_inner()
-                                    .map(|id| id.as_str().to_string())
+                                    .map(|id| {
+                                        let id = id.into_inner().next().unwrap();
+                                        match id.as_rule() {
+                                            Rule::identifier => IdType::Identifier {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            Rule::string_literal => IdType::Literal {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            other => {
+                                                panic!("Should be identifier or string literal")
+                                            }
+                                        }
+                                    })
                                     .collect::<Vec<_>>(),
                             );
                         }
                         _ => unreachable!(),
                     }
                 }
-                Ok(StartNode::Node { types, ids })
+                Ok(StartNode::Node { node_type, ids })
             }
             Rule::start_edge => {
                 let pairs = pair.into_inner();
-                let mut types = None;
+                let mut edge_type = String::new();
                 let mut ids = None;
                 for p in pairs {
                     match p.as_rule() {
                         Rule::type_args => {
-                            types = Some(
-                                p.into_inner()
-                                    .map(|t| t.as_str().to_string())
-                                    .collect::<Vec<_>>(),
-                            );
+                            edge_type = p.into_inner().next().unwrap().as_str().to_string();
                         }
                         Rule::id_args => {
                             ids = Some(
                                 p.into_inner()
-                                    .map(|id| id.as_str().to_string())
+                                    .map(|id| {
+                                        let id = id.into_inner().next().unwrap();
+                                        match id.as_rule() {
+                                            Rule::identifier => IdType::Identifier {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            Rule::string_literal => IdType::Literal {
+                                                value: id.as_str().to_string(),
+                                                loc: id.loc(),
+                                            },
+                                            other => {
+                                                println!("{:?}", other);
+                                                panic!("Should be identifier or string literal")
+                                            }
+                                        }
+                                    })
                                     .collect::<Vec<_>>(),
                             );
                         }
                         _ => unreachable!(),
                     }
                 }
-                Ok(StartNode::Edge { types, ids })
+                Ok(StartNode::Edge { edge_type, ids })
             }
-            Rule::identifier => Ok(StartNode::Variable(pair.as_str().to_string())),
+            Rule::identifier => Ok(StartNode::Identifier(pair.as_str().to_string())),
             _ => Ok(StartNode::Anonymous),
         }
     }
@@ -1484,13 +1744,14 @@ impl HelixParser {
             Rule::ID => Ok(Step {
                 loc: inner.loc(),
                 step: StepType::Object(Object {
-                    fields: vec![(
-                        "id".to_string(),
-                        FieldValue {
+                    fields: vec![FieldAddition {
+                        key: "id".to_string(),
+                        value: FieldValue {
                             loc: pair.loc(),
                             value: FieldValueType::Empty,
                         },
-                    )],
+                        loc: pair.loc(),
+                    }],
                     should_spread: false,
                     loc: pair.loc(),
                 }),
@@ -1530,40 +1791,153 @@ impl HelixParser {
     }
 
     fn parse_graph_step(&self, pair: Pair<Rule>) -> GraphStep {
-        let rule_str = pair.as_str();
-        let types = pair
-            .clone()
-            .into_inner()
-            .next()
-            .map(|p| p.into_inner().map(|t| t.as_str().to_string()).collect());
-
-        match rule_str {
-            s if s.starts_with("OutE") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::OutE(types),
-            },
-            s if s.starts_with("InE") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::InE(types),
-            },
-            s if s.starts_with("FromN") => GraphStep {
+        let types = |pair: &Pair<Rule>| {
+            pair.clone()
+                .into_inner()
+                .next()
+                .map(|p| p.as_str().to_string())
+                .ok_or_else(|| ParserError::from("Expected type".to_string()))
+                .unwrap()
+        }; // TODO: change to error
+        let pair = pair.into_inner().next().unwrap(); // TODO: change to error
+        match pair.as_rule() {
+            // s if s.starts_with("OutE") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::OutE(types),
+            // },
+            // s if s.starts_with("InE") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::InE(types),
+            // },
+            // s if s.starts_with("FromN") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::FromN,
+            // },
+            // s if s.starts_with("ToN") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::ToN,
+            // },
+            // s if s.starts_with("Out") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::Out(types),
+            // },
+            // s if s.starts_with("In") => GraphStep {
+            //     loc: pair.loc(),
+            //     step: GraphStepType::In(types),
+            // },
+            // _ => {
+            //     println!("rule_str: {:?}", rule_str);
+            //     unreachable!()
+            // }
+            Rule::out_e => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::OutE(types),
+                }
+            }
+            Rule::in_e => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::InE(types),
+                }
+            }
+            Rule::from_n => GraphStep {
                 loc: pair.loc(),
                 step: GraphStepType::FromN,
             },
-            s if s.starts_with("ToN") => GraphStep {
+            Rule::to_n => GraphStep {
                 loc: pair.loc(),
                 step: GraphStepType::ToN,
             },
-            s if s.starts_with("Out") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::Out(types),
-            },
-            s if s.starts_with("In") => GraphStep {
-                loc: pair.loc(),
-                step: GraphStepType::In(types),
-            },
+            Rule::out => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::Out(types),
+                }
+            }
+            Rule::in_nodes => {
+                let types = types(&pair);
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::In(types),
+                }
+            }
+            Rule::shortest_path => {
+                let mut inner = pair.clone().into_inner().next().unwrap().into_inner();
+
+                let (type_arg, from, to) =
+                    inner.fold((None, None, None), |(type_arg, from, to), p| {
+                        match p.as_rule() {
+                            Rule::type_args => (
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                                from,
+                                to,
+                            ),
+                            Rule::from => (
+                                type_arg,
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                                to,
+                            ),
+                            Rule::to => (
+                                type_arg,
+                                from,
+                                Some(
+                                    p.into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .into_inner()
+                                        .next()
+                                        .unwrap()
+                                        .as_str()
+                                        .to_string(),
+                                ),
+                            ),
+                            _ => (type_arg, from, to),
+                        }
+                    });
+
+                // TODO: add error handling and check about IdType as might not always be data.
+                // possibly use stack to keep track of variables and use them via precedence and then check on type
+                // e.g. if valid variable and is param then use data. otherwise use plain identifier
+                GraphStep {
+                    loc: pair.loc(),
+                    step: GraphStepType::ShortestPath(ShortestPath {
+                        loc: pair.loc(),
+                        from: from.map(|id| IdType::Identifier {
+                            value: id,
+                            loc: pair.loc(),
+                        }),
+                        to: to.map(|id| IdType::Identifier {
+                            value: id,
+                            loc: pair.loc(),
+                        }),
+                        type_arg,
+                    }),
+                }
+            }
             _ => {
-                println!("rule_str: {:?}", rule_str);
+                println!("rule_str: {:?}", pair.as_str());
                 unreachable!()
             }
         }
@@ -1621,7 +1995,7 @@ impl HelixParser {
 
     fn parse_new_field_pair(&self, pair: Pair<Rule>) -> Result<FieldAddition, ParserError> {
         let mut pairs = pair.clone().into_inner();
-        let name = pairs.next().unwrap().as_str().to_string();
+        let key = pairs.next().unwrap().as_str().to_string();
         let value_pair = pairs.next().unwrap();
 
         let value: FieldValue = match value_pair.as_rule() {
@@ -1688,7 +2062,7 @@ impl HelixParser {
 
         Ok(FieldAddition {
             loc: pair.loc(),
-            name,
+            key,
             value,
         })
     }
@@ -1757,8 +2131,11 @@ impl HelixParser {
     }
 
     fn parse_update(&self, pair: Pair<Rule>) -> Result<Update, ParserError> {
-        let fields = self.parse_field_additions(pair)?;
-        Ok(Update { fields })
+        let fields = self.parse_field_additions(pair.clone())?;
+        Ok(Update {
+            fields,
+            loc: pair.loc(),
+        })
     }
 
     fn parse_object_step(&self, pair: Pair<Rule>) -> Result<Object, ParserError> {
@@ -1787,17 +2164,7 @@ impl HelixParser {
                     },
                     Rule::object_step => FieldValue {
                         loc: p.clone().loc(),
-                        value: FieldValueType::Fields(
-                            self.parse_object_step(p.clone())?
-                                .fields
-                                .iter()
-                                .map(|(k, v)| FieldAddition {
-                                    loc: p.loc(),
-                                    name: k.clone(),
-                                    value: v.clone(),
-                                })
-                                .collect(),
-                        ),
+                        value: FieldValueType::Fields(self.parse_object_step(p.clone())?.fields),
                     },
                     _ => self.parse_new_field_value(p)?,
                 },
@@ -1810,7 +2177,11 @@ impl HelixParser {
                     value: FieldValueType::Empty,
                 },
             };
-            fields.push((prop_key, field_addition));
+            fields.push(FieldAddition {
+                loc: p.loc(),
+                key: prop_key,
+                value: field_addition,
+            });
         }
         Ok(Object {
             loc: pair.loc(),

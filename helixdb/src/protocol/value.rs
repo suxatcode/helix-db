@@ -1,11 +1,17 @@
-use crate::helix_engine::types::GraphError;
+use crate::{helix_engine::types::GraphError, helixc::generator::new::utils::GenRef};
 use serde::{
     de::{DeserializeSeed, VariantAccess, Visitor},
     Deserializer, Serializer,
 };
 use serde_json::Value as JsonValue;
 use sonic_rs::{Deserialize, Serialize};
-use std::{cmp::Ordering, collections::HashMap, fmt};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::{self, Display},
+};
+
+use super::id::ID;
 
 /// A flexible value type that can represent various property values in nodes and edges.
 /// Handles both JSON and binary serialisation formats via custom implementaions of the Serialize and Deserialize traits.
@@ -27,6 +33,26 @@ pub enum Value {
     Array(Vec<Value>),
     Object(HashMap<String, Value>),
     Empty,
+}
+impl Value {
+    pub fn to_string(&self) -> String {
+        match self {
+            Value::String(s) => s.to_string(),
+            Value::F32(f) => f.to_string(),
+            Value::F64(f) => f.to_string(),
+            Value::I8(i) => i.to_string(),
+            Value::I16(i) => i.to_string(),
+            Value::I32(i) => i.to_string(),
+            Value::I64(i) => i.to_string(),
+            Value::U8(u) => u.to_string(),
+            Value::U16(u) => u.to_string(),
+            Value::U32(u) => u.to_string(),
+            Value::U64(u) => u.to_string(),
+            Value::U128(u) => u.to_string(),
+            Value::Boolean(b) => b.to_string(),
+            _ => panic!("Not primitive"),
+        }
+    }
 }
 
 impl PartialEq<i32> for Value {
@@ -64,6 +90,33 @@ impl PartialEq<String> for Value {
     }
 }
 
+impl PartialEq<bool> for Value {
+    fn eq(&self, other: &bool) -> bool {
+        match self {
+            Value::Boolean(b) => b == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<f32> for Value {
+    fn eq(&self, other: &f32) -> bool {
+        match self {
+            Value::F32(f) => f == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<&str> for Value {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Value::String(s) => s == other,
+            _ => false,
+        }
+    }
+}
+
 impl PartialOrd<i64> for Value {
     fn partial_cmp(&self, other: &i64) -> Option<Ordering> {
         match self {
@@ -89,8 +142,6 @@ impl PartialOrd<f64> for Value {
         }
     }
 }
-
-
 
 /// Custom serialisation implementation for Value that removes enum variant names in JSON
 /// whilst preserving them for binary formats like bincode.
@@ -572,6 +623,13 @@ impl From<JsonValue> for Value {
     }
 }
 
+impl From<ID> for Value {
+    #[inline]
+    fn from(id: ID) -> Self {
+        Value::String(id.to_string())
+    }
+}
+
 pub trait Encodings {
     fn decode_properties(bytes: &[u8]) -> Result<HashMap<String, Value>, GraphError>;
     fn encode_properties(&self) -> Result<Vec<u8>, GraphError>;
@@ -595,6 +653,29 @@ impl Encodings for HashMap<String, Value> {
                 "Error serializing properties: {}",
                 e
             ))),
+        }
+    }
+}
+
+impl From<Value> for GenRef<String> {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::String(s) => GenRef::Literal(s),
+            Value::I8(i) => GenRef::Std(i.to_string()),
+            Value::I16(i) => GenRef::Std(i.to_string()),
+            Value::I32(i) => GenRef::Std(i.to_string()),
+            Value::I64(i) => GenRef::Std(i.to_string()),
+            Value::F32(f) => GenRef::Std(f.to_string()),
+            Value::F64(f) => GenRef::Std(f.to_string()),
+            Value::Boolean(b) => GenRef::Std(b.to_string()),
+            Value::U8(u) => GenRef::Std(u.to_string()),
+            Value::U16(u) => GenRef::Std(u.to_string()),
+            Value::U32(u) => GenRef::Std(u.to_string()),
+            Value::U64(u) => GenRef::Std(u.to_string()),
+            Value::U128(u) => GenRef::Std(u.to_string()),
+            Value::Array(a) => unimplemented!(),
+            Value::Object(o) => unimplemented!(),
+            Value::Empty => GenRef::Literal("".to_string()),
         }
     }
 }

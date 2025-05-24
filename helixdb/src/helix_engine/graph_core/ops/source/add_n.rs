@@ -1,17 +1,10 @@
 use super::super::tr_val::TraversalVal;
 use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RwTraversalIterator,
-        types::GraphError,
-    },
+    helix_engine::{graph_core::traversal_iter::RwTraversalIterator, types::GraphError},
     protocol::{
         filterable::Filterable,
-        items::{
-            v6_uuid,
-            Node,
-            SerializedNode
-        },
-        value::Value
+        items::{v6_uuid, Node, SerializedNode},
+        value::Value,
     },
 };
 use heed3::PutFlags;
@@ -33,8 +26,7 @@ pub trait AddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
         self,
         label: &'a str,
         properties: Vec<(String, Value)>,
-        secondary_indices: Option<&'a [String]>,
-        id: Option<u128>,
+        secondary_indices: Option<&'a [&str]>,
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>>;
 }
 
@@ -45,12 +37,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         self,
         label: &'a str,
         properties: Vec<(String, Value)>,
-        secondary_indices: Option<&'a [String]>,
-        id: Option<u128>, // TODO: can't be an option has to generated because always needs to be in order
+        secondary_indices: Option<&'a [&str]>,
     ) -> RwTraversalIterator<'a, 'b, std::iter::Once<Result<TraversalVal, GraphError>>> {
         let node = Node {
-            id: id.unwrap_or(v6_uuid()),
-            label: label.to_string(),
+            id: v6_uuid(),
+            label: label.to_string(), // TODO: just &str or Cow<'a, str>
             properties: properties.into_iter().collect(),
         };
 
@@ -71,16 +62,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
             Err(e) => result = Err(GraphError::from(e)),
         }
 
-        for index in &secondary_indices {
-            match self.storage.secondary_indices.get(index.as_str()) {
+        for index in secondary_indices {
+            match self.storage.secondary_indices.get(index) {
                 Some(db) => {
                     let key = match node.check_property(&index) {
-                        Some(value) => value,
-                        None => {
-                            result = Err(GraphError::New(format!(
-                                "Secondary Index {} not found",
-                                index
-                            )));
+                        Ok(value) => value,
+                        Err(e) => {
+                            result = Err(e);
                             continue;
                         }
                     };

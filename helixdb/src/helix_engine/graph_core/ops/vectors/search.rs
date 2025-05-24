@@ -1,3 +1,5 @@
+use heed3::RoTxn;
+
 use super::super::tr_val::TraversalVal;
 use crate::helix_engine::{
     graph_core::traversal_iter::RoTraversalIterator,
@@ -27,7 +29,7 @@ pub trait SearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
         filter: Option<&[F]>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapter<'a>
@@ -40,7 +42,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
         filter: Option<&[F]>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool,
+        F: Fn(&HVector, &RoTxn) -> bool,
     {
         let vectors = self
             .storage
@@ -53,20 +55,15 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
                 .map(|vector| Ok::<TraversalVal, GraphError>(TraversalVal::Vector(vector)))
                 .collect::<Vec<_>>()
                 .into_iter(),
-            //Err(VectorError::VectorNotFound()) =>
-            //Err(VectorError::InvalidVectorData) =>
-            //Err(VectorError::InvalidVectorId) =>
-            //Err(VectorError::InvalidVectorLevel) =>
-            //Err(VectorError::InvalidEntryPoint) =>
-            //Err(VectorError::EntryPointNotFound) =>
-            //Err(VectorError::InvalidVectorCoreConfig) =>
-            //Err(VectorError::ConversionError()) =>
-            //Err(VectorError::VectorCoreError()) =>
             Err(VectorError::InvalidVectorLength) => {
                 let error = GraphError::VectorError("invalid vector dimensions!".to_string());
                 once(Err(error)).collect::<Vec<_>>().into_iter()
             }
-            Err(_) => once(Err(GraphError::VectorError("a vector error has occured!".to_string()))).collect::<Vec<_>>().into_iter(),
+            Err(_) => once(Err(GraphError::VectorError(
+                "a vector error has occured!".to_string(),
+            )))
+            .collect::<Vec<_>>()
+            .into_iter(),
         };
 
         let iter = SearchV { iter };

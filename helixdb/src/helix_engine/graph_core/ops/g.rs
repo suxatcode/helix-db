@@ -4,7 +4,6 @@ use heed3::{types::Bytes, PutFlags, RoTxn, RwTxn};
 use itertools::Itertools;
 
 use crate::{
-    decode_str,
     helix_engine::{
         graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -49,10 +48,10 @@ impl G {
         }
     }
 
-    pub fn new_mut<'a, 'b>(
+    pub fn new_mut<'scope, 'env>(
         storage: Arc<HelixGraphStorage>,
-        txn: &'b mut RwTxn<'a>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+        txn: &'scope mut RwTxn<'env>,
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         Self: Sized,
     {
@@ -70,6 +69,21 @@ impl G {
         vals: Vec<TraversalVal>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         RoTraversalIterator {
+            inner: vals.into_iter().map(|val| Ok(val)),
+            storage,
+            txn,
+        }
+    }
+
+    pub fn new_mut_from<'scope, 'env>(
+        storage: Arc<HelixGraphStorage>,
+        txn: &'scope mut RwTxn<'env>,
+        // iter: impl Iterator<Item = Result<TraversalVal, GraphError>>
+        vals: Vec<TraversalVal>,
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    {
+        RwTraversalIterator {
+            // inner: iter,
             inner: vals.into_iter().map(|val| Ok(val)),
             storage,
             txn,
