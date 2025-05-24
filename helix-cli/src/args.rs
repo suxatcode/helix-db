@@ -52,6 +52,9 @@ pub enum CommandType {
 
     /// Save an instnaces data.mdb file
     Save(SaveCommand),
+
+    /// Delete an instance and all its data
+    Delete(DeleteCommand),
 }
 
 #[derive(Debug, Args)]
@@ -176,11 +179,18 @@ pub struct LabelCommand {
 #[derive(Debug, Args)]
 #[clap(name = "save", about = "Save an instances data.mdb file")]
 pub struct SaveCommand {
-    #[clap(help = "Instance ID to label")]
+    #[clap(help = "Instance ID to save")]
     pub instance: String,
 
     #[clap(help = "Where to save the file to")]
     pub output: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "delete", about = "Delete an instance and its saved data")]
+pub struct DeleteCommand {
+    #[clap(help = "Instance ID to delete")]
+    pub instance: String,
 }
 
 #[derive(Debug)]

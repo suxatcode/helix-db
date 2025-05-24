@@ -256,5 +256,15 @@ impl InstanceManager {
         }
         Ok(false)
     }
-}
 
+    pub fn delete_instance(&self, instance_id: &str) -> Result<bool, CliError> {
+        let mut instances = self.list_instances()?;
+        if let Some(pos) = instances.iter().position(|i| i.id == instance_id) {
+            instances.remove(pos);
+            self.save_instances(&instances)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
