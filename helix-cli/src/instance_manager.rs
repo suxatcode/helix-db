@@ -1,6 +1,7 @@
 use super::{
     args::CliError,
     utils::find_available_port,
+    utils::StyledString,
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -11,7 +12,6 @@ use std::{
 use dirs;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use colored::*;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstanceInfo {

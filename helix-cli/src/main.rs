@@ -17,7 +17,6 @@ use std::{
     io::{Write},
 };
 use clap::Parser;
-use colored::*;
 use spinners::{Spinner, Spinners};
 
 pub mod args;
