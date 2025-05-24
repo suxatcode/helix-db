@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
@@ -10,7 +8,6 @@ use crate::{
 };
 
 use super::super::tr_val::TraversalVal;
-use heed3::RwTxn;
 
 pub struct Update<I> {
     iter: I,
@@ -49,7 +46,7 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
             (lower, None) => lower,
         };
         let mut vec = Vec::with_capacity(capacity);
-        
+
         for item in self.inner {
             match item {
                 Ok(TraversalVal::Node(node)) => match storage.get_node(self.txn, &node.id) {
