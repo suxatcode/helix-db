@@ -272,7 +272,7 @@ pub fn write_headers() -> String {
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-
+use heed3::RoTxn;
 use get_routes::handler;
 use helixdb::{field_remapping, identifier_remapping, traversal_remapping, exclude_field};
 use helixdb::helix_engine::vector_core::vector::HVector;

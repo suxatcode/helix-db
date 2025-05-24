@@ -90,6 +90,33 @@ impl PartialEq<String> for Value {
     }
 }
 
+impl PartialEq<bool> for Value {
+    fn eq(&self, other: &bool) -> bool {
+        match self {
+            Value::Boolean(b) => b == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<f32> for Value {
+    fn eq(&self, other: &f32) -> bool {
+        match self {
+            Value::F32(f) => f == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<&str> for Value {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Value::String(s) => s == other,
+            _ => false,
+        }
+    }
+}
+
 impl PartialOrd<i64> for Value {
     fn partial_cmp(&self, other: &i64) -> Option<Ordering> {
         match self {

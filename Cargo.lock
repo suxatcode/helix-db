@@ -2039,6 +2039,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "get_routes",
+ "heed3",
  "helixdb",
  "inventory",
  "rand 0.9.1",

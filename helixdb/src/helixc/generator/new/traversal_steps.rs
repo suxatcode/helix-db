@@ -110,7 +110,7 @@ impl Display for Traversal {
                 assert!(nested.inner().len() > 0, "Empty nested traversal name");
                 write!(
                     f,
-                    "G::new_from(Arc::clone(&db), txn, vec![{}.clone()])",
+                    "G::new_from(Arc::clone(&db), &txn, vec![{}.clone()])",
                     nested
                 )?;
                 for step in &self.steps {

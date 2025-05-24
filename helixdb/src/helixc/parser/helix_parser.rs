@@ -457,6 +457,7 @@ pub struct SearchVector {
     pub vector_type: Option<String>,
     pub data: Option<VectorData>,
     pub k: Option<EvaluatesToNumber>,
+    pub pre_filter: Option<Box<Expression>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1182,6 +1183,7 @@ impl HelixParser {
         let mut vector_type = None;
         let mut data = None;
         let mut k = None;
+        let mut pre_filter = None;
         for p in pair.clone().into_inner() {
             match p.as_rule() {
                 Rule::identifier_upper => {
@@ -1196,41 +1198,29 @@ impl HelixParser {
                     }
                     _ => unreachable!(),
                 },
-                Rule::evaluates_to_number => match p.clone().into_inner().next().unwrap().as_rule()
-                {
-                    Rule::integer => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::I32(
-                                p.as_str()
-                                    .to_string()
-                                    .parse::<i32>()
-                                    .map_err(|_| ParserError::from("Invalid integer value"))?,
-                            ),
-                        });
-                    }
-                    Rule::float => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::F64(
-                                p.as_str()
-                                    .to_string()
-                                    .parse::<f64>()
-                                    .map_err(|_| ParserError::from("Invalid float value"))?,
-                            ),
-                        });
-                    }
-                    Rule::identifier => {
-                        k = Some(EvaluatesToNumber {
-                            loc: p.loc(),
-                            value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
-                        });
-                    }
-                    _ => unreachable!(),
-                },
+                Rule::integer => {
+                    k = Some(EvaluatesToNumber {
+                        loc: p.loc(),
+                        value: EvaluatesToNumberType::I32(
+                            p.as_str()
+                                .to_string()
+                                .parse::<i32>()
+                                .map_err(|_| ParserError::from("Invalid integer value"))?,
+                        ),
+                    });
+                }
+                Rule::identifier => {
+                    k = Some(EvaluatesToNumber {
+                        loc: p.loc(),
+                        value: EvaluatesToNumberType::Identifier(p.as_str().to_string()),
+                    });
+                }
+                Rule::pre_filter => {
+                    pre_filter = Some(Box::new(self.parse_expression(p)?));
+                }
                 _ => {
                     return Err(ParserError::from(format!(
-                        "Unexpected rule in AddV: {:?} => {:?}",
+                        "Unexpected rule in SearchV: {:?} => {:?}",
                         p.as_rule(),
                         p,
                     )))
@@ -1243,6 +1233,7 @@ impl HelixParser {
             vector_type,
             data,
             k,
+            pre_filter,
         })
     }
 
@@ -1325,12 +1316,10 @@ impl HelixParser {
                             Rule::boolean => Ok(ValueType::from(Value::Boolean(
                                 value_pair.as_str() == "true",
                             ))),
-                            Rule::identifier => {
-                                Ok(ValueType::Identifier {
-                                    value: value_pair.as_str().to_string(),
-                                    loc: value_pair.loc(),
-                                })
-                            }
+                            Rule::identifier => Ok(ValueType::Identifier {
+                                value: value_pair.as_str().to_string(),
+                                loc: value_pair.loc(),
+                            }),
                             _ => Err(ParserError::from("Invalid property value type")),
                         }?
                     }

@@ -107,7 +107,7 @@ to_from       = { to ~ from? | from ~ to? }
 to            = { "::" ~ "To" ~ "(" ~ id_arg ~ ")" }
 from          = { "::" ~ "From" ~ "(" ~ id_arg ~ ")" }
 vec_literal   = { "[" ~ (float) ~ ("," ~ (float))* ~ "]" }
-vector_data = { identifier | vec_literal }
+vector_data = { (identifier | vec_literal) }
 AddN          = { "AddN" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ create_field? ~ ")")? }
 AddE          = { "AddE" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ create_field? ~ ")")? ~ to_from }
 AddV          = { "AddV" ~ ("<" ~ identifier_upper ~ ">") ~ ("(" ~ vector_data ~ ("," ~ create_field)* ~ ")") }
@@ -156,7 +156,8 @@ drop = { "DROP" ~ (traversal | id_traversal | identifier)? }
 // ---------------------------------------------------------------------
 // Vector steps
 // ---------------------------------------------------------------------
-search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ evaluates_to_number ~ ")" }
+search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ (integer | identifier) ~ ")" }// ~ ("::" ~ pre_filter)? }
+pre_filter = { "PREFILTER" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 BatchAddV = { "BatchAddV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ identifier ~ ")" }
 
 // ---------------------------------------------------------------------

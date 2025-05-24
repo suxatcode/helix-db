@@ -16,7 +16,10 @@ use crate::{
                 ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
                 RemappingType, TraversalRemapping, ValueRemapping,
             },
-            source_steps::{AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType, SourceStep},
+            source_steps::{
+                AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType,
+                SearchVector as GeneratedSearchVector, SourceStep,
+            },
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
                 ShortestPath as GeneratedShortestPath, ShouldCollect, Step as GeneratedStep,
@@ -839,20 +842,168 @@ impl<'a> Ctx<'a> {
             //     }
             //     Type::Vector(add.vector_type.as_deref())
             // }
-            // SearchVector(sv) => {
-            //     if let Some(ref ty) = sv.vector_type {
-            //         if !self.vector_set.contains(ty.as_str()) {
-            //             self.push_query_err(
-            //                 q,
-            //                 sv.loc.clone(),
-            //                 format!("vector type `{}` has not been declared", ty),
-            //                 format!("add a `V::{}` schema first", ty),
-            //             );
-            //         }
-            //     }
-            //     // Search returns nodes that contain the vectors
-            //     Type::Nodes(None)
-            // }
+            SearchVector(sv) => {
+                if let Some(ref ty) = sv.vector_type {
+                    if !self.vector_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            format!("add a `V::{}` schema first", ty),
+                        );
+                    }
+                }
+                let vec = match &sv.data {
+                    Some(VectorData::Vector(v)) => GeneratedValue::Literal(GenRef::Ref(format!(
+                        "[{}]",
+                        v.iter()
+                            .map(|f| f.to_string())
+                            .collect::<Vec<String>>()
+                            .join(",")
+                    ))),
+                    Some(VectorData::Identifier(i)) => {
+                        self.is_valid_identifier(q, sv.loc.clone(), i.as_str());
+                        // if is in params then use data.
+                        if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                            GeneratedValue::Identifier(GenRef::Ref(format!(
+                                "data.{}",
+                                i.to_string()
+                            )))
+                        } else if let Some(_) = scope.get(i.as_str()) {
+                            GeneratedValue::Identifier(GenRef::Ref(i.to_string()))
+                        } else {
+                            self.push_query_err(
+                                q,
+                                sv.loc.clone(),
+                                format!("variable named `{}` is not in scope", i),
+                                "declare {} in the current scope or fix the typo",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    }
+                    _ => {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            "`SearchVector` must have a vector data".to_string(),
+                            "add a vector data",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+                let k = match &sv.k {
+                    Some(k) => match &k.value {
+                        EvaluatesToNumberType::I8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+
+                        EvaluatesToNumberType::U8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U128(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::Identifier(i) => {
+                            self.is_valid_identifier(q, sv.loc.clone(), i.as_str());
+                            GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                        }
+                        _ => {
+                            self.push_query_err(
+                                q,
+                                sv.loc.clone(),
+                                "`SearchVector` must have a limit of vectors to return".to_string(),
+                                "add a limit",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    },
+                    None => {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            "`SearchV` must have a limit of vectors to return".to_string(),
+                            "add a limit",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+
+                let pre_filter: Option<Vec<BoExp>> =
+                    match &sv.pre_filter {
+                        Some(expr) => {
+                            let (_, stmt) = self.infer_expr_type(
+                                expr,
+                                scope,
+                                q,
+                                Some(Type::Vector(sv.vector_type.clone())),
+                                None,
+                            );
+                            // Where/boolean ops don't change the element type,
+                            // so `cur_ty` stays the same.
+                            assert!(stmt.is_some());
+                            let stmt = stmt.unwrap();
+                            let mut gen_traversal = GeneratedTraversal {
+                                traversal_type: TraversalType::NestedFrom(GenRef::Std(
+                                    "v".to_string(),
+                                )),
+                                steps: vec![],
+                                should_collect: ShouldCollect::ToVec,
+                                source_step: Separator::Empty(SourceStep::Anonymous),
+                            };
+                            match stmt {
+                                GeneratedStatement::Traversal(tr) => {
+                                    gen_traversal.steps.push(Separator::Period(
+                                        GeneratedStep::Where(Where::Ref(WhereRef {
+                                            expr: BoExp::Expr(tr),
+                                        })),
+                                    ));
+                                }
+                                GeneratedStatement::BoExp(expr) => {
+                                    gen_traversal.steps.push(Separator::Period(
+                                        GeneratedStep::Where(match expr {
+                                            BoExp::Exists(tr) => Where::Exists(WhereExists { tr }),
+                                            _ => Where::Ref(WhereRef { expr }),
+                                        }),
+                                    ));
+                                }
+                                _ => unreachable!(),
+                            }
+                            Some(vec![BoExp::Expr(gen_traversal)])
+                        }
+                        None => None,
+                    };
+
+                // Search returns nodes that contain the vectors
+                (
+                    Type::Nodes(None),
+                    Some(GeneratedStatement::Traversal(GeneratedTraversal {
+                        traversal_type: TraversalType::Ref,
+                        steps: vec![],
+                        should_collect: ShouldCollect::ToVec,
+                        source_step: Separator::Period(SourceStep::SearchVector(
+                            GeneratedSearchVector { vec, k, pre_filter },
+                        )),
+                    })),
+                )
+            }
             And(v) => {
                 let exprs = v
                     .iter()
@@ -1185,7 +1336,6 @@ impl<'a> Ctx<'a> {
                         _ => unreachable!(),
                     }
                 }
-                // TODO implement inserting bool step for each
                 StepType::BooleanOperation(b_op) => {
                     let step = previous_step.unwrap();
                     let property_type = match &b_op.op {
@@ -1272,6 +1422,34 @@ impl<'a> Ctx<'a> {
                                                 format!(
                                                     "`{}` is not a field of {} `{}`",
                                                     field_name, "edge", edge_ty
+                                                ),
+                                                "check the schema field names",
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Type::Vector(Some(sv)) => {
+                                let field_set = self.vector_fields.get(sv.as_str()).cloned();
+                                if let Some(field_set) = field_set {
+                                    match field_set.get(field_name.as_str()) {
+                                        Some(field) => {
+                                            if field != &&property_type {
+                                                self.push_query_err(
+                                                    q,
+                                                    b_op.loc.clone(),
+                                                    format!("property `{field_name}` is of type `{field}` (from vector type `{sv}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    "make sure comparison value is of the same type as the property".to_string(),
+                                                );
+                                            }
+                                        }
+                                        None => {
+                                            self.push_query_err(
+                                                q,
+                                                b_op.loc.clone(),
+                                                format!(
+                                                    "`{}` is not a field of {} `{}`",
+                                                    field_name, "vector", sv
                                                 ),
                                                 "check the schema field names",
                                             );

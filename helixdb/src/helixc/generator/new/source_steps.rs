@@ -19,6 +19,7 @@ pub enum SourceStep {
     NFromType(NFromType),
     EFromID(EFromID),
     EFromType(EFromType),
+    SearchVector(SearchVector),
     Anonymous,
     Empty,
 }
@@ -148,8 +149,39 @@ impl Display for SourceStep {
             SourceStep::NFromType(n_from_type) => write!(f, "{}", n_from_type),
             SourceStep::EFromID(e_from_id) => write!(f, "{}", e_from_id),
             SourceStep::EFromType(e_from_type) => write!(f, "{}", e_from_type),
+            SourceStep::SearchVector(search_vector) => write!(f, "{}", search_vector),
             SourceStep::Anonymous => write!(f, ""),
             SourceStep::Empty => panic!("Should not be empty"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SearchVector {
+    pub vec: GeneratedValue,
+    pub k: GeneratedValue,
+    pub pre_filter: Option<Vec<BoExp>>,
+}
+
+impl Display for SearchVector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.pre_filter {
+            Some(pre_filter) => write!(
+                f,
+                "search_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, Some(&[{}]))",
+                self.vec,
+                self.k,
+                pre_filter
+                    .iter()
+                    .map(|f| format!("|v: &HVector, txn: &RoTxn| {}", f))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            None => write!(
+                f,
+                "search_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, None)",
+                self.vec, self.k
+            ),
         }
     }
 }

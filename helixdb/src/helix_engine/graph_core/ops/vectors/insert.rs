@@ -1,3 +1,5 @@
+use heed3::RoTxn;
+
 use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
@@ -31,7 +33,7 @@ pub trait InsertVAdapter<'a, 'b>:
         fields: Option<HashMap<String, Value>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 
     fn insert_vs<F>(
         self,
@@ -39,7 +41,7 @@ pub trait InsertVAdapter<'a, 'b>:
         fields: Option<HashMap<String, Value>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 }
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a, 'b>
@@ -52,7 +54,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
         fields: Option<HashMap<String, Value>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool,
+        F: Fn(&HVector, &RoTxn) -> bool,
     {
         let vector = self
             .storage
@@ -79,7 +81,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
         fields: Option<HashMap<String, Value>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector) -> bool,
+        F: Fn(&HVector, &RoTxn) -> bool,
     {
         let txn = self.txn;
         let storage = Arc::clone(&self.storage);

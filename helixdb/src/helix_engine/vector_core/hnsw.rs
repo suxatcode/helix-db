@@ -4,7 +4,8 @@ use crate::{helix_engine::types::VectorError, protocol::value::Value};
 use crate::helix_engine::vector_core::vector::HVector;
 use heed3::{RoTxn, RwTxn};
 
-pub trait HNSW {
+pub trait HNSW
+{
     /// Search for the k nearest neighbors of a query vector
     ///
     /// # Arguments
@@ -25,7 +26,7 @@ pub trait HNSW {
         should_trickle: bool,
     ) -> Result<Vec<HVector>, VectorError>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 
     /// Insert a new vector into the index
     ///
@@ -46,7 +47,7 @@ pub trait HNSW {
         fields: Option<HashMap<String, Value>>,
     ) -> Result<HVector, VectorError>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 
     /// Load a full hnsw index with all vectors at once
     ///
@@ -61,7 +62,7 @@ pub trait HNSW {
     /// An emtpy tuple
     fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
     where
-        F: Fn(&HVector) -> bool;
+        F: Fn(&HVector, &RoTxn) -> bool;
 
     /// Get all vectors from the index at a specific level
     ///
