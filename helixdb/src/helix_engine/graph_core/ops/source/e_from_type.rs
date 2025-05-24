@@ -12,7 +12,11 @@ use crate::{
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
-    protocol::items::SerializedEdge,
+    protocol::{
+        filterable::{Filterable, FilterableType},
+        items::{Edge},
+        label_hash::hash_label,
+    },
 };
 
 use super::super::tr_val::TraversalVal;
@@ -31,7 +35,7 @@ impl<'a> Iterator for EFromType<'a> {
         while let Some(value) = self.iter.next() {
             let (key, value) = value.unwrap();
             match value.decode() {
-                Ok(value) => match SerializedEdge::decode_edge(&value, key) {
+                Ok(value) => match Edge::decode_edge(&value, key) {
                     Ok(edge) => match &edge.label {
                         label if label == self.label => return Some(Ok(TraversalVal::Edge(edge))),
                         _ => continue,

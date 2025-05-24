@@ -111,13 +111,14 @@ where
 {
     #[inline]
     fn from(item: I) -> Self {
+        let length = match item.properties_ref() {
+            Some(properties) => properties.len(),
+            None => 0,
+        };
         let mut properties = match item.type_name() {
-            FilterableType::Node => {
-                HashMap::with_capacity(Node::NUM_PROPERTIES + item.properties_ref().len())
-            }
+            FilterableType::Node => HashMap::with_capacity(Node::NUM_PROPERTIES + length),
             FilterableType::Edge => {
-                let mut properties =
-                    HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
+                let mut properties = HashMap::with_capacity(Edge::NUM_PROPERTIES + length);
                 properties.insert(
                     "from_node".to_string(),
                     ReturnValue::from(item.from_node_uuid()),
@@ -129,7 +130,10 @@ where
                 properties
             }
             FilterableType::Vector => {
-                let mut properties = item.clone().properties();
+                let mut properties = match item.properties_ref() {
+                    Some(properties) => properties.clone(),
+                    None => HashMap::new(),
+                };
                 let mut return_value = HashMap::new();
                 let data = match properties.remove("data") {
                     Some(value) => value,
@@ -147,11 +151,14 @@ where
             "label".to_string(),
             ReturnValue::from(item.label().to_string()),
         );
-        properties.extend(
-            item.properties()
-                .into_iter()
-                .map(|(k, v)| (k, ReturnValue::from(v))),
-        );
+        if item.properties_ref().is_some() {
+            properties.extend(
+                item.properties()
+                    .unwrap()
+                    .into_iter()
+                    .map(|(k, v)| (k, ReturnValue::from(v))),
+            );
+        }
         ReturnValue::Object(properties)
     }
 }

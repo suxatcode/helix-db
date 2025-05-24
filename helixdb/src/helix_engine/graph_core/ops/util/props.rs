@@ -28,23 +28,38 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some(Ok(TraversalVal::Node(node))) => {
-                let prop = node.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match node.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
             Some(Ok(TraversalVal::Edge(edge))) => {
-                let prop = edge.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match edge.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
             Some(Ok(TraversalVal::Vector(vec))) => {
-                let prop = vec.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match vec.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
@@ -61,23 +76,38 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             Some(Ok(TraversalVal::Node(node))) => {
-                let prop = node.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match node.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
             Some(Ok(TraversalVal::Edge(edge))) => {
-                let prop = edge.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match edge.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }
             Some(Ok(TraversalVal::Vector(vec))) => {
-                let prop = vec.properties.get(self.prop);
-                match prop {
-                    Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                match vec.properties {
+                    Some(prop) => {
+                        let prop = prop.get(self.prop);
+                        match prop {
+                            Some(prop) => Some(Ok(TraversalVal::Value(prop.clone()))),
+                            None => None,
+                        }
+                    }
                     None => None,
                 }
             }

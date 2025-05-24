@@ -4,7 +4,10 @@ use crate::{
         graph_core::traversal_iter::{RoTraversalIterator, RwTraversalIterator},
         types::GraphError,
     },
-    protocol::items::{Edge, SerializedEdge},
+    protocol::{
+        filterable::{Filterable, FilterableType},
+        items::{Edge, Node},
+    },
 };
 use std::ops::Deref;
 use heed3::{
@@ -25,7 +28,7 @@ impl<'a> Iterator for E<'a> {
             let (key, value) = value.unwrap();
             let value = value.decode().unwrap();
             if !value.is_empty() {
-                match SerializedEdge::decode_edge(&value, key) {
+                match Edge::decode_edge(&value, key) {
                     Ok(edge) => Ok(TraversalVal::Edge(edge)),
                     Err(e) => Err(GraphError::ConversionError(format!(
                         "Error deserializing edge: {}",
@@ -85,7 +88,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> RwEAdapt
             .unwrap()
             .filter_map(|result| {
                 let (key, value) = result.unwrap();
-                let value: Edge = match SerializedEdge::decode_edge(&value.decode().unwrap(), key) {
+                let value: Edge = match Edge::decode_edge(&value.decode().unwrap(), key) {
                     Ok(edge) => edge,
                     Err(e) => {
                         eprintln!("Error decoding edge: {:?}", e);

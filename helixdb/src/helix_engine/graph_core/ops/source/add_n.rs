@@ -42,7 +42,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
         let node = Node {
             id: v6_uuid(),
             label: label.to_string(), // TODO: just &str or Cow<'a, str>
-            properties: properties.into_iter().collect(),
+            properties: Some(properties.into_iter().collect()),
         };
 
         let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();

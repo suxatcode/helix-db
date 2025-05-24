@@ -79,21 +79,29 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdap
             .inner
             .filter_map(move |item| {
                 let edge_label_hash = hash_label(edge_label, None);
-                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
-                match db
-                    .out_edges_db
-                    .lazily_decode_data()
-                    .get_duplicates(txn, &prefix)
-                {
-                    Ok(Some(iter)) => Some(OutEdgesIterator {
-                        iter,
-                        storage: Arc::clone(&db),
-                        txn,
-                    }),
-                    Ok(None) => None,
+                match item {
+                    Ok(item) => {
+                        let prefix = HelixGraphStorage::out_edge_key(&item.id(), &edge_label_hash);
+                        match db
+                            .out_edges_db
+                            .lazily_decode_data()
+                            .get_duplicates(txn, &prefix)
+                        {
+                            Ok(Some(iter)) => Some(OutEdgesIterator {
+                                iter,
+                                storage: Arc::clone(&db),
+                                txn,
+                            }),
+                            Ok(None) => None,
+                            Err(e) => {
+                                println!("{} Error getting out edges: {:?}", line!(), e);
+                                // return Err(e);
+                                None
+                            }
+                        }
+                    }
                     Err(e) => {
-                        println!("Error getting out edges: {:?}", e);
-                        // return Err(e);
+                        println!("{} Error getting oupt edges: {:?}", line!(), e);
                         None
                     }
                 }

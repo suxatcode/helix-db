@@ -6,7 +6,8 @@ use crate::{
         types::GraphError,
     },
     protocol::{
-        items::{Edge, SerializedEdge},
+        filterable::{Filterable, FilterableType},
+        items::{Edge, Node},
         label_hash::hash_label,
     },
 };
@@ -114,13 +115,16 @@ impl G {
                 {
                     return Err(GraphError::NodeNotFound);
                 }
-                match SerializedEdge::encode_edge(&Edge {
-                    id: *e_id,
-                    label: "knows".to_string(),
-                    properties: HashMap::new(),
-                    from_node: *e_from,
-                    to_node: *e_to,
-                }) {
+                match {
+                    Edge {
+                        id: *e_id,
+                        label: "knows".to_string(),
+                        properties: None,
+                        from_node: *e_from,
+                        to_node: *e_to,
+                    }
+                    .encode_edge()
+                } {
                     Ok(bytes) => {
                         if let Err(e) = storage.edges_db.put_with_flags(
                             &mut txn,
