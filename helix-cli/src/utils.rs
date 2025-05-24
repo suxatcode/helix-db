@@ -356,3 +356,8 @@ impl StyledString for str {
         format!("\x1b[4m{}\x1b[0m", self)
     }
 }
+
+// TODO:
+// Spinner::new
+// Spinner::stop_with_message
+// Dots9 style

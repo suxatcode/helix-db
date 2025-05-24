@@ -20,6 +20,9 @@ pub enum CommandType {
     /// Deploy a Helix project
     Deploy(DeployCommand),
 
+    /// Re-deploy a Helix project with new queries
+    Redeploy(RedeployCommand),
+
     /// Compile a Helix project
     Compile(CompileCommand),
 
@@ -68,6 +71,16 @@ pub struct DeployCommand {
 
     #[clap(short, long, help = "Port to run the instance on")]
     pub port: Option<u16>,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "redeploy", about = "Re-deploy a Helix project with new queries")]
+pub struct RedeployCommand {
+    #[clap(help = "Existing helix instance ID")]
+    pub instance: String,
+
+    #[clap(short, long, help = "The path to the project")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Args)]

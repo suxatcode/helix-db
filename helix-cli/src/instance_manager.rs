@@ -107,7 +107,7 @@ impl InstanceManager {
         Ok(instance)
     }
 
-    pub fn start_instance(&self, instance_id: &str) -> Result<Option<InstanceInfo>, CliError> {
+    pub fn start_instance(&self, instance_id: &str, endpoints: Option<Vec<String>>) -> Result<InstanceInfo, CliError> {
         let mut instance = match self.get_instance(instance_id)? {
             Some(instance) => instance,
             None => return Err(CliError::New(format!("No instance found with id {}", instance_id)))
@@ -158,10 +158,13 @@ impl InstanceManager {
 
         instance.pid = child.id();
         instance.running = true;
+        if let Some(endpoints) = endpoints {
+            instance.available_endpoints = endpoints;
+        }
 
         self.update_instance(&instance)?;
 
-        Ok(Some(instance))
+        Ok(instance)
     }
 
     pub fn get_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
