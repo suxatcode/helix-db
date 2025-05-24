@@ -30,7 +30,7 @@ pub trait InsertVAdapter<'a, 'b>:
         self,
         vec: &Vec<f64>,
         label: &str,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector, &RoTxn) -> bool;
@@ -38,7 +38,7 @@ pub trait InsertVAdapter<'a, 'b>:
     fn insert_vs<F>(
         self,
         vecs: &Vec<Vec<f64>>,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector, &RoTxn) -> bool;
@@ -51,7 +51,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
         self,
         query: &Vec<f64>,
         label: &str,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector, &RoTxn) -> bool,
@@ -78,7 +78,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
     fn insert_vs<F>(
         self,
         vecs: &Vec<Vec<f64>>,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         F: Fn(&HVector, &RoTxn) -> bool,

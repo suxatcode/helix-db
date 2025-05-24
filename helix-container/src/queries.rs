@@ -42,40 +42,48 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct File7 {
+pub struct File8 {
     pub name: String,
     pub age: i32,
 }
 
-pub struct EdgeFile7 {
-    pub from: File7,
-    pub to: File7,
+pub struct EdgeFile8 {
+    pub from: File8,
+    pub to: File8,
 }
 
-pub struct File7Vec {
+pub struct File8Vec {
     pub content: String,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct file7Input {
+pub struct file8Input {
     pub vec: Vec<f64>,
 }
 #[handler]
-pub fn file7(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    let data: file7Input = match sonic_rs::from_slice(&input.request.body) {
+pub fn file8(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: file8Input = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
 
     let mut remapping_vals: HashMap<u128, ResponseRemapping> = HashMap::new();
     let db = Arc::clone(&input.graph.storage);
-    let txn = db.graph_env.read_txn().unwrap();
+    let mut txn = db.graph_env.write_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-    let vecs = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector, &RoTxn) -> bool>(&data.vec, 10, None)
+    let new_vec = G::new_mut(Arc::clone(&db), &mut txn)
+        .insert_v::<fn(&HVector, &RoTxn) -> bool>(
+            &data.vec,
+            "File8Vec",
+            Some(props! { "content" => "hello" }),
+        )
         .collect_to::<Vec<_>>();
-    return_vals.insert("hello".to_string(), ReturnValue::from(Value::from("hello")));
+    return_vals.insert(
+        "new_vec".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(new_vec, remapping_vals),
+    );
 
+    txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
 }

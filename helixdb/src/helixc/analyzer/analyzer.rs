@@ -800,7 +800,8 @@ impl<'a> Ctx<'a> {
                                 }
                                 VectorData::Identifier(i) => {
                                     self.is_valid_identifier(q, add.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                    // TODO: if in params then do data.i else i
+                                    GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
                                 }
                             };
                             let add_v = AddV {
@@ -2916,7 +2917,8 @@ impl<'a> Ctx<'a> {
                                 }
                                 VectorData::Identifier(i) => {
                                     self.is_valid_identifier(q, add.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Ref(i.clone()))
+                                    // TODO: if in params then do data.i else i
+                                    GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
                                 }
                             };
                             let add_v = AddV {

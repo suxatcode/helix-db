@@ -44,7 +44,7 @@ pub trait HNSW
         txn: &mut RwTxn,
         data: &[f64],
         nid: Option<u128>,
-        fields: Option<HashMap<String, Value>>,
+        fields: Option<Vec<(String, Value)>>,
     ) -> Result<HVector, VectorError>
     where
         F: Fn(&HVector, &RoTxn) -> bool;

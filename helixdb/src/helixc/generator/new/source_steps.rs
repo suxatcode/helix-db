@@ -70,7 +70,7 @@ pub struct AddV {
 impl Display for AddV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        write!(f, "add_v({}, {}, {})", self.vec, self.label, properties)
+        write!(f, "insert_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, {})", self.vec, self.label, properties)
     }
 }
 
@@ -90,7 +90,11 @@ impl Display for SearchV {
             .map(|f| format!("{}", f))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "search_v({}, {}, {})", self.vec, properties, f_str)
+        write!(
+            f,
+            "search_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, {})",
+            self.vec, properties, f_str
+        )
     }
 }
 

@@ -124,14 +124,17 @@ impl Display for Order {
 }
 
 pub fn write_properties(properties: &Vec<(String, GeneratedValue)>) -> String {
-    format!(
-        "props! {{ {} }}",
-        properties
+    match properties.is_empty() {
+        true => "None".to_string(),
+        false => format!(
+            "Some(props! {{ {} }})",
+            properties
             .iter()
-            .map(|(name, value)| format!("\"{}\" => {}", name, value))
-            .collect::<Vec<String>>()
-            .join(", ")
-    )
+                .map(|(name, value)| format!("\"{}\" => {}", name, value))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
 }
 
 pub fn write_secondary_indices(secondary_indices: &Option<Vec<String>>) -> String {
