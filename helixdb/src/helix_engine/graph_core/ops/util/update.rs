@@ -24,28 +24,24 @@ where
     }
 }
 
-pub trait UpdateAdapter<'a, 'b>: Iterator + Sized {
+pub trait UpdateAdapter<'scope, 'env>: Iterator + Sized {
     fn update(
         self,
         props: Vec<(String, Value)>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        'b: 'a;
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter<'a, 'b>
-    for RwTraversalIterator<'a, 'b, I>
+impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter<'scope, 'env>
+    for RwTraversalIterator<'scope, 'env, I>
 {
     fn update(
         self,
         props: Vec<(String, Value)>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        'b: 'a,
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     {
         let storage = self.storage.clone();
 
-        let capacity = match  self.inner.size_hint() {
+        let capacity = match self.inner.size_hint() {
             (_, Some(upper)) => upper,
             (lower, None) => lower,
         };
@@ -55,22 +51,27 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter
             match item {
                 Ok(TraversalVal::Node(node)) => match storage.get_node(self.txn, &node.id) {
                     Ok(mut old_node) => {
-                        for (k, v) in props.iter() {
-                            old_node.properties.insert(k.clone(), v.clone());
-                        }
-                        for (key, v) in old_node.properties.iter() {
-                            if let Some(db) = storage.secondary_indices.get(key) {
-                                match bincode::serialize(v) {
-                                    Ok(serialized) => {
-                                        if let Err(e) =
-                                            db.put(self.txn, &serialized, &node.id.to_be_bytes())
-                                        {
-                                            vec.push(Err(GraphError::from(e)));
+                        if let Some(mut properties) = old_node.properties {
+                            for (k, v) in props.iter() {
+                                properties.insert(k.clone(), v.clone());
+                            }
+                            for (key, v) in properties.iter() {
+                                if let Some(db) = storage.secondary_indices.get(key) {
+                                    match bincode::serialize(v) {
+                                        Ok(serialized) => {
+                                            if let Err(e) = db.put(
+                                                self.txn,
+                                                &serialized,
+                                                &node.id.to_be_bytes(),
+                                            ) {
+                                                vec.push(Err(GraphError::from(e)));
+                                            }
                                         }
+                                        Err(e) => vec.push(Err(GraphError::from(e))),
                                     }
-                                    Err(e) => vec.push(Err(GraphError::from(e))),
                                 }
                             }
+                            old_node.properties = Some(properties);
                         }
                         match bincode::serialize(&node) {
                             Ok(serialized) => {
@@ -83,15 +84,18 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter
                                     Err(e) => vec.push(Err(GraphError::from(e))),
                                 }
                             }
-                                Err(e) => vec.push(Err(GraphError::from(e))),
+                            Err(e) => vec.push(Err(GraphError::from(e))),
                         }
                     }
                     Err(e) => vec.push(Err(e)),
                 },
                 Ok(TraversalVal::Edge(edge)) => match storage.get_edge(self.txn, &edge.id) {
                     Ok(mut old_edge) => {
-                        for (k, v) in props.iter() {
-                            old_edge.properties.insert(k.clone(), v.clone());
+                        if let Some(mut properties) = old_edge.properties {
+                            for (k, v) in props.iter() {
+                                properties.insert(k.clone(), v.clone());
+                            }
+                            old_edge.properties = Some(properties);
                         }
                         match bincode::serialize(&edge) {
                             Ok(serialized) => {
@@ -113,7 +117,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter
             }
         }
         RwTraversalIterator {
-            inner: Update { iter: vec.into_iter() },
+            inner: Update {
+                iter: vec.into_iter(),
+            },
             storage: self.storage,
             txn: self.txn,
         }

@@ -1,11 +1,12 @@
 use crate::args::*;
 use colored::*;
 use helixdb::helixc::{
-    analyzer::{analyzer::analyze, types::Source as HelixSource},
-    generator::generator::CodeGenerator,
+    analyzer::analyzer::analyze,
+    generator::new::generator_types::Source as GeneratedSource,
     parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
 use std::{
+    fmt::Write,
     fs,
     fs::DirEntry,
     io::ErrorKind,
@@ -254,7 +255,8 @@ fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
     let files = files
         .iter()
         .map(|file| {
-            let name = file.file_name().to_string_lossy().into_owned();
+            let name = file.path().to_string_lossy().into_owned();
+            println!("{}", name);
             let content = fs::read_to_string(file.path()).unwrap();
             HxFile { name, content }
         })
@@ -280,26 +282,22 @@ fn parse_content(content: &Content) -> Result<Source, CliError> {
     Ok(source)
 }
 
-fn analyze_source(source: Source) -> Result<HelixSource, CliError> {
-    let diagnostics = analyze(&source);
+fn analyze_source(source: Source) -> Result<GeneratedSource, CliError> {
+    let (diagnostics, source) = analyze(&source);
     if !diagnostics.is_empty() {
         for diag in diagnostics {
-            println!("{}", diag.render(&source.source, "queries.hx"));
+            let filepath = diag.filepath.clone().unwrap_or("queries.hx".to_string());
+            println!("{}", diag.render(&source.src, &filepath));
         }
         return Err(CliError::CompileFailed);
     }
 
-    Ok(HelixSource::from(source))
+    Ok(source)
 }
 
-pub fn generate(files: &Vec<DirEntry>) -> Result<Content, CliError> {
-    let mut generator = CodeGenerator::new();
+pub fn generate(files: &Vec<DirEntry>) -> Result<(Content, GeneratedSource), CliError> {
     let mut content = generate_content(&files)?;
     content.source = parse_content(&content)?;
     let analyzed_source = analyze_source(content.source.clone())?;
-    content.content.push_str(&generator.generate_headers());
-    content
-        .content
-        .push_str(&generator.generate_source(&analyzed_source));
-    Ok(content)
+    Ok((content, analyzed_source))
 }

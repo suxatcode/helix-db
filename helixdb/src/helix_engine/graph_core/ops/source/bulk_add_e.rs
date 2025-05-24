@@ -7,7 +7,7 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage, types::GraphError,
     },
     protocol::{
-        items::{Edge, SerializedEdge},
+        items::{Edge},
         label_hash::hash_label,
     },
 };
@@ -68,13 +68,16 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
             {
                 result = Err(GraphError::NodeNotFound);
             }
-            match SerializedEdge::encode_edge(&Edge {
-                id: *e_id,
-                label: "knows".to_string(),
-                properties: HashMap::new(),
-                from_node: *e_from,
-                to_node: *e_to,
-            }) {
+            match {
+                Edge {
+                    id: *e_id,
+                    label: "knows".to_string(),
+                    properties: None,
+                    from_node: *e_from,
+                    to_node: *e_to,
+                }
+                .encode_edge()
+            } {
                 Ok(bytes) => {
                     if let Err(e) = self.storage.edges_db.put_with_flags(
                         self.txn,

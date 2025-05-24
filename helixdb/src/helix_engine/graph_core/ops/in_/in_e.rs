@@ -91,7 +91,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InEdgesAdapt
                     }),
                     Ok(None) => None,
                     Err(e) => {
-                        println!("Error getting out edges: {:?}", e);
+                        println!("Error getting in edges: {:?}", e);
                         // return Err(e);
                         None
                     }

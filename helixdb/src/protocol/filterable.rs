@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use crate::protocol::{
-    items::{Edge, Node},
-    value::Value,
+use crate::{
+    helix_engine::types::GraphError,
+    protocol::{
+        items::{Edge, Node},
+        value::Value,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -33,13 +36,13 @@ pub trait Filterable {
 
     fn to_node_uuid(&self) -> String;
 
-    fn properties(self) -> HashMap<String, Value>;
+    fn properties(self) -> Option<HashMap<String, Value>>;
 
-    fn properties_mut(&mut self) -> &mut HashMap<String, Value>;
+    fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>>;
 
-    fn properties_ref(&self) -> &HashMap<String, Value>;
+    fn properties_ref(&self) -> &Option<HashMap<String, Value>>;
 
-    fn check_property(&self, key: &str) -> Option<&Value>;
+    fn check_property(&self, key: &str) -> Result<&Value, GraphError>;
 
     fn find_property<'a>(
         &'a self,
@@ -91,23 +94,34 @@ impl Filterable for Node {
     }
 
     #[inline(always)]
-    fn properties(self) -> HashMap<String, Value> {
+    fn properties(self) -> Option<HashMap<String, Value>> {
         self.properties
     }
 
     #[inline(always)]
-    fn properties_ref(&self) -> &HashMap<String, Value> {
+    fn properties_ref(&self) -> &Option<HashMap<String, Value>> {
         &self.properties
     }
 
     #[inline(always)]
-    fn properties_mut(&mut self) -> &mut HashMap<String, Value> {
+    fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>> {
         &mut self.properties
     }
 
     #[inline(always)]
-    fn check_property(&self, key: &str) -> Option<&Value> {
-        self.properties.get(key)
+    fn check_property(&self, key: &str) -> Result<&Value, GraphError> {
+        match &self.properties {
+            Some(properties) => properties
+                .get(key)
+                .ok_or(GraphError::ConversionError(format!(
+                    "Property {} not found",
+                    key
+                ))),
+            None => Err(GraphError::ConversionError(format!(
+                "Property {} not found",
+                key
+            ))),
+        }
     }
 
     #[inline(always)]
@@ -117,11 +131,14 @@ impl Filterable for Node {
         secondary_properties: &'a HashMap<String, ReturnValue>,
         property: &'a mut ReturnValue,
     ) -> Option<&'a ReturnValue> {
-        match self.properties.get(key) {
-            Some(value) => {
-                property.clone_from(&ReturnValue::Value(value.clone()));
-                Some(property)
-            }
+        match &self.properties {
+            Some(properties) => match properties.get(key) {
+                Some(value) => {
+                    property.clone_from(&ReturnValue::Value(value.clone()));
+                    Some(property)
+                }
+                None => secondary_properties.get(key),
+            },
             None => secondary_properties.get(key),
         }
     }
@@ -161,7 +178,7 @@ impl Filterable for Edge {
     #[inline(always)]
     fn to_node(&self) -> u128 {
         self.to_node
-    }   
+    }
 
     #[inline(always)]
     fn to_node_uuid(&self) -> String {
@@ -169,23 +186,34 @@ impl Filterable for Edge {
     }
 
     #[inline(always)]
-    fn properties(self) -> HashMap<String, Value> {
+    fn properties(self) -> Option<HashMap<String, Value>> {
         self.properties
     }
 
     #[inline(always)]
-    fn properties_ref(&self) -> &HashMap<String, Value> {
+    fn properties_ref(&self) -> &Option<HashMap<String, Value>> {
         &self.properties
     }
 
     #[inline(always)]
-    fn properties_mut(&mut self) -> &mut HashMap<String, Value> {
+    fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>> {
         &mut self.properties
     }
 
     #[inline(always)]
-    fn check_property(&self, key: &str) -> Option<&Value> {
-        self.properties.get(key)
+    fn check_property(&self, key: &str) -> Result<&Value, GraphError> {
+        match &self.properties {
+            Some(properties) => properties
+                .get(key)
+                .ok_or(GraphError::ConversionError(format!(
+                    "Property {} not found",
+                    key
+                ))),
+            None => Err(GraphError::ConversionError(format!(
+                "Property {} not found",
+                key
+            ))),
+        }
     }
 
     #[inline(always)]
@@ -195,11 +223,14 @@ impl Filterable for Edge {
         secondary_properties: &'a HashMap<String, ReturnValue>,
         property: &'a mut ReturnValue,
     ) -> Option<&'a ReturnValue> {
-        match self.properties.get(key) {
-            Some(value) => {
-                property.clone_from(&ReturnValue::Value(value.clone()));
-                Some(property)
-            }
+        match &self.properties {
+            Some(properties) => match properties.get(key) {
+                Some(value) => {
+                    property.clone_from(&ReturnValue::Value(value.clone()));
+                    Some(property)
+                }
+                None => secondary_properties.get(key),
+            },
             None => secondary_properties.get(key),
         }
     }

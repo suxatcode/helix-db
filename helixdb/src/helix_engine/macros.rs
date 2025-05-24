@@ -59,11 +59,11 @@ pub mod macros {
     vec![]
     };
     ($($key:expr => $value:expr),* $(,)?) => {
-    vec![
-    $(
-    (String::from($key), $value.into()),
-    )*
-    ]
+        vec![
+            $(
+            (String::from($key), $value.into()),
+            )*
+        ]
     };
  }
 
@@ -130,51 +130,122 @@ pub mod macros {
     }
 
     #[macro_export]
-    macro_rules! decode_str {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => std::str::from_utf8(v)?,
+    macro_rules! field_remapping {
+        ($remapping_vals:expr, $var_name:expr, $old_name:expr => $new_name:expr) => {{
+            let old_value = match $var_name.check_property($old_name) {
+                Ok(val) => val,
                 Err(e) => {
                     return Err(GraphError::ConversionError(format!(
                         "Error Decoding: {:?}",
-                        e
+                        "Invalid node".to_string()
                     )))
                 }
-            }
-        };
+            };
+            let old_value_remapping =
+                Remapping::new(false, Some($new_name), Some(ReturnValue::from(old_value)));
+            $remapping_vals.insert(
+                $var_name.id(),
+                ResponseRemapping::new(
+                    HashMap::from([($old_name.to_string(), old_value_remapping)]),
+                    false,
+                ),
+            );
+            Ok::<TraversalVal, GraphError>($var_name) // Return the Ok value
+        }};
     }
 
     #[macro_export]
-    macro_rules! decode_string {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => String::from_utf8(v.to_vec())?,
-                Err(e) => {
-                    return Err(GraphError::ConversionError(format!(
-                        "Error Decoding: {:?}",
-                        e
-                    )))
-                }
-            }
-        };
+    macro_rules! traversal_remapping {
+        ($remapping_vals:expr, $var_name:expr, $new_name:expr => $traversal:expr) => {{
+            // TODO: ref?
+            let traversal_result: Vec<TraversalVal> = $traversal;
+            let new_remapping = Remapping::new(
+                false,
+                Some($new_name.to_string()),
+                Some(ReturnValue::from(traversal_result)),
+            );
+            $remapping_vals.insert(
+                $var_name.id(),
+                ResponseRemapping::new(
+                    HashMap::from([($new_name.to_string(), new_remapping)]),
+                    false,
+                ),
+            );
+            Ok::<TraversalVal, GraphError>($var_name)
+        }};
     }
 
     #[macro_export]
-    macro_rules! decode_u128 {
-        ($value:expr) => {
-            match $value.decode() {
-                Ok(v) => {
-                    let mut arr = [0u8; 16];
-                    arr.copy_from_slice(v);
-                    u128::from_le_bytes(arr) // TODO: from_be_bytes??
-                }
+    macro_rules! exclude_field {
+        ($remapping_vals:expr, $($field_to_exclude:expr),* $(,)?) => {{
+
+                    $(
+                    let $field_to_exclude_remapping = Remapping::new(
+                        true,
+                        Some($field_to_exclude),
+                        None,
+                    );
+                    $remapping_vals.insert(
+                        item.id(),
+                        ResponseRemapping::new(
+                            HashMap::from([($field_to_exclude.to_string(), $field_to_exclude_remapping)]),
+                            false,
+                        ),
+                    );
+                    )*
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! identifier_remapping {
+        ($remapping_vals:expr, $var_name:expr, $field_name:expr =>  $identifier_value:expr) => {{
+            let value = match $var_name.check_property($field_name) {
+                Ok(val) => val.clone(), // TODO: try and remove clone
                 Err(e) => {
                     return Err(GraphError::ConversionError(format!(
                         "Error Decoding: {:?}",
-                        e
+                        "Invalid node".to_string()
                     )))
                 }
-            }
-        };
+            };
+            let value_remapping = Remapping::new(
+                false,
+                Some($identifier_value.to_string()),
+                Some(ReturnValue::from(value)),
+            );
+            $remapping_vals.insert(
+                $var_name.id(),
+                ResponseRemapping::new(
+                    HashMap::from([($field_name.to_string(), value_remapping)]),
+                    false,
+                ),
+            );
+            Ok::<TraversalVal, GraphError>($var_name)
+        }};
+    }
+
+    #[macro_export]
+    macro_rules! value_remapping {
+        ($remapping_vals:expr, $var_name:expr, $field_name:expr =>  $value:expr) => {{
+            let old_value = match $var_name.check_property($field_name) {
+                Ok(val) => val,
+                Err(e) => {
+                    return Err(GraphError::ConversionError(format!(
+                        "Error Decoding: {:?}",
+                        "Invalid node".to_string()
+                    )))
+                }
+            };
+            let old_value_remapping =
+                Remapping::new(false, Some(value), Some(ReturnValue::from(old_value)));
+            $remapping_vals.insert(
+                $var_name.id(),
+                ResponseRemapping::new(
+                    HashMap::from([($field_name.to_string(), old_value_remapping)]),
+                    false,
+                ),
+            );
+            Ok(()) // Return the Ok value
+        }};
     }
 }

@@ -3,12 +3,17 @@ use std::{
     time::Instant,
 };
 
-use crate::protocol::{
-    filterable::Filterable,
-    items::Node,
-    value::Value,
+use crate::{helix_engine::graph_core::ops::source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter}, props};
+use crate::{
+    helix_engine::graph_core::ops::source::n_from_type::NFromTypeAdapter,
+    protocol::{
+        filterable::Filterable,
+        id::ID,
+        items::{Edge, Node},
+        traversal_value::TraversalValue,
+        value::Value,
+    },
 };
-use crate::{helix_engine::graph_core::ops::source::bulk_add_e::BulkAddEAdapter, props};
 use crate::{
     helix_engine::{
         graph_core::ops::{
@@ -28,6 +33,7 @@ use crate::{
     protocol::items::v6_uuid,
 };
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
 use super::ops::{
@@ -45,184 +51,30 @@ fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
 }
 
 #[test]
-fn test_n() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
-
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let thing = storage
-        .create_node(&mut txn, "thing", props!(), None, None)
-        .unwrap();
-    txn.commit().unwrap();
-
-    let txn = storage.graph_env.read_txn().unwrap();
-    // let mut traversal = TraversalBuilder::new(Arc::clone(&storage), TraversalValue::Empty);
-    let nodes = G::new(Arc::clone(&storage), &txn)
-        .n()
-        .collect_to::<Vec<_>>();
-    // Check that the node array contains all nodes
-    assert_eq!(nodes.len(), 3);
-
-    let node_ids: Vec<u128> = nodes.iter().map(|n| n.id()).collect();
-    let node_labels: Vec<String> = nodes.iter().map(|n| n.label()).collect();
-
-    assert!(node_ids.contains(&person1.id));
-    assert!(node_ids.contains(&person2.id));
-    assert!(node_ids.contains(&thing.id));
-
-    assert_eq!(node_labels.iter().filter(|&l| l == "person").count(), 2);
-    assert_eq!(node_labels.iter().filter(|&l| l == "thing").count(), 1);
-}
-
-#[test]
-fn test_e() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
-
-    // Graph Structure:
-    // (person1)-[knows]->(person2)
-    //         \-[likes]->(person3)
-    // (person2)-[follows]->(person3)
-
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-
-    let knows_edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    let likes_edge = storage
-        .create_edge(&mut txn, "likes", &person1.id, &person3.id, props!())
-        .unwrap();
-    let follows_edge = storage
-        .create_edge(&mut txn, "follows", &person2.id, &person3.id, props!())
-        .unwrap();
-
-    txn.commit().unwrap();
-
-    let txn = storage.graph_env.read_txn().unwrap();
-    let edges = G::new(Arc::clone(&storage), &txn)
-        .e()
-        .collect_to::<Vec<_>>();
-
-    // Check that the edge array contains the three edges
-    assert_eq!(edges.len(), 3);
-
-    let edge_ids: Vec<u128> = edges.iter().map(|e| e.id()).collect();
-    let edge_labels: Vec<String> = edges.iter().map(|e| e.label().to_string()).collect();
-
-    assert!(edge_ids.contains(&knows_edge.id));
-    assert!(edge_ids.contains(&likes_edge.id));
-    assert!(edge_ids.contains(&follows_edge.id));
-
-    assert!(edge_labels.contains(&"knows".to_string()));
-    assert!(edge_labels.contains(&"likes".to_string()));
-    assert!(edge_labels.contains(&"follows".to_string()));
-
-    for edge in edges {
-        match edge {
-            TraversalVal::Edge(edge) => match edge.label() {
-                "knows" => {
-                    assert_eq!(edge.from_node(), person1.id);
-                    assert_eq!(edge.to_node(), person2.id);
-                }
-                "likes" => {
-                    assert_eq!(edge.from_node(), person1.id);
-                    assert_eq!(edge.to_node(), person3.id);
-                }
-                "follows" => {
-                    assert_eq!(edge.from_node(), person2.id);
-                    assert_eq!(edge.to_node(), person3.id);
-                }
-                _ => panic!("Unexpected edge label"),
-            },
-            _ => panic!("Expected Edge value"),
-        }
-    }
-}
-
-#[test]
-fn test_n_empty_graph() {
-    let (storage, _temp_dir) = setup_test_db();
-
-    let txn = storage.graph_env.read_txn().unwrap();
-
-    let nodes = G::new(Arc::clone(&storage), &txn)
-        .n()
-        .collect_to::<Vec<_>>();
-
-    // Check that the node array is empty
-    assert_eq!(nodes.len(), 0);
-}
-
-#[test]
-fn test_e_empty_graph() {
-    let (storage, _temp_dir) = setup_test_db();
-
-    let txn = storage.graph_env.read_txn().unwrap();
-    let edges = G::new(Arc::clone(&storage), &txn)
-        .e()
-        .collect_to::<Vec<_>>();
-
-    // Check that the edge array is empty
-    assert_eq!(edges.len(), 0);
-}
-
-#[test]
-fn test_n_nodes_without_edges() {
-    let (storage, _temp_dir) = setup_test_db();
-    let mut txn = storage.graph_env.write_txn().unwrap();
-
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-
-    txn.commit().unwrap();
-    let txn = storage.graph_env.read_txn().unwrap();
-
-    let nodes = G::new(Arc::clone(&storage), &txn)
-        .n()
-        .collect_to::<Vec<_>>();
-
-    // Check that the node array contains the two nodes
-    assert_eq!(nodes.len(), 2);
-    let node_ids: Vec<u128> = nodes.iter().map(|n| n.id()).collect();
-    assert!(node_ids.contains(&person1.id));
-    assert!(node_ids.contains(&person2.id));
-}
-
-#[test]
 fn test_add_n() {
     let (storage, _temp_dir) = setup_test_db();
 
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let nodes = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("person", props! {}, None, None)
+        .add_n("person", props! {"name" => "John"}, None)
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
 
-    assert_eq!(nodes.first().unwrap().label(), "person");
+    let node = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&nodes.first().unwrap().id())
+        .collect_to::<Vec<_>>();
+    assert_eq!(node.first().unwrap().label(), "person");
+    println!("node: {:?}", node.first().unwrap());
 
-    // Now txn is free of borrows
-    // (If you dropped txn above, you would need to reinitialize it; so in practice, this pattern
-    //  is only used if the borrow is the only problem.)
+    assert_eq!(node.first().unwrap().id(), nodes.first().unwrap().id());
+    assert_eq!(
+        *node.first().unwrap().check_property("name").unwrap(),
+        Value::String("John".to_string())
+    );
+    println!("node: {:?}", node.first().unwrap());
 
-    // If we haven’t dropped txn, ensure no borrows exist before commit
+    // If we haven't dropped txn, ensure no borrows exist before commit
     txn.commit().unwrap();
 }
 
@@ -231,12 +83,14 @@ fn test_add_e() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let node1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let node2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let node1 = node1.first().unwrap();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let node2 = node2.first().unwrap();
 
     txn.commit().unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
@@ -245,8 +99,8 @@ fn test_add_e() {
             "knows",
             props! {},
             None,
-            node1.id.clone(),
-            node2.id.clone(),
+            node1.id(),
+            node2.id(),
             false,
             EdgeType::Std,
         )
@@ -259,8 +113,8 @@ fn test_add_e() {
             assert_eq!(edge.label(), "knows");
             match edge {
                 TraversalVal::Edge(edge) => {
-                    assert_eq!(edge.from_node(), node1.id);
-                    assert_eq!(edge.to_node(), node2.id);
+                    assert_eq!(edge.from_node(), node1.id());
+                    assert_eq!(edge.to_node(), node2.id());
                 }
                 _ => panic!("Expected Edge value"),
             }
@@ -275,22 +129,41 @@ fn test_out() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create graph: (person1)-[knows]->(person2)-[knows]->(person3)
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = person2.first().unwrap();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = person3.first().unwrap();
 
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "knows", &person2.id, &person3.id, props!())
-        .unwrap();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person2.id(),
+            person3.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
@@ -300,7 +173,7 @@ fn test_out() {
     //     .filter_map(|node| node.ok())
     //     .collect::<Vec<_>>();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person1.id())
         .out("knows")
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
@@ -308,7 +181,7 @@ fn test_out() {
     // txn.commit().unwrap();
     // Check that current step is at person2
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person2.id);
+    assert_eq!(nodes[0].id(), person2.id());
 }
 
 #[test]
@@ -319,14 +192,14 @@ fn test_out_e() {
 
     let mut txn = storage.graph_env.write_txn().unwrap();
     let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("person", props! {}, None, Some(1))
+        .add_n("person", props! {}, None)
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
     let person1 = person1.first().unwrap();
     txn.commit().unwrap();
     let mut txn = storage.graph_env.write_txn().unwrap();
     let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("person", props! {}, None, Some(2))
+        .add_n("person", props! {}, None)
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
     let person2 = person2.first().unwrap();
@@ -368,27 +241,36 @@ fn test_in() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create graph: (person1)-[knows]->(person2)
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(1))
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(2))
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = person2.first().unwrap();
 
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
     txn.commit().unwrap();
-
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person2.id)
+        .n_from_id(&person2.id())
         .in_("knows")
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person1
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person1.id);
+    assert_eq!(nodes[0].id(), person1.id());
 }
 
 #[test]
@@ -397,31 +279,42 @@ fn test_in_e() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create test graph: (person1)-[knows]->(person2)
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(1))
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(2))
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = person2.first().unwrap();
     println!("person1: {:?}", person1);
     println!("person2: {:?}", person2);
 
-    let edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            true,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    let edge = edge.first().unwrap();
     println!("edge: {:?}", edge);
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
 
     let edges = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person2.id)
+        .n_from_id(&person2.id())
         .in_e("knows")
         .collect_to::<Vec<_>>();
 
     // Check that current step is at the edge between person1 and person2
     assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].id(), edge.id);
+    assert_eq!(edges[0].id(), edge.id());
     assert_eq!(edges[0].label(), "knows");
 }
 
@@ -436,38 +329,64 @@ fn test_complex_traversal() {
     //     |                                     |
     //     +-------<------[follows]------<-------+
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = person2.first().unwrap();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = person3.first().unwrap();
 
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "likes", &person2.id, &person3.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "follows", &person3.id, &person1.id, props!())
-        .unwrap();
-
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "likes",
+            props!(),
+            None,
+            person2.id(),
+            person3.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "follows",
+            props!(),
+            None,
+            person3.id(),
+            person1.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
     txn.commit().unwrap();
 
     let txn = storage.graph_env.read_txn().unwrap();
 
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person1.id())
         .out("knows")
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person2
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person2.id);
+    assert_eq!(nodes[0].id(), person2.id());
 
     // Traverse from person2 to person3
     let nodes = G::new_from(Arc::clone(&storage), &txn, vec![nodes[0].clone()])
@@ -476,7 +395,7 @@ fn test_complex_traversal() {
 
     // Check that current step is at person3
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person3.id);
+    assert_eq!(nodes[0].id(), person3.id());
 
     // Traverse from person3 to person1
     let nodes = G::new_from(Arc::clone(&storage), &txn, vec![nodes[0].clone()])
@@ -485,20 +404,21 @@ fn test_complex_traversal() {
 
     // Check that current step is at person1
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person1.id);
+    assert_eq!(nodes[0].id(), person1.id());
 }
 
 #[test]
 fn test_count_single_node() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let person = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person = person.first().unwrap();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person.id)
+        .n_from_id(&person.id())
         .count();
 
     assert_eq!(count, 1);
@@ -508,20 +428,20 @@ fn test_count_single_node() {
 fn test_count_node_array() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .count();
     assert_eq!(count, 3);
 }
@@ -532,22 +452,41 @@ fn test_count_mixed_steps() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create a graph with multiple paths
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person1 = person1.first().unwrap();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = person2.first().unwrap();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = person3.first().unwrap();
 
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person3.id, props!())
-        .unwrap();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person3.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
     txn.commit().unwrap();
     println!(
         "person1: {:?},\nperson2: {:?},\nperson3: {:?}",
@@ -556,7 +495,7 @@ fn test_count_mixed_steps() {
 
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person1.id())
         .out("knows")
         .count();
 
@@ -569,18 +508,20 @@ fn test_range_subset() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create multiple nodes
-    let _: Vec<Node> = (0..5)
+    let _: Vec<_> = (0..5)
         .map(|_| {
-            storage
-                .create_node(&mut txn, "person", props!(), None, None)
-                .unwrap()
+            G::new_mut(Arc::clone(&storage), &mut txn)
+                .add_n("person", props!(), None)
+                .collect_to::<Vec<_>>()
+                .first()
+                .unwrap();
         })
         .collect();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(1, 3) // Take nodes at index 1 and 2
         .count();
 
@@ -593,29 +534,47 @@ fn test_range_chaining() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create graph: (p1)-[knows]->(p2)-[knows]->(p3)-[knows]->(p4)-[knows]->(p5)
-    let nodes: Vec<Node> = (0..5)
+    let nodes: Vec<_> = (0..5)
         .map(|i| {
-            storage
-                .create_node(&mut txn, "person", props! { "name" => i }, None, None)
+            G::new_mut(Arc::clone(&storage), &mut txn)
+                .add_n("person", props! { "name" => i }, None)
+                .collect_to::<Vec<_>>()
+                .first()
                 .unwrap()
+                .clone()
         })
         .collect();
 
     // Create edges connecting nodes sequentially
     for i in 0..4 {
-        storage
-            .create_edge(&mut txn, "knows", &nodes[i].id, &nodes[i + 1].id, props!())
-            .unwrap();
+        G::new_mut(Arc::clone(&storage), &mut txn)
+            .add_e(
+                "knows",
+                props!(),
+                None,
+                nodes[i].id(),
+                nodes[i + 1].id(),
+                false,
+                EdgeType::Std,
+            )
+            .collect_to::<Vec<_>>();
     }
 
-    storage
-        .create_edge(&mut txn, "knows", &nodes[4].id, &nodes[0].id, props!())
-        .unwrap();
-
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            nodes[4].id(),
+            nodes[0].id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 3) // Take first 3 nodes
         .out("knows") // Get their outgoing nodes
         .collect_to::<Vec<_>>();
@@ -629,7 +588,7 @@ fn test_range_empty() {
 
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 0) // Take first 3 nodes
         .collect_to::<Vec<_>>();
 
@@ -641,7 +600,7 @@ fn test_count_empty() {
     let (storage, _temp_dir) = setup_test_db();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n() // Get all nodes
+        .n_from_type("person") // Get all nodes
         .range(0, 0) // Take first 3 nodes
         .count();
 
@@ -654,10 +613,10 @@ fn test_n_from_id() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create a test node
-    let person = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let node_id = person.id.clone();
+    let person = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let node_id = person.id().clone();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
@@ -674,26 +633,34 @@ fn test_n_from_id_with_traversal() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create test graph: (person1)-[knows]->(person2)
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            true,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person1.id())
         .out("knows")
         .collect_to::<Vec<_>>();
 
     // Check that traversal reaches person2
     assert_eq!(count.len(), 1);
-    assert_eq!(count[0].id(), person2.id);
+    assert_eq!(count[0].id(), person2.id());
 }
 
 #[test]
@@ -702,17 +669,24 @@ fn test_e_from_id() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create test graph and edge
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    let edge_id = edge.id.clone();
-
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    let edge_id = edge.first().unwrap().id();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let edges = G::new(Arc::clone(&storage), &txn)
@@ -724,8 +698,8 @@ fn test_e_from_id() {
     assert_eq!(edges[0].id(), edge_id);
     assert_eq!(edges[0].label(), "knows");
     if let Some(TraversalVal::Edge(edge)) = edges.first() {
-        assert_eq!(edge.from_node(), person1.id);
-        assert_eq!(edge.to_node(), person2.id);
+        assert_eq!(edge.from_node(), person1.id());
+        assert_eq!(edge.to_node(), person2.id());
     } else {
         assert!(false, "Expected Edge value");
     }
@@ -757,34 +731,53 @@ fn test_n_from_id_chain_operations() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create test graph: (person1)-[knows]->(person2)-[likes]->(person3)
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
 
-    storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "likes", &person2.id, &person3.id, props!())
-        .unwrap();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "likes",
+            props!(),
+            None,
+            person2.id(),
+            person3.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
-        .n_from_id(&person1.id)
+        .n_from_id(&person1.id())
         .out("knows")
         .out("likes")
         .collect_to::<Vec<_>>();
 
     // Check that the chain of traversals reaches person3
     assert_eq!(nodes.len(), 1);
-    assert_eq!(nodes[0].id(), person3.id);
+    assert_eq!(nodes[0].id(), person3.id());
 }
 
 #[test]
@@ -793,32 +786,48 @@ fn test_e_from_id_chain_operations() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create test graph and edges
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
 
-    let edge1 = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-    storage
-        .create_edge(&mut txn, "likes", &person2.id, &person3.id, props!())
-        .unwrap();
+    let edge1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "likes",
+            props!(),
+            None,
+            person2.id(),
+            person3.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let edges = G::new(Arc::clone(&storage), &txn)
-        .e_from_id(&edge1.id)
+        .e_from_id(&edge1.id())
         .from_n()
         .collect_to::<Vec<_>>();
 
     assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].id(), person1.id);
+    assert_eq!(edges[0].id(), person1.id());
     assert_eq!(edges[0].label(), "person");
 }
 
@@ -828,39 +837,39 @@ fn test_filter_nodes() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     // Create nodes with different properties
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
-        .unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 30 }, None, None)
-        .unwrap();
-    let person3 = storage
-        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 25 }, None)
+        .collect_to::<Vec<_>>();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 30 }, None)
+        .collect_to::<Vec<_>>();
+    let person3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 35 }, None)
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| {
             if let Ok(TraversalVal::Node(node)) = val {
-                if let Some(value) = node.check_property("age") {
+                if let Ok(value) = node.check_property("age") {
                     match value {
-                        Value::F64(age) => *age > 30.0,
-                        Value::I32(age) => *age > 30,
-                        _ => false,
+                        Value::F64(age) => Ok(*age > 30.0),
+                        Value::I32(age) => Ok(*age > 30),
+                        _ => Ok(false),
                     }
                 } else {
-                    false
+                    Ok(false)
                 }
             } else {
-                false
+                Ok(false)
             }
         })
         .collect_to::<Vec<_>>();
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), person3.id);
+    assert_eq!(traversal[0].id(), person3.id());
 }
 
 #[test]
@@ -868,25 +877,25 @@ fn test_filter_macro_single_argument() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "name" => "Alice" }, None, None)
-        .unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "name" => "Bob" }, None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "name" => "Alice" }, None)
+        .collect_to::<Vec<_>>();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "name" => "Bob" }, None)
+        .collect_to::<Vec<_>>();
 
-    fn has_name(val: &Result<TraversalVal, GraphError>) -> bool {
+    fn has_name(val: &Result<TraversalVal, GraphError>) -> Result<bool, GraphError> {
         if let Ok(TraversalVal::Node(node)) = val {
-            return node.check_property("name").is_some();
+            return node.check_property("name").map_or(Ok(false), |_| Ok(true));
         } else {
-            return false;
+            return Ok(false);
         }
     }
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| has_name(val))
         .collect_to::<Vec<_>>();
     assert_eq!(traversal.len(), 2);
@@ -905,38 +914,41 @@ fn test_filter_macro_multiple_arguments() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props! { "age" => 30 }, None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 25 }, None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 30 }, None)
+        .collect_to::<Vec<_>>();
     txn.commit().unwrap();
 
-    fn age_greater_than(val: &Result<TraversalVal, GraphError>, min_age: i32) -> bool {
+    fn age_greater_than(
+        val: &Result<TraversalVal, GraphError>,
+        min_age: i32,
+    ) -> Result<bool, GraphError> {
         if let Ok(TraversalVal::Node(node)) = val {
-            if let Some(value) = node.check_property("age") {
+            if let Ok(value) = node.check_property("age") {
                 match value {
-                    Value::F64(age) => *age > min_age as f64,
-                    Value::I32(age) => *age > min_age,
-                    _ => false,
+                    Value::F64(age) => Ok(*age > min_age as f64),
+                    Value::I32(age) => Ok(*age > min_age),
+                    _ => Ok(false),
                 }
             } else {
-                false
+                Ok(false)
             }
         } else {
-            false
+            Ok(false)
         }
     }
 
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| age_greater_than(val, 27))
         .collect_to::<Vec<_>>();
 
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), person2.id);
+    assert_eq!(traversal[0].id(), person2.id());
 }
 
 #[test]
@@ -944,58 +956,62 @@ fn test_filter_edges() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to::<Vec<_>>();
 
-    let _ = storage
-        .create_edge(
-            &mut txn,
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
             "knows",
-            &person1.id,
-            &person2.id,
             props! { "since" => 2020 },
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
         )
-        .unwrap();
-    let edge2 = storage
-        .create_edge(
-            &mut txn,
+        .collect_to::<Vec<_>>();
+    let edge2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
             "knows",
-            &person2.id,
-            &person1.id,
             props! { "since" => 2022 },
+            None,
+            person2.id(),
+            person1.id(),
+            false,
+            EdgeType::Std,
         )
-        .unwrap();
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
 
-    fn recent_edge(val: &Result<TraversalVal, GraphError>, year: i32) -> bool {
+    fn recent_edge(val: &Result<TraversalVal, GraphError>, year: i32) -> Result<bool, GraphError> {
         if let Ok(TraversalVal::Edge(edge)) = val {
-            if let Some(value) = edge.check_property("since") {
+            if let Ok(value) = edge.check_property("since") {
                 match value {
-                    Value::I32(since) => return *since > year,
-                    Value::F64(since) => return *since > year as f64,
-                    _ => return false,
+                    Value::I32(since) => return Ok(*since > year),
+                    Value::F64(since) => return Ok(*since > year as f64),
+                    _ => return Ok(false),
                 }
             } else {
-                false
+                Ok(false)
             }
         } else {
-            false
+            Ok(false)
         }
     }
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .e()
+        .e_from_type("knows")
         .filter_ref(|val, _| recent_edge(val, 2021))
         .collect_to::<Vec<_>>();
 
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), edge2.id);
+    assert_eq!(traversal[0].id(), edge2.id());
 }
 
 #[test]
@@ -1003,27 +1019,27 @@ fn test_filter_empty_result() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 25 }, None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 25 }, None)
+        .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| {
             if let Ok(TraversalVal::Node(node)) = val {
-                if let Some(value) = node.check_property("age") {
+                if let Ok(value) = node.check_property("age") {
                     match value {
-                        Value::I32(age) => return *age > 100,
-                        Value::F64(age) => return *age > 100.0,
-                        _ => return false,
+                        Value::I32(age) => return Ok(*age > 100),
+                        Value::F64(age) => return Ok(*age > 100.0),
+                        _ => return Ok(false),
                     }
                 } else {
-                    false
+                    Ok(false)
                 }
             } else {
-                false
+                Ok(false)
             }
         })
         .collect_to::<Vec<_>>();
@@ -1035,63 +1051,54 @@ fn test_filter_chain() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let _ = storage
-        .create_node(
-            &mut txn,
-            "person",
-            props! { "age" => 25, "name" => "Alice" },
-            None,
-            None,
-        )
-        .unwrap();
-    let person2 = storage
-        .create_node(
-            &mut txn,
-            "person",
-            props! { "age" => 30, "name" => "Bob" },
-            None,
-            None,
-        )
-        .unwrap();
-    let _ = storage
-        .create_node(&mut txn, "person", props! { "age" => 35 }, None, None)
-        .unwrap();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 25, "name" => "Alice" }, None)
+        .collect_to_val();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 30, "name" => "Bob" }, None)
+        .collect_to_val();
+    let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "age" => 35 }, None)
+        .collect_to_val();
 
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
 
-    fn has_name(val: &Result<TraversalVal, GraphError>) -> bool {
+    fn has_name(val: &Result<TraversalVal, GraphError>) -> Result<bool, GraphError> {
         if let Ok(TraversalVal::Node(node)) = val {
-            return node.check_property("name").is_some();
+            return node.check_property("name").map_or(Ok(false), |_| Ok(true));
         } else {
-            return false;
+            return Ok(false);
         }
     }
 
-    fn age_greater_than(val: &Result<TraversalVal, GraphError>, min_age: i32) -> bool {
+    fn age_greater_than(
+        val: &Result<TraversalVal, GraphError>,
+        min_age: i32,
+    ) -> Result<bool, GraphError> {
         if let Ok(TraversalVal::Node(node)) = val {
-            if let Some(value) = node.check_property("age") {
+            if let Ok(value) = node.check_property("age") {
                 match value {
-                    Value::F64(age) => return *age > min_age as f64,
-                    Value::I32(age) => return *age > min_age,
-                    _ => return false,
+                    Value::F64(age) => return Ok(*age > min_age as f64),
+                    Value::I32(age) => return Ok(*age > min_age),
+                    _ => return Ok(false),
                 }
             } else {
-                return false;
+                return Ok(false);
             }
         } else {
-            return false;
+            return Ok(false);
         }
     }
 
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("person")
         .filter_ref(|val, _| has_name(val))
         .filter_ref(|val, _| age_greater_than(val, 27))
         .collect_to::<Vec<_>>();
 
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), person2.id);
+    assert_eq!(traversal[0].id(), person2.id());
 }
 
 #[test]
@@ -1099,26 +1106,33 @@ fn test_in_n() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(1))
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(2))
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("per son", props!(), None)
+        .collect_to_val();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to_val();
 
-    let edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to_val();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .e_from_id(&edge.id)
+        .e_from_id(&edge.id())
         .to_n()
         .collect_to::<Vec<_>>();
 
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), person2.id);
+    assert_eq!(traversal[0].id(), person2.id());
 }
 
 #[test]
@@ -1126,25 +1140,32 @@ fn test_out_n() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let person1 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(1))
-        .unwrap();
-    let person2 = storage
-        .create_node(&mut txn, "person", props!(), None, Some(2))
-        .unwrap();
+    let person1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to_val();
+    let person2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to_val();
 
-    let edge = storage
-        .create_edge(&mut txn, "knows", &person1.id, &person2.id, props!())
-        .unwrap();
-
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            props!(),
+            None,
+            person1.id(),
+            person2.id(),
+            false,
+            EdgeType::Std,
+        )
+        .collect_to_val();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .e_from_id(&edge.id)
+        .e_from_id(&edge.id())
         .from_n()
         .collect_to::<Vec<_>>();
     assert_eq!(traversal.len(), 1);
-    assert_eq!(traversal[0].id(), person1.id);
+    assert_eq!(traversal[0].id(), person1.id());
 }
 
 #[test]
@@ -1153,12 +1174,12 @@ fn test_edge_properties() {
     let mut txn = storage.graph_env.write_txn().unwrap();
 
     let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
-        .add_n("person", props!(), None, None)
+        .add_n("person", props!(), None)
         .collect_to::<Vec<_>>();
     let node1 = node1.first().unwrap().clone();
-    let node2 = storage
-        .create_node(&mut txn, "person", props!(), None, None)
-        .unwrap();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props!(), None)
+        .collect_to_val();
     let props = props! { "since" => 2020, "date" => 1744965900, "name" => "hello"};
     let edge = G::new_mut(Arc::clone(&storage), &mut txn)
         .add_e(
@@ -1166,7 +1187,7 @@ fn test_edge_properties() {
             props.clone(),
             Some(v6_uuid()),
             node1.id(),
-            node2.id,
+            node2.id(),
             false,
             EdgeType::Std,
         )
@@ -1179,20 +1200,23 @@ fn test_edge_properties() {
         .filter_ref(|val, _| {
             if let Ok(val) = val {
                 println!("val: {:?}", val.check_property("date"));
-                val.check_property("date").map_or(false, |v| {
+                val.check_property("date").map_or(Ok(false), |v| {
                     println!("v: {:?}", v);
                     println!("v: {:?}", *v == 1743290007);
-                    *v >= 1743290007
+                    Ok(*v >= 1743290007)
                 })
             } else {
-                false
+                Ok(false)
             }
         })
         .collect_to::<Vec<_>>();
     let edge = edge.first().unwrap();
     match edge {
         TraversalVal::Edge(edge) => {
-            assert_eq!(edge.properties, props.into_iter().collect());
+            assert_eq!(
+                edge.properties.clone().unwrap(),
+                props.into_iter().collect()
+            );
         }
         _ => {
             panic!("Expected Edge value");
@@ -1269,11 +1293,11 @@ fn huge_traversal() {
 
     for i in 0..100_000 {
         // nodes.push(Node::new("person", props! { "name" => i}));
-        nodes.push((v6_uuid()));
+        nodes.push(v6_uuid());
     }
     println!("time taken to initialise nodes: {:?}", start.elapsed());
     start = Instant::now();
-    nodes.sort();
+
     println!("time taken to sort nodes: {:?}", start.elapsed());
     start = Instant::now();
     let now = Instant::now();
@@ -1285,7 +1309,7 @@ fn huge_traversal() {
     println!("time taken to add nodes: {:?}", now.elapsed());
     let start = Instant::now();
     let mut edges = Vec::with_capacity(6000 * 2000);
-    for i in 0..100_000_000 {
+    for i in 0..10_000 {
         let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
         let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
         // edges.push(Edge {
@@ -1314,7 +1338,7 @@ fn huge_traversal() {
     let txn = storage.graph_env.read_txn().unwrap();
     let now = Instant::now();
     let traversal = G::new(Arc::clone(&storage), &txn)
-        .n()
+        .n_from_type("user")
         .out_e("knows")
         .to_n()
         .out("knows")
@@ -1337,6 +1361,7 @@ fn huge_traversal() {
         .out("knows")
         .out("knows")
         .dedup()
+
         .range(0, 10000)
         .count();
     println!("optimized version time: {:?}", now.elapsed());
@@ -1392,4 +1417,36 @@ fn huge_traversal() {
     //     storage.graph_env.real_disk_size()
     // );
     assert!(false);
+}
+
+#[test]
+fn test_with_id_type() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", props! { "name" => "test" }, None)
+        .collect_to_val();
+    txn.commit().unwrap();
+    #[derive(Serialize, Deserialize, Debug)]
+    struct Input {
+        id: ID,
+        name: String,
+    }
+
+    let input = sonic_rs::from_slice::<Input>(
+        format!(
+            "{{\"id\":\"{}\",\"name\":\"test\"}}",
+            uuid::Uuid::from_u128(node.id()).to_string()
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&input.id)
+        .collect_to::<Vec<_>>();
+
+    assert_eq!(traversal.len(), 1);
+    assert_eq!(traversal[0].id(), input.id.inner());
 }

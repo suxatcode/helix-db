@@ -85,7 +85,7 @@ impl Default for Config {
                 m: Some(25),
                 ef_construction: Some(512),
                 ef_search: Some(768),
-                db_max_size: Some(10_000),
+                db_max_size: Some(100),
             },
             graph_config: GraphConfig {
                 secondary_indices: None,
