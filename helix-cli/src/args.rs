@@ -48,7 +48,10 @@ pub enum CommandType {
     Ingest(IngestCommand),
 
     /// Give an instance a short description
-    Label(LabelCommand)
+    Label(LabelCommand),
+
+    /// Save an instnaces data.mdb file
+    Save(SaveCommand),
 }
 
 #[derive(Debug, Args)]
@@ -122,14 +125,14 @@ pub struct StopCommand {
     pub all: bool,
 
     #[clap(help = "Instance ID to stop")]
-    pub instance_id: Option<String>,
+    pub instance: Option<String>,
 }
 
 #[derive(Debug, Args)]
 #[clap(name = "start", about = "Start a stopped Helix instance")]
 pub struct StartCommand {
     #[clap(help = "Instance ID to Start")]
-    pub instance_id: String,
+    pub instance: String,
 }
 
 #[derive(Debug, Args)]
@@ -164,10 +167,20 @@ pub struct IngestCommand {
 #[clap(name = "label", about = "Give an instance a short description")]
 pub struct LabelCommand {
     #[clap(help = "Instance ID to label")]
-    pub instance_id: String,
+    pub instance: String,
 
     #[clap(help = "Short description to label")]
     pub label: String,
+}
+
+#[derive(Debug, Args)]
+#[clap(name = "save", about = "Save an instances data.mdb file")]
+pub struct SaveCommand {
+    #[clap(help = "Instance ID to label")]
+    pub instance: String,
+
+    #[clap(help = "Where to save the file to")]
+    pub output: Option<String>,
 }
 
 #[derive(Debug)]

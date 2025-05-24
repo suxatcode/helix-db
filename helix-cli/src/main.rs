@@ -277,7 +277,7 @@ fn main() {
                                 }
                             }
                         });
-                    } else if let Some(instance_id) = command.instance_id {
+                    } else if let Some(instance_id) = command.instance {
                         match instance_manager.stop_instance(&instance_id) {
                             Ok(false) => {
                                 println!("{} {}", "Instance is not running".yellow().bold(), instance_id)
@@ -288,14 +288,10 @@ fn main() {
                             Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        println!("{}", "Please specify --all or provide an instance ID".yellow().bold());
+                        println!("{}", "Please specify --all or provide an instance ID\n".yellow().bold());
                         println!("Available instances (green=running, yellow=stopped): ");
                         for instance in instances {
-                            if instance.running {
-                                println!("└── {} {}", "ID:".green().bold(), instance.id);
-                            } else {
-                                println!("└── {} {}", "ID:".yellow().bold(), instance.id);
-                            }
+                            print_instnace(&instance);
                         }
                     }
                 }
@@ -309,7 +305,7 @@ fn main() {
             let instance_manager = InstanceManager::new().unwrap();
             let mut sp = Spinner::new(Spinners::Dots9, "Starting Helix instance".into());
 
-            match instance_manager.start_instance(&command.instance_id) {
+            match instance_manager.start_instance(&command.instance) {
                 Ok(Some(instance)) => {
                     sp.stop_with_message(format!(
                         "{}",
@@ -324,7 +320,7 @@ fn main() {
                     ));
                     println!(
                         "└── Could not find instance with ID: {}",
-                        command.instance_id
+                        command.instance
                     );
                 }
                 Err(e) => {
@@ -336,7 +332,7 @@ fn main() {
 
         CommandType::Label(command) => {
             let instance_manager = InstanceManager::new().unwrap();
-            let instance_id = command.instance_id;
+            let instance_id = command.instance;
             let label = command.label;
             match instance_manager.set_label(&instance_id, &label) {
                 Ok(false) => {
@@ -578,6 +574,40 @@ fn main() {
             );
         }
 
+        CommandType::Save(command) => {
+            let instance_manager = InstanceManager::new().unwrap();
+            let iid = &command.instance;
+
+            match instance_manager.get_instance(iid) {
+                Ok(Some(_)) => println!("{}", "Helix instance found!".green().bold()),
+                Ok(None) => {
+                    println!("{} {}", "No Helix instance found with id".red().bold(), iid.red().bold());
+                    return;
+                }
+                Err(e) => {
+                    println!("{} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
+
+            let output_path = match command.output {
+                Some(output) => format!("{}helix_instance_{}", output, iid),
+                None => format!("helix_instance_{}", iid),
+            };
+            let home_dir = std::env::var("HOME").expect("Failed to get HOME environment variable");
+            let instance_path = format!("{}/.helix/cached_builds/data/{}/user", home_dir, iid);
+
+            let mut runner = Command::new("cp");
+            runner.arg("-r");
+            runner.arg(instance_path);
+            runner.arg(&output_path);
+
+            match runner.output() {
+                Ok(_) => println!("{} {}", "Saved Helix instance to".green().bold(), output_path.green().bold()),
+                Err(e) => println!("{} {}", "Error while copying:".red().bold(), e),
+            }
+        }
+
         CommandType::Ingest(command) => {
             match command.db_type.as_str() {
                 "sqlite" => {
@@ -638,7 +668,7 @@ fn main() {
                         }
                     }
 
-                    let ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
+                    let _ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
                     // TODO: Add ingestion logic
                 },
                 "pg" | "postgres" => {
@@ -655,8 +685,8 @@ fn main() {
 
                     // Run the PostgreSQL ingestion
                     let rt = tokio::runtime::Runtime::new().unwrap();
-                    let result = rt.block_on(async {
-                        let mut ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size, command.use_ssl).await;
+                    let _result = rt.block_on(async {
+                        let ingestor = PostgresIngestor::new(&command.db_url, Some(command.instance.clone()), command.batch_size, command.use_ssl).await;
 
                         match ingestor {
                             Ok(mut ingestor) => {
@@ -678,12 +708,12 @@ fn main() {
 
                                         #[cfg(target_os = "macos")]
                                         {
-                                            if let Err(e) = std::process::Command::new("open")
+                                            if let Err(_) = std::process::Command::new("open")
                                                 .arg("https://helix-db.com/dashboard")
                                                 .spawn()
                                             {
                                                 println!("Failed to open url");
-                                                println!("Please visit https://helix-db.com/dashboard");
+                                                println!("Please visit https://helix-db.com/dashboard"); // TODO: this is outdated
                                             }
                                         }
 
@@ -718,4 +748,3 @@ fn main() {
         }
     }
 }
-

@@ -164,7 +164,7 @@ impl InstanceManager {
         Ok(Some(instance))
     }
 
-    fn get_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
+    pub fn get_instance(&self, instance_id: &str) -> io::Result<Option<InstanceInfo>> {
         let instances = self.list_instances()?;
         Ok(instances.into_iter().find(|i| i.id == instance_id))
     }
