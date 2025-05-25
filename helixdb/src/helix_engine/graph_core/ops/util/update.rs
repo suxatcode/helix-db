@@ -24,7 +24,7 @@ where
     }
 }
 
-pub trait UpdateAdapter<'scope, 'env>: Iterator + Sized {
+pub trait UpdateAdapter<'scope, 'env>: Iterator  {
     fn update(
         self,
         props: Option<Vec<(String, Value)>>,

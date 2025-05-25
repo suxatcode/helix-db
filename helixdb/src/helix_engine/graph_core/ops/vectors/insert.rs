@@ -9,7 +9,7 @@ use crate::{
     },
     protocol::value::Value,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 pub struct InsertVIterator {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -23,9 +23,7 @@ impl Iterator for InsertVIterator {
     }
 }
 
-pub trait InsertVAdapter<'a, 'b>:
-    Iterator<Item = Result<TraversalVal, GraphError>> + Sized
-{
+pub trait InsertVAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> {
     fn insert_v<F>(
         self,
         vec: &Vec<f64>,

@@ -1,33 +1,20 @@
-use std::sync::Arc;
-
+use crate::{
+    helix_engine::{
+        graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
+        types::GraphError,
+    },
+    protocol::items::Node,
+};
 use heed3::{
     byteorder::BE,
     types::{Bytes, U128},
-    RoTxn,
 };
-
-use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage},
-        types::GraphError,
-    },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge, Node},
-        label_hash::hash_label,
-    },
-};
-
-use super::super::tr_val::TraversalVal;
 
 pub struct NFromType<'a> {
     iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
     label: &'a str,
 }
-// implementing iterator for OutIterator
+
 impl<'a> Iterator for NFromType<'a> {
     type Item = Result<TraversalVal, GraphError>;
 
@@ -51,7 +38,10 @@ impl<'a> Iterator for NFromType<'a> {
         None
     }
 }
-pub trait NFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait NFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
+    /// Returns an iterator containing the nodes with the given label.
+    ///
+    /// Note that the `label` cannot be empty and must be a valid, existing node label.
     fn n_from_type(
         self,
         label: &'a str,
@@ -59,21 +49,20 @@ pub trait NFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>
 }
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypeAdapter<'a>
     for RoTraversalIterator<'a, I>
-{
+{   
+    #[inline]
     fn n_from_type(
         self,
         label: &'a str,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let db = self.storage.clone();
-        let txn: &RoTxn<'_> = self.txn;
-        let iter = db.nodes_db.lazily_decode_data().iter(txn).unwrap();
+        let iter = self
+            .storage
+            .nodes_db
+            .lazily_decode_data()
+            .iter(self.txn)
+            .unwrap();
         RoTraversalIterator {
-            inner: NFromType {
-                iter,
-                storage: db.clone(),
-                txn,
-                label,
-            },
+            inner: NFromType { iter, label },
             storage: self.storage,
             txn: self.txn,
         }

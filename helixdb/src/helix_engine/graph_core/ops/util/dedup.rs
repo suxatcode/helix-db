@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use crate::helix_engine::{
     graph_core::{
         ops::tr_val::{Traversable, TraversalVal},
-        traversal_iter::RoTraversalIterator
+        traversal_iter::RoTraversalIterator,
     },
     types::GraphError,
 };
@@ -13,7 +13,6 @@ pub struct Dedup<I> {
     seen: HashSet<String>,
 }
 
-// implementing iterator for Range
 impl<I> Iterator for Dedup<I>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
@@ -22,43 +21,34 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
-            Some(item) => {
-                match item {
-                    Ok(item) => {
-                        if self.seen.insert(item.id().to_string()) {
-                            Some(Ok(item))
-                        } else {
-                            self.next()
-                        }
+            Some(item) => match item {
+                Ok(item) => {
+                    if self.seen.insert(item.id().to_string()) {
+                        Some(Ok(item))
+                    } else {
+                        self.next()
                     }
-                    _ => Some(item),
                 }
-            }
+                _ => Some(item),
+            },
             None => None,
         }
     }
 }
 
 pub trait DedupAdapter<'a>: Iterator {
-    /// Dedup returns a deduplicated iterator
+    /// Dedup returns an iterator that will return unique items when collected
     fn dedup(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        Self: Sized + Iterator,
-        Self::Item: Send;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> DedupAdapter<'a>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> DedupAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
     fn dedup(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        Self: Sized + Iterator,
-        Self::Item: Send,
-    {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         {
             let upper_bound = match self.inner.size_hint() {
                 (_, Some(upper_bound)) => upper_bound,

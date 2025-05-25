@@ -1,33 +1,20 @@
-use std::sync::Arc;
-
+use crate::{
+    helix_engine::{
+        graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
+        types::GraphError,
+    },
+    protocol::items::Edge,
+};
 use heed3::{
     byteorder::BE,
     types::{Bytes, U128},
-    RoTxn,
 };
-
-use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RoTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-        types::GraphError,
-    },
-    protocol::{
-        filterable::{Filterable, FilterableType},
-        items::{Edge},
-        label_hash::hash_label,
-    },
-};
-
-use super::super::tr_val::TraversalVal;
 
 pub struct EFromType<'a> {
     iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
     label: &'a str,
 }
-// implementing iterator for OutIterator
+
 impl<'a> Iterator for EFromType<'a> {
     type Item = Result<TraversalVal, GraphError>;
 
@@ -48,7 +35,7 @@ impl<'a> Iterator for EFromType<'a> {
         None
     }
 }
-pub trait EFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait EFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
     fn e_from_type(
         self,
         label: &'a str,
@@ -57,20 +44,19 @@ pub trait EFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> EFromTypeAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
+    #[inline]
     fn e_from_type(
         self,
         label: &'a str,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let db = self.storage.clone();
-        let txn: &RoTxn<'_> = self.txn;
-        let iter = db.edges_db.lazily_decode_data().iter(txn).unwrap();
+        let iter = self
+            .storage
+            .edges_db
+            .lazily_decode_data()
+            .iter(self.txn)
+            .unwrap();
         RoTraversalIterator {
-            inner: EFromType {
-                iter,
-                storage: db.clone(),
-                txn,
-                label,
-            },
+            inner: EFromType { iter, label },
             storage: self.storage,
             txn: self.txn,
         }

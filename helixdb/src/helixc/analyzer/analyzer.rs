@@ -925,7 +925,12 @@ impl<'a> Ctx<'a> {
                         }
                         EvaluatesToNumberType::Identifier(i) => {
                             self.is_valid_identifier(q, sv.loc.clone(), i.as_str());
-                            GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                            // is param
+                            if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                                GeneratedValue::Identifier(GenRef::Std(format!("data.{} as usize", i)))
+                            } else {
+                                GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                            }
                         }
                         _ => {
                             self.push_query_err(

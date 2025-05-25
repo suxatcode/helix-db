@@ -21,7 +21,7 @@ impl<I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator for SearchV<
     }
 }
 
-pub trait SearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait SearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>>  {
     fn search_v<F>(
         self,
         query: &Vec<f64>,
