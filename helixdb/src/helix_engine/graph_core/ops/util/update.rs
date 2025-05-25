@@ -27,7 +27,7 @@ where
 pub trait UpdateAdapter<'scope, 'env>: Iterator + Sized {
     fn update(
         self,
-        props: Vec<(String, Value)>,
+        props: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
@@ -36,7 +36,7 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
 {
     fn update(
         self,
-        props: Vec<(String, Value)>,
+        props: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     {
         let storage = self.storage.clone();
@@ -52,8 +52,10 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
                 Ok(TraversalVal::Node(node)) => match storage.get_node(self.txn, &node.id) {
                     Ok(mut old_node) => {
                         if let Some(mut properties) = old_node.properties {
-                            for (k, v) in props.iter() {
-                                properties.insert(k.clone(), v.clone());
+                            if let Some(ref props) = props {
+                                for (k, v) in props.iter() {
+                                    properties.insert(k.clone(), v.clone());
+                                }
                             }
                             for (key, v) in properties.iter() {
                                 if let Some(db) = storage.secondary_indices.get(key) {
@@ -90,12 +92,15 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
                     Err(e) => vec.push(Err(e)),
                 },
                 Ok(TraversalVal::Edge(edge)) => match storage.get_edge(self.txn, &edge.id) {
-                    Ok(mut old_edge) => {
-                        if let Some(mut properties) = old_edge.properties {
-                            for (k, v) in props.iter() {
-                                properties.insert(k.clone(), v.clone());
+                    Ok(old_edge) => {
+                        let mut old_edge = old_edge.clone();
+                        if let Some(mut properties) = old_edge.properties.clone() {
+                            if let Some(ref props) = props {
+                                for (k, v) in props.iter() {
+                                    properties.insert(k.clone(), v.clone());
+                                }
+                                old_edge.properties = Some(properties);
                             }
-                            old_edge.properties = Some(properties);
                         }
                         match bincode::serialize(&edge) {
                             Ok(serialized) => {

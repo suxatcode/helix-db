@@ -702,7 +702,7 @@ impl<'a> Ctx<'a> {
                             from,
                             label,
                             properties,
-                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                            // secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
                         };
                         let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                             source_step: Separator::Period(SourceStep::AddE(add_e)),
@@ -2870,7 +2870,7 @@ impl<'a> Ctx<'a> {
                             Some(id) => match id {
                                 IdType::Identifier { value, loc } => {
                                     self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                    GenRef::Ref(format!("data.{}", value.clone()))
+                                    GenRef::Ref(format!("{}.id()", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                                 _ => unreachable!(),
@@ -2889,7 +2889,7 @@ impl<'a> Ctx<'a> {
                             Some(id) => match id {
                                 IdType::Identifier { value, loc } => {
                                     self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                    GenRef::Ref(format!("data.{}", value.clone()))
+                                    GenRef::Ref(format!("{}.id()", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                                 _ => unreachable!(),
@@ -2909,7 +2909,7 @@ impl<'a> Ctx<'a> {
                             from,
                             label,
                             properties,
-                            secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
+                            // secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
                         };
                         let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                             source_step: Separator::Period(SourceStep::AddE(add_e)),
