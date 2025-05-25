@@ -98,6 +98,11 @@ pub struct Field {
     pub field_type: FieldType,
     pub loc: Loc,
 }
+impl Field {
+    pub fn is_indexed(&self) -> bool {
+        self.prefix.is_indexed()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum DefaultValue {
@@ -122,6 +127,14 @@ pub enum FieldPrefix {
     Index,
     Optional,
     Empty,
+}
+impl FieldPrefix {
+    pub fn is_indexed(&self) -> bool {
+        match self {
+            FieldPrefix::Index => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +213,37 @@ impl Display for FieldType {
                 }
                 write!(f, "}}")
             } // FieldType::Closure(a, b) => write!(f, "Closure({})", a),
+        }
+    }
+}
+
+impl PartialEq<Value> for FieldType {
+    fn eq(&self, other: &Value) -> bool {
+        match (self, other) {
+            (FieldType::String, Value::String(_)) => true,
+            (FieldType::F32, Value::F32(_)) => true,
+            (FieldType::F64, Value::F64(_)) => true,
+            (FieldType::I8, Value::I8(_)) => true,
+            (FieldType::I16, Value::I16(_)) => true,
+            (FieldType::I32, Value::I32(_)) => true,
+            (FieldType::I64, Value::I64(_)) => true,
+            (FieldType::U8, Value::U8(_)) => true,
+            (FieldType::U16, Value::U16(_)) => true,
+            (FieldType::U32, Value::U32(_)) => true,
+            (FieldType::U64, Value::U64(_)) => true,
+            (FieldType::U128, Value::U128(_)) => true,
+            (FieldType::Boolean, Value::Boolean(_)) => true,
+            (FieldType::Array(inner_type), Value::Array(values)) => {
+                values.iter().all(|v| inner_type.as_ref().eq(v))
+            }
+            (FieldType::Object(fields), Value::Object(values)) => {
+                fields.len() == values.len()
+                    && fields.iter().all(|(k, field_type)| match values.get(k) {
+                        Some(value) => field_type.eq(value),
+                        None => false,
+                    })
+            }
+            _ => false,
         }
     }
 }
@@ -515,8 +559,28 @@ pub struct EdgeConnection {
 
 #[derive(Debug, Clone)]
 pub enum IdType {
-    Literal { value: String, loc: Loc },
-    Identifier { value: String, loc: Loc },
+    Literal {
+        value: String,
+        loc: Loc,
+    },
+    Identifier {
+        value: String,
+        loc: Loc,
+    },
+    ByIndex {
+        index: Box<IdType>,
+        value: Box<ValueType>,
+        loc: Loc,
+    },
+}
+impl Display for IdType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdType::Literal { value, loc } => write!(f, "{}", value),
+            IdType::Identifier { value, loc } => write!(f, "{}", value),
+            IdType::ByIndex { index, value, loc } => write!(f, "{}", index),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -534,6 +598,7 @@ pub enum ValueType {
         loc: Loc,
     },
 }
+
 
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
@@ -575,6 +640,7 @@ impl From<IdType> for String {
                 value
             }
             IdType::Identifier { value, loc } => value,
+            IdType::ByIndex { index, value, loc } => String::from(*index),
         }
     }
 }
@@ -1661,6 +1727,73 @@ impl HelixParser {
                                     })
                                     .collect::<Vec<_>>(),
                             );
+                        }
+                        Rule::by_index => {
+                            ids = Some({
+                                let mut pairs: Pairs<'_, Rule> = p.clone().into_inner();
+                                println!("pairs: {:?}", pairs);
+                                let index = match pairs.next().unwrap().clone().into_inner().next()
+                                {
+                                    Some(id) => match id.as_rule() {
+                                        Rule::identifier => IdType::Identifier {
+                                            value: id.as_str().to_string(),
+                                            loc: id.loc(),
+                                        },
+                                        Rule::string_literal => IdType::Literal {
+                                            value: id.as_str().to_string(),
+                                            loc: id.loc(),
+                                        },
+                                        other => {
+                                            panic!(
+                                                "Should be identifier or string literal: {:?}",
+                                                other
+                                            )
+                                        }
+                                    },
+                                    None => return Err(ParserError::from("Missing index")),
+                                };
+                                println!("index: {:?}", index);
+                                println!("pairs: {:?}", pairs);
+                                let value = match pairs.next().unwrap().into_inner().next() {
+                                    Some(val) => match val.as_rule() {
+                                        Rule::identifier => ValueType::Identifier {
+                                            value: val.as_str().to_string(),
+                                            loc: val.loc(),
+                                        },
+                                        Rule::string_literal => ValueType::Literal {
+                                            value: Value::from(val.as_str()),
+                                            loc: val.loc(),
+                                        },
+                                        Rule::integer => ValueType::Literal {
+                                            value: Value::from(
+                                                val.as_str().parse::<i64>().unwrap(),
+                                            ),
+                                            loc: val.loc(),
+                                        },
+                                        Rule::float => ValueType::Literal {
+                                            value: Value::from(
+                                                val.as_str().parse::<f64>().unwrap(),
+                                            ),
+                                            loc: val.loc(),
+                                        },
+                                        Rule::boolean => ValueType::Literal {
+                                            value: Value::from(
+                                                val.as_str().parse::<bool>().unwrap(),
+                                            ),
+                                            loc: val.loc(),
+                                        },
+                                        other => {
+                                            panic!("Should be identifier or string literal")
+                                        }
+                                    },
+                                    _ => unreachable!(),
+                                };
+                                vec![IdType::ByIndex {
+                                    index: Box::new(index),
+                                    value: Box::new(value),
+                                    loc: p.loc(),
+                                }]
+                            })
                         }
                         _ => unreachable!(),
                     }

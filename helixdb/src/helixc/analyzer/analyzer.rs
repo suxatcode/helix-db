@@ -17,7 +17,7 @@ use crate::{
                 RemappingType, TraversalRemapping, ValueRemapping,
             },
             source_steps::{
-                AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromType,
+                AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromIndex, NFromType,
                 SearchVector as GeneratedSearchVector, SourceStep,
             },
             traversal_steps::{
@@ -103,9 +103,9 @@ struct Ctx<'a> {
     node_set: HashSet<&'a str>,
     vector_set: HashSet<&'a str>,
     edge_map: HashMap<&'a str, &'a EdgeSchema>,
-    node_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
-    edge_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
-    vector_fields: HashMap<&'a str, HashMap<&'a str, &'a FieldType>>,
+    node_fields: HashMap<&'a str, HashMap<&'a str, &'a Field>>,
+    edge_fields: HashMap<&'a str, HashMap<&'a str, &'a Field>>,
+    vector_fields: HashMap<&'a str, HashMap<&'a str, &'a Field>>,
     diagnostics: Vec<Diagnostic>,
     output: GeneratedSource,
 }
@@ -121,8 +121,8 @@ impl<'a> Ctx<'a> {
                     n.name.1.as_str(),
                     n.fields
                         .iter()
-                        .map(|f| (f.name.as_str(), &f.field_type))
-                        .collect(),
+                        .map(|f| (f.name.as_str(), f))
+                        .collect::<HashMap<&str, &Field>>(),
                 )
             })
             .collect();
@@ -135,7 +135,7 @@ impl<'a> Ctx<'a> {
                     e.name.1.as_str(),
                     e.properties
                         .as_ref()
-                        .map(|v| v.iter().map(|f| (f.name.as_str(), &f.field_type)).collect())
+                        .map(|v| v.iter().map(|f| (f.name.as_str(), f)).collect())
                         .unwrap_or_else(HashMap::new),
                 )
             })
@@ -147,10 +147,7 @@ impl<'a> Ctx<'a> {
             .map(|v| {
                 (
                     v.name.as_str(),
-                    v.fields
-                        .iter()
-                        .map(|f| (f.name.as_str(), &f.field_type))
-                        .collect(),
+                    v.fields.iter().map(|f| (f.name.as_str(), f)).collect(),
                 )
             })
             .collect();
@@ -669,6 +666,7 @@ impl<'a> Ctx<'a> {
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                                _ => unreachable!(),
                             },
                             _ => {
                                 self.push_query_err(
@@ -687,6 +685,7 @@ impl<'a> Ctx<'a> {
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                                _ => unreachable!(),
                             },
                             _ => {
                                 self.push_query_err(
@@ -947,50 +946,49 @@ impl<'a> Ctx<'a> {
                     }
                 };
 
-                let pre_filter: Option<Vec<BoExp>> =
-                    match &sv.pre_filter {
-                        Some(expr) => {
-                            let (_, stmt) = self.infer_expr_type(
-                                expr,
-                                scope,
-                                q,
-                                Some(Type::Vector(sv.vector_type.clone())),
-                                None,
-                            );
-                            // Where/boolean ops don't change the element type,
-                            // so `cur_ty` stays the same.
-                            assert!(stmt.is_some());
-                            let stmt = stmt.unwrap();
-                            let mut gen_traversal = GeneratedTraversal {
-                                traversal_type: TraversalType::NestedFrom(GenRef::Std(
-                                    "v".to_string(),
-                                )),
-                                steps: vec![],
-                                should_collect: ShouldCollect::ToVec,
-                                source_step: Separator::Empty(SourceStep::Anonymous),
-                            };
-                            match stmt {
-                                GeneratedStatement::Traversal(tr) => {
-                                    gen_traversal.steps.push(Separator::Period(
-                                        GeneratedStep::Where(Where::Ref(WhereRef {
+                let pre_filter: Option<Vec<BoExp>> = match &sv.pre_filter {
+                    Some(expr) => {
+                        let (_, stmt) = self.infer_expr_type(
+                            expr,
+                            scope,
+                            q,
+                            Some(Type::Vector(sv.vector_type.clone())),
+                            None,
+                        );
+                        // Where/boolean ops don't change the element type,
+                        // so `cur_ty` stays the same.
+                        assert!(stmt.is_some());
+                        let stmt = stmt.unwrap();
+                        let mut gen_traversal = GeneratedTraversal {
+                            traversal_type: TraversalType::NestedFrom(GenRef::Std("v".to_string())),
+                            steps: vec![],
+                            should_collect: ShouldCollect::ToVec,
+                            source_step: Separator::Empty(SourceStep::Anonymous),
+                        };
+                        match stmt {
+                            GeneratedStatement::Traversal(tr) => {
+                                gen_traversal
+                                    .steps
+                                    .push(Separator::Period(GeneratedStep::Where(Where::Ref(
+                                        WhereRef {
                                             expr: BoExp::Expr(tr),
-                                        })),
-                                    ));
-                                }
-                                GeneratedStatement::BoExp(expr) => {
-                                    gen_traversal.steps.push(Separator::Period(
-                                        GeneratedStep::Where(match expr {
-                                            BoExp::Exists(tr) => Where::Exists(WhereExists { tr }),
-                                            _ => Where::Ref(WhereRef { expr }),
-                                        }),
-                                    ));
-                                }
-                                _ => unreachable!(),
+                                        },
+                                    ))));
                             }
-                            Some(vec![BoExp::Expr(gen_traversal)])
+                            GeneratedStatement::BoExp(expr) => {
+                                gen_traversal
+                                    .steps
+                                    .push(Separator::Period(GeneratedStep::Where(match expr {
+                                        BoExp::Exists(tr) => Where::Exists(WhereExists { tr }),
+                                        _ => Where::Ref(WhereRef { expr }),
+                                    })));
+                            }
+                            _ => unreachable!(),
                         }
-                        None => None,
-                    };
+                        Some(vec![BoExp::Expr(gen_traversal)])
+                    }
+                    None => None,
+                };
 
                 // Search returns nodes that contain the vectors
                 (
@@ -1100,28 +1098,116 @@ impl<'a> Ctx<'a> {
                 if let Some(ids) = ids {
                     assert!(ids.len() == 1, "multiple ids not supported yet");
                     // check id exists in scope
-                    gen_traversal.source_step = Separator::Period(SourceStep::NFromID(NFromID {
-                        id: match ids[0].clone() {
-                            IdType::Identifier { value: i, loc } => {
-                                if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
-                                    if !scope.contains_key(i.as_str()) {
-                                        self.push_query_err(
-                                            q,
-                                            loc,
-                                            format!("variable named `{}` is not in scope", i),
-                                            format!(
-                                                "declare {} in the current scope or fix the typo",
-                                                i
-                                            ),
-                                        );
+                    match ids[0].clone() {
+                        IdType::ByIndex { index, value, loc } => {
+                            self.is_valid_identifier(q, loc.clone(), index.to_string().as_str());
+                            let corresponding_field =
+                                self.node_fields.get(node_type.as_str()).cloned();
+                            match corresponding_field {
+                                Some(node_fields) => {
+                                    match node_fields
+                                        .iter()
+                                        .find(|(name, _)| name.to_string() == *index.to_string())
+                                    {
+                                        Some((_, field)) => {
+                                            if !field.is_indexed() {
+                                                self.push_query_err(q, loc.clone(), format!("field `{}` has not been indexed for node type `{}`", index, node_type), format!("use a field that has been indexed with `INDEX` in the schema for node type `{}`", node_type));
+                                            } else {
+                                                if let ValueType::Literal { ref value, ref loc } =
+                                                    *value
+                                                {
+                                                    if !field.field_type.eq(value) {
+                                                        self.push_query_err(q, loc.clone(), format!("value `{}` is of type `{}`, expected `{}`", value.to_string(), value, field.field_type), format!("use a value of type `{}`", field.field_type ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        None => unreachable!(),
                                     }
                                 }
-                                GenRef::Ref(format!("data.{}", i))
+                                None => unreachable!(),
+                            };
+                            gen_traversal.source_step = Separator::Period(SourceStep::NFromIndex(
+                                NFromIndex {
+                                    index: GenRef::Literal(match *index {
+                                        IdType::Identifier { value, loc: _ } => value,
+                                        _ => {
+                                            self.push_query_err(
+                                                q,
+                                                loc.clone(),
+                                                "index type must be an identifier, got literal".to_string(),
+                                                "use an existing identifier from the shema that has been indexed with `INDEX` instead".to_string(),
+                                            );
+                                            String::new()
+                                        }
+                                    }),
+                                    key: GenRef::Ref(match *value {
+                                        ValueType::Identifier { value: i, loc } => {
+                                            if self.is_valid_identifier(q, loc.clone(), i.as_str())
+                                            {
+                                                if !scope.contains_key(i.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        loc,
+                                                        format!("variable named `{}` is not in scope", i),
+                                                        format!(
+                                                            "declare {} in the current scope or fix the typo",
+                                                            i
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                            format!("data.{}", i)
+                                        }
+                                        ValueType::Literal { value, loc } => match value {
+                                            Value::String(s) => s,
+                                            Value::I8(i) => i.to_string(),
+                                            Value::I16(i) => i.to_string(),
+                                            Value::I32(i) => i.to_string(),
+                                            Value::I64(i) => i.to_string(),
+                                            Value::U8(i) => i.to_string(),
+                                            Value::U16(i) => i.to_string(),
+                                            Value::U32(i) => i.to_string(),
+                                            Value::U64(i) => i.to_string(),
+                                            Value::U128(i) => i.to_string(),
+                                            Value::F32(i) => i.to_string(),
+                                            Value::F64(i) => i.to_string(),
+                                            Value::Boolean(b) => b.to_string(),
+                                            _ => unreachable!(),
+                                        },
+                                        _ => unreachable!(),
+                                    }),
+                                },
+                            ));
+                        }
+                        IdType::Identifier { value: i, loc } => {
+                            if self.is_valid_identifier(q, loc.clone(), i.as_str()) {
+                                if !scope.contains_key(i.as_str()) {
+                                    self.push_query_err(
+                                        q,
+                                        loc,
+                                        format!("variable named `{}` is not in scope", i),
+                                        format!(
+                                            "declare {} in the current scope or fix the typo",
+                                            i
+                                        ),
+                                    );
+                                }
                             }
-                            IdType::Literal { value: s, loc } => GenRef::Ref(s), // TODO: handle string
-                        },
-                        label: GenRef::Literal(node_type.clone()),
-                    }));
+                            gen_traversal.source_step =
+                                Separator::Period(SourceStep::NFromID(NFromID {
+                                    id: GenRef::Ref(format!("data.{}", i)),
+                                    label: GenRef::Literal(node_type.clone()),
+                                }));
+                        }
+                        IdType::Literal { value: s, loc } => {
+                            gen_traversal.source_step =
+                                Separator::Period(SourceStep::NFromID(NFromID {
+                                    id: GenRef::Ref(s),
+                                    label: GenRef::Literal(node_type.clone()),
+                                }));
+                        }
+                    }
                 } else {
                     gen_traversal.source_step =
                         Separator::Period(SourceStep::NFromType(NFromType {
@@ -1162,6 +1248,7 @@ impl<'a> Ctx<'a> {
                                 GenRef::Std(format!("data.{}", i))
                             }
                             IdType::Literal { value: s, loc } => GenRef::Std(s),
+                            _ => unreachable!(),
                         },
                         label: GenRef::Literal(edge_type.clone()),
                     }));
@@ -1379,11 +1466,11 @@ impl<'a> Ctx<'a> {
                                 if let Some(field_set) = field_set {
                                     match field_set.get(field_name.as_str()) {
                                         Some(field) => {
-                                            if field != &&property_type {
+                                            if field.field_type != property_type {
                                                 self.push_query_err(
                                                     q,
                                                     b_op.loc.clone(),
-                                                    format!("property `{field_name}` is of type `{field}` (from node type `{node_ty}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    format!("property `{field_name}` is of type `{}` (from node type `{node_ty}::{{{field_name}}}`), which does not match type of compared value `{}`", field.field_type, property_type),
                                                     "make sure comparison value is of the same type as the property".to_string(),
                                                 );
                                             }
@@ -1407,11 +1494,11 @@ impl<'a> Ctx<'a> {
                                 if let Some(field_set) = field_set {
                                     match field_set.get(field_name.as_str()) {
                                         Some(field) => {
-                                            if field != &&property_type {
+                                            if field.field_type != property_type {
                                                 self.push_query_err(
                                                     q,
                                                     b_op.loc.clone(),
-                                                    format!("property `{field_name}` is of type `{field}` (from edge type `{edge_ty}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    format!("property `{field_name}` is of type `{}` (from edge type `{edge_ty}::{{{field_name}}}`), which does not match type of compared value `{}`", field.field_type, property_type),
                                                     "make sure comparison value is of the same type as the property".to_string(),
                                                 );
                                             }
@@ -1435,11 +1522,11 @@ impl<'a> Ctx<'a> {
                                 if let Some(field_set) = field_set {
                                     match field_set.get(field_name.as_str()) {
                                         Some(field) => {
-                                            if field != &&property_type {
+                                            if field.field_type != property_type {
                                                 self.push_query_err(
                                                     q,
                                                     b_op.loc.clone(),
-                                                    format!("property `{field_name}` is of type `{field}` (from vector type `{sv}::{{{field_name}}}`), which does not match type of compared value `{property_type}`"),
+                                                    format!("property `{field_name}` is of type `{}` (from vector type `{sv}::{{{field_name}}}`), which does not match type of compared value `{}`", field.field_type, property_type),
                                                     "make sure comparison value is of the same type as the property".to_string(),
                                                 );
                                             }
@@ -1847,7 +1934,7 @@ impl<'a> Ctx<'a> {
     fn validate_exclude_fields(
         &mut self,
         ex: &Exclude,
-        field_set: &HashMap<&str, &FieldType>,
+        field_set: &HashMap<&str, &Field>,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         type_name: &str,
@@ -2354,7 +2441,7 @@ impl<'a> Ctx<'a> {
     fn validate_object_fields(
         &mut self,
         obj: &Object,
-        field_set: &HashMap<&str, &FieldType>,
+        field_set: &HashMap<&str, &Field>,
         excluded: &HashMap<&str, Loc>,
         q: &'a Query,
         type_name: &str,
@@ -2786,6 +2873,7 @@ impl<'a> Ctx<'a> {
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                                _ => unreachable!(),
                             },
                             _ => {
                                 self.push_query_err(
@@ -2804,6 +2892,7 @@ impl<'a> Ctx<'a> {
                                     GenRef::Ref(format!("data.{}", value.clone()))
                                 }
                                 IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                                _ => unreachable!(),
                             },
                             _ => {
                                 self.push_query_err(

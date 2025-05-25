@@ -103,10 +103,10 @@ impl From<IdType> for GenRef<String> {
         match value {
             IdType::Literal { value: s, loc } => GenRef::Literal(s),
             IdType::Identifier { value: s, loc } => GenRef::Id(s),
+            _ => panic!("Cannot convert to string: {:?}", value),
         }
     }
 }
-
 
 #[derive(Clone)]
 pub enum Order {
@@ -129,11 +129,11 @@ pub fn write_properties(properties: &Vec<(String, GeneratedValue)>) -> String {
         false => format!(
             "Some(props! {{ {} }})",
             properties
-            .iter()
+                .iter()
                 .map(|(name, value)| format!("\"{}\" => {}", name, value))
                 .collect::<Vec<String>>()
                 .join(", ")
-        )
+        ),
     }
 }
 
@@ -272,9 +272,7 @@ impl<T: Display> Separator<T> {
 }
 pub fn write_headers() -> String {
     r#"
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Instant;
+
 use heed3::RoTxn;
 use get_routes::handler;
 use helixdb::{field_remapping, identifier_remapping, traversal_remapping, exclude_field};
@@ -293,6 +291,7 @@ use helixdb::{
             n::NAdapter,
             n_from_id::NFromIdAdapter,
             n_from_type::NFromTypeAdapter,
+            n_from_index::NFromIndexAdapter,
         },
         tr_val::{Traversable, TraversalVal},
         util::{
@@ -314,6 +313,10 @@ use helixdb::{
     },
 };
 use sonic_rs::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Instant;
+use std::cell::RefCell;
     "#
     .to_string()
 }
