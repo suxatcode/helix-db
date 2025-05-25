@@ -49,16 +49,15 @@ pub struct AddE {
     pub properties: Vec<(String, GeneratedValue)>,
     pub from: GenRef<String>,
     pub to: GenRef<String>,
-    pub secondary_indices: Option<Vec<String>>,
+    // pub secondary_indices: Option<Vec<String>>,
 }
 impl Display for AddE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let properties = write_properties(&self.properties);
-        let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            "add_e({}, {}, {}, {}, {})",
-            self.label, properties, self.from, self.to, secondary_indices
+            "add_e({}, {}, {}, {}, true, EdgeType::Std)",
+            self.label, properties, self.from, self.to
         )
     }
 }

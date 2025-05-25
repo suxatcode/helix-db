@@ -32,8 +32,7 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
     fn add_e(
         self,
         label: &'a str,
-        properties: Vec<(String, Value)>,
-        id: Option<u128>,
+        properties: Option<Vec<(String, Value)>>,
         from_node: u128,
         to_node: u128,
         should_check: bool,
@@ -49,17 +48,16 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
     fn add_e(
         self,
         label: &'a str,
-        properties: Vec<(String, Value)>,
-        id: Option<u128>,
+        properties: Option<Vec<(String, Value)>>,
         from_node: u128,
         to_node: u128,
         should_check: bool,
         edge_type: EdgeType,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let edge = Edge {
-            id: id.unwrap_or(v6_uuid()),
+            id: v6_uuid(),
             label: label.to_string(),
-            properties: Some(properties.into_iter().collect()),
+            properties: properties.map(|props| props.into_iter().collect()),
             from_node,
             to_node,
         };
