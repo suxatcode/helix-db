@@ -443,16 +443,27 @@ impl Filterable for HVector {
     }
 
     fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>> {
-        unreachable!()
+        &mut self.properties
     }
 
     fn properties_ref(&self) -> &Option<HashMap<String, Value>> {
-        unreachable!()
+        &self.properties
     }
 
     // TODO: Implement this
-    fn check_property(&self, _key: &str) -> Result<&Value, GraphError> {
-        unreachable!()
+    fn check_property(&self, key: &str) -> Result<&Value, GraphError> {
+        match &self.properties {
+            Some(properties) => properties
+                .get(key)
+                .ok_or(GraphError::ConversionError(format!(
+                    "Property {} not found",
+                    key
+                ))),
+            None => Err(GraphError::ConversionError(format!(
+                "Property {} not found",
+                key
+            ))),
+        }
     }
 
     fn find_property(
