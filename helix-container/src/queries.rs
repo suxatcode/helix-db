@@ -68,7 +68,7 @@ pub fn search_vector(input: &HandlerInput, response: &mut Response) -> Result<()
     let txn = db.graph_env.read_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     let vec = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector, &RoTxn) -> bool>(&data.query, data.k, None)
+        .search_v::<fn(&HVector, &RoTxn) -> bool>(&data.query, data.k as usize, None)
         .collect_to::<Vec<_>>();
     return_vals.insert(
         "vec".to_string(),
