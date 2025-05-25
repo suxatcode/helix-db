@@ -239,10 +239,6 @@ fn main() {
             }
         }
 
-        // TODO:
-        // - update pid
-        // - update endpoints
-
         CommandType::Redeploy(command) => {
             let instance_manager = InstanceManager::new().unwrap();
             let iid = &command.instance;
