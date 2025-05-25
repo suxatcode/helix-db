@@ -4,18 +4,15 @@ use crate::{
     utils::*,
 };
 use clap::Parser;
-use colored::*;
 use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
 use spinners::{Spinner, Spinners};
-use std::fmt::Write;
 use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    io::{Write},
+    fmt::Write,
+    //io::Write,
 };
-use clap::Parser;
-use spinners::{Spinner, Spinners};
 
 pub mod args;
 mod instance_manager;
@@ -124,30 +121,28 @@ fn main() {
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
-            // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
-            if local {
-                let file_path = PathBuf::from(&output).join("src/queries.rs");
-                let mut generated_rust_code = String::new();
-                match write!(&mut generated_rust_code, "{}", analyzed_source) {
-                    Ok(_) => {
-                        println!("{}", "Successfully transpiled queries".green().bold());
-                    }
-                    Err(e) => {
-                        println!("{}", "Failed to transpile queries".red().bold());
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
+            let file_path = PathBuf::from(&output).join("src/queries.rs");
+            let mut generated_rust_code = String::new();
+            match write!(&mut generated_rust_code, "{}", analyzed_source) {
+                Ok(_) => {
+                    println!("{}", "Successfully transpiled queries".green().bold());
                 }
-                match fs::write(file_path, generated_rust_code) {
-                    Ok(_) => {
-                        println!("{}", "Successfully wrote queries file".green().bold());
-                    }
-                    Err(e) => {
-                        println!("{}", "Failed to write queries file".red().bold());
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
+                Err(e) => {
+                    println!("{}", "Failed to transpile queries".red().bold());
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
                 }
+            }
+            match fs::write(file_path, generated_rust_code) {
+                Ok(_) => {
+                    println!("{}", "Successfully wrote queries file".green().bold());
+                }
+                Err(e) => {
+                    println!("{}", "Failed to write queries file".red().bold());
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
 
             let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
 
@@ -189,27 +184,11 @@ fn main() {
                                 "{}",
                                 "Successfully built Helix".green().bold()
                             ));
-                        } else {
-                            sp.stop_with_message(format!(
-                                "{}",
-                                "Failed to build Helix".red().bold()
-                            ));
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            if !stderr.is_empty() {
-                                println!("└── {} {}", "Error:\n".red().bold(), stderr);
-                            }
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
-                        println!("└── {} {}", "Error:".red().bold(), e);
-                        return;
-                    }
-                }
-                        ));
                     } else {
-                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                        sp.stop_with_message(format!(
+                            "{}",
+                            "Failed to build Helix".red().bold()
+                        ));
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         if !stderr.is_empty() {
                             println!("└── {} {}", "Error:\n".red().bold(), stderr);
@@ -304,7 +283,7 @@ fn main() {
 
             let num_files = files.len();
 
-            let code = match generate(&files) {
+            let (code, anazlyed_source) = match generate(&files) {
                 Ok(code) => code,
                 Err(e) => {
                     sp.stop_with_message(format!("{}", "Error compiling queries".red().bold()));
@@ -714,8 +693,6 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
-            runner.arg("--branch");
-            runner.arg("analyzer-improvements");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 
@@ -844,7 +821,6 @@ fn main() {
 
             let mut del_prompt: bool = false;
             print!("Are you sure you want to delete the instance and its data? (y/n): ");
-            std::io::stdout().flush().unwrap();
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
             del_prompt = input.trim().to_lowercase() == "y";
