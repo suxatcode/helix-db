@@ -200,7 +200,7 @@ impl Display for Query {
         )?;
         // prints each statement
         for statement in &self.statements {
-            write!(f, "    {}\n", statement)?;
+            write!(f, "    {};\n", statement)?;
         }
 
         for return_value in &self.return_values {
@@ -281,7 +281,7 @@ pub struct Assignment {
 }
 impl Display for Assignment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "let {} = {};", self.variable, *self.value)
+        write!(f, "let {} = {}", self.variable, *self.value)
     }
 }
 

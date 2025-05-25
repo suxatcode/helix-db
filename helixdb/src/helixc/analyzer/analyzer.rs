@@ -735,24 +735,24 @@ impl<'a> Ctx<'a> {
                         );
                     }
                     // Validate vector fields
-                    if let Some(fields) = &add.fields {
-                        let field_set = self.vector_fields.get(ty.as_str()).cloned();
-                        if let Some(field_set) = field_set {
-                            for (field_name, _) in fields {
-                                if !field_set.contains_key(field_name.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        add.loc.clone(),
-                                        format!(
-                                            "`{}` is not a field of vector `{}`",
-                                            field_name, ty
-                                        ),
-                                        "check the schema field names",
-                                    );
+                    let (label, properties) = match &add.fields {
+                        Some(fields) => {
+                            let field_set = self.vector_fields.get(ty.as_str()).cloned();
+                            if let Some(field_set) = field_set {
+                                for (field_name, _) in fields {
+                                    if !field_set.contains_key(field_name.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            add.loc.clone(),
+                                            format!(
+                                                "`{}` is not a field of vector `{}`",
+                                                field_name, ty
+                                            ),
+                                            "check the schema field names",
+                                        );
+                                    }
                                 }
                             }
-                        }
-                        if let Some(vec_data) = &add.data {
                             let label = GenRef::Literal(ty.clone());
                             let properties = fields
                                 .iter()
@@ -787,38 +787,40 @@ impl<'a> Ctx<'a> {
                                     )
                                 })
                                 .collect();
-                            let vec = match vec_data {
-                                VectorData::Vector(v) => {
-                                    GeneratedValue::Literal(GenRef::Ref(format!(
-                                        "[{}]",
-                                        v.iter()
-                                            .map(|f| f.to_string())
-                                            .collect::<Vec<String>>()
-                                            .join(",")
-                                    )))
-                                }
-                                VectorData::Identifier(i) => {
-                                    self.is_valid_identifier(q, add.loc.clone(), i.as_str());
-                                    // TODO: if in params then do data.i else i
-                                    GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
-                                }
-                            };
-                            let add_v = AddV {
-                                vec,
-                                label,
-                                properties,
-                            };
-                            let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
-                                source_step: Separator::Period(SourceStep::AddV(add_v)),
-                                steps: vec![],
-                                traversal_type: TraversalType::Mut,
-                                should_collect: ShouldCollect::ToVec,
-                            });
-                            if let Some(gen_query) = gen_query {
-                                gen_query.is_mut = true;
-                            }
-                            return (Type::Vector(Some(ty.to_string())), Some(stmt));
+                            (label, Some(properties))
                         }
+                        None => (GenRef::Literal(ty.clone()), None),
+                    };
+                    if let Some(vec_data) = &add.data {
+                        let vec = match vec_data {
+                            VectorData::Vector(v) => GeneratedValue::Literal(GenRef::Ref(format!(
+                                "[{}]",
+                                v.iter()
+                                    .map(|f| f.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(",")
+                            ))),
+                            VectorData::Identifier(i) => {
+                                self.is_valid_identifier(q, add.loc.clone(), i.as_str());
+                                // TODO: if in params then do data.i else i
+                                GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
+                            }
+                        };
+                        let add_v = AddV {
+                            vec,
+                            label,
+                            properties,
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: Separator::Period(SourceStep::AddV(add_v)),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
+                        });
+                        if let Some(gen_query) = gen_query {
+                            gen_query.is_mut = true;
+                        }
+                        return (Type::Vector(Some(ty.to_string())), Some(stmt));
                     }
                 }
                 self.push_query_err(
@@ -2942,24 +2944,24 @@ impl<'a> Ctx<'a> {
                         );
                     }
                     // Validate vector fields
-                    if let Some(fields) = &add.fields {
-                        let field_set = self.vector_fields.get(ty.as_str()).cloned();
-                        if let Some(field_set) = field_set {
-                            for (field_name, _) in fields {
-                                if !field_set.contains_key(field_name.as_str()) {
-                                    self.push_query_err(
-                                        q,
-                                        add.loc.clone(),
-                                        format!(
-                                            "`{}` is not a field of vector `{}`",
-                                            field_name, ty
-                                        ),
-                                        "check the schema field names",
-                                    );
+                    let (label, properties) = match &add.fields {
+                        Some(fields) => {
+                            let field_set = self.vector_fields.get(ty.as_str()).cloned();
+                            if let Some(field_set) = field_set {
+                                for (field_name, _) in fields {
+                                    if !field_set.contains_key(field_name.as_str()) {
+                                        self.push_query_err(
+                                            q,
+                                            add.loc.clone(),
+                                            format!(
+                                                "`{}` is not a field of vector `{}`",
+                                                field_name, ty
+                                            ),
+                                            "check the schema field names",
+                                        );
+                                    }
                                 }
                             }
-                        }
-                        if let Some(vec_data) = &add.data {
                             let label = GenRef::Literal(ty.clone());
                             let properties = fields
                                 .iter()
@@ -2994,38 +2996,38 @@ impl<'a> Ctx<'a> {
                                     )
                                 })
                                 .collect();
-                            let vec = match vec_data {
-                                VectorData::Vector(v) => {
-                                    GeneratedValue::Literal(GenRef::Ref(format!(
-                                        "[{}]",
-                                        v.iter()
-                                            .map(|f| f.to_string())
-                                            .collect::<Vec<String>>()
-                                            .join(",")
-                                    )))
-                                }
-                                VectorData::Identifier(i) => {
-                                    self.is_valid_identifier(q, add.loc.clone(), i.as_str());
-                                    // TODO: if in params then do data.i else i
-                                    GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
-                                }
-                            };
-                            let add_v = AddV {
-                                vec,
-                                label,
-                                properties,
-                            };
-                            let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
-                                source_step: Separator::Period(SourceStep::AddV(add_v)),
-                                steps: vec![],
-                                traversal_type: TraversalType::Mut,
-                                should_collect: ShouldCollect::ToVec,
-                            });
-
-                            query.is_mut = true;
-                            // query.statements.push(stmt.clone());
-                            return Some(stmt);
+                            (label, Some(properties))
                         }
+                        None => (GenRef::Literal(ty.clone()), None),
+                    };
+                    if let Some(vec_data) = &add.data {
+                        let vec = match vec_data {
+                            VectorData::Vector(v) => GeneratedValue::Literal(GenRef::Ref(format!(
+                                "[{}]",
+                                v.iter()
+                                    .map(|f| f.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(",")
+                            ))),
+                            VectorData::Identifier(i) => {
+                                self.is_valid_identifier(q, add.loc.clone(), i.as_str());
+                                // TODO: if in params then do data.i else i
+                                GeneratedValue::Identifier(GenRef::Ref(format!("data.{}", i)))
+                            }
+                        };
+                        let add_v = AddV {
+                            vec,
+                            label,
+                            properties,
+                        };
+                        let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
+                            source_step: Separator::Period(SourceStep::AddV(add_v)),
+                            steps: vec![],
+                            traversal_type: TraversalType::Mut,
+                            should_collect: ShouldCollect::ToVec,
+                        });
+                        query.is_mut = true;
+                        return Some(stmt);
                     }
                 }
                 self.push_query_err(
