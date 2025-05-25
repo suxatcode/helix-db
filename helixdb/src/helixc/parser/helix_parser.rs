@@ -221,17 +221,15 @@ impl PartialEq<Value> for FieldType {
     fn eq(&self, other: &Value) -> bool {
         match (self, other) {
             (FieldType::String, Value::String(_)) => true,
-            (FieldType::F32, Value::F32(_)) => true,
-            (FieldType::F64, Value::F64(_)) => true,
-            (FieldType::I8, Value::I8(_)) => true,
-            (FieldType::I16, Value::I16(_)) => true,
-            (FieldType::I32, Value::I32(_)) => true,
-            (FieldType::I64, Value::I64(_)) => true,
-            (FieldType::U8, Value::U8(_)) => true,
-            (FieldType::U16, Value::U16(_)) => true,
-            (FieldType::U32, Value::U32(_)) => true,
-            (FieldType::U64, Value::U64(_)) => true,
-            (FieldType::U128, Value::U128(_)) => true,
+            (FieldType::F32 | FieldType::F64, Value::F32(_) | Value::F64(_)) => true,
+            (
+                FieldType::I8 | FieldType::I16 | FieldType::I32 | FieldType::I64,
+                Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_),
+            ) => true,
+            (
+                FieldType::U8 | FieldType::U16 | FieldType::U32 | FieldType::U64 | FieldType::U128,
+                Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_),
+            ) => true,
             (FieldType::Boolean, Value::Boolean(_)) => true,
             (FieldType::Array(inner_type), Value::Array(values)) => {
                 values.iter().all(|v| inner_type.as_ref().eq(v))
@@ -598,7 +596,6 @@ pub enum ValueType {
         loc: Loc,
     },
 }
-
 
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
