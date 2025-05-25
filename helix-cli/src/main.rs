@@ -693,6 +693,8 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
+            runner.arg("--branch");
+            runner.arg("cli-fixes");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 
