@@ -2361,7 +2361,7 @@ impl<'a> Ctx<'a> {
             (ShortestPath(sp), Type::Nodes(_)) => {
                 println!("ShortestPath {:?}", sp);
                 let type_arg = match sp.type_arg.clone() {
-                    Some(type_arg) => Some(GenRef::Std(type_arg)),
+                    Some(type_arg) => Some(GenRef::Literal(type_arg)),
                     None => None,
                 };
                 // check edge type is valid

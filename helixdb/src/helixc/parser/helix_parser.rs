@@ -1996,56 +1996,33 @@ impl HelixParser {
                 }
             }
             Rule::shortest_path => {
-                let mut inner = pair.clone().into_inner().next().unwrap().into_inner();
-
-                let (type_arg, from, to) =
-                    inner.fold((None, None, None), |(type_arg, from, to), p| {
-                        match p.as_rule() {
-                            Rule::type_args => (
-                                Some(
-                                    p.into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .as_str()
-                                        .to_string(),
+                let (type_arg, from, to) = pair.clone().into_inner().fold(
+                    (None, None, None),
+                    |(type_arg, from, to), p| match p.as_rule() {
+                        Rule::type_args => (
+                            Some(p.into_inner().next().unwrap().as_str().to_string()),
+                            from,
+                            to,
+                        ),
+                        Rule::to_from => match p.into_inner().next() {
+                            Some(p) => match p.as_rule() {
+                                Rule::to => (
+                                    type_arg,
+                                    from,
+                                    Some(p.into_inner().next().unwrap().as_str().to_string()),
                                 ),
-                                from,
-                                to,
-                            ),
-                            Rule::from => (
-                                type_arg,
-                                Some(
-                                    p.into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .as_str()
-                                        .to_string(),
+                                Rule::from => (
+                                    type_arg,
+                                    Some(p.into_inner().next().unwrap().as_str().to_string()),
+                                    to,
                                 ),
-                                to,
-                            ),
-                            Rule::to => (
-                                type_arg,
-                                from,
-                                Some(
-                                    p.into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .into_inner()
-                                        .next()
-                                        .unwrap()
-                                        .as_str()
-                                        .to_string(),
-                                ),
-                            ),
-                            _ => (type_arg, from, to),
-                        }
-                    });
+                                _ => unreachable!(),
+                            },
+                            None => (type_arg, from, to),
+                        },
+                        _ => (type_arg, from, to),
+                    },
+                );
 
                 // TODO: add error handling and check about IdType as might not always be data.
                 // possibly use stack to keep track of variables and use them via precedence and then check on type
