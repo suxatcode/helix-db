@@ -12,7 +12,6 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     io::Write,
-    path::Path,
 };
 
 #[derive(Parser)]
