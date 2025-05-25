@@ -285,17 +285,15 @@ use helixdb::{
         source::{
             add_e::{AddEAdapter, EdgeType},
             add_n::AddNAdapter,
-            e::EAdapter,
             e_from_id::EFromIdAdapter,
             e_from_type::EFromTypeAdapter,
-            n::NAdapter,
             n_from_id::NFromIdAdapter,
             n_from_type::NFromTypeAdapter,
             n_from_index::NFromIndexAdapter,
         },
         tr_val::{Traversable, TraversalVal},
         util::{
-            dedup::DedupAdapter, drop::DropAdapter, filter_mut::FilterMut,
+            dedup::DedupAdapter, filter_mut::FilterMut,
             filter_ref::FilterRefAdapter, range::RangeAdapter, update::UpdateAdapter,
             map::MapAdapter, paths::ShortestPathAdapter, props::PropsAdapter, drop::Drop,
         },

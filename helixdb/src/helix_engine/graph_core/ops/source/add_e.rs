@@ -28,7 +28,7 @@ impl Iterator for AddE {
     }
 }
 
-pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>  {
     fn add_e(
         self,
         label: &'a str,

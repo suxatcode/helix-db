@@ -21,7 +21,7 @@ impl Iterator for AddNIterator {
     }
 }
 
-pub trait AddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> + Sized {
+pub trait AddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>  {
     fn add_n(
         self,
         label: &'a str,

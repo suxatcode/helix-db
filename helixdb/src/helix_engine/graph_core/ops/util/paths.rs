@@ -1,21 +1,15 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
-
-use chrono::format::Item;
-use heed3::RoTxn;
-
 use crate::{
     helix_engine::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
-    protocol::{
-        items::{Edge, Node},
-        label_hash::hash_label,
-    },
+    protocol::{items::Edge, label_hash::hash_label},
+};
+use heed3::RoTxn;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
 };
 
 #[derive(Debug, Clone)]
@@ -90,13 +84,13 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
                         .unwrap();
 
                     for result in iter {
-                        let (key, value) = result.unwrap();
+                        let (_, value) = result.unwrap(); // TODO: handle error
                         let (edge_id, to_node) =
-                            HelixGraphStorage::unpack_adj_edge_data(value).unwrap();
+                            HelixGraphStorage::unpack_adj_edge_data(value).unwrap(); // TODO: handle error
 
                         if !visited.contains(&to_node) {
                             visited.insert(to_node);
-                            let edge = self.storage.get_edge(self.txn, &edge_id).unwrap();
+                            let edge = self.storage.get_edge(self.txn, &edge_id).unwrap(); // TODO: handle error
                             parent.insert(to_node, (current_id, edge));
 
                             if to_node == to {
@@ -116,6 +110,21 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
 }
 
 pub trait ShortestPathAdapter<'a, I>: Iterator<Item = Result<TraversalVal, GraphError>> {
+    /// ShortestPath finds the shortest path between two nodes
+    ///
+    /// # Arguments
+    ///
+    /// * `edge_label` - The label of the edge to use
+    /// * `from` - The starting node
+    /// * `to` - The ending node
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let node1 = Node { id: 1, label: "Person".to_string(), properties: None };
+    /// let node2 = Node { id: 2, label: "Person".to_string(), properties: None };
+    /// let traversal = G::new(storage, &txn).shortest_path(Some("knows"), Some(&node1.id), Some(&node2.id));
+    /// ```
     fn shortest_path(
         self,
         edge_label: Option<&'a str>,
@@ -129,6 +138,7 @@ pub trait ShortestPathAdapter<'a, I>: Iterator<Item = Result<TraversalVal, Graph
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPathAdapter<'a, I>
     for RoTraversalIterator<'a, I>
 {
+    #[inline]
     fn shortest_path(
         self,
         edge_label: Option<&'a str>,
