@@ -2,6 +2,7 @@ use crate::{
     args::{CommandType, HelixCLI},
     instance_manager::InstanceManager,
     utils::*,
+    styled_string::StyledString,
 };
 use clap::Parser;
 use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
@@ -17,6 +18,7 @@ use std::{
 pub mod args;
 mod instance_manager;
 mod utils;
+mod styled_string;
 
 fn main() {
     let args = HelixCLI::parse();

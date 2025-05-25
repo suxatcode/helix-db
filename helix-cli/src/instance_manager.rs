@@ -1,7 +1,7 @@
 use super::{
     args::CliError,
     utils::find_available_port,
-    utils::StyledString,
+    styled_string::StyledString,
 };
 use std::{
     fs::{self, File, OpenOptions},
