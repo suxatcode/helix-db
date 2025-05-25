@@ -1,15 +1,13 @@
 use crate::{
-    args::{
-        HelixCLI,
-        CommandType,
-    },
+    args::{CommandType, HelixCLI},
     instance_manager::InstanceManager,
     utils::*,
 };
-use helixdb::{
-    helix_engine::graph_core::config::Config,
-    ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
-};
+use clap::Parser;
+use colored::*;
+use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
+use spinners::{Spinner, Spinners};
+use std::fmt::Write;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -107,7 +105,7 @@ fn main() {
 
             let num_files = files.len();
 
-            let code = match generate(&files) {
+            let (code, analyzed_source) = match generate(&files) {
                 Ok(code) => code,
                 Err(e) => {
                     sp.stop_with_message(format!("{}", "Error compiling queries".red().bold()));
@@ -126,17 +124,30 @@ fn main() {
             let cache_dir = PathBuf::from(&output);
             fs::create_dir_all(&cache_dir).unwrap();
 
-            let file_path = PathBuf::from(&output).join("src/queries.rs");
-            match fs::write(file_path, code.content) {
-                Ok(_) => {
-                    println!("{}", "Successfully wrote queries file".green().bold());
+            // if local overwrite queries file in ~/.helix/repo/helix-container/src/queries.rs
+            if local {
+                let file_path = PathBuf::from(&output).join("src/queries.rs");
+                let mut generated_rust_code = String::new();
+                match write!(&mut generated_rust_code, "{}", analyzed_source) {
+                    Ok(_) => {
+                        println!("{}", "Successfully transpiled queries".green().bold());
+                    }
+                    Err(e) => {
+                        println!("{}", "Failed to transpile queries".red().bold());
+                        println!("└── {} {}", "Error:".red().bold(), e);
+                        return;
+                    }
                 }
-                Err(e) => {
-                    println!("{}", "Failed to write queries file".red().bold());
-                    println!("└── {} {}", "Error:".red().bold(), e);
-                    return;
+                match fs::write(file_path, generated_rust_code) {
+                    Ok(_) => {
+                        println!("{}", "Successfully wrote queries file".green().bold());
+                    }
+                    Err(e) => {
+                        println!("{}", "Failed to write queries file".red().bold());
+                        println!("└── {} {}", "Error:".red().bold(), e);
+                        return;
+                    }
                 }
-            }
 
             let mut sp = Spinner::new(Spinners::Dots9, "Building Helix".into());
 
@@ -177,6 +188,25 @@ fn main() {
                         sp.stop_with_message(format!(
                                 "{}",
                                 "Successfully built Helix".green().bold()
+                            ));
+                        } else {
+                            sp.stop_with_message(format!(
+                                "{}",
+                                "Failed to build Helix".red().bold()
+                            ));
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            if !stderr.is_empty() {
+                                println!("└── {} {}", "Error:\n".red().bold(), stderr);
+                            }
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
+                        println!("└── {} {}", "Error:".red().bold(), e);
+                        return;
+                    }
+                }
                         ));
                     } else {
                         sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
@@ -536,22 +566,39 @@ fn main() {
                 return;
             }
 
-            let code = match generate(&files) {
-                Ok(code) => code,
+            let (_, analyzed_source) = match generate(&files) {
+                Ok((code, analyzed_source)) => (code, analyzed_source),
                 Err(e) => {
                     sp.stop_with_message(format!("{}", e.to_string().red().bold()));
                     return;
                 }
             };
-
-            // write source to file
             let file_path = PathBuf::from(&output).join("queries.rs");
-            fs::write(file_path, code.content).unwrap();
-            sp.stop_with_message(format!(
-                "{} {}",
-                "Successfully compiled queries to".green().bold(),
-                output
-            ));
+            let mut generated_rust_code = String::new();
+            match write!(&mut generated_rust_code, "{}", analyzed_source) {
+                Ok(_) => {
+                    println!("{}", "Successfully transpiled queries".green().bold());
+                }
+                Err(e) => {
+                    println!("{}", "Failed to transpile queries".red().bold());
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
+            match fs::write(file_path, generated_rust_code) {
+                Ok(_) => {
+                    println!(
+                        "{} {}",
+                        "Successfully compiled queries to".green().bold(),
+                        output
+                    );
+                }
+                Err(e) => {
+                    println!("{} {}", "Failed to write queries file".red().bold(), e);
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
         }
 
         CommandType::Check(command) => {
@@ -667,6 +714,8 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
+            runner.arg("--branch");
+            runner.arg("analyzer-improvements");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 

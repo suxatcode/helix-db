@@ -53,13 +53,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
                 let node = Node {
                     id: *node,
                     label: "user".to_string(),
-                    properties: HashMap::new(),
+                    properties: None,
                 };
 
                 let id = node.id;
                 // insert node
 
-                match SerializedNode::encode_node(&node) {
+                match node.encode_node() {
                     Ok(bytes) => {
                         if let Err(e) = self.storage.nodes_db.put_with_flags(
                             self.txn,

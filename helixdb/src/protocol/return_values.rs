@@ -1,25 +1,13 @@
-use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
 use super::{
     count::Count,
-    filterable::{
-        Filterable,
-        FilterableType,
-    },
-    items::{
-        Edge,
-        Node,
-    },
-    remapping::{
-        Remapping,
-        ResponseRemapping,
-    },
+    filterable::{Filterable, FilterableType},
+    items::{Edge, Node},
+    remapping::{Remapping, ResponseRemapping},
     value::Value,
 };
+use crate::helix_engine::graph_core::ops::tr_val::TraversalVal;
 use sonic_rs::{Deserialize, Serialize};
-use std::{
-    cell::RefMut,
-    collections::HashMap,
-};
+use std::{cell::RefMut, collections::HashMap};
 
 /// A return value enum that represents different possible outputs from graph operations.
 /// Can contain traversal results, counts, boolean flags, or empty values.
@@ -99,25 +87,53 @@ impl From<u128> for ReturnValue {
     }
 }
 
+impl From<Vec<TraversalVal>> for ReturnValue {
+    fn from(array: Vec<TraversalVal>) -> Self {
+        ReturnValue::Array(array.into_iter().map(|val| val.into()).collect())
+    }
+}
+
+impl From<TraversalVal> for ReturnValue {
+    fn from(val: TraversalVal) -> Self {
+        match val {
+            TraversalVal::Node(node) => ReturnValue::from(node),
+            TraversalVal::Edge(edge) => ReturnValue::from(edge),
+            TraversalVal::Vector(vector) => ReturnValue::from(vector),
+            TraversalVal::Count(count) => ReturnValue::from(count),
+            TraversalVal::Empty => ReturnValue::Empty,
+            _ => unreachable!(),
+        }
+    }
+}
 impl<I> From<I> for ReturnValue
 where
     I: Filterable + Clone,
 {
     #[inline]
     fn from(item: I) -> Self {
+        let length = match item.properties_ref() {
+            Some(properties) => properties.len(),
+            None => 0,
+        };
         let mut properties = match item.type_name() {
-            FilterableType::Node => {
-                HashMap::with_capacity(Node::NUM_PROPERTIES + item.properties_ref().len())
-            }
+            FilterableType::Node => HashMap::with_capacity(Node::NUM_PROPERTIES + length),
             FilterableType::Edge => {
-                let mut properties =
-                    HashMap::with_capacity(Edge::NUM_PROPERTIES + item.properties_ref().len());
-                properties.insert("from_node".to_string(), ReturnValue::from(item.from_node_uuid()));
-                properties.insert("to_node".to_string(), ReturnValue::from(item.to_node_uuid()));
+                let mut properties = HashMap::with_capacity(Edge::NUM_PROPERTIES + length);
+                properties.insert(
+                    "from_node".to_string(),
+                    ReturnValue::from(item.from_node_uuid()),
+                );
+                properties.insert(
+                    "to_node".to_string(),
+                    ReturnValue::from(item.to_node_uuid()),
+                );
                 properties
             }
             FilterableType::Vector => {
-                let mut properties = item.clone().properties();
+                let mut properties = match item.properties_ref() {
+                    Some(properties) => properties.clone(),
+                    None => HashMap::new(),
+                };
                 let mut return_value = HashMap::new();
                 let data = match properties.remove("data") {
                     Some(value) => value,
@@ -135,11 +151,14 @@ where
             "label".to_string(),
             ReturnValue::from(item.label().to_string()),
         );
-        properties.extend(
-            item.properties()
-                .into_iter()
-                .map(|(k, v)| (k, ReturnValue::from(v))),
-        );
+        if item.properties_ref().is_some() {
+            properties.extend(
+                item.properties()
+                    .unwrap()
+                    .into_iter()
+                    .map(|(k, v)| (k, ReturnValue::from(v))),
+            );
+        }
         ReturnValue::Object(properties)
     }
 }
@@ -166,7 +185,7 @@ impl ReturnValue {
     #[inline(always)]
     fn process_items_with_mixin<T>(
         item: T,
-        mixin: &mut RefMut<HashMap<u128, ResponseRemapping>>,
+        mixin: &mut HashMap<u128, ResponseRemapping>,
     ) -> ReturnValue
     where
         T: Filterable + Clone,
