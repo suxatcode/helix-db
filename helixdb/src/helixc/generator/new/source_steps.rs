@@ -65,16 +65,27 @@ impl Display for AddE {
 pub struct AddV {
     pub vec: GeneratedValue,
     pub label: GenRef<String>,
-    pub properties: Vec<(String, GeneratedValue)>,
+    pub properties: Option<Vec<(String, GeneratedValue)>>,
 }
 impl Display for AddV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = write_properties(&self.properties);
-        write!(
-            f,
-            "insert_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, {})",
-            self.vec, self.label, properties
-        )
+        match &self.properties {
+            Some(properties) => {
+                let properties = write_properties(properties);
+                write!(
+                    f,
+                    "insert_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, {})",
+                    self.vec, self.label, properties
+                )
+            }
+            None => {
+                write!(
+                    f,
+                    "insert_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, None)",
+                    self.vec, self.label
+                )
+            }
+        }
     }
 }
 
