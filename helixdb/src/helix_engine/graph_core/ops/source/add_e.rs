@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
@@ -14,7 +16,15 @@ use heed3::PutFlags;
 
 pub enum EdgeType {
     Vec,
-    Std,
+    Node,
+}
+impl Display for EdgeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EdgeType::Vec => write!(f, "EdgeType::Vec"),
+            EdgeType::Node => write!(f, "EdgeType::Node"),
+        }
+    }
 }
 pub struct AddE {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -64,15 +74,15 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
 
-        if let EdgeType::Std = edge_type {
-            if should_check {
-                if !(self.node_vec_exists(&from_node, EdgeType::Std)
-                    && self.node_vec_exists(&to_node, EdgeType::Std))
-                {
-                    result = Err(GraphError::NodeNotFound);
-                }
-            }
-        }
+        // if let EdgeType::Node = edge_type {
+        //     if should_check {
+        //         if !(self.node_vec_exists(&from_node, EdgeType::Node)
+        //             && self.node_vec_exists(&to_node, EdgeType::Node))
+        //         {
+        //             result = Err(GraphError::NodeNotFound);
+        //         }
+        //     }
+        // }
 
         match edge.encode_edge() {
             Ok(bytes) => {
@@ -128,7 +138,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
     fn node_vec_exists(&self, node_vec_id: &u128, edge_type: EdgeType) -> bool {
         let exists = match edge_type {
-            EdgeType::Std => self
+            EdgeType::Node => self
                 .storage
                 .nodes_db
                 .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))

@@ -103,7 +103,7 @@ fn test_add_e() {
             node1.id(),
             node2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .filter_map(|edge| edge.ok())
         .collect::<Vec<_>>();
@@ -150,7 +150,7 @@ fn test_out() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -160,7 +160,7 @@ fn test_out() {
             person2.id(),
             person3.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -173,7 +173,7 @@ fn test_out() {
     //     .collect::<Vec<_>>();
     let nodes = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id())
-        .out("knows")
+        .out("knows", &EdgeType::Node)
         .filter_map(|node| node.ok())
         .collect::<Vec<_>>();
 
@@ -211,7 +211,7 @@ fn test_out_e() {
             person1.id().clone(),
             person2.id().clone(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .filter_map(|edge| edge.ok())
         .collect::<Vec<_>>();
@@ -255,14 +255,14 @@ fn test_in() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     txn.commit().unwrap();
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person2.id())
-        .in_("knows")
+        .in_("knows", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person1
@@ -294,7 +294,7 @@ fn test_in_e() {
             person1.id(),
             person2.id(),
             true,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     let edge = edge.first().unwrap();
@@ -345,7 +345,7 @@ fn test_complex_traversal() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -355,7 +355,7 @@ fn test_complex_traversal() {
             person2.id(),
             person3.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -365,7 +365,7 @@ fn test_complex_traversal() {
             person3.id(),
             person1.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     txn.commit().unwrap();
@@ -374,7 +374,7 @@ fn test_complex_traversal() {
 
     let nodes = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id())
-        .out("knows")
+        .out("knows", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person2
@@ -383,7 +383,7 @@ fn test_complex_traversal() {
 
     // Traverse from person2 to person3
     let nodes = G::new_from(Arc::clone(&storage), &txn, vec![nodes[0].clone()])
-        .out("likes")
+        .out("likes", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person3
@@ -392,7 +392,7 @@ fn test_complex_traversal() {
 
     // Traverse from person3 to person1
     let nodes = G::new_from(Arc::clone(&storage), &txn, vec![nodes[0].clone()])
-        .out("follows")
+        .out("follows", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that current step is at person1
@@ -465,7 +465,7 @@ fn test_count_mixed_steps() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -475,7 +475,7 @@ fn test_count_mixed_steps() {
             person1.id(),
             person3.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     txn.commit().unwrap();
@@ -487,7 +487,7 @@ fn test_count_mixed_steps() {
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id())
-        .out("knows")
+        .out("knows", &EdgeType::Node)
         .count();
 
     assert_eq!(count, 2);
@@ -545,7 +545,7 @@ fn test_range_chaining() {
                 nodes[i].id(),
                 nodes[i + 1].id(),
                 false,
-                EdgeType::Std,
+                EdgeType::Node,
             )
             .collect_to::<Vec<_>>();
     }
@@ -557,7 +557,7 @@ fn test_range_chaining() {
             nodes[4].id(),
             nodes[0].id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     txn.commit().unwrap();
@@ -565,7 +565,7 @@ fn test_range_chaining() {
     let count = G::new(Arc::clone(&storage), &txn)
         .n_from_type("person") // Get all nodes
         .range(0, 3) // Take first 3 nodes
-        .out("knows") // Get their outgoing nodes
+        .out("knows", &EdgeType::Node) // Get their outgoing nodes
         .collect_to::<Vec<_>>();
 
     assert_eq!(count.len(), 3);
@@ -635,7 +635,7 @@ fn test_n_from_id_with_traversal() {
             person1.id(),
             person2.id(),
             true,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -643,7 +643,7 @@ fn test_n_from_id_with_traversal() {
     let txn = storage.graph_env.read_txn().unwrap();
     let count = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id())
-        .out("knows")
+        .out("knows", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that traversal reaches person2
@@ -670,7 +670,7 @@ fn test_e_from_id() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     let edge_id = edge.first().unwrap().id();
@@ -738,7 +738,7 @@ fn test_n_from_id_chain_operations() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -748,7 +748,7 @@ fn test_n_from_id_chain_operations() {
             person2.id(),
             person3.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -756,8 +756,8 @@ fn test_n_from_id_chain_operations() {
     let txn = storage.graph_env.read_txn().unwrap();
     let nodes = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&person1.id())
-        .out("knows")
-        .out("likes")
+        .out("knows", &EdgeType::Node)
+        .out("likes", &EdgeType::Node)
         .collect_to::<Vec<_>>();
 
     // Check that the chain of traversals reaches person3
@@ -788,7 +788,7 @@ fn test_e_from_id_chain_operations() {
             person2.id(),
             person1.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     G::new_mut(Arc::clone(&storage), &mut txn)
@@ -798,7 +798,7 @@ fn test_e_from_id_chain_operations() {
             person2.id(),
             person3.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -953,7 +953,7 @@ fn test_filter_edges() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
     let edge2 = G::new_mut(Arc::clone(&storage), &mut txn)
@@ -963,7 +963,7 @@ fn test_filter_edges() {
             person2.id(),
             person1.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -1109,7 +1109,7 @@ fn test_in_n() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to_val();
     txn.commit().unwrap();
@@ -1142,7 +1142,7 @@ fn test_out_n() {
             person1.id(),
             person2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to_val();
     txn.commit().unwrap();
@@ -1175,7 +1175,7 @@ fn test_edge_properties() {
             node1.id(),
             node2.id(),
             false,
-            EdgeType::Std,
+            EdgeType::Node,
         )
         .collect_to::<Vec<_>>();
 
@@ -1327,7 +1327,7 @@ fn huge_traversal() {
         .n_from_type("user")
         .out_e("knows")
         .to_n()
-        .out("knows")
+        .out("knows", &EdgeType::Node)
         // .filter_ref(|val, _| {
         //     if let Ok(TraversalVal::Node(node)) = val {
         //         if let Some(value) = node.check_property("name") {
@@ -1342,10 +1342,10 @@ fn huge_traversal() {
         //         return false;
         //     }
         // })
-        .out("knows")
-        .out("knows")
-        .out("knows")
-        .out("knows")
+        .out("knows", &EdgeType::Node)
+        .out("knows", &EdgeType::Node)
+        .out("knows", &EdgeType::Node)
+        .out("knows", &EdgeType::Node)
         .dedup()
         .range(0, 10000)
         .count();

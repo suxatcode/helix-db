@@ -3,7 +3,7 @@ use crate::{
         graph_core::config::Config,
         storage_core::storage_methods::StorageMethods,
         types::GraphError,
-        vector_core::vector_core::{HNSWConfig, VectorCore},
+        vector_core::{hnsw::HNSW, vector::HVector, vector_core::{HNSWConfig, VectorCore}},
     },
     protocol::{
         filterable::Filterable,
@@ -219,6 +219,11 @@ impl HelixGraphStorage {
         arr.copy_from_slice(bytes);
         let res = u128::from_be_bytes(arr);
         Ok(res)
+    }
+
+    pub fn get_vector(&self, txn: &RoTxn, id: &u128) -> Result<HVector, GraphError> {
+        let vector = self.vectors.get_vector(txn, *id, 0, true)?;
+        Ok(vector)
     }
 }
 

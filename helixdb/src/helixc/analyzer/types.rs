@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::helixc::{
-    generator::new::{
+    generator::{
         generator_types::{
             Assignment as GeneratedAssignment, EdgeSchema as GeneratedEdgeSchema,
             NodeSchema as GeneratedNodeSchema, Parameter as GeneratedParameter, SchemaProperty,

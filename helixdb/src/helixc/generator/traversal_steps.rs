@@ -1,4 +1,4 @@
-use crate::helixc::generator::new::utils::write_properties;
+use crate::helixc::generator::utils::write_properties;
 
 use super::{
     bool_op::BoolOp,
@@ -230,20 +230,22 @@ impl Debug for Step {
 #[derive(Clone)]
 pub struct Out {
     pub label: GenRef<String>,
+    pub edge_type: GenRef<String>,
 }
 impl Display for Out {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "out({})", self.label)
+        write!(f, "out({},{})", self.label, self.edge_type)
     }
 }
 
 #[derive(Clone)]
 pub struct In {
     pub label: GenRef<String>,
+    pub edge_type: GenRef<String>,
 }
 impl Display for In {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "in_({})", self.label)
+        write!(f, "in_({},{})", self.label, self.edge_type)
     }
 }
 

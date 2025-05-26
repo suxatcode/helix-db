@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Display;
 
-use crate::helixc::generator::new::utils::{write_properties, write_secondary_indices};
+use crate::helixc::generator::utils::{write_properties, write_secondary_indices};
 
 use super::{
     generator_types::BoExp,
@@ -55,7 +55,7 @@ impl Display for AddE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "add_e({}, {}, {}, {}, true, EdgeType::Std)",
+            "add_e({}, {}, {}, {}, true, EdgeType::Node)",
             self.label,
             write_properties(&self.properties),
             self.from,
