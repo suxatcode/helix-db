@@ -5,7 +5,7 @@ use crate::{
 };
 use helixdb::helixc::{
     analyzer::analyzer::analyze,
-    generator::new::generator_types::Source as GeneratedSource,
+    generator::generator_types::Source as GeneratedSource,
     parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
 use std::{

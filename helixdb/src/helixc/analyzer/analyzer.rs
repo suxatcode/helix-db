@@ -3,8 +3,9 @@
 use colored::Colorize;
 
 use crate::{
+    helix_engine::graph_core::ops::source::add_e::EdgeType,
     helixc::{
-        generator::new::{
+        generator::{
             bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
                 Assignment as GeneratedAssignment, BoExp, Drop as GeneratedDrop,
@@ -2431,9 +2432,24 @@ impl<'a> Ctx<'a> {
 
             // Node‑to‑Node
             (Out(label), Type::Nodes(Some(node_label)) | Type::Vector(Some(node_label))) => {
+                let edge_type = match self.edge_map.get(label.as_str()) {
+                    Some(ref edge) => {
+                        if self.node_set.contains(edge.to.1.as_str()) {
+                            EdgeType::Node
+                        } else if self.vector_set.contains(edge.to.1.as_str()) {
+                            EdgeType::Vec
+                        } else {
+                            panic!("Edge of type `{}` does not exist", label);
+                        }
+                    }
+                    None => {
+                        unreachable!()
+                    }
+                };
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::Out(GeneratedOut {
+                        edge_type: GenRef::Ref(edge_type.to_string()),
                         label: GenRef::Literal(label.clone()),
                     })));
                 let edge = self.edge_map.get(label.as_str());
@@ -2463,10 +2479,27 @@ impl<'a> Ctx<'a> {
                     }
                 }
             }
+
             (In(label), Type::Nodes(Some(node_label)) | Type::Vector(Some(node_label))) => {
+                let edge_type = match self.edge_map.get(label.as_str()) {
+                    Some(ref edge) => {
+                        if self.node_set.contains(edge.from.1.as_str()) {
+                            EdgeType::Node
+                        } else if self.vector_set.contains(edge.from.1.as_str()) {
+                            EdgeType::Vec
+                        } else {
+                            panic!("Edge of type `{}` does not exist", label);
+                        }
+                    }
+                    None => {
+                        unreachable!()
+                    }
+                };
+
                 traversal
                     .steps
                     .push(Separator::Period(GeneratedStep::In(GeneratedIn {
+                        edge_type: GenRef::Ref(edge_type.to_string()),
                         label: GenRef::Literal(label.clone()),
                     })));
                 let edge = self.edge_map.get(label.as_str());

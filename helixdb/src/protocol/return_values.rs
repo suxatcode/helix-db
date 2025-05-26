@@ -100,6 +100,7 @@ impl From<TraversalVal> for ReturnValue {
             TraversalVal::Edge(edge) => ReturnValue::from(edge),
             TraversalVal::Vector(vector) => ReturnValue::from(vector),
             TraversalVal::Count(count) => ReturnValue::from(count),
+            TraversalVal::Value(value) => ReturnValue::from(value),
             TraversalVal::Empty => ReturnValue::Empty,
             _ => unreachable!(),
         }
@@ -195,9 +196,11 @@ impl ReturnValue {
             if m.should_spread {
                 ReturnValue::from(item).mixin_remapping(&mut m.remappings)
             } else {
+                println!("default mixin");
                 ReturnValue::default().mixin_remapping(&mut m.remappings)
             }
         } else {
+            println!("no mixin found for item: {:?}", id);
             ReturnValue::from(item)
         }
     }
@@ -222,6 +225,7 @@ impl ReturnValue {
                     }
                     TraversalVal::Count(count) => ReturnValue::from(count),
                     TraversalVal::Empty => ReturnValue::Empty,
+                    TraversalVal::Value(value) => ReturnValue::from(value),
                     _ => unreachable!(),
                 })
                 .collect(),
@@ -280,14 +284,19 @@ impl ReturnValue {
         match self {
             ReturnValue::Object(mut a) => {
                 remappings.into_iter().for_each(|(k, v)| {
+                    println!("k: {:?}, new_name: {:?}", k, v.new_name);
                     if v.exclude {
                         let _ = a.remove(k);
                     } else if let Some(new_name) = &v.new_name {
                         if let Some(value) = a.remove(k) {
                             a.insert(new_name.clone(), value);
+                        } else {
+                            println!("no value found for key: {:?}", k);
+                            a.insert(k.clone(), v.return_value.clone());
                         }
                     } else {
-                        a.insert(k.clone(), v.return_value.clone());
+                        println!("inserting value: {:?}", k);
+                        a.insert(k.clone(), v.return_value.clone()); // TODO/ remove clone
                     }
                 });
                 ReturnValue::Object(a)

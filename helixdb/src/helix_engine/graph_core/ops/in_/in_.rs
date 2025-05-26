@@ -1,7 +1,10 @@
 use crate::{
     helix_engine::{
         graph_core::{
-            ops::tr_val::{Traversable, TraversalVal},
+            ops::{
+                source::add_e::EdgeType,
+                tr_val::{Traversable, TraversalVal},
+            },
             traversal_iter::RoTraversalIterator,
         },
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
@@ -21,6 +24,7 @@ pub struct InNodesIterator<'a, T> {
     >,
     storage: Arc<HelixGraphStorage>,
     txn: &'a T,
+    edge_type: &'a EdgeType,
 }
 
 impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a>> {
@@ -37,8 +41,17 @@ impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a>> {
                             return Some(Err(e));
                         }
                     };
-                    if let Ok(node) = self.storage.get_node(self.txn, &node_id) {
-                        return Some(Ok(TraversalVal::Node(node)));
+                    match self.edge_type {
+                        EdgeType::Node => {
+                            if let Ok(node) = self.storage.get_node(self.txn, &node_id) {
+                                return Some(Ok(TraversalVal::Node(node)));
+                            }
+                        }
+                        EdgeType::Vec => {
+                            if let Ok(vector) = self.storage.get_vector(self.txn, &node_id) {
+                                return Some(Ok(TraversalVal::Vector(vector)));
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -61,6 +74,7 @@ pub trait InAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> {
     fn in_(
         self,
         edge_label: &'a str,
+        edge_type: &'a EdgeType,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
@@ -71,6 +85,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a
     fn in_(
         self,
         edge_label: &'a str,
+        edge_type: &'a EdgeType,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let db = Arc::clone(&self.storage);
         let storage = Arc::clone(&self.storage);
@@ -79,7 +94,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a
             .inner
             .filter_map(move |item| {
                 let edge_label_hash = hash_label(edge_label, None);
-                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
+                let prefix = HelixGraphStorage::in_edge_key(&item.unwrap().id(), &edge_label_hash);
                 match db
                     .in_edges_db
                     .lazily_decode_data()
@@ -89,6 +104,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a
                         iter,
                         storage: Arc::clone(&db),
                         txn,
+                        edge_type,
                     }),
                     Ok(None) => None,
                     Err(e) => {
