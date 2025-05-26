@@ -143,40 +143,36 @@ fn unwrap_object(
     let sub_param = (
         name,
         obj.iter()
-            .map(|(field_name, field_type)| {
-                match field_type {
+            .map(|(field_name, field_type)| match field_type {
+                FieldType::Object(obj) => {
+                    unwrap_object(format!("{}Data", field_name), obj, sub_parameters);
+                    GeneratedParameter {
+                        name: field_name.clone(),
+                        field_type: GeneratedType::Object(GenRef::Std(format!(
+                            "{}Data",
+                            field_name
+                        ))),
+                    }
+                }
+                FieldType::Array(inner) => match inner.as_ref() {
                     FieldType::Object(obj) => {
                         unwrap_object(format!("{}Data", field_name), obj, sub_parameters);
                         GeneratedParameter {
                             name: field_name.clone(),
-                            field_type: GeneratedType::Object(GenRef::Std(format!(
-                                "{}Data",
-                                field_name
+                            field_type: GeneratedType::Vec(Box::new(GeneratedType::Object(
+                                GenRef::Std(format!("{}Data", field_name)),
                             ))),
                         }
                     }
-                    FieldType::Array(inner) => match inner.as_ref() {
-                        FieldType::Object(obj) => {
-                            unwrap_object(format!("{}Data", field_name), obj, sub_parameters);
-                            GeneratedParameter {
-                                name: field_name.clone(),
-                                field_type: GeneratedType::Vec(Box::new(GeneratedType::Object(
-                                    GenRef::Std(format!("{}Data", field_name)),
-                                ))),
-                            }
-                        }
-                        _ => GeneratedParameter {
-                            name: field_name.clone(),
-                            field_type: GeneratedType::Vec(Box::new(GeneratedType::from(
-                                field_type.clone(),
-                            ))),
-                        },
-                    },
                     _ => GeneratedParameter {
                         name: field_name.clone(),
                         field_type: GeneratedType::from(field_type.clone()),
                     },
-                }
+                },
+                _ => GeneratedParameter {
+                    name: field_name.clone(),
+                    field_type: GeneratedType::from(field_type.clone()),
+                },
             })
             .collect(),
     );

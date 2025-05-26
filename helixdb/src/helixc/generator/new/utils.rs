@@ -123,10 +123,9 @@ impl Display for Order {
     }
 }
 
-pub fn write_properties(properties: &Vec<(String, GeneratedValue)>) -> String {
-    match properties.is_empty() {
-        true => "None".to_string(),
-        false => format!(
+pub fn write_properties(properties: &Option<Vec<(String, GeneratedValue)>>) -> String {
+    match properties {
+        Some(properties) => format!(
             "Some(props! {{ {} }})",
             properties
                 .iter()
@@ -134,6 +133,7 @@ pub fn write_properties(properties: &Vec<(String, GeneratedValue)>) -> String {
                 .collect::<Vec<String>>()
                 .join(", ")
         ),
+        None => "None".to_string(),
     }
 }
 

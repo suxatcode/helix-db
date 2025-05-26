@@ -1422,7 +1422,13 @@ impl HelixParser {
                 }
             }
         }
-
+        if edge_type.is_none() {
+            return Err(ParserError::from("Missing edge type"));
+        }
+        if connection.is_none() {
+            return Err(ParserError::from("Missing edge connection"));
+        }
+        println!("edge type: {:?}", edge_type);
         Ok(AddEdge {
             edge_type,
             fields,

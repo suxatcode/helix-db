@@ -21,7 +21,7 @@ pub enum TraversalType {
     Nested(GenRef<String>), // Should contain `.clone()` if necessary (probably is)
     NestedFrom(GenRef<String>),
     Empty,
-    Update(Vec<(String, GeneratedValue)>),
+    Update(Option<Vec<(String, GeneratedValue)>>),
 }
 impl Debug for TraversalType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -243,7 +243,7 @@ pub struct In {
 }
 impl Display for In {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "in({})", self.label)
+        write!(f, "in_({})", self.label)
     }
 }
 
