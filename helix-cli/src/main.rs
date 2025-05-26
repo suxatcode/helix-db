@@ -7,6 +7,7 @@ use crate::{
 use clap::Parser;
 use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
 use spinners::{Spinner, Spinners};
+use core::num;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -280,6 +281,8 @@ fn main() {
             let mut sp = Spinner::new(Spinners::Dots9, "Compiling Helix queries".into());
 
             let num_files = files.len();
+
+            println!("num of files: {:?}", num_files);
 
             let (code, anazlyed_source) = match generate(&files) {
                 Ok(code) => code,
