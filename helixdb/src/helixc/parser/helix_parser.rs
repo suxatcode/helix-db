@@ -1897,7 +1897,7 @@ impl HelixParser {
                         key: "id".to_string(),
                         value: FieldValue {
                             loc: pair.loc(),
-                            value: FieldValueType::Empty,
+                            value: FieldValueType::Identifier("id".to_string()),
                         },
                         loc: pair.loc(),
                     }],
@@ -2282,7 +2282,7 @@ impl HelixParser {
                     },
                     Rule::anonymous_traversal => FieldValue {
                         loc: p.loc(),
-                        value: FieldValueType::Traversal(Box::new(self.parse_traversal(p)?)),
+                        value: FieldValueType::Traversal(Box::new(self.parse_anon_traversal(p)?)),
                     },
                     Rule::mapping_field => FieldValue {
                         loc: p.loc(),
