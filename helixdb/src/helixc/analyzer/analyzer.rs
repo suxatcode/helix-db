@@ -2157,7 +2157,6 @@ impl<'a> Ctx<'a> {
         scope: &mut HashMap<&'a str, Type>,
         var_name: Option<&str>,
     ) {
-        println!("Object: {:?}", obj);
         match &cur_ty {
             Type::Nodes(Some(node_ty)) => {
                 if let Some(field_set) = self.node_fields.get(node_ty.as_str()).cloned() {
@@ -2657,8 +2656,29 @@ impl<'a> Ctx<'a> {
                             &mut inner_traversal,
                             None,
                         );
-                        inner_traversal.traversal_type =
-                            TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
+                        match &traversal.start {
+                            StartNode::Identifier(name) => {
+                                if name.to_string() == var_name {
+                                    inner_traversal.traversal_type = TraversalType::NestedFrom(
+                                        GenRef::Std(var_name.to_string()),
+                                    );
+                                } else {
+                                    inner_traversal.traversal_type =
+                                        TraversalType::FromVar(GenRef::Std(name.to_string()));
+                                }
+                            }
+                            _ => {
+                                // self.push_query_err(
+                                //     q,
+                                //     value.loc.clone(),
+                                //     "invalid traversal start".to_string(),
+                                //     "must be anonymous or identifier".to_string(),
+                                // );
+                                inner_traversal.traversal_type =
+                                    TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
+                            }
+                        };
+
                         RemappingType::TraversalRemapping(TraversalRemapping {
                             variable_name: var_name.to_string(),
                             new_field: key.clone(),
@@ -2678,8 +2698,28 @@ impl<'a> Ctx<'a> {
                                     &mut inner_traversal,
                                     None,
                                 );
-                                inner_traversal.traversal_type =
-                                    TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
+                                match &traversal.start {
+                                    StartNode::Identifier(name) => {
+                                        if name.to_string() == var_name {
+                                            inner_traversal.traversal_type =
+                                                TraversalType::NestedFrom(GenRef::Std(var_name.to_string()));
+                                        } else {
+                                            inner_traversal.traversal_type =
+                                                TraversalType::FromVar(GenRef::Std(name.to_string()));
+                                        }
+                                    }
+                                    _ => {
+                                        // self.push_query_err(
+                                        //     q,
+                                        //     value.loc.clone(),
+                                        //     "invalid traversal start".to_string(),
+                                        //     "must be anonymous or identifier".to_string(),
+                                        // );
+                                        inner_traversal.traversal_type = TraversalType::NestedFrom(
+                                            GenRef::Std(var_name.to_string()),
+                                        );
+                                    }
+                                };
                                 RemappingType::TraversalRemapping(TraversalRemapping {
                                     variable_name: var_name.to_string(),
                                     new_field: key.clone(),
@@ -2773,7 +2813,8 @@ impl<'a> Ctx<'a> {
                             q,
                             obj[0].loc.clone(),
                             "field value is empty".to_string(),
-                            "field value must be a literal, identifier, traversal,or object".to_string(),
+                            "field value must be a literal, identifier, traversal,or object"
+                                .to_string(),
                         );
                         RemappingType::Empty
                     } // err
