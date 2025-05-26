@@ -143,7 +143,7 @@ pub mod macros {
             };
             let old_value_remapping =
                 Remapping::new(false, Some($new_name), Some(ReturnValue::from(old_value)));
-            $remapping_vals.insert(
+            $remapping_vals.borrow_mut().insert(
                 $var_name.id(),
                 ResponseRemapping::new(
                     HashMap::from([($old_name.to_string(), old_value_remapping)]),
@@ -164,7 +164,7 @@ pub mod macros {
                 Some($new_name.to_string()),
                 Some(ReturnValue::from(traversal_result)),
             );
-            $remapping_vals.insert(
+            $remapping_vals.borrow_mut().insert(
                 $var_name.id(),
                 ResponseRemapping::new(
                     HashMap::from([($new_name.to_string(), new_remapping)]),
@@ -185,7 +185,7 @@ pub mod macros {
                         Some($field_to_exclude),
                         None,
                     );
-                    $remapping_vals.insert(
+                    $remapping_vals.borrow_mut().insert(
                         item.id(),
                         ResponseRemapping::new(
                             HashMap::from([($field_to_exclude.to_string(), $field_to_exclude_remapping)]),
@@ -213,7 +213,7 @@ pub mod macros {
                 Some($identifier_value.to_string()),
                 Some(ReturnValue::from(value)),
             );
-            $remapping_vals.insert(
+            $remapping_vals.borrow_mut().insert(
                 $var_name.id(),
                 ResponseRemapping::new(
                     HashMap::from([($field_name.to_string(), value_remapping)]),
@@ -238,7 +238,7 @@ pub mod macros {
             };
             let old_value_remapping =
                 Remapping::new(false, Some(value), Some(ReturnValue::from(old_value)));
-            $remapping_vals.insert(
+            $remapping_vals.borrow_mut().insert(
                 $var_name.id(),
                 ResponseRemapping::new(
                     HashMap::from([($field_name.to_string(), old_value_remapping)]),
