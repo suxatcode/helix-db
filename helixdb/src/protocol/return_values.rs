@@ -100,6 +100,7 @@ impl From<TraversalVal> for ReturnValue {
             TraversalVal::Edge(edge) => ReturnValue::from(edge),
             TraversalVal::Vector(vector) => ReturnValue::from(vector),
             TraversalVal::Count(count) => ReturnValue::from(count),
+            TraversalVal::Value(value) => ReturnValue::from(value),
             TraversalVal::Empty => ReturnValue::Empty,
             _ => unreachable!(),
         }
