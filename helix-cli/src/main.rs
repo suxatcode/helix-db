@@ -323,9 +323,7 @@ fn main() {
             let file_path = PathBuf::from(&output).join("src/queries.rs");
             let mut generated_rust_code = String::new();
             match write!(&mut generated_rust_code, "{}", analyzed_source) {
-                Ok(_) => {
-                    println!("{}", "Successfully wrote queries file".green().bold());
-                }
+                Ok(_) => {}
                 Err(e) => {
                     println!("{}", "Failed to write queries file".red().bold());
                     println!("└── {} {}", "Error:".red().bold(), e);
@@ -421,7 +419,13 @@ fn main() {
                 .collect();
 
             let cached_binary = instance_manager.cache_dir.join(&iid);
-            fs::copy(binary_path, &cached_binary).unwrap();
+            match fs::copy(binary_path, &cached_binary) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("{} {}", "Error while copying binary:".red().bold(), e);
+                    return;
+                }
+            }
 
             match instance_manager.start_instance(iid, Some(endpoints)) {
                 Ok(instance) => {
