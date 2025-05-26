@@ -9,7 +9,6 @@ use helixdb::helixc::{
     parser::helix_parser::{Content, HelixParser, HxFile, Source},
 };
 use std::{
-    fmt::Write,
     fs,
     fs::DirEntry,
     io::ErrorKind,
