@@ -180,7 +180,6 @@ impl<'a> Ctx<'a> {
                 && !self.vector_set.contains(edge.from.1.as_str())
             {
                 self.push_schema_err(
-                    &edge.from.1,
                     edge.from.0.clone(),
                     format!("`{}` is not a declared node type", edge.from.1),
                     Some(format!("Declare `N::{}` before this edge", edge.from.1)),
@@ -190,18 +189,46 @@ impl<'a> Ctx<'a> {
                 && !self.vector_set.contains(edge.to.1.as_str())
             {
                 self.push_schema_err(
-                    &edge.to.1,
                     edge.to.0.clone(),
                     format!("`{}` is not a declared node type", edge.to.1),
                     Some(format!("Declare `N::{}` before this edge", edge.to.1)),
                 );
             }
+            edge.properties.as_ref().map(|v| {
+                v.iter().for_each(|f| {
+                    if f.name.to_lowercase() == "id" {
+                        self.push_schema_err(
+                            f.loc.clone(),
+                            format!("`{}` is a reserved field name", f.name),
+                            Some("rename the field to something else".to_string()),
+                        );
+                    }
+                })
+            });
             self.output.edges.push(edge.clone().into());
         }
         for node in &self.src.node_schemas {
+            node.fields.iter().for_each(|f| {
+                if f.name.to_lowercase() == "id" {
+                    self.push_schema_err(
+                        f.loc.clone(),
+                        format!("`{}` is a reserved field name", f.name),
+                        Some("rename the field to something else".to_string()),
+                    );
+                }
+            });
             self.output.nodes.push(node.clone().into());
         }
         for vector in &self.src.vector_schemas {
+            vector.fields.iter().for_each(|f: &Field| {
+                if f.name.to_lowercase() == "id" {
+                    self.push_schema_err(
+                        f.loc.clone(),
+                        format!("`{}` is a reserved field name", f.name),
+                        Some("rename the field to something else".to_string()),
+                    );
+                }
+            });
             self.output.vectors.push(vector.clone().into());
         }
     }
@@ -342,7 +369,7 @@ impl<'a> Ctx<'a> {
     // -----------------------------------------------------
     // Helpers
     // -----------------------------------------------------
-    fn push_schema_err(&mut self, _ident: &str, loc: Loc, msg: String, hint: Option<String>) {
+    fn push_schema_err(&mut self, loc: Loc, msg: String, hint: Option<String>) {
         self.diagnostics.push(Diagnostic::new(
             loc,
             msg,
@@ -2643,11 +2670,9 @@ impl<'a> Ctx<'a> {
         let remappings = obj
             .into_iter()
             .map(|FieldAddition { key, value, .. }| {
-                println!("Field value: {:?}", value.value);
                 match &value.value {
                     // if the field value is a traversal then it is a TraversalRemapping
                     FieldValueType::Traversal(traversal) => {
-                        println!("Traversal parent type: {:?}", parent_ty);
                         let mut inner_traversal = GeneratedTraversal::default();
                         self.check_traversal(
                             &traversal,
