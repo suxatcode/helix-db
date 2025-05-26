@@ -104,15 +104,15 @@ pub fn GetFollowedUsersPosts(
         .collect_to::<Vec<_>>();
     return_vals.insert("posts".to_string(), ReturnValue::from_traversal_value_array_with_mixin(G::new_from(Arc::clone(&db), &txn, posts.clone())
 
-.map_traversal(|post, txn| { traversal_remapping!(remapping_vals, post.clone(), "post" => G::new_from(Arc::clone(&db), &txn, vec![post.clone()])
+.map_traversal(|item, txn| { traversal_remapping!(remapping_vals, item.clone(), "post" => G::new_from(Arc::clone(&db), &txn, vec![item.clone()])
 
-.check_property("Content").collect_to::<Vec<_>>())?;
-traversal_remapping!(remapping_vals, post.clone(), "creatorID" => G::new_from(Arc::clone(&db), &txn, followers.clone())
+.check_property("content").collect_to::<Vec<_>>())?;
+traversal_remapping!(remapping_vals, item.clone(), "creatorID" => G::new_from(Arc::clone(&db), &txn, followers.clone())
 
 .out("Created")
 
 .check_property("id").collect_to::<Vec<_>>())?;
- Ok(post) }).collect_to::<Vec<_>>().clone(), remapping_vals.borrow_mut()));
+ Ok(item) }).collect_to::<Vec<_>>().clone(), remapping_vals.borrow_mut()));
 
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
