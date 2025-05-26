@@ -205,7 +205,7 @@ impl InstanceManager {
                 use windows::Win32::System::Threading::{
                     OpenProcess, TerminateProcess, PROCESS_TERMINATE,
                 };
-                let handle = unsafe { OpenProcess(PROCESS_TERMINATE, false.into(), instance.pid) };
+                let handle = unsafe { OpenProcess(PROCESS_TERMINATE, false.into(), instances[pos].pid) };
                 if let Ok(handle) = handle {
                     unsafe { TerminateProcess(handle, 0) };
                 }
