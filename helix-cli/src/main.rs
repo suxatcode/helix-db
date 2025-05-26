@@ -12,7 +12,6 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     fmt::Write,
-    //io::Write,
 };
 
 pub mod args;
@@ -240,6 +239,27 @@ fn main() {
         }
 
         CommandType::Redeploy(command) => {
+            match Command::new("cargo").output() {
+                Ok(_) => {}
+                Err(_) => {
+                    println!("{}", "Cargo is not installed".red().bold());
+                    return;
+                }
+            }
+
+            match check_helix_installation() {
+                Ok(_) => {}
+                Err(_) => {
+                    println!(
+                        "{}",
+                        "Helix is not installed. Please run `helix install` first."
+                            .red()
+                            .bold()
+                    );
+                    return;
+                }
+            };
+
             let instance_manager = InstanceManager::new().unwrap();
             let iid = &command.instance;
 
@@ -255,6 +275,8 @@ fn main() {
                 }
             };
 
+            let path = get_cfg_deploy_path(command.path).unwrap();
+
             let output = dirs::home_dir()
                 .map(|path| {
                     path.join(".helix/repo/helix-db/helix-container")
@@ -262,8 +284,6 @@ fn main() {
                         .into_owned()
                     })
                 .unwrap_or_else(|| "./.helix/repo/helix-db/helix-container".to_string());
-
-            let path = get_cfg_deploy_path(command.path).unwrap();
 
             let files = match check_and_read_files(&path) {
                 Ok(files) if !files.is_empty() => files,
@@ -281,7 +301,7 @@ fn main() {
 
             let num_files = files.len();
 
-            let (code, anazlyed_source) = match generate(&files) {
+            let (code, analyzed_source) = match generate(&files) {
                 Ok(code) => code,
                 Err(e) => {
                     sp.stop_with_message(format!("{}", "Error compiling queries".red().bold()));
@@ -301,7 +321,18 @@ fn main() {
             fs::create_dir_all(&cache_dir).unwrap();
 
             let file_path = PathBuf::from(&output).join("src/queries.rs");
-            match fs::write(file_path, code.content) {
+            let mut generated_rust_code = String::new();
+            match write!(&mut generated_rust_code, "{}", analyzed_source) {
+                Ok(_) => {
+                    println!("{}", "Successfully wrote queries file".green().bold());
+                }
+                Err(e) => {
+                    println!("{}", "Failed to write queries file".red().bold());
+                    println!("└── {} {}", "Error:".red().bold(), e);
+                    return;
+                }
+            }
+            match fs::write(file_path, generated_rust_code) {
                 Ok(_) => {
                     println!("{}", "Successfully wrote queries file".green().bold());
                 }
@@ -388,6 +419,9 @@ fn main() {
                 .iter()
                 .map(|q| to_snake_case(&q.name))
                 .collect();
+
+            let cached_binary = instance_manager.cache_dir.join(&iid);
+            fs::copy(binary_path, &cached_binary).unwrap();
 
             match instance_manager.start_instance(iid, Some(endpoints)) {
                 Ok(instance) => {
@@ -691,8 +725,6 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
-            runner.arg("--branch");
-            runner.arg("cli-fixes");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 

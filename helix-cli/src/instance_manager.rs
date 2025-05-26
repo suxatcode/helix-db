@@ -27,7 +27,7 @@ pub struct InstanceInfo {
 
 pub struct InstanceManager {
     instances_file: PathBuf,
-    cache_dir: PathBuf,
+    pub cache_dir: PathBuf,
     logs_dir: PathBuf,
 }
 
