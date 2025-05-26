@@ -28,7 +28,7 @@ pub enum SourceStep {
 #[derive(Clone)]
 pub struct AddN {
     pub label: GenRef<String>,
-    pub properties: Vec<(String, GeneratedValue)>,
+    pub properties: Option<Vec<(String, GeneratedValue)>>,
     pub secondary_indices: Option<Vec<String>>,
 }
 impl Display for AddN {
@@ -46,19 +46,20 @@ impl Display for AddN {
 #[derive(Clone)]
 pub struct AddE {
     pub label: GenRef<String>,
-    pub properties: Vec<(String, GeneratedValue)>,
+    pub properties: Option<Vec<(String, GeneratedValue)>>,
     pub from: GenRef<String>,
     pub to: GenRef<String>,
-    pub secondary_indices: Option<Vec<String>>,
+    // pub secondary_indices: Option<Vec<String>>,
 }
 impl Display for AddE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = write_properties(&self.properties);
-        let secondary_indices = write_secondary_indices(&self.secondary_indices);
         write!(
             f,
-            "add_e({}, {}, {}, {}, {})",
-            self.label, properties, self.from, self.to, secondary_indices
+            "add_e({}, {}, {}, {}, true, EdgeType::Std)",
+            self.label,
+            write_properties(&self.properties),
+            self.from,
+            self.to
         )
     }
 }
@@ -66,15 +67,16 @@ impl Display for AddE {
 pub struct AddV {
     pub vec: GeneratedValue,
     pub label: GenRef<String>,
-    pub properties: Vec<(String, GeneratedValue)>,
+    pub properties: Option<Vec<(String, GeneratedValue)>>,
 }
 impl Display for AddV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let properties = write_properties(&self.properties);
         write!(
             f,
             "insert_v::<fn(&HVector, &RoTxn) -> bool>({}, {}, {})",
-            self.vec, self.label, properties
+            self.vec,
+            self.label,
+            write_properties(&self.properties)
         )
     }
 }
@@ -83,7 +85,7 @@ impl Display for AddV {
 #[derive(Clone)]
 pub struct SearchV {
     pub vec: GeneratedValue,
-    pub properties: Vec<(String, GeneratedValue)>,
+    pub properties: Option<Vec<(String, GeneratedValue)>>,
     pub f: Vec<BoExp>,
 }
 impl Display for SearchV {

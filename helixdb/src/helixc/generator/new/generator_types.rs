@@ -200,7 +200,7 @@ impl Display for Query {
         )?;
         // prints each statement
         for statement in &self.statements {
-            write!(f, "    {}\n", statement)?;
+            write!(f, "    {};\n", statement)?;
         }
 
         for return_value in &self.return_values {
@@ -281,7 +281,7 @@ pub struct Assignment {
 }
 impl Display for Assignment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "let {} = {};", self.variable, *self.value)
+        write!(f, "let {} = {}", self.variable, *self.value)
     }
 }
 
@@ -418,7 +418,7 @@ impl Display for ReturnValue {
                 )
             }
             ReturnType::NamedExpr(name) => {
-                write!(f, "    return_vals.insert({}.to_string(), ReturnValue::from_traversal_value_array_with_mixin({}, remapping_vals.borrow_mut()));\n", String::from(name.clone()), self.value)
+                write!(f, "    return_vals.insert({}.to_string(), ReturnValue::from_traversal_value_array_with_mixin({}.clone(), remapping_vals.borrow_mut()));\n", String::from(name.clone()), self.value)
             }
             ReturnType::UnnamedExpr => {
                 write!(f, "// need to implement unnamed return value\n todo!()")

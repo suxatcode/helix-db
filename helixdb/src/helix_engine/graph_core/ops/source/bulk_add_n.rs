@@ -1,14 +1,8 @@
-use heed3::PutFlags;
-use std::collections::HashMap;
-
 use crate::{
-    helix_engine::{
-        graph_core::traversal_iter::RwTraversalIterator,
-        types::GraphError,
-    },
-    protocol::items::{Node, SerializedNode},
+    helix_engine::{graph_core::traversal_iter::RwTraversalIterator, types::GraphError},
+    protocol::items::Node,
 };
-
+use heed3::PutFlags;
 use super::super::tr_val::TraversalVal;
 
 pub struct BulkAddN {
@@ -23,9 +17,9 @@ impl Iterator for BulkAddN {
     }
 }
 
-pub trait BulkAddNAdapter<'a, 'b>:
-    Iterator<Item = Result<TraversalVal, GraphError>> + Sized
-{
+pub trait BulkAddNAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> {
+    ///
+    #[deprecated(note = "only used for testing when larger than ram use for loop of addN instead")]
     fn bulk_add_n(
         self,
         nodes: &mut [u128],
