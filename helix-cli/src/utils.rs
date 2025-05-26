@@ -1,5 +1,8 @@
-use crate::args::*;
-use colored::*;
+use crate::{
+    args::*,
+    instance_manager::InstanceInfo,
+    styled_string::StyledString,
+};
 use helixdb::helixc::{
     analyzer::analyzer::analyze,
     generator::new::generator_types::Source as GeneratedSource,
@@ -209,29 +212,6 @@ pub fn check_and_read_files(path: &str) -> Result<Vec<DirEntry>, CliError> {
     Ok(files)
 }
 
-// pub fn compile_hql_to_source(files: &Vec<DirEntry>) -> Result<Source, CliError> {
-//     let contents: String = files
-//         .iter()
-//         .map(|file| -> String {
-//             match fs::read_to_string(file.path()) {
-//                 Ok(contents) => contents,
-//                 Err(e) => {
-//                     panic!("{}", e); // TODO: something better here instead of panic
-//                 }
-//             }
-//         })
-//         .fold(String::new(), |acc, contents| acc + &contents);
-
-//     let source = match HelixParser::parse_source(&contents) {
-//         Ok(source) => source,
-//         Err(e) => {
-//             return Err(CliError::from(format!("{}", e)));
-//         }
-//     };
-
-//     Ok(source)
-// }
-
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut prev_is_uppercase = false;
@@ -256,7 +236,6 @@ fn generate_content(files: &Vec<DirEntry>) -> Result<Content, CliError> {
         .iter()
         .map(|file| {
             let name = file.path().to_string_lossy().into_owned();
-            println!("{}", name);
             let content = fs::read_to_string(file.path()).unwrap();
             HxFile { name, content }
         })
@@ -301,3 +280,26 @@ pub fn generate(files: &Vec<DirEntry>) -> Result<(Content, GeneratedSource), Cli
     let analyzed_source = analyze_source(content.source.clone())?;
     Ok((content, analyzed_source))
 }
+
+pub fn print_instnace(instance: &InstanceInfo) {
+    let rg: bool = instance.running;
+    println!(
+        "{} {}{}",
+        if rg { "Instance ID:".green().bold() } else { "Instance ID:".yellow().bold() },
+        if rg { instance.id.green().bold() } else { instance.id.yellow().bold() },
+        if rg { " (running)".to_string().green().bold() } else { " (not running)".to_string().yellow().bold() },
+    );
+    println!("└── Label: {}", instance.label.underline());
+    println!("└── Port: {}", instance.port);
+    println!("└── Available endpoints:");
+    instance.available_endpoints
+        .iter()
+        .for_each(|ep|
+            println!("    └── /{}", ep)
+        );
+}
+
+// TODO:
+// Spinner::new
+// Spinner::stop_with_message
+// Dots9 style

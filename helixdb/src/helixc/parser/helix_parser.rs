@@ -12,7 +12,6 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     io::Write,
-    path::Path,
 };
 
 #[derive(Parser)]
@@ -2365,7 +2364,7 @@ mod tests {
     #[test]
     fn test_parse_edge_schema() {
         let input = r#"
-        
+
         E::Follows {
             From: User,
             To: User,
@@ -2392,7 +2391,7 @@ mod tests {
     #[test]
     fn test_parse_edge_schema_no_props() {
         let input = r#"
-        
+
         E::Follows {
             From: User,
             To: User,
@@ -2419,7 +2418,7 @@ mod tests {
     #[test]
     fn test_parse_query() {
         let input = r#"
-        QUERY FindUser(userName : String) => 
+        QUERY FindUser(userName : String) =>
             user <- N<User>
             RETURN user
         "#;
@@ -2972,7 +2971,7 @@ mod tests {
         QUERY mapInReturn() =>
             user <- N<User>("123")
             RETURN user::{
-                name, 
+                name,
                 age
             }
         "#;
@@ -3138,7 +3137,7 @@ mod tests {
     #[test]
     fn test_array_as_param_type() {
         let input = r#"
-        QUERY trWithArrayParam(ids: [String], names:[String], ages: [I32], createdAt: String) => 
+        QUERY trWithArrayParam(ids: [String], names:[String], ages: [I32], createdAt: String) =>
             AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
@@ -3193,7 +3192,7 @@ mod tests {
             Name: String
         }
 
-        QUERY trWithArrayParam(user: User) => 
+        QUERY trWithArrayParam(user: User) =>
             AddN<User>({Name: "test"})
             RETURN "SUCCESS"
         "#;
@@ -3226,7 +3225,7 @@ mod tests {
     #[test]
     fn test_add_vector() {
         let input = r#"
-        V::User 
+        V::User
 
         QUERY addVector(vector: [F64]) =>
             RETURN AddV<User>(vector)
