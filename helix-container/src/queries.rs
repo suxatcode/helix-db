@@ -42,53 +42,49 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct Chapter {
-    pub chapter_index: i64,
+pub struct File2 {
+    pub name: String,
+    pub is_admin: bool,
+    pub f1: i8,
+    pub f2: i16,
+    pub f3: i32,
+    pub f4: i64,
+    pub f5: f32,
+    pub f6: f64,
+    pub f7: String,
+    pub f8: u8,
+    pub f9: u16,
+    pub f10: u32,
+    pub f11: u64,
+    pub f12: u128,
 }
 
-pub struct SubChapter {
-    pub title: String,
-    pub content: String,
-}
-
-pub struct Contains {
-    pub from: Chapter,
-    pub to: SubChapter,
-}
-
-pub struct EmbeddingOf {
-    pub from: SubChapter,
-    pub to: Embedding,
-    pub chunk: String,
-}
-
-pub struct Embedding {
-    pub chunk: String,
+pub struct EdgeFile2 {
+    pub from: File2,
+    pub to: File2,
+    pub name: String,
+    pub is_admin: bool,
+    pub f1: i8,
+    pub f2: i16,
+    pub f3: i32,
+    pub f4: i64,
+    pub f5: f32,
+    pub f6: f64,
+    pub f7: String,
+    pub f8: u8,
+    pub f9: u16,
+    pub f10: u32,
+    pub f11: u64,
+    pub f12: u128,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct chunksData {
-    pub chunk: String,
-    pub vector: Vec<f64>,
-}
-#[derive(Serialize, Deserialize)]
-pub struct subchaptersData {
-    pub content: String,
-    pub chunks: Vec<chunksData>,
-    pub title: String,
-}
-#[derive(Serialize, Deserialize)]
-pub struct chaptersData {
-    pub subchapters: Vec<subchaptersData>,
-    pub id: i64,
-}
-#[derive(Serialize, Deserialize)]
-pub struct loaddocs_ragInput {
-    pub chapters: Vec<chaptersData>,
+pub struct file2Input {
+    pub name: String,
 }
 #[handler]
-pub fn loaddocs_rag(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    let data: loaddocs_ragInput = match sonic_rs::from_slice(&input.request.body) {
+pub fn file2(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: file2Input = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
@@ -98,92 +94,21 @@ pub fn loaddocs_rag(input: &HandlerInput, response: &mut Response) -> Result<(),
     let db = Arc::clone(&input.graph.storage);
     let mut txn = db.graph_env.write_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-    for data in data.chapters {
-        let chapter_node = G::new_mut(Arc::clone(&db), &mut txn)
-            .add_n("Chapter", Some(props! { "chapter_index" => data.id }), None)
-            .collect_to::<Vec<_>>();
-        for data in data.subchapters {
-            let subchapter_node = G::new_mut(Arc::clone(&db), &mut txn)
-                .add_n(
-                    "SubChapter",
-                    Some(props! { "title" => data.title, "content" => data.content }),
-                    None,
-                )
-                .collect_to::<Vec<_>>();
-            G::new_mut(Arc::clone(&db), &mut txn)
-                .add_e(
-                    "Contains",
-                    None,
-                    chapter_node.id(),
-                    subchapter_node.id(),
-                    true,
-                    EdgeType::Std,
-                )
-                .collect_to::<Vec<_>>();
-            for data in data.chunks {
-                let vec = G::new_mut(Arc::clone(&db), &mut txn)
-                    .insert_v::<fn(&HVector, &RoTxn) -> bool>(&data.vector, "Embedding", None)
-                    .collect_to::<Vec<_>>();
-                G::new_mut(Arc::clone(&db), &mut txn)
-                    .add_e(
-                        "EmbeddingOf",
-                        Some(props! { "chunk" => data.chunk }),
-                        subchapter_node.id(),
-                        vec.id(),
-                        true,
-                        EdgeType::Std,
-                    )
-                    .collect_to::<Vec<_>>();
-            }
-        }
-    }
+    let user = G::new_mut(Arc::clone(&db), &mut txn)
+.add_n("File2", Some(props! { "f12" => 12, "f9" => 9, "f5" => 5.0, "f3" => "3", "f11" => 11, "f2" => 2, "f4" => 4, "f7" => "7", "f8" => 8, "f10" => 10, "is_admin" => true, "name" => data.name.clone(), "f6" => 6.0, "f1" => 1 }), None).collect_to::<Vec<_>>();
+    let user2 = G::new_mut(Arc::clone(&db), &mut txn)
+.add_n("File2", Some(props! { "f12" => 12, "name" => data.name.clone(), "is_admin" => true, "f8" => 8, "f2" => 2, "f5" => 5.0, "f6" => 6.0, "f1" => 1, "f3" => 3, "f9" => 9, "f10" => 10, "f7" => "7", "f4" => 4, "f11" => 11 }), None).collect_to::<Vec<_>>();
+    G::new_mut(Arc::clone(&db), &mut txn)
+.add_e("EdgeFile2", Some(props! { "f4" => 4, "name" => data.name.clone(), "f2" => 2, "f7" => "7", "f3" => 3, "f1" => 1, "f6" => 6.0, "f8" => 8, "f9" => 9, "is_admin" => true, "f10" => 10, "f11" => 11, "f12" => 12, "f5" => 5.0 }), user.id(), user2.id(), true, EdgeType::Std).collect_to::<Vec<_>>();
     return_vals.insert(
-        "Success".to_string(),
-        ReturnValue::from(Value::from("Success")),
-    );
-
-    txn.commit().unwrap();
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-    Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct searchdocs_ragInput {
-    pub query: Vec<f64>,
-    pub k: i32,
-}
-#[handler]
-pub fn searchdocs_rag(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    let data: searchdocs_ragInput = match sonic_rs::from_slice(&input.request.body) {
-        Ok(data) => data,
-        Err(err) => return Err(GraphError::from(err)),
-    };
-
-    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
-        RefCell::new(HashMap::new());
-    let db = Arc::clone(&input.graph.storage);
-    let txn = db.graph_env.read_txn().unwrap();
-    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-    let vecs = G::new(Arc::clone(&db), &txn)
-        .search_v::<fn(&HVector, &RoTxn) -> bool>(&data.query, data.k as usize, None)
-        .collect_to::<Vec<_>>();
-    let subchapters = G::new_from(Arc::clone(&db), &txn, vecs.clone())
-        .in_("EmbeddingOf")
-        .collect_to::<Vec<_>>();
-    return_vals.insert(
-        "subchapters".to_string(),
+        "user".to_string(),
         ReturnValue::from_traversal_value_array_with_mixin(
-            G::new_from(Arc::clone(&db), &txn, subchapters.clone())
-                .map_traversal(|item, txn| {
-                    identifier_remapping!(remapping_vals, item.clone(), "title" => "title")?;
-                    identifier_remapping!(remapping_vals, item.clone(), "content" => "content")?;
-                    Ok(item)
-                })
-                .collect_to::<Vec<_>>(),
+            user.clone(),
             remapping_vals.borrow_mut(),
         ),
     );
 
+    txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
 }

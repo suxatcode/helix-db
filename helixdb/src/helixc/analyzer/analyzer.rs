@@ -496,17 +496,40 @@ impl<'a> Ctx<'a> {
                                         "check the schema field names",
                                     );
                                 }
-                                if let ValueType::Identifier { value, loc } = value {
-                                    if self.is_valid_identifier(q, loc.clone(), value.as_str()) {
-                                        if !scope.contains_key(value.as_str()) {
+                                match value {
+                                    ValueType::Identifier { value, loc } => {
+                                        if self.is_valid_identifier(q, loc.clone(), value.as_str())
+                                        {
+                                            if !scope.contains_key(value.as_str()) {
+                                                self.push_query_err(
+                                                    q,
+                                                    loc.clone(),
+                                                    format!("`{}` is not in scope", value),
+                                                    "declare it earlier or fix the typo",
+                                                );
+                                            }
+                                        };
+                                    }
+                                    ValueType::Literal { value, loc } => {
+                                        // check against type
+                                        let field_type = self
+                                            .node_fields
+                                            .get(ty.as_str())
+                                            .unwrap()
+                                            .get(field_name.as_str())
+                                            .unwrap()
+                                            .field_type
+                                            .clone();
+                                        if field_type != *value {
                                             self.push_query_err(
-                                                q,
-                                                loc.clone(),
-                                                format!("`{}` is not in scope", value),
-                                                "declare it earlier or fix the typo",
-                                            );
+                                                 q,
+                                                 loc.clone(),
+                                                 format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                 "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                             );
                                         }
                                     }
+                                    _ => {}
                                 }
                             }
                         }
@@ -527,7 +550,7 @@ impl<'a> Ctx<'a> {
                                             );
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
-                                                "data.{}",
+                                                "data.{}.clone()",
                                                 value.clone()
                                             )))
                                         }
@@ -615,7 +638,7 @@ impl<'a> Ctx<'a> {
                             // Get the field set before validation
                             let field_set = self.edge_fields.get(ty.as_str()).cloned();
                             if let Some(field_set) = field_set {
-                                for (field_name, _) in fields {
+                                for (field_name, value) in fields {
                                     if !field_set.contains_key(field_name.as_str()) {
                                         self.push_query_err(
                                             q,
@@ -626,6 +649,45 @@ impl<'a> Ctx<'a> {
                                             ),
                                             "check the schema field names",
                                         );
+                                    }
+
+                                    match value {
+                                        ValueType::Identifier { value, loc } => {
+                                            if self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            ) {
+                                                if !scope.contains_key(value.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        loc.clone(),
+                                                        format!("`{}` is not in scope", value),
+                                                        "declare it earlier or fix the typo",
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        ValueType::Literal { value, loc } => {
+                                            // check against type
+                                            let field_type = self
+                                                .edge_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                .clone();
+                                            if field_type != *value {
+                                                self.push_query_err(
+                                                     q,
+                                                     loc.clone(),
+                                                     format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                     "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                                 );
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -648,7 +710,7 @@ impl<'a> Ctx<'a> {
                                                         value.as_str(),
                                                     );
                                                     GeneratedValue::Identifier(GenRef::Std(
-                                                        format!("data.{}", value.clone()),
+                                                        format!("data.{}.clone()", value.clone()),
                                                     ))
                                                 }
                                                 v => {
@@ -695,7 +757,7 @@ impl<'a> Ctx<'a> {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("data.{}", value.clone()))
+                                GenRef::Std(format!("data.{}.clone()", value.clone()))
                             }
                             IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
                             _ => unreachable!(),
@@ -717,7 +779,6 @@ impl<'a> Ctx<'a> {
                         properties,
                         // secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
                     };
-                    println!("add_e: {:?}", add_e.label);
                     let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                         source_step: Separator::Period(SourceStep::AddE(add_e)),
                         steps: vec![],
@@ -752,7 +813,7 @@ impl<'a> Ctx<'a> {
                         Some(fields) => {
                             let field_set = self.vector_fields.get(ty.as_str()).cloned();
                             if let Some(field_set) = field_set {
-                                for (field_name, _) in fields {
+                                for (field_name, value) in fields {
                                     if !field_set.contains_key(field_name.as_str()) {
                                         self.push_query_err(
                                             q,
@@ -763,6 +824,44 @@ impl<'a> Ctx<'a> {
                                             ),
                                             "check the schema field names",
                                         );
+                                    }
+                                    match value {
+                                        ValueType::Identifier { value, loc } => {
+                                            if self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            ) {
+                                                if !scope.contains_key(value.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        loc.clone(),
+                                                        format!("`{}` is not in scope", value),
+                                                        "declare it earlier or fix the typo",
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        ValueType::Literal { value, loc } => {
+                                            // check against type
+                                            let field_type = self
+                                                .vector_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                .clone();
+                                            if field_type != *value {
+                                                self.push_query_err(
+                                                     q,
+                                                     loc.clone(),
+                                                     format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                     "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                                 );
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -2063,7 +2162,6 @@ impl<'a> Ctx<'a> {
         scope: &mut HashMap<&'a str, Type>,
         var_name: Option<&str>,
     ) {
-        println!("{:?}", cur_ty);
         match &cur_ty {
             Type::Nodes(Some(node_ty)) => {
                 if let Some(field_set) = self.node_fields.get(node_ty.as_str()).cloned() {
@@ -2385,7 +2483,6 @@ impl<'a> Ctx<'a> {
             }
 
             (ShortestPath(sp), Type::Nodes(_)) => {
-                println!("ShortestPath {:?}", sp);
                 let type_arg = match sp.type_arg.clone() {
                     Some(type_arg) => Some(GenRef::Literal(type_arg)),
                     None => None,
@@ -2739,17 +2836,40 @@ impl<'a> Ctx<'a> {
                                         "check the schema field names",
                                     );
                                 }
-                                if let ValueType::Identifier { value, loc } = value {
-                                    if self.is_valid_identifier(q, loc.clone(), value.as_str()) {
-                                        if !scope.contains_key(value.as_str()) {
+                                match value {
+                                    ValueType::Identifier { value, loc } => {
+                                        if self.is_valid_identifier(q, loc.clone(), value.as_str())
+                                        {
+                                            if !scope.contains_key(value.as_str()) {
+                                                self.push_query_err(
+                                                    q,
+                                                    loc.clone(),
+                                                    format!("`{}` is not in scope", value),
+                                                    "declare it earlier or fix the typo",
+                                                );
+                                            }
+                                        };
+                                    }
+                                    ValueType::Literal { value, loc } => {
+                                        // check against type
+                                        let field_type = self
+                                            .node_fields
+                                            .get(ty.as_str())
+                                            .unwrap()
+                                            .get(field_name.as_str())
+                                            .unwrap()
+                                            .field_type
+                                            .clone();
+                                        if field_type != *value {
                                             self.push_query_err(
-                                                q,
-                                                loc.clone(),
-                                                format!("`{}` is not in scope", value),
-                                                "declare it earlier or fix the typo",
-                                            );
+                                                 q,
+                                                 loc.clone(),
+                                                 format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                 "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                             );
                                         }
                                     }
+                                    _ => {}
                                 }
                             }
                         }
@@ -2770,7 +2890,7 @@ impl<'a> Ctx<'a> {
                                             );
                                             // when doing object field access would need to include object here
                                             GeneratedValue::Identifier(GenRef::Std(format!(
-                                                "data.{}",
+                                                "data.{}.clone()",
                                                 value.clone()
                                             )))
                                         }
@@ -2842,7 +2962,6 @@ impl<'a> Ctx<'a> {
             }
 
             AddEdge(add) => {
-                println!("add_e: {:?}", add);
                 if let Some(ref ty) = add.edge_type {
                     if !self.edge_map.contains_key(ty.as_str()) {
                         self.push_query_err(
@@ -2859,7 +2978,7 @@ impl<'a> Ctx<'a> {
                             // Get the field set before validation
                             let field_set = self.edge_fields.get(ty.as_str()).cloned();
                             if let Some(field_set) = field_set {
-                                for (field_name, _) in fields {
+                                for (field_name, value) in fields {
                                     if !field_set.contains_key(field_name.as_str()) {
                                         self.push_query_err(
                                             q,
@@ -2870,6 +2989,44 @@ impl<'a> Ctx<'a> {
                                             ),
                                             "check the schema field names",
                                         );
+                                    }
+                                    match value {
+                                        ValueType::Identifier { value, loc } => {
+                                            if self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            ) {
+                                                if !scope.contains_key(value.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        loc.clone(),
+                                                        format!("`{}` is not in scope", value),
+                                                        "declare it earlier or fix the typo",
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        ValueType::Literal { value, loc } => {
+                                            // check against type
+                                            let field_type = self
+                                                .edge_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                .clone();
+                                            if field_type != *value {
+                                                self.push_query_err(
+                                                     q,
+                                                     loc.clone(),
+                                                     format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                     "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                                 );
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -2892,7 +3049,7 @@ impl<'a> Ctx<'a> {
                                                         value.as_str(),
                                                     );
                                                     GeneratedValue::Identifier(GenRef::Std(
-                                                        format!("data.{}", value.clone()),
+                                                        format!("data.{}.clone()", value.clone()), // keep track of used variables
                                                     ))
                                                 }
                                                 v => {
@@ -2960,7 +3117,6 @@ impl<'a> Ctx<'a> {
                         properties,
                         // secondary_indices: None, // TODO: Add secondary indices by checking against labeled `INDEX` fields in schema
                     };
-                    println!("add_e: {:?}", add_e.label);
                     let stmt = GeneratedStatement::Traversal(GeneratedTraversal {
                         source_step: Separator::Period(SourceStep::AddE(add_e)),
                         steps: vec![],
@@ -2995,7 +3151,7 @@ impl<'a> Ctx<'a> {
                         Some(fields) => {
                             let field_set = self.vector_fields.get(ty.as_str()).cloned();
                             if let Some(field_set) = field_set {
-                                for (field_name, _) in fields {
+                                for (field_name, value) in fields {
                                     if !field_set.contains_key(field_name.as_str()) {
                                         self.push_query_err(
                                             q,
@@ -3006,6 +3162,44 @@ impl<'a> Ctx<'a> {
                                             ),
                                             "check the schema field names",
                                         );
+                                    }
+                                    match value {
+                                        ValueType::Identifier { value, loc } => {
+                                            if self.is_valid_identifier(
+                                                q,
+                                                loc.clone(),
+                                                value.as_str(),
+                                            ) {
+                                                if !scope.contains_key(value.as_str()) {
+                                                    self.push_query_err(
+                                                        q,
+                                                        loc.clone(),
+                                                        format!("`{}` is not in scope", value),
+                                                        "declare it earlier or fix the typo",
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        ValueType::Literal { value, loc } => {
+                                            // check against type
+                                            let field_type = self
+                                                .vector_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                .clone();
+                                            if field_type != *value {
+                                                self.push_query_err(
+                                                     q,
+                                                     loc.clone(),
+                                                     format!("value `{}` is of type `{}`, which does not match type {} declared in the schema for field `{}` on node type `{}`", value, GenRef::from(value.clone()), field_type, field_name, ty),
+                                                     "ensure the value is of the same type as the field declared in the schema".to_string(),
+                                                 );
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -3026,7 +3220,7 @@ impl<'a> Ctx<'a> {
                                                     value.as_str(),
                                                 );
                                                 GeneratedValue::Identifier(GenRef::Std(format!(
-                                                    "data.{}",
+                                                    "data.{}.clone()",
                                                     value.clone()
                                                 )))
                                             }
@@ -3420,7 +3614,6 @@ impl<'a> Ctx<'a> {
                     }
                 }
                 let mut statements = Vec::new();
-                println!("Scope: {:?}", scope);
                 for body_stmt in &fl.statements {
                     // Recursive walk (but without infinite nesting for now)
 

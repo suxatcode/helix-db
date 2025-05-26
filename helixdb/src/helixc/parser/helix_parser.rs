@@ -223,12 +223,24 @@ impl PartialEq<Value> for FieldType {
             (FieldType::String, Value::String(_)) => true,
             (FieldType::F32 | FieldType::F64, Value::F32(_) | Value::F64(_)) => true,
             (
-                FieldType::I8 | FieldType::I16 | FieldType::I32 | FieldType::I64,
-                Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_),
-            ) => true,
-            (
-                FieldType::U8 | FieldType::U16 | FieldType::U32 | FieldType::U64 | FieldType::U128,
-                Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_),
+                FieldType::I8
+                | FieldType::I16
+                | FieldType::I32
+                | FieldType::I64
+                | FieldType::U8
+                | FieldType::U16
+                | FieldType::U32
+                | FieldType::U64
+                | FieldType::U128,
+                Value::I8(_)
+                | Value::I16(_)
+                | Value::I32(_)
+                | Value::I64(_)
+                | Value::U8(_)
+                | Value::U16(_)
+                | Value::U32(_)
+                | Value::U64(_)
+                | Value::U128(_),
             ) => true,
             (FieldType::Boolean, Value::Boolean(_)) => true,
             (FieldType::Array(inner_type), Value::Array(values)) => {
@@ -596,6 +608,11 @@ pub enum ValueType {
         loc: Loc,
     },
 }
+impl ValueType {
+    pub fn new(value: Value, loc: Loc) -> ValueType {
+        ValueType::Literal { value, loc }
+    }
+}
 
 impl From<Value> for ValueType {
     fn from(value: Value) -> ValueType {
@@ -942,7 +959,6 @@ impl HelixParser {
             }
             None => None,
         };
-        println!("defaults: {:?}", defaults);
 
         Ok(Field {
             prefix,
@@ -1363,22 +1379,24 @@ impl HelixParser {
                             .ok_or_else(|| ParserError::from("Empty property value"))?;
 
                         match value_pair.as_rule() {
-                            Rule::string_literal => Ok(ValueType::from(Value::from(
-                                value_pair.as_str().to_string(),
-                            ))),
+                            Rule::string_literal => Ok(ValueType::new(
+                                Value::from(value_pair.as_str().to_string()),
+                                value_pair.loc(),
+                            )),
                             Rule::integer => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|i| ValueType::from(Value::I32(i)))
+                                .map(|i| ValueType::new(Value::I32(i), value_pair.loc()))
                                 .map_err(|_| ParserError::from("Invalid integer value")),
                             Rule::float => value_pair
                                 .as_str()
                                 .parse()
-                                .map(|f| ValueType::from(Value::F64(f)))
+                                .map(|f| ValueType::new(Value::F64(f), value_pair.loc()))
                                 .map_err(|_| ParserError::from("Invalid float value")),
-                            Rule::boolean => Ok(ValueType::from(Value::Boolean(
-                                value_pair.as_str() == "true",
-                            ))),
+                            Rule::boolean => Ok(ValueType::new(
+                                Value::Boolean(value_pair.as_str() == "true"),
+                                value_pair.loc(),
+                            )),
                             Rule::identifier => Ok(ValueType::Identifier {
                                 value: value_pair.as_str().to_string(),
                                 loc: value_pair.loc(),
@@ -1386,7 +1404,7 @@ impl HelixParser {
                             _ => Err(ParserError::from("Invalid property value type")),
                         }?
                     }
-                    None => ValueType::from(Value::Empty),
+                    None => ValueType::new(Value::Empty, Loc::empty()),
                 };
 
                 Ok((prop_key, prop_val))
@@ -1428,7 +1446,6 @@ impl HelixParser {
         if connection.is_none() {
             return Err(ParserError::from("Missing edge connection"));
         }
-        println!("edge type: {:?}", edge_type);
         Ok(AddEdge {
             edge_type,
             fields,
@@ -1734,7 +1751,6 @@ impl HelixParser {
                         Rule::by_index => {
                             ids = Some({
                                 let mut pairs: Pairs<'_, Rule> = p.clone().into_inner();
-                                println!("pairs: {:?}", pairs);
                                 let index = match pairs.next().unwrap().clone().into_inner().next()
                                 {
                                     Some(id) => match id.as_rule() {
@@ -1755,8 +1771,6 @@ impl HelixParser {
                                     },
                                     None => return Err(ParserError::from("Missing index")),
                                 };
-                                println!("index: {:?}", index);
-                                println!("pairs: {:?}", pairs);
                                 let value = match pairs.next().unwrap().into_inner().next() {
                                     Some(val) => match val.as_rule() {
                                         Rule::identifier => ValueType::Identifier {
