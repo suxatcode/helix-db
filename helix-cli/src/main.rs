@@ -709,7 +709,7 @@ fn main() {
                     println!("|");
                     println!("└── Then run `helix check --path <path-to-project>` to check your queries.");
                     println!("|");
-                    println!("└── Then run `helix deploy --path <path-to-project> --local` to build your queries.");
+                    println!("└── Then run `helix deploy --path <path-to-project>` to build your queries.");
                 }
                 Err(e) => {
                     println!("{}", "Failed to install Helix repo".red().bold());
