@@ -178,8 +178,8 @@ impl Display for Query {
             )?;
             writeln!(f, "    Ok(data) => data,")?;
             writeln!(f, "    Err(err) => return Err(GraphError::from(err)),")?;
+            writeln!(f, "}};\n")?;
         }
-        writeln!(f, "}};\n")?;
         writeln!(
             f,
             "let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());"
