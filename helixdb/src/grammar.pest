@@ -16,7 +16,7 @@ edge_body  = { "{" ~ "From:" ~ identifier_upper ~ "," ~ ("To:" ~ identifier_uppe
 field_defs = { (field_def ~ ",")* ~ (field_def ~ ","?)? }
 field_def  = { index? ~ identifier ~ ":" ~ param_type ~ (default)? }
 index= { "INDEX" }
-default = { "DEFAULT" ~  (float | integer | boolean | string_literal | none) } 
+default = { "DEFAULT" ~  (now | float | integer | boolean | string_literal | none) } 
 // optional = { "OPTIONAL" }
 
 
@@ -208,6 +208,7 @@ identifier       = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 identifier_upper = @{ ASCII_ALPHA_UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 integer          = @{ ASCII_DIGIT+ }
 float            = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+now              = { "NOW" }
 
 // ---------------------------------------------------------------------
 // Whitespace and comments

@@ -106,6 +106,7 @@ impl Field {
 
 #[derive(Debug, Clone)]
 pub enum DefaultValue {
+    Now,
     String(String),
     F32(f32),
     F64(f64),
@@ -177,6 +178,7 @@ impl PartialEq for FieldType {
             (FieldType::U128, FieldType::U128) => true,
             (FieldType::Boolean, FieldType::Boolean) => true,
             (FieldType::Uuid, FieldType::Uuid) => true,
+            (FieldType::Date, FieldType::Date) => true,
             (FieldType::Array(a), FieldType::Array(b)) => a == b,
             (FieldType::Identifier(a), FieldType::Identifier(b)) => a == b,
             (FieldType::Object(a), FieldType::Object(b)) => a == b,
@@ -255,7 +257,7 @@ impl PartialEq<Value> for FieldType {
             }
             (FieldType::Date, value) => match value {
                 Value::String(date) => {
-                    println!("date: {}, {:?}", date, date.parse::<NaiveDate>().is_ok());
+                    println!("date: {}, {:?}", date, date.parse::<NaiveDate>());
                     date.parse::<NaiveDate>().is_ok() || date.parse::<DateTime<Utc>>().is_ok()
                 }
                 Value::I64(timestamp) => DateTime::from_timestamp(*timestamp, 0).is_some(),
@@ -957,6 +959,9 @@ impl HelixParser {
                                     }
                                     _ => unreachable!(), // throw error
                                 }
+                            }
+                            Rule::now => {
+                                DefaultValue::Now
                             }
                             Rule::boolean => {
                                 DefaultValue::Boolean(pair.as_str().parse::<bool>().unwrap())

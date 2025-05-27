@@ -35,7 +35,7 @@ use crate::{
             location::Loc,
         },
     },
-    protocol::value::Value,
+    protocol::{date::Date, value::Value},
 };
 
 use std::{
@@ -568,7 +568,51 @@ impl<'a> Ctx<'a> {
                                     field_name.clone(),
                                     match value {
                                         ValueType::Literal { value, loc } => {
-                                            GeneratedValue::Literal(GenRef::from(value.clone()))
+                                            println!(
+                                                "value: {:?}, {}",
+                                                self.node_fields
+                                                    .get(ty.as_str())
+                                                    .unwrap()
+                                                    .get(field_name.as_str())
+                                                    .unwrap()
+                                                    .field_type,
+                                                    self.node_fields
+                                                    .get(ty.as_str())
+                                                    .unwrap()
+                                                    .get(field_name.as_str())
+                                                    .unwrap()
+                                                    .field_type == FieldType::Date
+                                            );
+                                            match self
+                                                .node_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                == FieldType::Date
+                                            {
+                                                true => match Date::new(value) {
+                                                    Ok(date) => {
+                                                        println!("date: {}", date.to_rfc3339());
+                                                        GeneratedValue::Literal(GenRef::Literal(
+                                                            date.to_rfc3339(),
+                                                        ))
+                                                    }
+                                                    Err(e) => {
+                                                        self.push_query_err(
+                                                            q,
+                                                            loc.clone(),
+                                                            e.to_string(),
+                                                            "ensure the value is a valid date",
+                                                        );
+                                                        GeneratedValue::Unknown
+                                                    }
+                                                },
+                                                false => GeneratedValue::Literal(GenRef::from(
+                                                    value.clone(),
+                                                )),
+                                            }
                                         }
                                         ValueType::Identifier { value, loc } => {
                                             self.is_valid_identifier(
@@ -727,9 +771,33 @@ impl<'a> Ctx<'a> {
                                             field_name.clone(),
                                             match value {
                                                 ValueType::Literal { value, loc } => {
-                                                    GeneratedValue::Literal(GenRef::from(
-                                                        value.clone(),
-                                                    ))
+                                                    match self
+                                                        .edge_fields
+                                                        .get(ty.as_str())
+                                                        .unwrap()
+                                                        .get(field_name.as_str())
+                                                        .unwrap()
+                                                        .field_type
+                                                        == FieldType::Date
+                                                    {
+                                                        true => match Date::new(value) {
+                                                            Ok(date) => GeneratedValue::Literal(
+                                                                GenRef::Literal(date.to_rfc3339()),
+                                                            ),
+                                                            Err(e) => {
+                                                                self.push_query_err(
+                                                                    q,
+                                                                    loc.clone(),
+                                                                    e.to_string(),
+                                                                    "ensure the value is a valid date",
+                                                                );
+                                                                GeneratedValue::Unknown
+                                                            }
+                                                        },
+                                                        false => GeneratedValue::Literal(GenRef::from(
+                                                            value.clone(),
+                                                        )),
+                                                    }
                                                 }
                                                 ValueType::Identifier { value, loc } => {
                                                     self.is_valid_identifier(
@@ -901,7 +969,33 @@ impl<'a> Ctx<'a> {
                                         field_name.clone(),
                                         match value {
                                             ValueType::Literal { value, loc } => {
-                                                GeneratedValue::Literal(GenRef::from(value.clone()))
+                                                match self
+                                                    .vector_fields
+                                                    .get(ty.as_str())
+                                                    .unwrap()
+                                                    .get(field_name.as_str())
+                                                    .unwrap()
+                                                    .field_type
+                                                    == FieldType::Date
+                                                {
+                                                    true => match Date::new(value) {
+                                                        Ok(date) => GeneratedValue::Literal(
+                                                            GenRef::Literal(date.to_rfc3339()),
+                                                        ),
+                                                        Err(e) => {
+                                                            self.push_query_err(
+                                                                q,
+                                                                loc.clone(),
+                                                                e.to_string(),
+                                                                "ensure the value is a valid date",
+                                                            );
+                                                            GeneratedValue::Unknown
+                                                        }
+                                                    },
+                                                    false => GeneratedValue::Literal(GenRef::from(
+                                                        value.clone(),
+                                                    )),
+                                                }
                                             }
                                             ValueType::Identifier { value, loc } => {
                                                 self.is_valid_identifier(
@@ -3114,7 +3208,33 @@ impl<'a> Ctx<'a> {
                                     field_name.clone(),
                                     match value {
                                         ValueType::Literal { value, loc } => {
-                                            GeneratedValue::Literal(GenRef::from(value.clone()))
+                                            match self
+                                                .node_fields
+                                                .get(ty.as_str())
+                                                .unwrap()
+                                                .get(field_name.as_str())
+                                                .unwrap()
+                                                .field_type
+                                                == FieldType::Date
+                                            {
+                                                true => match Date::new(value) {
+                                                    Ok(date) => GeneratedValue::Literal(
+                                                        GenRef::Literal(date.to_rfc3339()),
+                                                    ),
+                                                    Err(e) => {
+                                                        self.push_query_err(
+                                                            q,
+                                                            loc.clone(),
+                                                            e.to_string(),
+                                                            "ensure the value is a valid date",
+                                                        );
+                                                        GeneratedValue::Unknown
+                                                    }
+                                                },
+                                                false => GeneratedValue::Literal(GenRef::from(
+                                                    value.clone(),
+                                                )),
+                                            }
                                         }
                                         ValueType::Identifier { value, loc } => {
                                             self.is_valid_identifier(
@@ -3272,9 +3392,33 @@ impl<'a> Ctx<'a> {
                                             field_name.clone(),
                                             match value {
                                                 ValueType::Literal { value, loc } => {
-                                                    GeneratedValue::Literal(GenRef::from(
-                                                        value.clone(),
-                                                    ))
+                                                    match self
+                                                        .edge_fields
+                                                        .get(ty.as_str())
+                                                        .unwrap()
+                                                        .get(field_name.as_str())
+                                                        .unwrap()
+                                                        .field_type
+                                                        == FieldType::Date
+                                                    {
+                                                        true => match Date::new(value) {
+                                                            Ok(date) => GeneratedValue::Literal(
+                                                                GenRef::Literal(date.to_rfc3339()),
+                                                            ),
+                                                            Err(e) => {
+                                                                self.push_query_err(
+                                                                    q,
+                                                                    loc.clone(),
+                                                                    e.to_string(),
+                                                                    "ensure the value is a valid date",
+                                                                );
+                                                                GeneratedValue::Unknown
+                                                            }
+                                                        },
+                                                        false => GeneratedValue::Literal(GenRef::from(
+                                                            value.clone(),
+                                                        )),
+                                                    }
                                                 }
                                                 ValueType::Identifier { value, loc } => {
                                                     self.is_valid_identifier(
@@ -3445,7 +3589,33 @@ impl<'a> Ctx<'a> {
                                         field_name.clone(),
                                         match value {
                                             ValueType::Literal { value, loc } => {
-                                                GeneratedValue::Literal(GenRef::from(value.clone()))
+                                                match self
+                                                    .vector_fields
+                                                    .get(ty.as_str())
+                                                    .unwrap()
+                                                    .get(field_name.as_str())
+                                                    .unwrap()
+                                                    .field_type
+                                                    == FieldType::Date
+                                                {
+                                                    true => match Date::new(value) {
+                                                        Ok(date) => GeneratedValue::Literal(
+                                                            GenRef::Literal(date.to_rfc3339()),
+                                                        ),
+                                                        Err(e) => {
+                                                            self.push_query_err(
+                                                                q,
+                                                                loc.clone(),
+                                                                e.to_string(),
+                                                                "ensure the value is a valid date",
+                                                            );
+                                                            GeneratedValue::Unknown
+                                                        }
+                                                    },
+                                                    false => GeneratedValue::Literal(GenRef::from(
+                                                        value.clone(),
+                                                    )),
+                                                }
                                             }
                                             ValueType::Identifier { value, loc } => {
                                                 self.is_valid_identifier(

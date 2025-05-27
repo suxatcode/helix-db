@@ -73,14 +73,32 @@ pub fn file9(input: &HandlerInput, response: &mut Response) -> Result<(), GraphE
     let user = G::new_mut(Arc::clone(&db), &mut txn)
         .add_n(
             "File9",
-            Some(props! { "name" => "File9", "created_at" => "2021-01-01" }),
+            Some(props! { "name" => "File9", "created_at" => "2021-01-01T00:00:00+00:00" }),
             None,
         )
+        .collect_to::<Vec<_>>();
+    let user2 = G::new_mut(Arc::clone(&db), &mut txn)
+        .add_n(
+            "File9",
+            Some(props! { "name" => "File9", "created_at" => chrono::Utc::now().to_rfc3339() }),
+            None,
+        )
+        .collect_to::<Vec<_>>();
+    let edge = G::new_mut(Arc::clone(&db), &mut txn)
+        .add_e("EFile9", None, user.id(), user2.id(), true, EdgeType::Node)
         .collect_to::<Vec<_>>();
     return_vals.insert(
         "user".to_string(),
         ReturnValue::from_traversal_value_array_with_mixin(
             user.clone(),
+            remapping_vals.borrow_mut(),
+        ),
+    );
+
+    return_vals.insert(
+        "edge".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(
+            edge.clone(),
             remapping_vals.borrow_mut(),
         ),
     );
