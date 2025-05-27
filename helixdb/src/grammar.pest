@@ -195,7 +195,8 @@ array            = { "[" ~ param_type ~ "]" }
 object           = { "{" ~ field_defs ~ "}" }
 named_type       = { "String" | "Boolean" | "F32" | "F64" | "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64" | "U128" }
 ID_TYPE          = { "ID" }
-param_type       = { named_type | ID_TYPE | array | object | identifier }
+date_type       = { "Date" }
+param_type       = { named_type | date_type | ID_TYPE | array | object | identifier  }
 
 // ---------------------------------------------------------------------
 // Literals

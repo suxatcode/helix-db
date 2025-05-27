@@ -3,6 +3,7 @@ use super::{
     parser_methods::ParserError,
 };
 use crate::protocol::value::Value;
+use chrono::{DateTime, NaiveDate, Utc};
 use pest::{
     iterators::{Pair, Pairs},
     Parser as PestParser,
@@ -202,7 +203,7 @@ impl Display for FieldType {
             FieldType::U128 => write!(f, "U128"),
             FieldType::Boolean => write!(f, "Boolean"),
             FieldType::Uuid => write!(f, "ID"),
-            FieldType::Date => todo!(),
+            FieldType::Date => write!(f, "Date"),
             FieldType::Array(t) => write!(f, "Array({})", t),
             FieldType::Identifier(s) => write!(f, "{}", s),
             FieldType::Object(m) => {
@@ -252,7 +253,19 @@ impl PartialEq<Value> for FieldType {
                         None => false,
                     })
             }
-            _ => false,
+            (FieldType::Date, value) => match value {
+                Value::String(date) => {
+                    println!("date: {}, {:?}", date, date.parse::<NaiveDate>().is_ok());
+                    date.parse::<NaiveDate>().is_ok() || date.parse::<DateTime<Utc>>().is_ok()
+                }
+                Value::I64(timestamp) => DateTime::from_timestamp(*timestamp, 0).is_some(),
+                Value::U64(timestamp) => DateTime::from_timestamp(*timestamp as i64, 0).is_some(),
+                _ => false,
+            },
+            l => {
+                println!("l: {:?}", l);
+                false
+            },
         }
     }
 }
@@ -868,6 +881,7 @@ impl HelixParser {
             }
             Rule::identifier => Ok(FieldType::Identifier(field.as_str().to_string())),
             Rule::ID_TYPE => Ok(FieldType::Uuid),
+            Rule::date_type => Ok(FieldType::Date),
             _ => {
                 unreachable!()
             }
