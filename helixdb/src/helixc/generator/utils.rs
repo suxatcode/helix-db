@@ -235,7 +235,7 @@ impl Display for RustType {
             RustType::F64 => write!(f, "f64"),
             RustType::Bool => write!(f, "bool"),
             RustType::Uuid => write!(f, "ID"), // TODO: Change this for actual UUID
-            RustType::Date => unimplemented!(),
+            RustType::Date => write!(f, "DateTime<Utc>"),
         }
     }
 }
@@ -315,6 +315,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 use std::cell::RefCell;
+use chrono::{DateTime, Utc};
     "#
     .to_string()
 }
