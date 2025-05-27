@@ -43,24 +43,43 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct File9 {
+pub struct User {
     pub name: String,
+    pub age: u32,
+    pub email: String,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
-pub struct EFile9 {
-    pub from: File9,
-    pub to: File9,
-    pub since: DateTime<Utc>,
+#[handler]
+pub fn GetUsers(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let db = Arc::clone(&input.graph.storage);
+    let txn = db.graph_env.read_txn().unwrap();
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+    let users = G::new(Arc::clone(&db), &txn)
+        .n_from_type("User")
+        .collect_to::<Vec<_>>();
+    return_vals.insert(
+        "users".to_string(),
+        ReturnValue::from_traversal_value_array_with_mixin(
+            users.clone(),
+            remapping_vals.borrow_mut(),
+        ),
+    );
+
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct file9Input {
-    pub date: DateTime<Utc>,
+pub struct CreatedUserInput {
+    pub name: String,
+    pub age: u32,
+    pub email: String,
 }
 #[handler]
-pub fn file9(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-    let data: file9Input = match sonic_rs::from_slice(&input.request.body) {
+pub fn CreatedUser(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: CreatedUserInput = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
@@ -71,34 +90,11 @@ pub fn file9(input: &HandlerInput, response: &mut Response) -> Result<(), GraphE
     let mut txn = db.graph_env.write_txn().unwrap();
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     let user = G::new_mut(Arc::clone(&db), &mut txn)
-        .add_n(
-            "File9",
-            Some(props! { "name" => "File9", "created_at" => "2021-01-01T00:00:00+00:00" }),
-            None,
-        )
-        .collect_to::<Vec<_>>();
-    let user2 = G::new_mut(Arc::clone(&db), &mut txn)
-        .add_n(
-            "File9",
-            Some(props! { "name" => "File9", "created_at" => chrono::Utc::now().to_rfc3339() }),
-            None,
-        )
-        .collect_to::<Vec<_>>();
-    let edge = G::new_mut(Arc::clone(&db), &mut txn)
-        .add_e("EFile9", None, user.id(), user2.id(), true, EdgeType::Node)
-        .collect_to::<Vec<_>>();
+.add_n("User", Some(props! { "age" => data.age.clone(), "created_at" => chrono::Utc::now().to_rfc3339(), "email" => data.email.clone(), "updated_at" => chrono::Utc::now().to_rfc3339(), "name" => data.name.clone() }), None).collect_to::<Vec<_>>();
     return_vals.insert(
         "user".to_string(),
         ReturnValue::from_traversal_value_array_with_mixin(
             user.clone(),
-            remapping_vals.borrow_mut(),
-        ),
-    );
-
-    return_vals.insert(
-        "edge".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(
-            edge.clone(),
             remapping_vals.borrow_mut(),
         ),
     );
