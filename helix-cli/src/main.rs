@@ -1,23 +1,27 @@
 use crate::{
     args::{CommandType, HelixCLI},
     instance_manager::InstanceManager,
-    utils::*,
     styled_string::StyledString,
+    utils::*,
 };
+use args::OutputLanguage;
 use clap::Parser;
-use helixdb::{helix_engine::graph_core::config::Config, ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor}};
+use helixdb::{
+    helix_engine::graph_core::config::Config,
+    ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
+};
 use spinners::{Spinner, Spinners};
 use std::{
+    fmt::Write,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    fmt::Write,
 };
 
 pub mod args;
 mod instance_manager;
-mod utils;
 mod styled_string;
+mod utils;
 
 fn main() {
     let args = HelixCLI::parse();
@@ -162,10 +166,7 @@ fn main() {
             match runner.output() {
                 Ok(_) => {}
                 Err(e) => {
-                    sp.stop_with_message(format!(
-                            "{}",
-                            "Failed to check Rust code".red().bold()
-                    ));
+                    sp.stop_with_message(format!("{}", "Failed to check Rust code".red().bold()));
                     println!("└── {} {}", "Error:".red().bold(), e);
                     return;
                 }
@@ -182,14 +183,11 @@ fn main() {
                 Ok(output) => {
                     if output.status.success() {
                         sp.stop_with_message(format!(
-                                "{}",
-                                "Successfully built Helix".green().bold()
-                            ));
-                    } else {
-                        sp.stop_with_message(format!(
                             "{}",
-                            "Failed to build Helix".red().bold()
+                            "Successfully built Helix".green().bold()
                         ));
+                    } else {
+                        sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         if !stderr.is_empty() {
                             println!("└── {} {}", "Error:\n".red().bold(), stderr);
@@ -222,15 +220,15 @@ fn main() {
             match instance_manager.init_start_instance(&binary_path, port, endpoints) {
                 Ok(instance) => {
                     sp.stop_with_message(format!(
-                            "{}",
-                            "Successfully started Helix instance".green().bold()
+                        "{}",
+                        "Successfully started Helix instance".green().bold()
                     ));
                     print_instnace(&instance);
                 }
                 Err(e) => {
                     sp.stop_with_message(format!(
-                            "{}",
-                            "Failed to start Helix instance".red().bold()
+                        "{}",
+                        "Failed to start Helix instance".red().bold()
                     ));
                     println!("└── {} {}", "Error:".red().bold(), e);
                     return;
@@ -266,7 +264,11 @@ fn main() {
             match instance_manager.get_instance(iid) {
                 Ok(Some(_)) => println!("{}", "Helix instance found!".green().bold()),
                 Ok(None) => {
-                    println!("{} {}", "No Helix instance found with id".red().bold(), iid.red().bold());
+                    println!(
+                        "{} {}",
+                        "No Helix instance found with id".red().bold(),
+                        iid.red().bold()
+                    );
                     return;
                 }
                 Err(e) => {
@@ -282,7 +284,7 @@ fn main() {
                     path.join(".helix/repo/helix-db/helix-container")
                         .to_string_lossy()
                         .into_owned()
-                    })
+                })
                 .unwrap_or_else(|| "./.helix/repo/helix-db/helix-container".to_string());
 
             let files = match check_and_read_files(&path) {
@@ -358,10 +360,7 @@ fn main() {
             match runner.output() {
                 Ok(_) => {}
                 Err(e) => {
-                    sp.stop_with_message(format!(
-                            "{}",
-                            "Failed to check Rust code".red().bold()
-                    ));
+                    sp.stop_with_message(format!("{}", "Failed to check Rust code".red().bold()));
                     println!("└── {} {}", "Error:".red().bold(), e);
                     return;
                 }
@@ -378,8 +377,8 @@ fn main() {
                 Ok(output) => {
                     if output.status.success() {
                         sp.stop_with_message(format!(
-                                "{}",
-                                "Successfully built Helix".green().bold()
+                            "{}",
+                            "Successfully built Helix".green().bold()
                         ));
                     } else {
                         sp.stop_with_message(format!("{}", "Failed to build Helix".red().bold()));
@@ -398,7 +397,7 @@ fn main() {
             }
 
             match instance_manager.stop_instance(iid) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     println!("{} {}", "Error while stopping instance:".red().bold(), e);
                     return;
@@ -420,7 +419,7 @@ fn main() {
 
             let cached_binary = instance_manager.cache_dir.join(&iid);
             match fs::copy(binary_path, &cached_binary) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     println!("{} {}", "Error while copying binary:".red().bold(), e);
                     return;
@@ -430,15 +429,15 @@ fn main() {
             match instance_manager.start_instance(iid, Some(endpoints)) {
                 Ok(instance) => {
                     sp.stop_with_message(format!(
-                            "{}",
-                            "Successfully started Helix instance".green().bold()
+                        "{}",
+                        "Successfully started Helix instance".green().bold()
                     ));
                     print_instnace(&instance);
                 }
                 Err(e) => {
                     sp.stop_with_message(format!(
-                            "{}",
-                            "Failed to start Helix instance".red().bold()
+                        "{}",
+                        "Failed to start Helix instance".red().bold()
                     ));
                     println!("└── {} {}", "Error:".red().bold(), e);
                     return;
@@ -480,7 +479,8 @@ fn main() {
                                 match instance_manager.stop_instance(instance.id.as_str()) {
                                     Ok(_) => {
                                         println!(
-                                            "└── {} {}", "ID:".yellow().bold(),
+                                            "└── {} {}",
+                                            "ID:".yellow().bold(),
                                             instance.id.yellow().bold()
                                         );
                                     }
@@ -498,7 +498,11 @@ fn main() {
                     } else if let Some(instance_id) = command.instance {
                         match instance_manager.stop_instance(&instance_id) {
                             Ok(false) => {
-                                println!("{} {}", "Instance is not running".yellow().bold(), instance_id)
+                                println!(
+                                    "{} {}",
+                                    "Instance is not running".yellow().bold(),
+                                    instance_id
+                                )
                             }
                             Ok(true) => {
                                 println!("{} {}", "Stopped instance".green().bold(), instance_id)
@@ -506,7 +510,12 @@ fn main() {
                             Err(e) => println!("{} {}", "Failed to stop instance:".red().bold(), e),
                         }
                     } else {
-                        println!("{}", "Please specify --all or provide an instance ID\n".yellow().bold());
+                        println!(
+                            "{}",
+                            "Please specify --all or provide an instance ID\n"
+                                .yellow()
+                                .bold()
+                        );
                         println!("Available instances (green=running, yellow=stopped): ");
                         for instance in instances {
                             print_instnace(&instance);
@@ -557,7 +566,11 @@ fn main() {
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("{} '{}'", "No path provided, defaulting to".yellow().bold(), DB_DIR.yellow().bold());
+                println!(
+                    "{} '{}'",
+                    "No path provided, defaulting to".yellow().bold(),
+                    DB_DIR.yellow().bold()
+                );
                 DB_DIR
             };
 
@@ -577,7 +590,10 @@ fn main() {
             };
 
             if files.is_empty() {
-                sp.stop_with_message(format!("{}", "No queries found, nothing to compile".red().bold()));
+                sp.stop_with_message(format!(
+                    "{}",
+                    "No queries found, nothing to compile".red().bold()
+                ));
                 return;
             }
 
@@ -588,6 +604,18 @@ fn main() {
                     return;
                 }
             };
+
+            if OutputLanguage::TypeScript == command.gen {
+                match gen_typescript(&analyzed_source, &output) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("{} {}", "Failed to write typescript types".red().bold(), e);
+                        println!("└── {} {}", "Error:".red().bold(), e);
+                        return;
+                    }
+                };
+            }
+
             let file_path = PathBuf::from(&output).join("queries.rs");
             let mut generated_rust_code = String::new();
             match write!(&mut generated_rust_code, "{}", analyzed_source) {
@@ -620,7 +648,11 @@ fn main() {
             let path = if let Some(p) = &command.path {
                 p
             } else {
-                println!("{} '{}'", "No path provided, defaulting to".yellow().bold(), DB_DIR.yellow().bold());
+                println!(
+                    "{} '{}'",
+                    "No path provided, defaulting to".yellow().bold(),
+                    DB_DIR.yellow().bold()
+                );
                 DB_DIR
             };
 
@@ -636,7 +668,10 @@ fn main() {
             };
 
             if files.is_empty() {
-                sp.stop_with_message(format!("{}", "No queries found, nothing to compile".red().bold()));
+                sp.stop_with_message(format!(
+                    "{}",
+                    "No queries found, nothing to compile".red().bold()
+                ));
                 return;
             }
 
@@ -649,12 +684,12 @@ fn main() {
                 }
             }
 
-            sp.stop_with_message(
-                format!(
-                    "{}",
-                    "Helix-QL schema and queries validated successfully with zero errors".green().bold()
-                )
-            );
+            sp.stop_with_message(format!(
+                "{}",
+                "Helix-QL schema and queries validated successfully with zero errors"
+                    .green()
+                    .bold()
+            ));
         }
 
         CommandType::Install(command) => {
@@ -706,11 +741,15 @@ fn main() {
                 println!(
                     "{} {}",
                     "Helix repo already exists at".yellow().bold(),
-                    repo_path.join("helix-db").display().to_string().yellow().bold(),
+                    repo_path
+                        .join("helix-db")
+                        .display()
+                        .to_string()
+                        .yellow()
+                        .bold(),
                 );
                 return;
             }
-
 
             // Create the directory structure if it doesn't exist
             match fs::create_dir_all(&repo_path) {
@@ -806,7 +845,11 @@ fn main() {
             match instance_manager.get_instance(iid) {
                 Ok(Some(_)) => println!("{}", "Helix instance found!".green().bold()),
                 Ok(None) => {
-                    println!("{} {}", "No Helix instance found with id".red().bold(), iid.red().bold());
+                    println!(
+                        "{} {}",
+                        "No Helix instance found with id".red().bold(),
+                        iid.red().bold()
+                    );
                     return;
                 }
                 Err(e) => {
@@ -828,7 +871,11 @@ fn main() {
             runner.arg(&output_path);
 
             match runner.output() {
-                Ok(_) => println!("{} {}", "Saved Helix instance to".green().bold(), output_path.green().bold()),
+                Ok(_) => println!(
+                    "{} {}",
+                    "Saved Helix instance to".green().bold(),
+                    output_path.green().bold()
+                ),
                 Err(e) => println!("{} {}", "Error while copying:".red().bold(), e),
             }
         }
@@ -840,7 +887,11 @@ fn main() {
             match instance_manager.get_instance(iid) {
                 Ok(Some(_)) => println!("{}", "Helix instance found!".green().bold()),
                 Ok(None) => {
-                    println!("{} {}", "No Helix instance found with id".red().bold(), iid.red().bold());
+                    println!(
+                        "{} {}",
+                        "No Helix instance found with id".red().bold(),
+                        iid.red().bold()
+                    );
                     return;
                 }
                 Err(e) => {
@@ -850,8 +901,12 @@ fn main() {
             }
 
             match instance_manager.stop_instance(iid) {
-                Ok(true) => println!("{} {}", "Stopped instance".green().bold(), iid.green().bold()),
-                Ok(false) => {},
+                Ok(true) => println!(
+                    "{} {}",
+                    "Stopped instance".green().bold(),
+                    iid.green().bold()
+                ),
+                Ok(false) => {}
                 Err(e) => println!("{} {}", "Error while stopping instance".red().bold(), e),
             }
 
@@ -867,7 +922,8 @@ fn main() {
                     Err(e) => println!("{} {}", "Error while deleting instance".red().bold(), e),
                 }
 
-                let home_dir = std::env::var("HOME").expect("Failed to get HOME environment variable");
+                let home_dir =
+                    std::env::var("HOME").expect("Failed to get HOME environment variable");
                 let instance_path = format!("{}/.helix/cached_builds/data/{}", home_dir, iid);
                 let binary_path = format!("{}/.helix/cached_builds/{}", home_dir, iid);
                 let log_path = format!("{}/.helix/logs/instance_{}.log", home_dir, iid);
@@ -916,7 +972,9 @@ fn main() {
                             "{} '{}' {}",
                             "The file".red().bold(),
                             path.display().to_string().red().bold(),
-                            "must have a .sqlite, .db, or .sqlite3 file extension".red().bold(),
+                            "must have a .sqlite, .db, or .sqlite3 file extension"
+                                .red()
+                                .bold(),
                         );
                         return;
                     }
@@ -925,7 +983,10 @@ fn main() {
                     match instance_manager.list_instances() {
                         Ok(instances) => {
                             if instances.is_empty() {
-                                println!("{}", "There are no running Helix instances!".red().bold());
+                                println!(
+                                    "{}",
+                                    "There are no running Helix instances!".red().bold()
+                                );
                                 return;
                             }
                             let mut is_valid_instance = false;
@@ -949,14 +1010,20 @@ fn main() {
 
                     let _ingestor = SqliteIngestor::new(&path_str, None, 5).unwrap();
                     // TODO: Add ingestion logic
-                },
+                }
                 "pg" | "postgres" => {
-                    let mut sp = Spinner::new(Spinners::Dots9, "Connecting to PostgreSQL database...".into());
+                    let mut sp = Spinner::new(
+                        Spinners::Dots9,
+                        "Connecting to PostgreSQL database...".into(),
+                    );
                     // Create output directory if specified
                     let output_dir = command.output_dir.as_deref().unwrap_or("./");
                     if !Path::new(output_dir).exists() {
                         fs::create_dir_all(output_dir).unwrap_or_else(|e| {
-                            sp.stop_with_message(format!("{}", "Failed to create output directory".red().bold()));
+                            sp.stop_with_message(format!(
+                                "{}",
+                                "Failed to create output directory".red().bold()
+                            ));
                             println!("└── {}", e);
                             return;
                         });
@@ -1020,7 +1087,12 @@ fn main() {
                     });
                 }
                 _ => {
-                    println!("{}", "Invalid database type. Must be either 'sqlite' or 'pg/postgres'".red().bold());
+                    println!(
+                        "{}",
+                        "Invalid database type. Must be either 'sqlite' or 'pg/postgres'"
+                            .red()
+                            .bold()
+                    );
                     return;
                 }
             }
