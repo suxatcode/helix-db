@@ -16,6 +16,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    io::Write as iWrite,
 };
 
 pub mod args;
@@ -912,6 +913,7 @@ fn main() {
 
             let mut del_prompt: bool = false;
             print!("Are you sure you want to delete the instance and its data? (y/n): ");
+            std::io::stdout().flush().unwrap();
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
             del_prompt = input.trim().to_lowercase() == "y";
