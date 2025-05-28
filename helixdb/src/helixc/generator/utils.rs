@@ -2,6 +2,8 @@ use std::fmt::{self, Debug, Display};
 
 use crate::helixc::parser::helix_parser::IdType;
 
+use super::tsdisplay::TsDisplay;
+
 #[derive(Clone)]
 pub enum GenRef<T>
 where
@@ -236,6 +238,27 @@ impl Display for RustType {
             RustType::Bool => write!(f, "bool"),
             RustType::Uuid => write!(f, "ID"), // TODO: Change this for actual UUID
             RustType::Date => write!(f, "DateTime<Utc>"),
+        }
+    }
+}
+impl TsDisplay for RustType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RustType::String => write!(f, "string"),
+            RustType::I8 => write!(f, "number"),
+            RustType::I16 => write!(f, "number"),
+            RustType::I32 => write!(f, "number"),
+            RustType::I64 => write!(f, "number"),
+            RustType::U8 => write!(f, "number"),
+            RustType::U16 => write!(f, "number"),
+            RustType::U32 => write!(f, "number"),
+            RustType::U64 => write!(f, "number"),
+            RustType::U128 => write!(f, "number"),
+            RustType::F32 => write!(f, "number"),
+            RustType::F64 => write!(f, "number"),
+            RustType::Bool => write!(f, "boolean"),
+            RustType::Uuid => write!(f, "string"), // do these
+            RustType::Date => write!(f, "Date"),   // do these
         }
     }
 }

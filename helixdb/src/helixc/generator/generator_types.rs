@@ -5,6 +5,7 @@ use crate::{helixc::parser::helix_parser::FieldPrefix, protocol::value::Value};
 
 use super::{
     traversal_steps::{ShouldCollect, Traversal},
+    tsdisplay::TsDisplay,
     utils::{write_headers, write_properties, GenRef, GeneratedType, GeneratedValue},
 };
 
@@ -85,6 +86,16 @@ impl Display for NodeSchema {
         write!(f, "}}\n")
     }
 }
+impl TsDisplay for NodeSchema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "interface {} {{\n", self.name)?;
+        write!(f, "    id: string;\n")?;
+        for property in &self.properties {
+            write!(f, "    {}: {};\n", property.name, property.field_type)?;
+        }
+        write!(f, "}}\n")
+    }
+}
 
 #[derive(Clone)]
 pub struct EdgeSchema {
@@ -104,7 +115,25 @@ impl Display for EdgeSchema {
         write!(f, "}}\n")
     }
 }
-
+impl TsDisplay for EdgeSchema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "interface {} {{\n", self.name)?;
+        write!(f, "    id: string;\n")?;
+        write!(f, "    from: {};\n", self.from)?;
+        write!(f, "    to: {};\n", self.to)?;
+        write!(
+            f,
+            "properties: {{{}}};\n",
+            &self
+                .properties
+                .iter()
+                .map(|p| format!("{}: {}", p.name, p.field_type))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )?;
+        write!(f, "}}\n")
+    }
+}
 #[derive(Clone)]
 pub struct VectorSchema {
     pub name: String,
@@ -115,6 +144,17 @@ impl Display for VectorSchema {
         write!(f, "pub struct {} {{\n", self.name)?;
         for property in &self.properties {
             write!(f, "    pub {}: {},\n", property.name, property.field_type)?;
+        }
+        write!(f, "}}\n")
+    }
+}
+impl TsDisplay for VectorSchema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "interface {} {{\n", self.name)?;
+        write!(f, "    id: string;\n")?;
+        write!(f, "    data: Array<number>;\n")?;
+        for property in &self.properties {
+            write!(f, "    {}: {};\n", property.name, property.field_type)?;
         }
         write!(f, "}}\n")
     }

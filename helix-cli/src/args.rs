@@ -6,7 +6,7 @@ pub mod version {
     pub const AUTHORS: &str = "Helix Team";
 }
 
-use version::{VERSION, NAME, AUTHORS};
+use version::{AUTHORS, NAME, VERSION};
 
 #[derive(Debug, Parser)]
 #[clap(name = NAME, version = VERSION, author = AUTHORS)]
@@ -74,7 +74,10 @@ pub struct DeployCommand {
 }
 
 #[derive(Debug, Args)]
-#[clap(name = "redeploy", about = "Re-deploy a Helix project with new queries")]
+#[clap(
+    name = "redeploy",
+    about = "Re-deploy a Helix project with new queries"
+)]
 pub struct RedeployCommand {
     #[clap(help = "Existing helix instance ID")]
     pub instance: String,
@@ -92,6 +95,8 @@ pub struct CompileCommand {
     #[clap(short, long, help = "The output path")]
     pub output: Option<String>,
 
+    #[clap(short, long, help = "The target language")]
+    pub gen: OutputLanguage,
     // #[clap(short, long, help = "The target platform")]
     // pub target: Option<String>,
 
@@ -163,15 +168,29 @@ pub struct IngestCommand {
     pub db_url: String,
 
     /// Helix instance to ingest data into
-    #[clap(short = 'i', long = "instance", help = "Helixdb instance to ingest data into")]
+    #[clap(
+        short = 'i',
+        long = "instance",
+        help = "Helixdb instance to ingest data into"
+    )]
     pub instance: String,
 
     /// Batch size for ingestion (only used for PostgreSQL)
-    #[clap(short = 'b', long = "batch", default_value = "1000", help = "Batch size for ingestion")]
+    #[clap(
+        short = 'b',
+        long = "batch",
+        default_value = "1000",
+        help = "Batch size for ingestion"
+    )]
     pub batch_size: usize,
 
     /// Output directory for JSONL files
-    #[clap(short = 'o', long = "output", default_value = "./", help = "Output directory for JSONL files")]
+    #[clap(
+        short = 'o',
+        long = "output",
+        default_value = "./",
+        help = "Output directory for JSONL files"
+    )]
     pub output_dir: Option<String>,
 
     /// Use SSL for PostgreSQL
@@ -249,3 +268,11 @@ impl From<sonic_rs::Error> for CliError {
     }
 }
 
+#[derive(Debug, Subcommand, Clone)]
+#[clap(name = "output", about = "The target language")]
+pub enum OutputLanguage {
+    #[clap(name = "rust", about = "Rust")]
+    Rust,
+    #[clap(name = "typescript", about = "TypeScript")]
+    TypeScript,
+}
