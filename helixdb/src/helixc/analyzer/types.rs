@@ -123,18 +123,6 @@ impl GeneratedParameter {
     }
 }
 
-impl GeneratedStatement {
-    // pub fn unwrap_assignment(assignment: Assignment, statements: &mut Vec<GeneratedStatement>) {
-    //     let generated_assignment = GeneratedStatement::Assignment(GeneratedAssignment {
-    //         variable: assignment.variable.clone(),
-    //         value: assignment.value.into(),
-    //     });
-    //     statements.push(generated_assignment);
-    // }
-
-    fn unwrap_traversal(traversal: GeneratedTraversal, statements: &mut Vec<GeneratedStatement>) {}
-}
-
 fn unwrap_object(
     name: String,
     obj: &HashMap<String, FieldType>,

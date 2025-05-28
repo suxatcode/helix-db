@@ -1,11 +1,15 @@
 use core::fmt;
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    io::{self, Write},
+};
 
 use crate::{helixc::parser::helix_parser::FieldPrefix, protocol::value::Value};
 
 use super::{
     traversal_steps::{ShouldCollect, Traversal},
-    tsdisplay::TsDisplay,
+    tsdisplay::ToTypeScript,
     utils::{write_headers, write_properties, GenRef, GeneratedType, GeneratedValue},
 };
 
@@ -86,14 +90,24 @@ impl Display for NodeSchema {
         write!(f, "}}\n")
     }
 }
-impl TsDisplay for NodeSchema {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "interface {} {{\n", self.name)?;
-        write!(f, "    id: string;\n")?;
+impl ToTypeScript for NodeSchema {
+    fn to_typescript(&self) -> String {
+        let mut result = format!("interface {} {{\n", self.name);
+        result.push_str("  id: string;\n");
+        
         for property in &self.properties {
-            write!(f, "    {}: {};\n", property.name, property.field_type)?;
+            result.push_str(&format!(
+                "  {}: {};\n",
+                property.name,
+                match &property.field_type {
+                    GeneratedType::RustType(t) => t.to_ts(),
+                    _ => unreachable!(),
+                }
+            ));
         }
-        write!(f, "}}\n")
+        
+        result.push_str("}\n");
+        result
     }
 }
 
@@ -115,23 +129,25 @@ impl Display for EdgeSchema {
         write!(f, "}}\n")
     }
 }
-impl TsDisplay for EdgeSchema {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "interface {} {{\n", self.name)?;
-        write!(f, "    id: string;\n")?;
-        write!(f, "    from: {};\n", self.from)?;
-        write!(f, "    to: {};\n", self.to)?;
-        write!(
-            f,
-            "properties: {{{}}};\n",
-            &self
-                .properties
-                .iter()
-                .map(|p| format!("{}: {}", p.name, p.field_type))
-                .collect::<Vec<_>>()
-                .join("; ")
-        )?;
-        write!(f, "}}\n")
+impl ToTypeScript for VectorSchema {
+    fn to_typescript(&self) -> String {
+        let mut result = format!("interface {} {{\n", self.name);
+        result.push_str("  id: string;\n");
+        result.push_str("  data: Array<number>;\n");
+        
+        for property in &self.properties {
+            result.push_str(&format!(
+                "  {}: {};\n",
+                property.name,
+                match &property.field_type {
+                    GeneratedType::RustType(t) => t.to_ts(),
+                    _ => unreachable!(),
+                }
+            ));
+        }
+        
+        result.push_str("}\n");
+        result
     }
 }
 #[derive(Clone)]
@@ -148,15 +164,26 @@ impl Display for VectorSchema {
         write!(f, "}}\n")
     }
 }
-impl TsDisplay for VectorSchema {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "interface {} {{\n", self.name)?;
-        write!(f, "    id: string;\n")?;
-        write!(f, "    data: Array<number>;\n")?;
-        for property in &self.properties {
-            write!(f, "    {}: {};\n", property.name, property.field_type)?;
-        }
-        write!(f, "}}\n")
+impl ToTypeScript for EdgeSchema {
+    fn to_typescript(&self) -> String {
+        let properties_str = self
+            .properties
+            .iter()
+            .map(|p| format!(
+                "    {}: {}",
+                p.name,
+                match &p.field_type {
+                    GeneratedType::RustType(t) => t.to_ts(),
+                    _ => unreachable!(),
+                }
+            ))
+            .collect::<Vec<_>>()
+            .join(";");
+
+        format!(
+            "interface {} {{\n  id: string;\n  from: {};\n  to: {};\n  properties: {{\n\t{}\n}};\n}}\n",
+            self.name, self.from, self.to, properties_str
+        )
     }
 }
 

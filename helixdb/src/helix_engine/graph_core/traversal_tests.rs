@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    helix_engine::graph_core::ops::source::n_from_type::NFromTypeAdapter,
+    helix_engine::graph_core::ops::source::{n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter},
     protocol::{
         filterable::Filterable,
         id::ID,
@@ -1485,6 +1485,14 @@ fn test_add_e_with_dup_flag() {
         .e_from_type("knows")
         .count();
     println!("{:?}", traversal);
+
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n_from_type("person")
+        .out_e("knows")
+        .count();
+    println!("{:?}", traversal);
+
+
     assert_eq!(traversal, 10000);
 
     assert!(false)

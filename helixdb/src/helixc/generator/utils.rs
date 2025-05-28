@@ -1,8 +1,8 @@
-use std::fmt::{self, Debug, Display};
+use std::{fmt::{self, Debug, Display}, io::{self, Write}};
 
 use crate::helixc::parser::helix_parser::IdType;
 
-use super::tsdisplay::TsDisplay;
+use super::tsdisplay::ToTypeScript;
 
 #[derive(Clone)]
 pub enum GenRef<T>
@@ -241,25 +241,26 @@ impl Display for RustType {
         }
     }
 }
-impl TsDisplay for RustType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RustType::String => write!(f, "string"),
-            RustType::I8 => write!(f, "number"),
-            RustType::I16 => write!(f, "number"),
-            RustType::I32 => write!(f, "number"),
-            RustType::I64 => write!(f, "number"),
-            RustType::U8 => write!(f, "number"),
-            RustType::U16 => write!(f, "number"),
-            RustType::U32 => write!(f, "number"),
-            RustType::U64 => write!(f, "number"),
-            RustType::U128 => write!(f, "number"),
-            RustType::F32 => write!(f, "number"),
-            RustType::F64 => write!(f, "number"),
-            RustType::Bool => write!(f, "boolean"),
-            RustType::Uuid => write!(f, "string"), // do these
-            RustType::Date => write!(f, "Date"),   // do these
-        }
+impl RustType {
+    pub fn to_ts(&self) -> String {
+        let s = match self {
+            RustType::String =>  "string",
+            RustType::I8 =>  "number",
+            RustType::I16 =>  "number",
+            RustType::I32 =>  "number",
+            RustType::I64 =>  "number",
+            RustType::U8 =>  "number",
+            RustType::U16 =>  "number",
+            RustType::U32 =>  "number",
+            RustType::U64 =>  "number",
+            RustType::U128 =>  "number",
+            RustType::F32 =>  "number",
+            RustType::F64 =>  "number",
+            RustType::Bool =>  "boolean",
+            RustType::Uuid =>  "string", // do thee
+            RustType::Date =>  "Date",   // do thee
+        };
+        s.to_string()
     }
 }
 

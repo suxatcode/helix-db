@@ -1,10 +1,5 @@
-use std::fmt;
+use std::io::{self, Write};
 
-pub trait TsDisplay
-where
-    Self: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
-    }
+pub trait ToTypeScript {
+    fn to_typescript(&self) -> String;
 }

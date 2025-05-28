@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 pub mod version {
     pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -268,11 +268,21 @@ impl From<sonic_rs::Error> for CliError {
     }
 }
 
-#[derive(Debug, Subcommand, Clone)]
-#[clap(name = "output", about = "The target language")]
+#[derive(Debug, Subcommand, Clone, ValueEnum)]
+#[clap(name = "output")]
 pub enum OutputLanguage {
-    #[clap(name = "rust", about = "Rust")]
+    #[clap(name = "rust", alias = "rs")]
     Rust,
-    #[clap(name = "typescript", about = "TypeScript")]
+    #[clap(name = "typescript", alias = "ts")]
     TypeScript,
+}
+
+impl PartialEq for OutputLanguage {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (OutputLanguage::TypeScript, OutputLanguage::TypeScript) => true,
+            (OutputLanguage::Rust, OutputLanguage::Rust) => true,
+            _ => false
+        }
+    }
 }

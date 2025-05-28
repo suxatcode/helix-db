@@ -38,7 +38,7 @@ impl Iterator for AddE {
     }
 }
 
-pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>  {
+pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> {
     fn add_e(
         self,
         label: &'a str,
@@ -62,6 +62,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
         from_node: u128,
         to_node: u128,
         should_check: bool,
+        // edge_types: (EdgeType, EdgeType),
         edge_type: EdgeType,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         let edge = Edge {
@@ -74,12 +75,35 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
 
-        // if let EdgeType::Node = edge_type {
-        //     if should_check {
-        //         if !(self.node_vec_exists(&from_node, EdgeType::Node)
-        //             && self.node_vec_exists(&to_node, EdgeType::Node))
-        //         {
-        //             result = Err(GraphError::NodeNotFound);
+        // if should_check {
+        //     match edge_types {
+        //         (EdgeType::Node, EdgeType::Node) => {
+        //             if !(self.node_vec_exists(&from_node, EdgeType::Node)
+        //                 && self.node_vec_exists(&to_node, EdgeType::Node))
+        //             {
+        //                 result = Err(GraphError::NodeNotFound);
+        //             }
+        //         }
+        //         (EdgeType::Vec, EdgeType::Vec) => {
+        //             if !(self.node_vec_exists(&from_node, EdgeType::Vec)
+        //                 && self.node_vec_exists(&to_node, EdgeType::Vec))
+        //             {
+        //                 result = Err(GraphError::NodeNotFound);
+        //             }
+        //         }
+        //         (EdgeType::Node, EdgeType::Vec) => {
+        //             if !(self.node_vec_exists(&from_node, EdgeType::Node)
+        //                 && self.node_vec_exists(&to_node, EdgeType::Vec))
+        //             {
+        //                 result = Err(GraphError::NodeNotFound);
+        //             }
+        //         }
+        //         (EdgeType::Vec, EdgeType::Node) => {
+        //             if !(self.node_vec_exists(&from_node, EdgeType::Vec)
+        //                 && self.node_vec_exists(&to_node, EdgeType::Node))
+        //             {
+        //                 result = Err(GraphError::NodeNotFound);
+        //             }
         //         }
         //     }
         // }
