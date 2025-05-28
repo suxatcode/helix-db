@@ -94,7 +94,7 @@ impl ToTypeScript for NodeSchema {
     fn to_typescript(&self) -> String {
         let mut result = format!("interface {} {{\n", self.name);
         result.push_str("  id: string;\n");
-        
+
         for property in &self.properties {
             result.push_str(&format!(
                 "  {}: {};\n",
@@ -105,7 +105,7 @@ impl ToTypeScript for NodeSchema {
                 }
             ));
         }
-        
+
         result.push_str("}\n");
         result
     }
@@ -134,7 +134,7 @@ impl ToTypeScript for VectorSchema {
         let mut result = format!("interface {} {{\n", self.name);
         result.push_str("  id: string;\n");
         result.push_str("  data: Array<number>;\n");
-        
+
         for property in &self.properties {
             result.push_str(&format!(
                 "  {}: {};\n",
@@ -145,7 +145,7 @@ impl ToTypeScript for VectorSchema {
                 }
             ));
         }
-        
+
         result.push_str("}\n");
         result
     }
@@ -169,14 +169,16 @@ impl ToTypeScript for EdgeSchema {
         let properties_str = self
             .properties
             .iter()
-            .map(|p| format!(
-                "    {}: {}",
-                p.name,
-                match &p.field_type {
-                    GeneratedType::RustType(t) => t.to_ts(),
-                    _ => unreachable!(),
-                }
-            ))
+            .map(|p| {
+                format!(
+                    "    {}: {}",
+                    p.name,
+                    match &p.field_type {
+                        GeneratedType::RustType(t) => t.to_ts(),
+                        _ => unreachable!(),
+                    }
+                )
+            })
             .collect::<Vec<_>>()
             .join(";");
 
@@ -261,23 +263,25 @@ impl Display for Query {
             writeln!(f, "let txn = db.graph_env.read_txn().unwrap();")?;
         }
 
-        writeln!(
-            f,
-            "let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();"
-        )?;
         // prints each statement
         for statement in &self.statements {
             write!(f, "    {};\n", statement)?;
         }
 
-        for return_value in &self.return_values {
-            write!(f, "    {}\n", return_value)?;
+        writeln!(
+            f,
+            "let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();"
+        )?;
+        if !self.return_values.is_empty() {
+            for return_value in &self.return_values {
+                write!(f, "    {}\n", return_value)?;
+            }
         }
 
         // commit the transaction
-        if self.is_mut {
+        // if self.is_mut {
             writeln!(f, "    txn.commit().unwrap();")?;
-        }
+        // }/
         // closes the handler function
         write!(
             f,
@@ -319,6 +323,7 @@ pub enum Statement {
     Literal(GenRef<String>),
     Identifier(GenRef<String>),
     BoExp(BoExp),
+    Empty,
 }
 impl Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -330,6 +335,7 @@ impl Display for Statement {
             Statement::Literal(literal) => write!(f, "{}", literal),
             Statement::Identifier(identifier) => write!(f, "{}", identifier),
             Statement::BoExp(bo) => write!(f, "{}", bo),
+            Statement::Empty => write!(f, ""),
         }
     }
 }

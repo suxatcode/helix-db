@@ -354,6 +354,7 @@ impl<'a> Ctx<'a> {
                         .return_values
                         .push(ReturnValue::new_literal(l.clone(), l.clone()));
                 }
+                GeneratedStatement::Empty => query.return_values = vec![],
                 _ => {
                     self.push_query_err(
                         q,
@@ -473,7 +474,6 @@ impl<'a> Ctx<'a> {
                 Type::Boolean,
                 Some(GeneratedStatement::Literal(GenRef::Literal(b.to_string()))),
             ),
-            Empty => (Type::Unknown, None),
 
             Traversal(tr) => {
                 let mut gen_traversal = GeneratedTraversal::default();
@@ -576,12 +576,13 @@ impl<'a> Ctx<'a> {
                                                     .get(field_name.as_str())
                                                     .unwrap()
                                                     .field_type,
-                                                    self.node_fields
+                                                self.node_fields
                                                     .get(ty.as_str())
                                                     .unwrap()
                                                     .get(field_name.as_str())
                                                     .unwrap()
-                                                    .field_type == FieldType::Date
+                                                    .field_type
+                                                    == FieldType::Date
                                             );
                                             match self
                                                 .node_fields
@@ -1309,6 +1310,7 @@ impl<'a> Ctx<'a> {
                     Some(GeneratedStatement::BoExp(BoExp::Exists(expr))),
                 )
             }
+            Empty => (Type::Unknown, Some(GeneratedStatement::Empty)),
             _ => {
                 println!("Unknown expression: {:?}", expr);
                 todo!()
