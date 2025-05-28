@@ -100,8 +100,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
 
         let label_hash = hash_label(edge.label.as_str(), None);
 
-        match self.storage.out_edges_db.put(
+        match self.storage.out_edges_db.put_with_flags(
             self.txn,
+            PutFlags::APPEND_DUP,
             &HelixGraphStorage::out_edge_key(&from_node, &label_hash),
             &HelixGraphStorage::pack_edge_data(&to_node, &edge.id),
         ) {
@@ -112,8 +113,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
             }
         }
 
-        match self.storage.in_edges_db.put(
+        match self.storage.in_edges_db.put_with_flags(
             self.txn,
+            PutFlags::APPEND_DUP,
             &HelixGraphStorage::in_edge_key(&to_node, &label_hash),
             &HelixGraphStorage::pack_edge_data(&from_node, &edge.id),
         ) {
