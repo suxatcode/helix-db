@@ -42,7 +42,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterat
         let iters = (0..8).map(|_| self.enumerate()).collect::<Vec<_>>();
     
         std::thread::scope(|s| {
-            let n = 8; // number of threads
+            let n = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8); // number of threads
     
             let threads: Vec<_> = iters
                 .into_iter()
