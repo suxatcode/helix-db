@@ -3,7 +3,7 @@ use crate::helix_engine::{
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use std::sync::Arc;
 
 pub struct ToNIterator<'a, I, T> {
@@ -13,7 +13,7 @@ pub struct ToNIterator<'a, I, T> {
 }
 
 // implementing iterator for OutIterator
-impl<'a, I> Iterator for ToNIterator<'a, I, RoTxn<'a>>
+impl<'a, I> Iterator for ToNIterator<'a, I, RoTxn<'a, WithoutTls>>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -43,7 +43,7 @@ pub trait ToNAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> {
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> ToNAdapter<'a, RoTxn<'a>>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> ToNAdapter<'a, RoTxn<'a, WithoutTls>>
     for RoTraversalIterator<'a, I>
 {
     #[inline(always)]

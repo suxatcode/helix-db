@@ -6,7 +6,7 @@ use crate::{
     },
     protocol::items::Node,
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use std::{iter::Once, sync::Arc};
 
 pub struct NFromId<'a, T> {
@@ -16,7 +16,7 @@ pub struct NFromId<'a, T> {
     id: u128,
 }
 
-impl<'a> Iterator for NFromId<'a, RoTxn<'a>> {
+impl<'a> Iterator for NFromId<'a, RoTxn<'a, WithoutTls>> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -42,7 +42,7 @@ pub trait NFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    type OutputIter = RoTraversalIterator<'a, NFromId<'a, RoTxn<'a>>>;
+    type OutputIter = RoTraversalIterator<'a, NFromId<'a, RoTxn<'a, WithoutTls>>>;
 
     #[inline]
     fn n_from_id(self, id: &u128) -> Self::OutputIter {

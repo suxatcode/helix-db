@@ -12,7 +12,7 @@ use crate::{
     },
     protocol::label_hash::hash_label,
 };
-use heed3::{types::Bytes, RoTxn};
+use heed3::{types::Bytes, RoTxn, WithoutTls};
 use std::sync::Arc;
 
 pub struct InNodesIterator<'a, T> {
@@ -27,7 +27,7 @@ pub struct InNodesIterator<'a, T> {
     edge_type: &'a EdgeType,
 }
 
-impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a>> {
+impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a, WithoutTls>> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -78,7 +78,7 @@ pub trait InAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> {
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a, RoTxn<'a>>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> InAdapter<'a, RoTxn<'a, WithoutTls>>
     for RoTraversalIterator<'a, I>
 {
     #[inline]

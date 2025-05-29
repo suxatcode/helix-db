@@ -3,7 +3,7 @@ use crate::helix_engine::{
     storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use std::sync::Arc;
 
 pub struct FromNIterator<'a, I, T> {
@@ -12,7 +12,7 @@ pub struct FromNIterator<'a, I, T> {
     txn: &'a T,
 }
 
-impl<'a, I> Iterator for FromNIterator<'a, I, RoTxn<'a>>
+impl<'a, I> Iterator for FromNIterator<'a, I, RoTxn<'a, WithoutTls>>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -44,7 +44,7 @@ pub trait FromNAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>>
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> FromNAdapter<'a, RoTxn<'a>>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> FromNAdapter<'a, RoTxn<'a, WithoutTls>>
     for RoTraversalIterator<'a, I>
 {
     #[inline(always)]

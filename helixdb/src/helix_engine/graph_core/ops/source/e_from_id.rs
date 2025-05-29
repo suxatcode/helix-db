@@ -6,7 +6,7 @@ use crate::{
     },
     protocol::items::Edge,
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use std::{iter::Once, sync::Arc};
 
 pub struct EFromId<'a, T> {
@@ -16,7 +16,7 @@ pub struct EFromId<'a, T> {
     id: &'a u128,
 }
 
-impl<'a> Iterator for EFromId<'a, RoTxn<'a>> {
+impl<'a> Iterator for EFromId<'a, RoTxn<'a, WithoutTls>> {
 
     type Item = Result<TraversalVal, GraphError>;
 
@@ -42,7 +42,7 @@ pub trait EFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> EFromIdAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
-    type OutputIter = RoTraversalIterator<'a, EFromId<'a, RoTxn<'a>>>;
+    type OutputIter = RoTraversalIterator<'a, EFromId<'a, RoTxn<'a, WithoutTls>>>;
 
     #[inline]
     fn e_from_id(self, id: &'a u128) -> Self::OutputIter {

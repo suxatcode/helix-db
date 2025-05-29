@@ -47,7 +47,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
         let vectors = self
             .storage
             .vectors
-            .search(self.txn, &query, k, filter, false);
+            .search(&self.txn, &query, k, filter, false);
 
         let iter = match vectors {
             Ok(vectors) => vectors

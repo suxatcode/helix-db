@@ -4,7 +4,7 @@ use crate::helix_engine::{
     storage_core::storage_core::HelixGraphStorage,
     types::GraphError,
 };
-use heed3::{RoTxn, RwTxn};
+use heed3::{RoTxn, RwTxn, WithoutTls};
 use std::sync::Arc;
 
 pub struct G {}
@@ -27,7 +27,7 @@ impl G {
     #[inline]
     pub fn new<'a>(
         storage: Arc<HelixGraphStorage>,
-        txn: &'a RoTxn<'a>,
+        txn: &'a RoTxn<'a, WithoutTls>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
         Self: Sized,
@@ -56,7 +56,7 @@ impl G {
     /// ```
     pub fn new_from<'a>(
         storage: Arc<HelixGraphStorage>,
-        txn: &'a RoTxn<'a>,
+        txn: &'a RoTxn<'a, WithoutTls>,
         items: Vec<TraversalVal>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
         RoTraversalIterator {

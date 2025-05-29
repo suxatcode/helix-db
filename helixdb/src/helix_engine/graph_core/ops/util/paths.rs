@@ -6,7 +6,7 @@ use crate::{
     },
     protocol::{items::Edge, label_hash::hash_label},
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
@@ -23,7 +23,7 @@ pub struct ShortestPathIterator<'a, I> {
     path_type: PathType,
     edge_label: Option<&'a str>,
     storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
+    txn: &'a RoTxn<'a, WithoutTls>,
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
@@ -56,14 +56,14 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
                     let mut current = end_id;
 
                     while current != start_id {
-                        nodes.push(self.storage.get_node(self.txn, current)?);
+                        nodes.push(self.storage.get_node(&self.txn, current)?);
 
                         let (prev_node, edge) = &parent[current];
                         edges.push(edge.clone());
                         current = prev_node;
                     }
 
-                    nodes.push(self.storage.get_node(self.txn, start_id)?);
+                    nodes.push(self.storage.get_node(&self.txn, start_id)?);
 
                     Ok(TraversalVal::Path((nodes, edges)))
                 };
@@ -80,7 +80,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
                     let iter = self
                         .storage
                         .out_edges_db
-                        .prefix_iter(self.txn, &out_prefix)
+                        .prefix_iter(&self.txn, &out_prefix)
                         .unwrap();
 
                     for result in iter {
@@ -90,7 +90,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
 
                         if !visited.contains(&to_node) {
                             visited.insert(to_node);
-                            let edge = self.storage.get_edge(self.txn, &edge_id).unwrap(); // TODO: handle error
+                            let edge = self.storage.get_edge(&self.txn, &edge_id).unwrap(); // TODO: handle error
                             parent.insert(to_node, (current_id, edge));
 
                             if to_node == to {
@@ -149,7 +149,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPath
         I: 'a,
     {
         let storage = Arc::clone(&self.storage);
-        let txn = self.txn;
+        let txn = &self.txn;
 
         RoTraversalIterator {
             inner: ShortestPathIterator {
@@ -161,7 +161,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPath
                 },
                 edge_label,
                 storage,
-                txn,
+                txn: &txn,
             },
             storage: Arc::clone(&self.storage),
             txn: self.txn,

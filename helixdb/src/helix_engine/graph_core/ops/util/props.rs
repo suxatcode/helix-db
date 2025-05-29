@@ -81,23 +81,23 @@ where
     }
 }
 
-impl<'a, 'b, I> PropsAdapter<'a, I> for RwTraversalIterator<'a, 'b, I>
-where
-    I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    'b: 'a,
-{
-    #[inline]
-    fn check_property(
-        self,
-        prop: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        RoTraversalIterator {
-            inner: PropsIterator {
-                iter: self.inner,
-                prop,
-            },
-            storage: self.storage,
-            txn: self.txn,
-        }
-    }
-}
+// impl<'a, 'b, I> PropsAdapter<'a, I> for RwTraversalIterator<'a, 'b, I>
+// where
+//     I: Iterator<Item = Result<TraversalVal, GraphError>>,
+//     'b: 'a,
+// {
+//     #[inline]
+//     fn check_property(
+//         self,
+//         prop: &'a str,
+//     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+//         RoTraversalIterator {
+//             inner: PropsIterator {
+//                 iter: self.inner,
+//                 prop,
+//             },
+//             storage: self.storage,
+//             txn: self.txn,
+//         }
+//     }
+// }

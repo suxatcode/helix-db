@@ -4,11 +4,11 @@ use crate::helix_engine::{
 };
 
 use super::super::tr_val::TraversalVal;
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls}  ;
 
 pub struct Map<'a, I, F> {
     iter: I,
-    txn: &'a RoTxn<'a>,
+    txn: &'a RoTxn<'a, WithoutTls>,
     f: F,
 }
 
@@ -16,7 +16,7 @@ pub struct Map<'a, I, F> {
 impl<'a, I, F> Iterator for Map<'a, I, F>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
-    F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
+    F: FnMut(TraversalVal, &RoTxn<'a, WithoutTls>) -> Result<TraversalVal, GraphError>,
 {
     type Item = I::Item;
 
@@ -51,7 +51,7 @@ pub trait MapAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
         f: F,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>;
+        F: FnMut(TraversalVal, &RoTxn<'a, WithoutTls>) -> Result<TraversalVal, GraphError>;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> MapAdapter<'a>
@@ -63,7 +63,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> MapAdapter<'a>
         f: F,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: FnMut(TraversalVal, &RoTxn<'a>) -> Result<TraversalVal, GraphError>,
+        F: FnMut(TraversalVal, &RoTxn<'a, WithoutTls>) -> Result<TraversalVal, GraphError>,
     {
         RoTraversalIterator {
             inner: Map {

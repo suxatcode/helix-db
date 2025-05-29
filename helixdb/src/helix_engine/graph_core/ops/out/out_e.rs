@@ -9,7 +9,7 @@ use crate::{
     },
     protocol::label_hash::hash_label,
 };
-use heed3::{types::Bytes, RoTxn};
+use heed3::{types::Bytes, RoTxn, WithoutTls};
 use std::sync::Arc;
 
 pub struct OutEdgesIterator<'a, T> {
@@ -23,7 +23,7 @@ pub struct OutEdgesIterator<'a, T> {
     txn: &'a T,
 }
 
-impl<'a> Iterator for OutEdgesIterator<'a, RoTxn<'a>> {
+impl<'a> Iterator for OutEdgesIterator<'a, RoTxn<'a, WithoutTls>> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -64,7 +64,7 @@ pub trait OutEdgesAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphErro
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdapter<'a, RoTxn<'a>>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> OutEdgesAdapter<'a, RoTxn<'a, WithoutTls>>
     for RoTraversalIterator<'a, I>
 {
     #[inline]

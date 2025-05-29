@@ -6,7 +6,7 @@ use crate::{
     },
     protocol::value::Value,
 };
-use heed3::RoTxn;
+use heed3::{RoTxn, WithoutTls};
 use serde::Serialize;
 use std::{iter::Once, sync::Arc};
 
@@ -18,7 +18,7 @@ pub struct NFromIndex<'a, T, K: Into<Value> + Serialize> {
     key: &'a K,
 }
 
-impl<'a, K> Iterator for NFromIndex<'a, RoTxn<'a>, K>
+impl<'a, K> Iterator for NFromIndex<'a, RoTxn<'a, WithoutTls>, K>
 where
     K: Into<Value> + Serialize,
 {
@@ -69,7 +69,7 @@ pub trait NFromIndexAdapter<'a, K: Into<Value> + Serialize>:
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, K: Into<Value> + Serialize + 'a>
     NFromIndexAdapter<'a, K> for RoTraversalIterator<'a, I>
 {
-    type OutputIter = RoTraversalIterator<'a, NFromIndex<'a, RoTxn<'a>, K>>;
+    type OutputIter = RoTraversalIterator<'a, NFromIndex<'a, RoTxn<'a, WithoutTls>, K>>;
 
     #[inline]
     fn n_from_index(self, index: &'a str, key: &'a K) -> Self::OutputIter

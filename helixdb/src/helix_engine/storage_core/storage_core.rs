@@ -3,7 +3,11 @@ use crate::{
         graph_core::config::Config,
         storage_core::storage_methods::StorageMethods,
         types::GraphError,
-        vector_core::{hnsw::HNSW, vector::HVector, vector_core::{HNSWConfig, VectorCore}},
+        vector_core::{
+            hnsw::HNSW,
+            vector::HVector,
+            vector_core::{HNSWConfig, VectorCore},
+        },
     },
     protocol::{
         filterable::Filterable,
@@ -13,7 +17,7 @@ use crate::{
     },
 };
 
-use heed3::byteorder::BE;
+use heed3::{byteorder::BE, WithoutTls};
 use heed3::{types::*, Database, DatabaseFlags, Env, EnvOpenOptions, RoTxn, RwTxn, WithTls};
 use std::collections::HashMap;
 use std::fs;
@@ -30,7 +34,7 @@ const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 // Key prefixes for different types of data
 
 pub struct HelixGraphStorage {
-    pub graph_env: Env<WithTls>,
+    pub graph_env: Env<WithoutTls>,
     pub nodes_db: Database<U128<BE>, Bytes>,
     pub edges_db: Database<U128<BE>, Bytes>,
     pub out_edges_db: Database<Bytes, Bytes>,
@@ -52,6 +56,7 @@ impl HelixGraphStorage {
         // Configure and open LMDB environment
         let graph_env = unsafe {
             EnvOpenOptions::new()
+                .read_txn_without_tls()
                 .map_size(db_size * 1024 * 1024 * 1024) // GB
                 .max_dbs(20)
                 .max_readers(200)
