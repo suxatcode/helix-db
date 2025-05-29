@@ -35,7 +35,7 @@ pub struct HelixGraphStorage {
     pub edges_db: Database<U128<BE>, Bytes>,
     pub out_edges_db: Database<Bytes, Bytes>,
     pub in_edges_db: Database<Bytes, Bytes>,
-    pub secondary_indices: HashMap<String, Database<Bytes, Bytes>>,
+    pub secondary_indices: HashMap<String, Database<Bytes, U128<BE>>>,
     pub vectors: VectorCore,
 }
 

@@ -54,7 +54,7 @@ impl Node {
         }
     }
 
-    pub fn encode_node(self) -> Result<Vec<u8>, GraphError> {
+    pub fn encode_node(&self) -> Result<Vec<u8>, GraphError> {
         let cfg = bincode::DefaultOptions::new()
             // .with_fixint_encoding()
             .with_big_endian();
@@ -64,49 +64,6 @@ impl Node {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct SerializedNode {
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub properties: Option<HashMap<String, Value>>,
-}
-
-impl SerializedNode {
-    pub fn decode_node(bytes: &[u8], id: u128) -> Result<Node, GraphError> {
-        let cfg = bincode::DefaultOptions::new()
-            // .with_fixint_encoding()
-            .with_big_endian();
-
-        match cfg.deserialize::<SerializedNode>(bytes) {
-            Ok(node) => {
-                let node = Node {
-                    id,
-                    label: node.label,
-                    properties: node.properties,
-                };
-                Ok(node) // ERROR REACHING END OF FILE EARLs
-            }
-            Err(e) => Err(GraphError::ConversionError(format!(
-                "Error deserializing node: {}",
-                e
-            ))),
-        }
-    }
-
-    pub fn encode_node(node: &Node) -> Result<Vec<u8>, GraphError> {
-        let node = SerializedNode {
-            label: node.label.clone(),
-            properties: node.properties.clone(),
-        };
-
-        let cfg = bincode::DefaultOptions::new()
-            // .with_fixint_encoding()
-            .with_big_endian();
-
-        cfg.serialize(&node)
-            .map_err(|e| GraphError::ConversionError(format!("Error serializing node: {}", e)))
-    }
-}
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

@@ -1,7 +1,15 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    helix_engine::graph_core::ops::source::{n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter},
+    helix_engine::graph_core::ops::source::{
+        bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter,
+    },
+    props,
+};
+use crate::{
+    helix_engine::graph_core::ops::source::{
+        n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter,
+    },
     protocol::{
         filterable::Filterable,
         id::ID,
@@ -9,12 +17,6 @@ use crate::{
         traversal_value::TraversalValue,
         value::Value,
     },
-};
-use crate::{
-    helix_engine::graph_core::ops::source::{
-        bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter,
-    },
-    props,
 };
 use crate::{
     helix_engine::{
@@ -1492,8 +1494,42 @@ fn test_add_e_with_dup_flag() {
         .count();
     println!("{:?}", traversal);
 
-
     assert_eq!(traversal, 10000);
 
     assert!(false)
 }
+
+#[test]
+fn test_add_n_parallel() {
+    let (storage, _temp_dir) = setup_test_db();
+    let n = 100_000_000;
+    let chunks = n / 10000000;
+    let k = n / chunks;
+    let start = Instant::now();
+
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    for _ in 0..n {
+        let _ = G::new_mut(Arc::clone(&storage), &mut txn)
+            .add_n("person", None, None)
+            .count();
+    }
+    txn.commit().unwrap();
+
+    println!("time taken to add {} nodes: {:?}", n, start.elapsed());
+    println!(
+        "size of mdb file on disk: {:?}",
+        storage.graph_env.real_disk_size()
+    );
+
+    let txn = storage.graph_env.read_txn().unwrap();
+    let count = G::new(Arc::clone(&storage), &txn)
+        .n_from_type("person")
+        .count();
+
+    println!("count: {:?}", count);
+
+    assert!(false);
+}
+
+// 3 614 375 936
+// 3 411 509 248
