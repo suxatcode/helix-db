@@ -1,7 +1,7 @@
 <div align="center">
 
 <picture>
-  <img src="/docs/full-logo.webp" alt="HelixDB Logo" width="200" height="200">
+  <img src="/docs/full-logo.png" alt="HelixDB Logo" width="200" height="200">
 </picture>
 
 <b>HelixDB</b>: an open-source graph-vector database written in Rust built for RAG and AI applications.
