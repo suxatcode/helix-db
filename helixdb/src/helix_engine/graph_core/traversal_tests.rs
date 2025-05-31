@@ -1276,50 +1276,39 @@ fn huge_traversal() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let mut nodes = Vec::with_capacity(65_000_000);
     let mut start = Instant::now();
-
-    for i in 0..100_000 {
-        // nodes.push(Node::new("person", Some(props! ){ "name" => i}));
-        nodes.push(v6_uuid());
+    let mut nodes = Vec::with_capacity(1000_000);
+    for i in 0..1000_000 {
+        let id = G::new_mut(Arc::clone(&storage), &mut txn).add_n(
+            "user",
+            None,
+            None,
+        ).collect_to_val();
+        nodes.push(id.id());
     }
-    println!("time taken to initialise nodes: {:?}", start.elapsed());
-    start = Instant::now();
-
-    println!("time taken to sort nodes: {:?}", start.elapsed());
-    start = Instant::now();
-    let now = Instant::now();
-    let res = G::new_mut(Arc::clone(&storage), &mut txn)
-        .bulk_add_n(&mut nodes, None, 1000000)
-        .map(|res| res.unwrap())
-        .collect::<Vec<_>>();
     txn.commit().unwrap();
-    println!("time taken to add nodes: {:?}", now.elapsed());
-    let start = Instant::now();
-    let mut edges = Vec::with_capacity(6000 * 2000);
-    for i in 0..10_000 {
-        let random_node1 = &nodes[rand::rng().random_range(0..nodes.len())];
-        let random_node2 = &nodes[rand::rng().random_range(0..nodes.len())];
-        // edges.push(Edge {
-        //     id: v6_uuid(),
-        //     label: "knows".to_string(),
-        //     properties: HashMap::new(),
-        //     from_node: random_node1.id,
-        //     to_node: random_node2.id,
-        // });
-        edges.push((*random_node1, *random_node2, v6_uuid()));
-    }
+    let txn = storage.graph_env.read_txn().unwrap();
     println!(
-        "time taken to create {} edges: {:?}",
-        edges.len(),
-        start.elapsed()
+        "size of mdb file on disk: {:?}",
+        storage.graph_env.real_disk_size()
     );
-    let mut start = Instant::now();
+    txn.commit().unwrap();
+    let start = Instant::now();
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let res = G::new_mut(Arc::clone(&storage), &mut txn)
-        .bulk_add_e(edges, false, 1000000)
-        .map(|res| res.unwrap())
-        .collect::<Vec<_>>();
+    for _ in 0..1000_000 {
+        let random_node1 = nodes[rand::rng().random_range(0..nodes.len())];
+        let random_node2 = nodes[rand::rng().random_range(0..nodes.len())];
+        G::new_mut(Arc::clone(&storage), &mut txn).add_e(
+            "knows",
+            None,
+            random_node1,
+            random_node2,
+            false,
+            EdgeType::Node,
+        ).count();
+    }
+    println!("time taken to create edges: {:?}", start.elapsed());
+
     txn.commit().unwrap();
     println!("time taken to add edges: {:?}", start.elapsed());
 
@@ -1345,9 +1334,9 @@ fn huge_traversal() {
         //     }
         // })
         .out("knows", &EdgeType::Node)
-        .out("knows", &EdgeType::Node)
-        .out("knows", &EdgeType::Node)
-        .out("knows", &EdgeType::Node)
+        // .out("knows", &EdgeType::Node)
+        // .out("knows", &EdgeType::Node)
+        // .out("knows", &EdgeType::Node)
         .dedup()
         .range(0, 10000)
         .count();
