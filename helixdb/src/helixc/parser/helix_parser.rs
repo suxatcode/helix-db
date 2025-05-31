@@ -529,6 +529,15 @@ pub struct SearchVector {
 }
 
 #[derive(Debug, Clone)]
+pub struct BM25Search {
+    pub loc: Loc,
+    pub vector_type: Option<String>,
+    pub data: Option<VectorData>,
+    pub k: Option<EvaluatesToNumber>,
+    pub pre_filter: Option<Box<Expression>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct EvaluatesToNumber {
     pub loc: Loc,
     pub value: EvaluatesToNumberType,
@@ -1128,6 +1137,10 @@ impl HelixParser {
                 Rule::search_vector => Ok(Statement {
                     loc: p.loc(),
                     statement: StatementType::SearchVector(self.parse_search_vector(p)?),
+                }),
+                Rule::bm25_search => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::BM25Search(self.parse_bm25_search(p)?),
                 }),
                 Rule::for_loop => Ok(Statement {
                     loc: p.loc(),
