@@ -55,6 +55,26 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
                 .map(|vector| Ok::<TraversalVal, GraphError>(TraversalVal::Vector(vector)))
                 .collect::<Vec<_>>()
                 .into_iter(),
+            Err(VectorError::VectorNotFound(id)) => {
+                let error = GraphError::VectorError(format!("vector not found for id {}", id));
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            },
+            Err(VectorError::InvalidVectorData) => {
+                let error = GraphError::VectorError("invalid vector data".to_string());
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            },
+            Err(VectorError::EntryPointNotFound) => {
+                let error = GraphError::VectorError("no entry point found for hnsw index".to_string());
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            },
+            Err(VectorError::ConversionError(e)) => {
+                let error = GraphError::VectorError(format!("conversion error: {}", e));
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            },
+            Err(VectorError::VectorCoreError(e)) => {
+                let error = GraphError::VectorError(format!("vector core error: {}", e));
+                once(Err(error)).collect::<Vec<_>>().into_iter()
+            },
             Err(VectorError::InvalidVectorLength) => {
                 let error = GraphError::VectorError("invalid vector dimensions!".to_string());
                 once(Err(error)).collect::<Vec<_>>().into_iter()
@@ -67,7 +87,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
         };
 
         let iter = SearchV { iter };
-        // Wrap it with the RoTraversalIterator adapter
+
         RoTraversalIterator {
             inner: iter,
             storage: self.storage,

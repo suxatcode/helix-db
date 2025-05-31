@@ -12,7 +12,7 @@ use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet},
+    collections::{BinaryHeap, HashSet},
 };
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
@@ -369,7 +369,7 @@ impl VectorCore {
             let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
                 for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level, filter)? {
-                    if visited.insert(neighbor.get_id().to_string()) {
+                    if visited.insert(neighbor.get_id().to_string()) { // TODO: NOT TO_STRING()
                         neighbor.set_distance(neighbor.distance_to(query)?);
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&neighbor, txn)) {
                             result.push(neighbor);
@@ -396,20 +396,19 @@ impl VectorCore {
     where
         F: Fn(&HVector, &RoTxn) -> bool,
     {
-        let mut visited: HashSet<String> = HashSet::new();
+        let mut visited: HashSet<u128> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
         let mut results: BinaryHeap<HVector> = BinaryHeap::new();
+
         entry_point.set_distance(entry_point.distance_to(query)?);
         candidates.push(Candidate {
             id: entry_point.get_id(),
             distance: entry_point.get_distance(),
         });
         results.push(entry_point.clone());
-        visited.insert(entry_point.get_id().to_string());
+        visited.insert(entry_point.get_id());
 
-        while !candidates.is_empty() {
-            let curr_cand = candidates.pop().unwrap();
-
+        while let Some(curr_cand) = candidates.pop() {
             if results.len() >= ef
                 && results
                     .get_max()
@@ -418,33 +417,62 @@ impl VectorCore {
                 break;
             }
 
-            for mut neighbor in self.get_neighbors(txn, curr_cand.id, level, filter)? {
-                if !visited.insert(neighbor.get_id().to_string()) {
-                    continue;
-                }
+            let max_distance = if results.len() >= ef {
+                results.get_max().map(|f| f.get_distance())
+            } else {
+                None
+            };
 
-                let distance = neighbor.distance_to(query)?;
-
-                let f = results.get_max().unwrap();
-                if results.len() < ef || distance < f.get_distance() {
-                    neighbor.set_distance(distance);
-                    candidates.push(Candidate {
-                        id: neighbor.get_id(),
-                        distance,
-                    });
-                    results.push(neighbor);
-                    if results.len() > ef {
-                        results = results.take_inord(ef);
+            self.get_neighbors(txn, curr_cand.id, level, filter)?.into_iter()
+                .filter(|neighbor| visited.insert(neighbor.get_id()))
+                .filter_map(|mut neighbor| {
+                    let distance = neighbor.distance_to(query).ok()?;
+                    if max_distance.map_or(true, |max| distance < max) {
+                        neighbor.set_distance(distance);
+                        Some((neighbor, distance))
+                    } else {
+                        None
                     }
+                })
+            .for_each(|(neighbor, distance)| {
+                candidates.push(Candidate {
+                    id: neighbor.get_id(),
+                    distance,
+                });
+                results.push(neighbor);
+                if results.len() > ef {
+                    results = results.take_inord(ef);
                 }
-            }
+            });
         }
-
         Ok(results)
     }
 }
 
 impl HNSW for VectorCore {
+    #[inline(always)]
+    fn get_vector(
+        &self,
+        txn: &RoTxn,
+        id: u128,
+        level: usize,
+        with_data: bool,
+    ) -> Result<HVector, VectorError> {
+        let key = Self::vector_key(id, level);
+        match self.vectors_db.get(txn, key.as_ref())? {
+            Some(bytes) => {
+                let vector = match with_data {
+                    true => HVector::from_bytes(id, level, &bytes),
+                    false => Ok(HVector::from_slice(level, vec![])),
+                }?;
+                Ok(vector)
+            }
+            None if level > 0 => self.get_vector(txn, id, 0, with_data),
+            None => Err(VectorError::VectorNotFound(id.to_string())),
+        }
+    }
+
+
     fn search<F>(
         &self,
         txn: &RoTxn,
@@ -456,7 +484,7 @@ impl HNSW for VectorCore {
     where
         F: Fn(&HVector, &RoTxn) -> bool,
     {
-        let query = HVector::from_slice(0, 0, query.to_vec());
+        let query = HVector::from_slice(0, query.to_vec());
 
         let mut entry_point = self.get_entry_point(txn)?;
 
@@ -499,16 +527,14 @@ impl HNSW for VectorCore {
         &self,
         txn: &mut RwTxn,
         data: &[f64],
-        nid: Option<u128>,
         fields: Option<Vec<(String, Value)>>,
     ) -> Result<HVector, VectorError>
     where
         F: Fn(&HVector, &RoTxn) -> bool,
     {
-        let id = nid.unwrap_or(uuid::Uuid::new_v4().as_u128());
         let new_level = self.get_new_level();
 
-        let mut query = HVector::from_slice(id, 0, data.to_vec());
+        let mut query = HVector::from_slice(0, data.to_vec());
         self.put_vector(txn, &query)?;
 
         query.level = new_level;
@@ -579,27 +605,6 @@ impl HNSW for VectorCore {
         }
         Ok(query)
     }
-    #[inline(always)]
-    fn get_vector(
-        &self,
-        txn: &RoTxn,
-        id: u128,
-        level: usize,
-        with_data: bool,
-    ) -> Result<HVector, VectorError> {
-        let key = Self::vector_key(id, level);
-        match self.vectors_db.get(txn, key.as_ref())? {
-            Some(bytes) => {
-                let vector = match with_data {
-                    true => HVector::from_bytes(id, level, &bytes),
-                    false => Ok(HVector::from_slice(id, level, vec![])),
-                }?;
-                Ok(vector)
-            }
-            None if level > 0 => self.get_vector(txn, id, 0, with_data),
-            None => Err(VectorError::VectorNotFound(id.to_string())),
-        }
-    }
 
     fn get_all_vectors(
         &self,
@@ -615,18 +620,5 @@ impl HNSW for VectorCore {
             })
             .filter_ok(|vector: &HVector| level.map_or(true, |l| vector.level == l))
             .collect()
-    }
-
-    fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool,
-    {
-        for v in data.iter() {
-            let _ = self.insert::<F>(txn, v, None, None);
-        }
-
-        // NOTE: need to txn.commit() outside of call
-
-        Ok(())
     }
 }

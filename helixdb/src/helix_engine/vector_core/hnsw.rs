@@ -33,7 +33,6 @@ pub trait HNSW
     /// # Arguments
     ///
     /// * `txn` - The transaction to use
-    /// * `id` - The id of the vector
     /// * `data` - The vector data
     ///
     /// # Returns
@@ -43,24 +42,8 @@ pub trait HNSW
         &self,
         txn: &mut RwTxn,
         data: &[f64],
-        nid: Option<u128>,
         fields: Option<Vec<(String, Value)>>,
     ) -> Result<HVector, VectorError>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool;
-
-    /// Load a full hnsw index with all vectors at once
-    ///
-    /// # Arguments
-    ///
-    /// * `txn` - The transaction to use
-    /// * `id` - The id of the vector
-    /// * `data` - A Vec of all the vectors to insert
-    ///
-    /// # Returns
-    ///
-    /// An emtpy tuple
-    fn load<F>(&self, txn: &mut RwTxn, data: Vec<&[f64]>) -> Result<(), VectorError>
     where
         F: Fn(&HVector, &RoTxn) -> bool;
 
@@ -100,3 +83,4 @@ pub trait HNSW
         with_data: bool,
     ) -> Result<HVector, VectorError>;
 }
+
