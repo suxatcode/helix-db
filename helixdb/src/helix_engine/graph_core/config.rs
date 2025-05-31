@@ -51,7 +51,8 @@ impl Config {
         }
     }
 
-    pub fn from_config_file(input_path: PathBuf) -> Result<Self, GraphError> {
+    pub fn from_config_file(input_path: PathBuf) -> Result<Self, GraphError> { // TODO: this isn't
+                                                                               // read
         if !input_path.exists() {
             return Err(GraphError::ConfigFileNotFound);
         }
@@ -83,8 +84,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             vector_config: VectorConfig {
-                m: Some(25),
-                ef_construction: Some(512),
+                m: Some(16),
+                ef_construction: Some(128),
                 ef_search: Some(768),
             },
             graph_config: GraphConfig {
