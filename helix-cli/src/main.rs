@@ -878,6 +878,8 @@ fn main() {
 
             let mut runner = Command::new("git");
             runner.arg("clone");
+            runner.arg("--branch");
+            runner.arg("helixgraphengine-refactor");
             runner.arg("https://github.com/HelixDB/helix-db.git");
             runner.current_dir(&repo_path);
 
@@ -1020,14 +1022,14 @@ fn main() {
                 Err(e) => println!("{} {}", "Error while stopping instance".red().bold(), e),
             }
 
-            let mut del_prompt: bool = false;
+            let mut _del_prompt: bool = false;
             print!("Are you sure you want to delete the instance and its data? (y/n): ");
             std::io::stdout().flush().unwrap();
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
-            del_prompt = input.trim().to_lowercase() == "y";
+            _del_prompt = input.trim().to_lowercase() == "y";
 
-            if del_prompt {
+            if _del_prompt {
                 match instance_manager.delete_instance(iid) {
                     Ok(_) => println!("{}", "Deleted Helix instance".green().bold()),
                     Err(e) => println!("{} {}", "Error while deleting instance".red().bold(), e),
@@ -1210,3 +1212,4 @@ fn main() {
         }
     }
 }
+
