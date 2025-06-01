@@ -69,7 +69,3 @@ build = ["compiler"]
 full = ["build", "compiler", "ingestion", "cosine"]
 default = ["full"]
 
-[profile.release]
-strip = "debuginfo"
-lto = true
-opt-level = "z"
