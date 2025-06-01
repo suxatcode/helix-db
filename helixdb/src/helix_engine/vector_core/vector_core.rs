@@ -1,8 +1,13 @@
-use crate::helix_engine::{
-    types::VectorError,
-    vector_core::{hnsw::HNSW, vector::HVector},
-};
 use crate::protocol::value::Value;
+use crate::{
+    helix_engine::{
+        types::VectorError,
+        vector_core::{hnsw::HNSW, vector::HVector},
+    },
+    protocol::value::Encodings,
+};
+use heed3::byteorder::BE;
+use heed3::types::U128;
 use heed3::{
     types::{Bytes, Unit},
     Database, Env, RoTxn, RwTxn,
@@ -14,6 +19,8 @@ use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
 };
+
+use super::vector::encoding;
 
 const DB_VECTORS: &str = "vectors"; // for vector data (v:)
 const DB_VECTOR_DATA: &str = "vector_data"; // for vector data (v:)
@@ -168,7 +175,7 @@ impl<T> HeapOps<T> for BinaryHeap<T> {
 pub struct VectorCore {
     pub vectors_db: Database<Bytes, Bytes>,
     pub vector_data_db: Database<Bytes, Bytes>,
-    pub out_edges_db: Database<Bytes, Unit>,
+    pub out_edges_db: Database<Bytes, U128<BE>>,
     pub config: HNSWConfig,
 }
 
@@ -187,42 +194,37 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn vector_key(id: u128, level: usize) -> Vec<u8> {
-        [VECTOR_PREFIX, &id.to_be_bytes(), &level.to_be_bytes()].concat()
+    fn vector_key(id: u128, level: u8) -> [u8; 17] {
+        let mut key = [0u8; 17];
+        key[..16].copy_from_slice(&id.to_be_bytes());
+        key[16..].copy_from_slice(&level.to_be_bytes());
+        key
     }
 
     #[inline(always)]
-    fn out_edges_key(source_id: u128, level: usize, sink_id: Option<u128>) -> Vec<u8> {
-        match sink_id {
-            Some(sink_id) => [
-                source_id.to_be_bytes().as_slice(),
-                level.to_be_bytes().as_slice(),
-                sink_id.to_be_bytes().as_slice(),
-            ]
-            .concat()
-            .to_vec(),
-            None => [
-                source_id.to_be_bytes().as_slice(),
-                level.to_be_bytes().as_slice(),
-            ]
-            .concat()
-            .to_vec(),
-        }
+    fn out_edges_key(source_id: u128, level: u8) -> [u8; 17] {
+        let mut key = [0u8; 17];
+        key[..16].copy_from_slice(&source_id.to_be_bytes());
+        key[16..].copy_from_slice(&level.to_be_bytes());
+        key
     }
 
     #[inline]
-    fn get_new_level(&self) -> usize {
+    fn get_new_level(&self) -> u8 {
         // TODO: look at using the XOR shift algorithm for random number generation
         // Storing global rng will not be threadsafe or possible as thread rng needs to be mutable
         // Should instead using an atomic mutable seed and the XOR shift algorithm
         let mut rng = rand::rng();
         let r: f64 = rng.random::<f64>();
-        let level = (-r.ln() * self.config.m_l).floor() as usize;
+        let level = (-r.ln() * self.config.m_l).floor() as u8;
         level
     }
 
     #[inline]
-    fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
+    fn get_entry_point<E: encoding::Encoding, const DIMENSION: usize>(
+        &self,
+        txn: &RoTxn,
+    ) -> Result<HVector<E, DIMENSION>, VectorError> {
         let ep_id = self.vectors_db.get(txn, ENTRY_POINT_KEY.as_bytes())?;
         if let Some(ep_id) = ep_id {
             let mut arr = [0u8; 16];
@@ -230,7 +232,7 @@ impl VectorCore {
             arr[..len].copy_from_slice(&ep_id[..len]);
 
             let ep = self
-                .get_vector(txn, u128::from_be_bytes(arr), 0, true)
+                .get_vector::<true, false>(txn, u128::from_be_bytes(arr), 0)
                 .map_err(|_| VectorError::EntryPointNotFound)?;
             Ok(ep)
         } else {
@@ -239,7 +241,11 @@ impl VectorCore {
     }
 
     #[inline]
-    fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
+    fn set_entry_point<E: encoding::Encoding, const DIMENSION: usize>(
+        &self,
+        txn: &mut RwTxn,
+        entry: &HVector<E, DIMENSION>,
+    ) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db
             .put(txn, &entry_key, &entry.get_id().to_be_bytes())
@@ -251,7 +257,11 @@ impl VectorCore {
     // #[inline(always)]
     // fn get_vector_(&self, txn: &RoTxn, id: u128) -> Result<Vec<f64>, VectorError> {
     #[inline(always)]
-    fn put_vector(&self, txn: &mut RwTxn, vector: &HVector) -> Result<(), VectorError> {
+    fn put_vector<E: encoding::Encoding, const DIMENSION: usize>(
+        &self,
+        txn: &mut RwTxn,
+        vector: &HVector<E, DIMENSION>,
+    ) -> Result<(), VectorError> {
         self.vectors_db
             .put(
                 txn,
@@ -263,17 +273,23 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn get_neighbors<F>(
+    fn get_neighbors<
+        E: encoding::Encoding,
+        const DIMENSION: usize,
+        F,
+        const WITH_VECTOR: bool,
+        const WITH_PROPERTIES: bool,
+    >(
         &self,
         txn: &RoTxn,
         id: u128,
-        level: usize,
+        level: u8,
         filter: Option<&[F]>,
-    ) -> Result<Vec<HVector>, VectorError>
+    ) -> Result<Vec<HVector<E, DIMENSION>>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool,
     {
-        let out_key = Self::out_edges_key(id, level, None);
+        let out_key = Self::out_edges_key(id, level);
         let mut neighbors = Vec::with_capacity(self.config.m_max_0.min(512)); // TODO: why 512?
 
         let iter = self
@@ -292,7 +308,9 @@ impl VectorCore {
                 let neighbor_id = u128::from_be_bytes(arr);
 
                 if neighbor_id != id {
-                    if let Ok(vector) = self.get_vector(txn, neighbor_id, level, true) {
+                    if let Ok(vector) =
+                        self.get_vector::<WITH_VECTOR, WITH_PROPERTIES>(txn, neighbor_id, level)
+                    {
                         // TODO: look at implementing a macro that actually just runs each function rather than iterating through
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&vector, txn)) {
                             neighbors.push(vector);
@@ -307,18 +325,18 @@ impl VectorCore {
     }
 
     #[inline(always)]
-    fn set_neighbours<'a>(
+    fn set_neighbours<'a, E: encoding::Encoding, const DIMENSION: usize>(
         &self,
         txn: &mut RwTxn,
         id: u128,
-        neighbors: &'a BinaryHeap<HVector>,
-        level: usize,
+        neighbors: &'a BinaryHeap<HVector<E, DIMENSION>>,
+        level: u8,
     ) -> Result<(), VectorError> {
-        let prefix = Self::out_edges_key(id, level, None);
+        let prefix = Self::out_edges_key(id, level);
 
-        let mut keys_to_delete: HashSet<Vec<u8>> = self
+        let mut keys_to_delete: HashSet<_> = self
             .out_edges_db
-            .prefix_iter(txn, prefix.as_ref())?
+            .prefix_iter(txn, &prefix)?
             .filter_map(|result| result.ok().map(|(key, _)| key.to_vec()))
             .collect();
 
@@ -329,13 +347,13 @@ impl VectorCore {
                 if neighbor_id == id {
                     return Ok(());
                 }
-                let out_key = Self::out_edges_key(id, level, Some(neighbor_id));
-                keys_to_delete.remove(&out_key);
-                self.out_edges_db.put(txn, &out_key, &())?;
+                let out_key = Self::out_edges_key(id, level);
+                keys_to_delete.remove(out_key.as_slice());
+                self.out_edges_db.put(txn, &out_key, &neighbor_id)?;
 
-                let in_key = Self::out_edges_key(neighbor_id, level, Some(id));
-                keys_to_delete.remove(&in_key);
-                self.out_edges_db.put(txn, &in_key, &())?;
+                let in_key = Self::out_edges_key(neighbor_id, level);
+                keys_to_delete.remove(in_key.as_slice());
+                self.out_edges_db.put(txn, &in_key, &id)?;
 
                 Ok(())
             })?;
@@ -347,17 +365,24 @@ impl VectorCore {
         Ok(())
     }
 
-    fn select_neighbors<'a, F>(
+    fn select_neighbors<
+        'a,
+        E: encoding::Encoding,
+        const DIMENSION: usize,
+        F,
+        const WITH_VECTOR: bool,
+        const WITH_PROPERTIES: bool,
+    >(
         &'a self,
         txn: &RoTxn,
-        query: &'a HVector,
-        mut cands: BinaryHeap<HVector>,
-        level: usize,
+        query: &'a HVector<E, DIMENSION>,
+        mut cands: BinaryHeap<HVector<E, DIMENSION>>,
+        level: u8,
         should_extend: bool,
         filter: Option<&[F]>,
-    ) -> Result<BinaryHeap<HVector>, VectorError>
+    ) -> Result<BinaryHeap<HVector<E, DIMENSION>>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool,
     {
         let m: usize = if level == 0 {
             self.config.m
@@ -368,8 +393,16 @@ impl VectorCore {
         if should_extend {
             let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
-                for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level, filter)? {
-                    if visited.insert(neighbor.get_id().to_string()) { // TODO: NOT TO_STRING()
+                for mut neighbor in self
+                    .get_neighbors::<E, DIMENSION, F, WITH_VECTOR, WITH_PROPERTIES>(
+                        txn,
+                        candidate.get_id(),
+                        level,
+                        filter,
+                    )?
+                {
+                    if visited.insert(neighbor.get_id().to_string()) {
+                        // TODO: NOT TO_STRING()
                         neighbor.set_distance(neighbor.distance_to(query)?);
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&neighbor, txn)) {
                             result.push(neighbor);
@@ -384,21 +417,28 @@ impl VectorCore {
         }
     }
 
-    fn search_level<'a, F>(
+    fn search_level<
+        'a,
+        E: encoding::Encoding,
+        const DIMENSION: usize,
+        F,
+        const WITH_VECTOR: bool,
+        const WITH_PROPERTIES: bool,
+    >(
         &'a self,
         txn: &RoTxn,
-        query: &'a HVector,
-        entry_point: &'a mut HVector,
+        query: &'a HVector<E, DIMENSION>,
+        entry_point: &'a mut HVector<E, DIMENSION>,
         ef: usize,
-        level: usize,
+        level: u8,
         filter: Option<&[F]>,
-    ) -> Result<BinaryHeap<HVector>, VectorError>
+    ) -> Result<BinaryHeap<HVector<E, DIMENSION>>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool,
     {
         let mut visited: HashSet<u128> = HashSet::new();
         let mut candidates: BinaryHeap<Candidate> = BinaryHeap::new();
-        let mut results: BinaryHeap<HVector> = BinaryHeap::new();
+        let mut results: BinaryHeap<HVector<E, DIMENSION>> = BinaryHeap::new();
 
         entry_point.set_distance(entry_point.distance_to(query)?);
         candidates.push(Candidate {
@@ -423,17 +463,23 @@ impl VectorCore {
                 None
             };
 
-            self.get_neighbors(txn, curr_cand.id, level, filter)?.into_iter()
-                .filter(|neighbor| visited.insert(neighbor.get_id()))
-                .filter_map(|mut neighbor| {
-                    let distance = neighbor.distance_to(query).ok()?;
-                    if max_distance.map_or(true, |max| distance < max) {
-                        neighbor.set_distance(distance);
-                        Some((neighbor, distance))
-                    } else {
-                        None
-                    }
-                })
+            self.get_neighbors::<E, DIMENSION, F, WITH_VECTOR, WITH_PROPERTIES>(
+                txn,
+                curr_cand.id,
+                level,
+                filter,
+            )?
+            .into_iter()
+            .filter(|neighbor| visited.insert(neighbor.get_id()))
+            .filter_map(|mut neighbor| {
+                let distance = neighbor.distance_to(query).ok()?;
+                if max_distance.map_or(true, |max| distance < max) {
+                    neighbor.set_distance(distance);
+                    Some((neighbor, distance))
+                } else {
+                    None
+                }
+            })
             .for_each(|(neighbor, distance)| {
                 candidates.push(Candidate {
                     id: neighbor.get_id(),
@@ -449,50 +495,49 @@ impl VectorCore {
     }
 }
 
-impl HNSW for VectorCore {
+impl<E: encoding::Encoding, const DIMENSION: usize> HNSW<E, DIMENSION> for VectorCore {
     #[inline(always)]
-    fn get_vector(
+    fn get_vector<const WITH_VECTOR: bool, const WITH_PROPERTIES: bool>(
         &self,
         txn: &RoTxn,
         id: u128,
-        level: usize,
-        with_data: bool,
-    ) -> Result<HVector, VectorError> {
+        level: u8,
+    ) -> Result<HVector<E, DIMENSION>, VectorError> {
         let key = Self::vector_key(id, level);
         match self.vectors_db.get(txn, key.as_ref())? {
             Some(bytes) => {
-                let vector = match with_data {
-                    true => HVector::from_bytes(id, level, &bytes),
-                    false => Ok(HVector::from_slice(level, vec![])),
-                }?;
+                let vector = if WITH_VECTOR {
+                    HVector::from_bytes(id, level, &bytes)?
+                } else {
+                    HVector::from_slice(level, &[E::default(); DIMENSION])
+                };
                 Ok(vector)
             }
-            None if level > 0 => self.get_vector(txn, id, 0, with_data),
+            None if level > 0 => self.get_vector::<WITH_VECTOR, WITH_PROPERTIES>(txn, id, 0),
             None => Err(VectorError::VectorNotFound(id.to_string())),
         }
     }
 
-
-    fn search<F>(
+    fn search<F, const WITH_VECTOR: bool, const WITH_PROPERTIES: bool>(
         &self,
         txn: &RoTxn,
-        query: &[f64],
+        query: [E; DIMENSION],
         k: usize,
         filter: Option<&[F]>,
         should_trickle: bool,
-    ) -> Result<Vec<HVector>, VectorError>
+    ) -> Result<Vec<HVector<E, DIMENSION>>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool,
     {
-        let query = HVector::from_slice(0, query.to_vec());
+        let query = HVector::from_slice(0, &query);
 
-        let mut entry_point = self.get_entry_point(txn)?;
+        let mut entry_point = self.get_entry_point::<E, DIMENSION>(txn)?;
 
         let ef = self.config.ef;
         let curr_level = entry_point.get_level();
 
         for level in (1..=curr_level).rev() {
-            let mut nearest = self.search_level(
+            let mut nearest = self.search_level::<E, DIMENSION, F, WITH_VECTOR, WITH_PROPERTIES>(
                 txn,
                 &query,
                 &mut entry_point,
@@ -508,7 +553,7 @@ impl HNSW for VectorCore {
             }
         }
 
-        let mut candidates = self.search_level(
+        let mut candidates = self.search_level::<E, DIMENSION, F, WITH_VECTOR, WITH_PROPERTIES>(
             txn,
             &query,
             &mut entry_point,
@@ -526,15 +571,15 @@ impl HNSW for VectorCore {
     fn insert<F>(
         &self,
         txn: &mut RwTxn,
-        data: &[f64],
+        data: [E; DIMENSION],
         fields: Option<Vec<(String, Value)>>,
-    ) -> Result<HVector, VectorError>
+    ) -> Result<HVector<E, DIMENSION>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool,
     {
         let new_level = self.get_new_level();
 
-        let mut query = HVector::from_slice(0, data.to_vec());
+        let mut query = HVector::from_slice(0, &data);
         self.put_vector(txn, &query)?;
 
         query.level = new_level;
@@ -554,12 +599,19 @@ impl HNSW for VectorCore {
         let l = entry_point.get_level();
         let mut curr_ep = entry_point;
         for level in (new_level + 1..=l).rev() {
-            let nearest = self.search_level::<F>(txn, &query, &mut curr_ep, 1, level, None)?;
+            let nearest = self.search_level::<E, DIMENSION, F, true, false>(
+                txn,
+                &query,
+                &mut curr_ep,
+                1,
+                level,
+                None,
+            )?;
             curr_ep = nearest.peek().unwrap().clone();
         }
 
         for level in (0..=l.min(new_level)).rev() {
-            let nearest = self.search_level::<F>(
+            let nearest = self.search_level::<E, DIMENSION, F, true, false>(
                 txn,
                 &query,
                 &mut curr_ep,
@@ -570,13 +622,16 @@ impl HNSW for VectorCore {
 
             curr_ep = nearest.peek().unwrap().clone();
 
-            let neighbors = self.select_neighbors::<F>(txn, &query, nearest, level, true, None)?;
+            let neighbors = self.select_neighbors::<E, DIMENSION, F, true, false>(
+                txn, &query, nearest, level, true, None,
+            )?;
 
             self.set_neighbours(txn, query.get_id(), &neighbors, level)?;
 
             for e in neighbors {
                 let id = e.get_id();
-                let e_conns = self.get_neighbors::<F>(txn, id, level, None)?;
+                let e_conns =
+                    self.get_neighbors::<E, DIMENSION, F, true, false>(txn, id, level, None)?;
                 if e_conns.len()
                     > if level == 0 {
                         self.config.m_max_0
@@ -585,8 +640,9 @@ impl HNSW for VectorCore {
                     }
                 {
                     let e_conns = BinaryHeap::from(e_conns);
-                    let e_new_conn =
-                        self.select_neighbors::<F>(txn, &query, e_conns, level, true, None)?;
+                    let e_new_conn = self.select_neighbors::<E, DIMENSION, F, true, false>(
+                        txn, &query, e_conns, level, true, None,
+                    )?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
                 }
             }
@@ -609,16 +665,18 @@ impl HNSW for VectorCore {
     fn get_all_vectors(
         &self,
         txn: &RoTxn,
-        level: Option<usize>,
-    ) -> Result<Vec<HVector>, VectorError> {
+        level: Option<u8>,
+    ) -> Result<Vec<HVector<E, DIMENSION>>, VectorError> {
         self.vectors_db
             .prefix_iter(txn, VECTOR_PREFIX)?
             .map(|result| {
-                result
-                    .map_err(VectorError::from)
-                    .and_then(|(_, value)| bincode::deserialize(&value).map_err(VectorError::from))
+                result.map_err(VectorError::from).and_then(|(key, value)| {
+                    let id = u128::from_be_bytes(key[1..17].try_into().unwrap());
+                    let level = key[17];
+                    HVector::from_bytes(id, level, &value)
+                })
             })
-            .filter_ok(|vector: &HVector| level.map_or(true, |l| vector.level == l))
+            .filter_ok(|vector: &HVector<E, DIMENSION>| level.map_or(true, |l| vector.level == l))
             .collect()
     }
 }

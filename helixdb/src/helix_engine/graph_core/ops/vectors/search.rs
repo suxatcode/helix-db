@@ -32,7 +32,7 @@ pub trait SearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
         F: Fn(&HVector, &RoTxn) -> bool;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapter<'a>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> SearchVAdapter<'a>
     for RoTraversalIterator<'a, I>
 {
     fn search_v<F>(
@@ -42,7 +42,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> SearchVAdapt
         filter: Option<&[F]>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
-        F: Fn(&HVector, &RoTxn) -> bool,
+        F: Fn(&HVector<f32, 1536>, &RoTxn) -> bool,
     {
         let vectors = self
             .storage

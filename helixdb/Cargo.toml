@@ -23,8 +23,9 @@ chrono = "0.4.39"
 flume = "0.11.1"
 rayon = "1.8.0"
 itertools = "0.14.0"
-colored = "2.1.0"
-
+colored = "3.0.0"
+get_routes = { path = "../get_routes" }
+serde-big-array = "0.5.1"
 # Compiler
 pest = { version = "2.7", optional = true }
 pest_derive = { version = "2.7", optional = true }
@@ -38,7 +39,8 @@ reqwest = { version = "0.12.15", features = [
     "json",
     "blocking",
 ], optional = true }
-rusqlite = { version = "0.35.0", features = ["bundled"], optional = true }
+
+rusqlite = { version = "0.36.0", features = ["bundled"], optional = true }
 tokio-postgres = { version = "0.7", features = [
     "with-uuid-1",
     "with-chrono-0_4",
@@ -49,8 +51,8 @@ tempfile = { version = "3.2", optional = true }
 [dev-dependencies]
 rand = "0.9.0"
 lazy_static = "1.4.0"
-polars = { version = "0.46.0", features = ["parquet", "lazy", "json"] }
-kdam = "0.3"
+polars = { version = "0.48.1", features = ["parquet", "lazy", "json"] }
+kdam = "0.6.2"
 
 [features]
 compiler = ["pest", "pest_derive"]

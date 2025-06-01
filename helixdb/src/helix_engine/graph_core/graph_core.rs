@@ -14,7 +14,6 @@ use crate::helixc::parser::helix_parser::{
     BooleanOp, Expression, GraphStep, HelixParser, IdType, Source, StartNode, Statement, Step,
     Traversal,
 };
-use crate::protocol::traversal_value::TraversalValue;
 use crate::protocol::{
     items::{Edge, Node},
     return_values::ReturnValue,

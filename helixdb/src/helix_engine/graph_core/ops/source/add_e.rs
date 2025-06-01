@@ -4,7 +4,9 @@ use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::storage_core::HelixGraphStorage, types::GraphError, vector_core::hnsw::HNSW,
+        storage_core::storage_core::HelixGraphStorage,
+        types::GraphError,
+        vector_core::{hnsw::HNSW, vector_core::VectorCore},
     },
     protocol::{
         items::{v6_uuid, Edge},
@@ -54,7 +56,7 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
     for RwTraversalIterator<'a, 'b, I>
-{   
+{
     #[inline(always)]
     fn add_e(
         self,
@@ -170,11 +172,13 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'
                 .nodes_db
                 .get(self.txn, &HelixGraphStorage::node_key(&node_vec_id))
                 .map_or(false, |node| node.is_some()),
-            EdgeType::Vec => self
-                .storage
-                .vectors
-                .get_vector(self.txn, *node_vec_id, 0, false)
-                .is_ok(),
+            EdgeType::Vec => <VectorCore as HNSW<f32, 1536>>::get_vector::<true, false>(
+                &self.storage.vectors,
+                &self.txn,
+                *node_vec_id,
+                0,
+            )
+            .is_ok(),
         };
 
         if !exists {

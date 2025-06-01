@@ -4,7 +4,9 @@ use crate::{helix_engine::types::VectorError, protocol::value::Value};
 use crate::helix_engine::vector_core::vector::HVector;
 use heed3::{RoTxn, RwTxn};
 
-pub trait HNSW
+use super::vector::encoding;
+
+pub trait HNSW<E: encoding::Encoding, const DIMENSION: usize>
 {
     /// Search for the k nearest neighbors of a query vector
     ///
@@ -17,16 +19,16 @@ pub trait HNSW
     /// # Returns
     ///
     /// A vector of tuples containing the id and distance of the nearest neighbors
-    fn search<F>(
+    fn search<F, const WITH_VECTOR: bool, const WITH_PROPERTIES: bool>(
         &self,
         txn: &RoTxn,
-        query: &[f64],
+        query: [E; DIMENSION],
         k: usize,
         filter: Option<&[F]>,
         should_trickle: bool,
-    ) -> Result<Vec<HVector>, VectorError>
+    ) -> Result<Vec<HVector<E, DIMENSION>>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool;
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool;
 
     /// Insert a new vector into the index
     ///
@@ -41,11 +43,11 @@ pub trait HNSW
     fn insert<F>(
         &self,
         txn: &mut RwTxn,
-        data: &[f64],
+        data: [E; DIMENSION],
         fields: Option<Vec<(String, Value)>>,
-    ) -> Result<HVector, VectorError>
+    ) -> Result<HVector<E, DIMENSION>, VectorError>
     where
-        F: Fn(&HVector, &RoTxn) -> bool;
+        F: Fn(&HVector<E, DIMENSION>, &RoTxn) -> bool;
 
     /// Get all vectors from the index at a specific level
     ///
@@ -60,8 +62,8 @@ pub trait HNSW
     fn get_all_vectors(
         &self,
         txn: &RoTxn,
-        level: Option<usize>,
-    ) -> Result<Vec<HVector>, VectorError>;
+        level: Option<u8>,
+    ) -> Result<Vec<HVector<E, DIMENSION>>, VectorError>;
 
     /// Get specific vector based on id and level
     ///
@@ -75,12 +77,11 @@ pub trait HNSW
     /// # Returns
     ///
     /// A `Result` containing a `Vec` of `HVector` if successful
-    fn get_vector(
+    fn get_vector<const WITH_VECTOR: bool, const WITH_PROPERTIES: bool>(
         &self,
         txn: &RoTxn,
         id: u128,
-        level: usize,
-        with_data: bool,
-    ) -> Result<HVector, VectorError>;
+        level: u8,
+    ) -> Result<HVector<E, DIMENSION>, VectorError>;
 }
 

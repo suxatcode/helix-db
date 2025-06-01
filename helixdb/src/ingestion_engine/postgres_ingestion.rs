@@ -62,7 +62,7 @@ enum Value {
     Text(String),
     Blob(Vec<u8>),
     Boolean(bool),
-    Vector(HVector),
+    Vector(HVector<f64, 128>),
     // Timestamp(chrono::DateTime<chrono::Utc>),
     // Uuid(uuid::Uuid),
 }

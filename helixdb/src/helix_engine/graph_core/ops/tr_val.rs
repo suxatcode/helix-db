@@ -1,7 +1,6 @@
 use crate::{
-    helix_engine::{types::GraphError, vector_core::vector::HVector},
+    helix_engine::{types::GraphError, vector_core::vector::{encoding, HVector}},
     protocol::{
-        count::Count,
         filterable::Filterable,
         items::{Edge, Node},
         value::Value,
@@ -10,11 +9,11 @@ use crate::{
 use std::hash::Hash;
 
 #[derive(Clone, Debug)]
-pub enum TraversalVal {
+pub enum TraversalVal
+{
     Node(Node),
     Edge(Edge),
-    Vector(HVector),
-    Count(Count),
+    Vector(HVector<f32, 1536>),
     Path((Vec<Node>, Vec<Edge>)),
     Value(Value),
     // Lazy(Lazy<'a, Bytes>),
@@ -33,7 +32,8 @@ impl Hash for TraversalVal {
     }
 }
 
-impl Eq for TraversalVal {}
+impl Eq for TraversalVal {
+}
 impl PartialEq for TraversalVal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {

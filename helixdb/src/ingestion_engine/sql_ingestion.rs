@@ -1,19 +1,17 @@
-use crate::helix_engine::types::GraphError;
-use reqwest::blocking::Client;
-use serde::{Deserialize, Serialize};
+use crate::{helix_engine::{graph_core::ops::tr_val::TraversalVal, types::GraphError}, helix_gateway::router::router::HandlerInput, protocol::response::Response};
+use get_routes::local_handler;
+use reqwest::{blocking::Client};
 use rusqlite::{
     params, types::Value as RusqliteValue, Connection as SqliteConn, Result as SqliteResult,
 };
+use serde::{Deserialize, Serialize};
 use std::{
+    collections::{HashMap, HashSet},
     error::Error,
     fmt,
     fs::File,
-    io::Write,
-    path::Path,
-    collections::{
-        HashMap,
-        HashSet
-    },
+    io::{BufReader, Write},
+    path::Path, sync::Arc,
 };
 
 #[derive(Debug)]
@@ -247,31 +245,32 @@ impl SqliteIngestor {
                     .sqlite_conn
                     .prepare(&format!("PRAGMA table_info({})", table_name))?;
 
-                let (columns, primary_keys): (Vec<ColumnInfo>, HashSet<String>) = col_stmt // statement
-                    .query_map(params![], |row| {
-                        let name: String = row.get(1)?;
-                        let is_pk: i32 = row.get(5)?;
-                        Ok((
-                            ColumnInfo {
-                                name: name.clone(),
-                                data_type: row.get(2)?,
-                                is_primary_key: is_pk > 0,
+                let (columns, primary_keys): (Vec<ColumnInfo>, HashSet<String>) =
+                    col_stmt // statement
+                        .query_map(params![], |row| {
+                            let name: String = row.get(1)?;
+                            let is_pk: i32 = row.get(5)?;
+                            Ok((
+                                ColumnInfo {
+                                    name: name.clone(),
+                                    data_type: row.get(2)?,
+                                    is_primary_key: is_pk > 0,
+                                },
+                                if is_pk > 0 { Some(name) } else { None },
+                            ))
+                        })?
+                        .collect::<SqliteResult<Vec<_>>>()?
+                        .into_iter()
+                        .fold(
+                            (Vec::new(), HashSet::new()),
+                            |(mut cols, mut pks), (col, pk)| {
+                                cols.push(col);
+                                if let Some(pk) = pk {
+                                    pks.insert(pk);
+                                }
+                                (cols, pks)
                             },
-                            if is_pk > 0 { Some(name) } else { None },
-                        ))
-                    })?
-                    .collect::<SqliteResult<Vec<_>>>()?
-                    .into_iter()
-                    .fold(
-                        (Vec::new(), HashSet::new()),
-                        |(mut cols, mut pks), (col, pk)| {
-                            cols.push(col);
-                            if let Some(pk) = pk {
-                                pks.insert(pk);
-                            }
-                            (cols, pks)
-                        },
-                    );
+                        );
 
                 let foreign_keys: Vec<ForeignKey> = self
                     .sqlite_conn
@@ -996,7 +995,8 @@ pub struct IngestSqlRequest {
 // / - The ingest function above does the conversion to helix format
 // / - The CLI will do the uploading to s3
 // / - The admin server or cli will handle the downloading from s3
-// ///
+// /
+// / 
 // #[local_handler]
 // pub fn ingest_sql(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
 //     let data: IngestSqlRequest = match sonic_rs::from_slice(&input.request.body) {
@@ -1013,7 +1013,7 @@ pub struct IngestSqlRequest {
 //     let path = Path::new(&data.file_path);
 //     let file = File::open(path.join("ingestion.jsonl")).unwrap();
 //     let reader = BufReader::new(file);
-//     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalValue::Empty);
+//     let mut tr = TraversalBuilder::new(Arc::clone(&db), TraversalVal::Empty);
 
 //     // TODO: need to look at overwriting the id's with the new UUIDs from helix
 //     // but keeping all of the connections.

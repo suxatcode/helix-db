@@ -6,7 +6,7 @@ use crate::{
         types::GraphError,
         vector_core::{
             hnsw::HNSW,
-            vector::HVector,
+            vector::{encoding, HVector},
             vector_core::{HNSWConfig, VectorCore},
         },
     },
@@ -34,7 +34,8 @@ const DB_IN_EDGES: &str = "in_edges"; // For incoming edge indices (i:)
 
 // Key prefixes for different types of data
 
-pub struct HelixGraphStorage { // TODO: maybe make not public?
+pub struct HelixGraphStorage {
+    // TODO: maybe make not public?
     pub graph_env: Env<WithTls>,
     pub nodes_db: Database<U128<BE>, Bytes>,
     pub edges_db: Database<U128<BE>, Bytes>,
@@ -227,8 +228,19 @@ impl HelixGraphStorage {
         Ok(res)
     }
 
-    pub fn get_vector(&self, txn: &RoTxn, id: &u128) -> Result<HVector, GraphError> {
-        let vector = self.vectors.get_vector(txn, *id, 0, true)?;
+    pub fn get_vector<
+        E: encoding::Encoding,
+        const DIMENSION: usize,
+        const WITH_DATA: bool,
+        const WITH_PROPERTIES: bool,
+    >(
+        &self,
+        txn: &RoTxn,
+        id: &u128,
+    ) -> Result<HVector<E, DIMENSION>, GraphError> {
+        let vector = self
+            .vectors
+            .get_vector::<WITH_DATA, WITH_PROPERTIES>(txn, *id, 0)?;
         Ok(vector)
     }
 

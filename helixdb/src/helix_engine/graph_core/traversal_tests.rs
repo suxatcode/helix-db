@@ -14,7 +14,6 @@ use crate::{
         filterable::Filterable,
         id::ID,
         items::{Edge, Node},
-        traversal_value::TraversalValue,
         value::Value,
     },
 };

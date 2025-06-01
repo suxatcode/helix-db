@@ -1,6 +1,5 @@
 use crate::{
     helixc::parser::parser_methods::ParserError,
-    protocol::traversal_value::TraversalValueError,
 };
 use core::fmt;
 use heed3::Error as HeedError;
@@ -138,13 +137,6 @@ impl From<Utf8Error> for GraphError {
 impl From<uuid::Error> for GraphError {
     fn from(error: uuid::Error) -> Self {
         GraphError::ConversionError(format!("uuid error: {}", error.to_string()))
-    }
-}
-
-
-impl From<TraversalValueError> for GraphError {
-    fn from(error: TraversalValueError) -> Self {
-        GraphError::ConversionError(format!("TraversalValueError: {}", error.to_string()))
     }
 }
 

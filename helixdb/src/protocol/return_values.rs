@@ -1,5 +1,4 @@
 use super::{
-    count::Count,
     filterable::{Filterable, FilterableType},
     items::{Edge, Node},
     remapping::{Remapping, ResponseRemapping},
@@ -42,12 +41,6 @@ impl From<Value> for ReturnValue {
 impl From<&Value> for ReturnValue {
     fn from(value: &Value) -> Self {
         ReturnValue::Value(value.clone())
-    }
-}
-
-impl From<Count> for ReturnValue {
-    fn from(count: Count) -> Self {
-        ReturnValue::Value(Value::I32(count.value() as i32))
     }
 }
 
@@ -99,7 +92,6 @@ impl From<TraversalVal> for ReturnValue {
             TraversalVal::Node(node) => ReturnValue::from(node),
             TraversalVal::Edge(edge) => ReturnValue::from(edge),
             TraversalVal::Vector(vector) => ReturnValue::from(vector),
-            TraversalVal::Count(count) => ReturnValue::from(count),
             TraversalVal::Value(value) => ReturnValue::from(value),
             TraversalVal::Empty => ReturnValue::Empty,
             _ => unreachable!(),
@@ -223,7 +215,6 @@ impl ReturnValue {
                     TraversalVal::Vector(vector) => {
                         ReturnValue::process_items_with_mixin(vector, &mut mixin)
                     }
-                    TraversalVal::Count(count) => ReturnValue::from(count),
                     TraversalVal::Empty => ReturnValue::Empty,
                     TraversalVal::Value(value) => ReturnValue::from(value),
                     _ => unreachable!(),
