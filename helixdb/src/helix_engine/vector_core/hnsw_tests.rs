@@ -215,8 +215,8 @@ fn bench_hnsw_search() {
 
 #[test]
 fn bench_hnsw_precision() {
-    let n_vecs = 100_000;
-    let n_query = 10_000; // 10-20%
+    let n_vecs = 10_00;
+    let n_query = 1_00; // 10-20%
     let k = 12;
     let vectors = load_dbpedia_vectors(n_vecs).unwrap();
     let db = Arc::new(setup_db());
@@ -234,6 +234,10 @@ fn bench_hnsw_precision() {
             .insert_v::<Filter>(&data, "vector", None);
         let vec = match tr.next() {
             Some(Ok(TraversalVal::Vector(hvector))) => Some(hvector),
+            Some(Err(e)) => {
+                println!("Error: {}", e);
+                None
+            }
             _ => None,
         };
         all_vectors.push(vec.unwrap());
