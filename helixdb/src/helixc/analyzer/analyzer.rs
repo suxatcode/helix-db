@@ -18,7 +18,7 @@ use crate::{
                 RemappingType, TraversalRemapping, ValueRemapping,
             },
             source_steps::{
-                AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromIndex, NFromType,
+                AddE, AddN, AddV, EFromID, EFromType, NFromID, NFromIndex, NFromType, SearchBM25,
                 SearchVector as GeneratedSearchVector, SourceStep,
             },
             traversal_steps::{
@@ -1311,6 +1311,130 @@ impl<'a> Ctx<'a> {
                 )
             }
             Empty => (Type::Unknown, Some(GeneratedStatement::Empty)),
+            BM25Search(bm25_search) => {
+                // TODO: look into how best do type checking for type passed in
+                if let Some(ref ty) = bm25_search.type_arg {
+                    if !self.node_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            bm25_search.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            format!("add a `V::{}` schema first", ty),
+                        );
+                    }
+                }
+                let vec = match &bm25_search.data {
+                    Some(ValueType::Literal { value, loc }) => {
+                        GeneratedValue::Literal(GenRef::Std(value.to_string()))
+                    }
+                    Some(ValueType::Identifier { value: i, loc }) => {
+                        self.is_valid_identifier(q, bm25_search.loc.clone(), i.as_str());
+                        // if is in params then use data.
+                        if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                            GeneratedValue::Identifier(GenRef::Ref(format!(
+                                "data.{}",
+                                i.to_string()
+                            )))
+                        } else if let Some(_) = scope.get(i.as_str()) {
+                            GeneratedValue::Identifier(GenRef::Ref(i.to_string()))
+                        } else {
+                            self.push_query_err(
+                                q,
+                                bm25_search.loc.clone(),
+                                format!("variable named `{}` is not in scope", i),
+                                "declare {} in the current scope or fix the typo",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    }
+                    _ => {
+                        self.push_query_err(
+                            q,
+                            bm25_search.loc.clone(),
+                            "`SearchVector` must have a vector data".to_string(),
+                            "add a vector data",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+                let k = match &bm25_search.k {
+                    Some(k) => match &k.value {
+                        EvaluatesToNumberType::I8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+
+                        EvaluatesToNumberType::U8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U128(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::Identifier(i) => {
+                            self.is_valid_identifier(q, bm25_search.loc.clone(), i.as_str());
+                            // is param
+                            if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                                GeneratedValue::Identifier(GenRef::Std(format!(
+                                    "data.{} as usize",
+                                    i
+                                )))
+                            } else {
+                                GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                            }
+                        }
+                        _ => {
+                            self.push_query_err(
+                                q,
+                                bm25_search.loc.clone(),
+                                "`SearchVector` must have a limit of vectors to return".to_string(),
+                                "add a limit",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    },
+                    None => {
+                        self.push_query_err(
+                            q,
+                            bm25_search.loc.clone(),
+                            "`SearchV` must have a limit of vectors to return".to_string(),
+                            "add a limit",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+
+                let search_bm25 = SearchBM25 {
+                    type_arg: GenRef::Literal(bm25_search.type_arg.clone().unwrap()),
+                    query: vec,
+                    k,
+                };
+                (
+                    Type::Vector(bm25_search.type_arg.clone()),
+                    Some(GeneratedStatement::Traversal(GeneratedTraversal {
+                        traversal_type: TraversalType::Ref,
+                        steps: vec![],
+                        should_collect: ShouldCollect::ToVec,
+                        source_step: Separator::Period(SourceStep::SearchBM25(search_bm25)),
+                    })),
+                )
+            }
             _ => {
                 println!("Unknown expression: {:?}", expr);
                 todo!()

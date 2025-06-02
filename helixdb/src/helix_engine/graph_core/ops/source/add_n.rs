@@ -1,6 +1,10 @@
 use super::super::tr_val::TraversalVal;
 use crate::{
-    helix_engine::{graph_core::traversal_iter::RwTraversalIterator, types::GraphError},
+    helix_engine::{
+        bm25::bm25::{BM25Flatten, BM25},
+        graph_core::traversal_iter::RwTraversalIterator,
+        types::GraphError,
+    },
     protocol::{
         filterable::Filterable,
         items::{v6_uuid, Node},
@@ -88,6 +92,22 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                         "Secondary Index {} not found",
                         index
                     )));
+                }
+            }
+        }
+
+        // auto inserts to bm25 if should_add_to_bm25 is true
+        if node.properties.is_some() {
+            let mut data = node
+                .properties
+                .as_ref()
+                .map(|props| props.flatten_bm25())
+                .unwrap_or_default();
+            data.push_str(&node.label);
+            match self.storage.bm25.insert_doc(self.txn, node.id, &data) {
+                Ok(_) => {}
+                Err(e) => {
+                    result = Err(GraphError::from(e));
                 }
             }
         }

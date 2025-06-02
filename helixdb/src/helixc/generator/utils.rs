@@ -322,6 +322,7 @@ use helixdb::{
             map::MapAdapter, paths::ShortestPathAdapter, props::PropsAdapter, drop::Drop,
         },
         vectors::{insert::InsertVAdapter, search::SearchVAdapter},
+        bm25::search_bm25::SearchBM25Adapter,
     },
     helix_engine::types::GraphError,
     helix_gateway::router::router::HandlerInput,

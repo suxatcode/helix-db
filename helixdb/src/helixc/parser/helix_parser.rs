@@ -267,7 +267,7 @@ impl PartialEq<Value> for FieldType {
             l => {
                 println!("l: {:?}", l);
                 false
-            },
+            }
         }
     }
 }
@@ -304,6 +304,7 @@ pub enum StatementType {
     Drop(Expression),
     SearchVector(SearchVector),
     BatchAddVector(BatchAddVector),
+    BM25Search(BM25Search),
     ForLoop(ForLoop),
 }
 
@@ -361,6 +362,7 @@ pub enum ExpressionType {
     And(Vec<Expression>),
     Or(Vec<Expression>),
     SearchVector(SearchVector),
+    BM25Search(BM25Search),
     Empty,
 }
 
@@ -526,6 +528,14 @@ pub struct SearchVector {
     pub data: Option<VectorData>,
     pub k: Option<EvaluatesToNumber>,
     pub pre_filter: Option<Box<Expression>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BM25Search {
+    pub loc: Loc,
+    pub type_arg: Option<String>,
+    pub data: Option<ValueType>,
+    pub k: Option<EvaluatesToNumber>,
 }
 
 #[derive(Debug, Clone)]
@@ -960,9 +970,7 @@ impl HelixParser {
                                     _ => unreachable!(), // throw error
                                 }
                             }
-                            Rule::now => {
-                                DefaultValue::Now
-                            }
+                            Rule::now => DefaultValue::Now,
                             Rule::boolean => {
                                 DefaultValue::Boolean(pair.as_str().parse::<bool>().unwrap())
                             }
@@ -1129,6 +1137,10 @@ impl HelixParser {
                     loc: p.loc(),
                     statement: StatementType::SearchVector(self.parse_search_vector(p)?),
                 }),
+                Rule::bm25_search => Ok(Statement {
+                    loc: p.loc(),
+                    statement: StatementType::BM25Search(self.parse_bm25_search(p)?),
+                }),
                 Rule::for_loop => Ok(Statement {
                     loc: p.loc(),
                     statement: StatementType::ForLoop(self.parse_for_loop(p)?),
@@ -1139,6 +1151,47 @@ impl HelixParser {
                 ))),
             })
             .collect()
+    }
+
+    fn parse_bm25_search(&self, pair: Pair<Rule>) -> Result<BM25Search, ParserError> {
+        let mut pairs = pair.clone().into_inner();
+        let vector_type = pairs.next().unwrap().as_str().to_string();
+        let query = match pairs.next() {
+            Some(pair) => {
+                match pair.as_rule() {
+                    Rule::identifier => ValueType::Identifier {
+                        value: pair.as_str().to_string(),
+                        loc: pair.loc(),
+                    },
+                    Rule::string_literal => ValueType::Literal {
+                        value: Value::String(pair.as_str().to_string()),
+                        loc: pair.loc(),
+                    },
+                    _ => {
+                        return Err(ParserError::from(format!(
+                            "Unexpected rule in BM25Search: {:?}",
+                            pair.as_rule()
+                        )));
+                    }
+                }
+            }
+            None => {
+                return Err(ParserError::from(format!(
+                    "Unexpected rule in BM25Search: {:?}",
+                    pair.as_rule()
+                )));
+            }
+        };
+        let k = pairs.next().unwrap().as_str().to_string();
+        Ok(BM25Search {
+            loc: pair.loc(),
+            type_arg: Some(vector_type),
+            data: Some(query),
+            k: Some(EvaluatesToNumber {
+                loc: pair.loc(),
+                value: EvaluatesToNumberType::U32(k.parse::<u32>().unwrap()),
+            }),
+        })
     }
 
     fn parse_for_loop(&self, pair: Pair<Rule>) -> Result<ForLoop, ParserError> {
@@ -1685,6 +1738,10 @@ impl HelixParser {
             Rule::none => Ok(Expression {
                 loc: pair.loc(),
                 expr: ExpressionType::Empty,
+            }),
+            Rule::bm25_search => Ok(Expression {
+                loc: pair.loc(),
+                expr: ExpressionType::BM25Search(self.parse_bm25_search(pair)?),
             }),
             _ => Err(ParserError::from(format!(
                 "Unexpected expression type: {:?}",
