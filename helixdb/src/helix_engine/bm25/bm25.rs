@@ -2,10 +2,13 @@ use heed3::{types::*, Database, Env, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use crate::helix_engine::{
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::GraphError,
-    vector_core::{hnsw::HNSW, vector::HVector},
+use crate::{
+    helix_engine::{
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+        vector_core::{hnsw::HNSW, vector::HVector},
+    },
+    protocol::value::Value,
 };
 
 const DB_BM25_INVERTED_INDEX: &str = "bm25_inverted_index"; // term -> list of (doc_id, tf)
@@ -400,5 +403,20 @@ impl HybridSearch for HelixGraphStorage {
         results.truncate(limit);
 
         Ok(results)
+    }
+}
+
+pub trait BM25Flatten {
+    fn flatten_bm25(&self) -> String;
+}
+
+impl BM25Flatten for HashMap<String, Value> {
+    fn flatten_bm25(&self) -> String {
+        let mut s = String::with_capacity(self.len() * 2);
+        for (k, v) in self.iter() {
+            s.push_str(&k);
+            s.push_str(&v.to_string());
+        }
+        s
     }
 }
