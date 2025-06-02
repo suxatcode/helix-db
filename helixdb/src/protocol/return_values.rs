@@ -106,6 +106,13 @@ impl From<TraversalVal> for ReturnValue {
         }
     }
 }
+
+impl From<&[f64]> for ReturnValue {
+    fn from(data: &[f64]) -> Self {
+        ReturnValue::Array(data.iter().map(|f| ReturnValue::from(*f)).collect())
+    }
+}
+
 impl<I> From<I> for ReturnValue
 where
     I: Filterable + Clone,
@@ -135,15 +142,12 @@ where
                     Some(properties) => properties.clone(),
                     None => HashMap::new(),
                 };
+                let data = item.vector_data();
+                let score = item.score();
+
                 let mut return_value = HashMap::new();
-                let data = match properties.remove("data") {
-                    Some(value) => value,
-                    None => {
-                        eprintln!("No data found in vector");
-                        return ReturnValue::Empty;
-                    }
-                };
                 return_value.insert("data".to_string(), ReturnValue::from(data));
+                return_value.insert("score".to_string(), ReturnValue::from(score));
                 return_value
             }
         };

@@ -329,6 +329,14 @@ impl Filterable for HVector {
         Some(properties)
     }
 
+    fn vector_data(&self) -> &[f64] {
+        &self.data
+    }
+
+    fn score(&self) -> f64 {
+        self.get_distance()
+    }
+
     fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>> {
         &mut self.properties
     }
