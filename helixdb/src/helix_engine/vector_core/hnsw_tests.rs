@@ -234,6 +234,10 @@ fn bench_hnsw_precision() {
             .insert_v::<Filter>(&data, "vector", None);
         let vec = match tr.next() {
             Some(Ok(TraversalVal::Vector(hvector))) => Some(hvector),
+            Some(Err(e)) => {
+                println!("Error: {}", e);
+                None
+            }
             _ => None,
         };
         all_vectors.push(vec.unwrap());

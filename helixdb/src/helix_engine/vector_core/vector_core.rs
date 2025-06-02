@@ -369,7 +369,8 @@ impl VectorCore {
             let mut result = BinaryHeap::with_capacity(m * cands.len());
             for candidate in cands.iter() {
                 for mut neighbor in self.get_neighbors(txn, candidate.get_id(), level, filter)? {
-                    if visited.insert(neighbor.get_id().to_string()) { // TODO: NOT TO_STRING()
+                    if visited.insert(neighbor.get_id().to_string()) {
+                        // TODO: NOT TO_STRING()
                         neighbor.set_distance(neighbor.distance_to(query)?);
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&neighbor, txn)) {
                             result.push(neighbor);
@@ -423,7 +424,8 @@ impl VectorCore {
                 None
             };
 
-            self.get_neighbors(txn, curr_cand.id, level, filter)?.into_iter()
+            self.get_neighbors(txn, curr_cand.id, level, filter)?
+                .into_iter()
                 .filter(|neighbor| visited.insert(neighbor.get_id()))
                 .filter_map(|mut neighbor| {
                     let distance = neighbor.distance_to(query).ok()?;
@@ -434,16 +436,16 @@ impl VectorCore {
                         None
                     }
                 })
-            .for_each(|(neighbor, distance)| {
-                candidates.push(Candidate {
-                    id: neighbor.get_id(),
-                    distance,
+                .for_each(|(neighbor, distance)| {
+                    candidates.push(Candidate {
+                        id: neighbor.get_id(),
+                        distance,
+                    });
+                    results.push(neighbor);
+                    if results.len() > ef {
+                        results = results.take_inord(ef);
+                    }
                 });
-                results.push(neighbor);
-                if results.len() > ef {
-                    results = results.take_inord(ef);
-                }
-            });
         }
         Ok(results)
     }
@@ -459,7 +461,7 @@ impl HNSW for VectorCore {
         with_data: bool,
     ) -> Result<HVector, VectorError> {
         let key = Self::vector_key(id, level);
-        match self.vectors_db.get(txn, key.as_ref())? {
+        let mut vector = match self.vectors_db.get(txn, key.as_ref())? {
             Some(bytes) => {
                 let vector = match with_data {
                     true => HVector::from_bytes(id, level, &bytes),
@@ -469,9 +471,10 @@ impl HNSW for VectorCore {
             }
             None if level > 0 => self.get_vector(txn, id, 0, with_data),
             None => Err(VectorError::VectorNotFound(id.to_string())),
-        }
-    }
+        }?;
 
+        Ok(vector)
+    }
 
     fn search<F>(
         &self,
@@ -520,7 +523,19 @@ impl HNSW for VectorCore {
             },
         )?;
 
-        Ok(candidates.to_vec_with_filter(k, filter, txn))
+        let mut results = candidates.to_vec_with_filter(k, filter, txn);
+
+        for result in results.iter_mut() {
+            result.properties = match self
+                .vector_data_db
+                .get(txn, &result.get_id().to_be_bytes())?
+            {
+                Some(bytes) => Some(bincode::deserialize(&bytes).map_err(VectorError::from)?),
+                None => None, // Maybe should be an error?
+            };
+        }
+
+        Ok(results)
     }
 
     fn insert<F>(
