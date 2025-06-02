@@ -91,10 +91,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
                     Err(e) => Err(GraphError::from(e)),
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .into_iter();
 
         RwTraversalIterator {
-            inner: iter.into_iter(),
+            inner: iter,
             storage: self.storage,
             txn,
         }
