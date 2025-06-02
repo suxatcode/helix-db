@@ -2,10 +2,13 @@ use heed3::{types::*, Database, Env, RoTxn, RwTxn};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use crate::helix_engine::{
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::GraphError,
-    vector_core::{hnsw::HNSW, vector::HVector},
+use crate::{
+    helix_engine::{
+        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        types::GraphError,
+        vector_core::{hnsw::HNSW, vector::HVector},
+    },
+    protocol::value::Value,
 };
 
 const DB_BM25_INVERTED_INDEX: &str = "bm25_inverted_index"; // term -> list of (doc_id, tf)
@@ -183,9 +186,7 @@ impl BM25 for HBM25Config {
             // Collect entries to keep
             let entries_to_keep = {
                 let mut entries = Vec::new();
-                if let Some(duplicates) =
-                    self.inverted_index_db.get_duplicates(txn, &term_bytes)?
-                {
+                if let Some(duplicates) = self.inverted_index_db.get_duplicates(txn, &term_bytes)? {
                     for result in duplicates {
                         let (_, posting_bytes) = result?;
                         let posting: PostingListEntry = bincode::deserialize(posting_bytes)?;
@@ -206,9 +207,7 @@ impl BM25 for HBM25Config {
             }
 
             // Update document frequency
-            let current_df = self.term_frequencies_db
-                .get(txn, &term_bytes)?
-                .unwrap_or(0);
+            let current_df = self.term_frequencies_db.get(txn, &term_bytes)?.unwrap_or(0);
             if current_df > 0 {
                 self.term_frequencies_db
                     .put(txn, &term_bytes, &(current_df - 1))?;
@@ -217,12 +216,13 @@ impl BM25 for HBM25Config {
 
         // Get document length before deleting it
         let doc_length = self.doc_lengths_db.get(txn, &doc_id)?.unwrap_or(0);
-        
+
         self.doc_lengths_db.delete(txn, &doc_id)?;
 
         // Update metadata
         let metadata_key = b"metadata";
-        let metadata_data = self.metadata_db
+        let metadata_data = self
+            .metadata_db
             .get(txn, metadata_key)?
             .map(|data| data.to_vec());
 
@@ -406,4 +406,17 @@ impl HybridSearch for HelixGraphStorage {
     }
 }
 
+pub trait BM25Flatten {
+    fn flatten_bm25(&self) -> String;
+}
 
+impl BM25Flatten for HashMap<String, Value> {
+    fn flatten_bm25(&self) -> String {
+        let mut s = String::with_capacity(self.len() * 2);
+        for (k, v) in self.iter() {
+            s.push_str(&k);
+            s.push_str(&v.to_string());
+        }
+        s
+    }
+}
