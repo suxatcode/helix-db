@@ -1,3 +1,4 @@
+pub mod bm25;
 pub mod g;
 pub mod in_;
 pub mod out;

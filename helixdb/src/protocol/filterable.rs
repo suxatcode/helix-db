@@ -38,6 +38,9 @@ pub trait Filterable {
 
     fn properties(self) -> Option<HashMap<String, Value>>;
 
+    fn vector_data(&self) -> &[f64];
+    fn score(&self) -> f64;
+
     fn properties_mut(&mut self) -> &mut Option<HashMap<String, Value>>;
 
     fn properties_ref(&self) -> &Option<HashMap<String, Value>>;
@@ -90,6 +93,16 @@ impl Filterable for Node {
 
     #[inline(always)]
     fn to_node_uuid(&self) -> String {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn vector_data(&self) -> &[f64] {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn score(&self) -> f64 {
         unreachable!()
     }
 
@@ -183,6 +196,16 @@ impl Filterable for Edge {
     #[inline(always)]
     fn to_node_uuid(&self) -> String {
         uuid::Uuid::from_u128(self.to_node).to_string()
+    }
+
+    #[inline(always)]
+    fn vector_data(&self) -> &[f64] {
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn score(&self) -> f64 {
+        unreachable!()
     }
 
     #[inline(always)]
