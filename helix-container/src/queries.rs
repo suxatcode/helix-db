@@ -53,25 +53,17 @@ pub struct Embedding {
     pub vec: Vec<f64>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct create_recordInput {
-
-pub data: String
-}
 #[handler]
-pub fn create_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-let data: create_recordInput = match sonic_rs::from_slice(&input.request.body) {
-    Ok(data) => data,
-    Err(err) => return Err(GraphError::from(err)),
-};
-
+pub fn count_records (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
 let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
 let db = Arc::clone(&input.graph);
-let mut txn = db.graph_env.write_txn().unwrap();
-    let record = G::new_mut(Arc::clone(&db), &mut txn)
-.add_n("Record", Some(props! { "data" => data.data.clone() }), None).collect_to::<Vec<_>>();
+let txn = db.graph_env.read_txn().unwrap();
+    let count = G::new(Arc::clone(&db), &txn)
+.n_from_type("Record")
+
+.count();
 let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
+        return_vals.insert("count".to_string(), ReturnValue::from(Value::from(count)));
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
@@ -79,28 +71,25 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct update_recordInput {
+pub struct search_vectorInput {
 
-pub id: ID,
-pub data: String
+pub query: Vec<f64>,
+pub k: i32
 }
 #[handler]
-pub fn update_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-let data: update_recordInput = match sonic_rs::from_slice(&input.request.body) {
+pub fn search_vector (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+let data: search_vectorInput = match sonic_rs::from_slice(&input.request.body) {
     Ok(data) => data,
     Err(err) => return Err(GraphError::from(err)),
 };
 
 let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
 let db = Arc::clone(&input.graph);
-let mut txn = db.graph_env.write_txn().unwrap();
-    let record = {let update_tr = G::new(Arc::clone(&db), &txn)
-.n_from_id(&data.id)
-    .collect_to::<Vec<_>>();G::new_mut_from(Arc::clone(&db), &mut txn, update_tr)
-    .update(Some(props! { "data" => data.data }))
-    .collect_to::<Vec<_>>()};
+let txn = db.graph_env.read_txn().unwrap();
+    let vec = G::new(Arc::clone(&db), &txn)
+.search_v::<fn(&HVector, &RoTxn) -> bool>(&data.query, data.k as usize, None).collect_to::<Vec<_>>();
 let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
+        return_vals.insert("vec".to_string(), ReturnValue::from_traversal_value_array_with_mixin(vec.clone(), remapping_vals.borrow_mut()));
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
@@ -126,48 +115,6 @@ let mut txn = db.graph_env.write_txn().unwrap();
 .insert_v::<fn(&HVector, &RoTxn) -> bool>(&data.vec, "Embedding", None).collect_to::<Vec<_>>();
 let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
         return_vals.insert("SUCCESS".to_string(), ReturnValue::from(Value::from("SUCCESS")));
-
-    txn.commit().unwrap();
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-    Ok(())
-}
-
-#[handler]
-pub fn count_records (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-let db = Arc::clone(&input.graph);
-let txn = db.graph_env.read_txn().unwrap();
-    let count = G::new(Arc::clone(&db), &txn)
-.n_from_type("Record")
-
-.count();
-let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        return_vals.insert("count".to_string(), ReturnValue::from(Value::from(count)));
-
-    txn.commit().unwrap();
-    response.body = sonic_rs::to_vec(&return_vals).unwrap();
-    Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct read_recordInput {
-
-pub id: ID
-}
-#[handler]
-pub fn read_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-let data: read_recordInput = match sonic_rs::from_slice(&input.request.body) {
-    Ok(data) => data,
-    Err(err) => return Err(GraphError::from(err)),
-};
-
-let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
-let db = Arc::clone(&input.graph);
-let txn = db.graph_env.read_txn().unwrap();
-    let record = G::new(Arc::clone(&db), &txn)
-.n_from_id(&data.id).collect_to::<Vec<_>>();
-let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
@@ -204,6 +151,31 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct create_recordInput {
+
+pub data: String
+}
+#[handler]
+pub fn create_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+let data: create_recordInput = match sonic_rs::from_slice(&input.request.body) {
+    Ok(data) => data,
+    Err(err) => return Err(GraphError::from(err)),
+};
+
+let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+let db = Arc::clone(&input.graph);
+let mut txn = db.graph_env.write_txn().unwrap();
+    let record = G::new_mut(Arc::clone(&db), &mut txn)
+.add_n("Record", Some(props! { "data" => data.data.clone() }), None).collect_to::<Vec<_>>();
+let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
+
+    txn.commit().unwrap();
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct scan_recordsInput {
 
 pub limit: i32,
@@ -230,14 +202,13 @@ let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct search_vectorInput {
+pub struct read_recordInput {
 
-pub query: Vec<f64>,
-pub k: i32
+pub id: ID
 }
 #[handler]
-pub fn search_vector (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
-let data: search_vectorInput = match sonic_rs::from_slice(&input.request.body) {
+pub fn read_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+let data: read_recordInput = match sonic_rs::from_slice(&input.request.body) {
     Ok(data) => data,
     Err(err) => return Err(GraphError::from(err)),
 };
@@ -245,10 +216,39 @@ let data: search_vectorInput = match sonic_rs::from_slice(&input.request.body) {
 let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
 let db = Arc::clone(&input.graph);
 let txn = db.graph_env.read_txn().unwrap();
-    let vec = G::new(Arc::clone(&db), &txn)
-.search_v::<fn(&HVector, &RoTxn) -> bool>(&data.query, data.k as usize, None).collect_to::<Vec<_>>();
+    let record = G::new(Arc::clone(&db), &txn)
+.n_from_id(&data.id).collect_to::<Vec<_>>();
 let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
-        return_vals.insert("vec".to_string(), ReturnValue::from_traversal_value_array_with_mixin(vec.clone(), remapping_vals.borrow_mut()));
+        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
+
+    txn.commit().unwrap();
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct update_recordInput {
+
+pub id: ID,
+pub data: String
+}
+#[handler]
+pub fn update_record (input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+let data: update_recordInput = match sonic_rs::from_slice(&input.request.body) {
+    Ok(data) => data,
+    Err(err) => return Err(GraphError::from(err)),
+};
+
+let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> = RefCell::new(HashMap::new());
+let db = Arc::clone(&input.graph);
+let mut txn = db.graph_env.write_txn().unwrap();
+    let record = {let update_tr = G::new(Arc::clone(&db), &txn)
+.n_from_id(&data.id)
+    .collect_to::<Vec<_>>();G::new_mut_from(Arc::clone(&db), &mut txn, update_tr)
+    .update(Some(props! { "data" => data.data }))
+    .collect_to::<Vec<_>>()};
+let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
+        return_vals.insert("record".to_string(), ReturnValue::from_traversal_value_array_with_mixin(record.clone(), remapping_vals.borrow_mut()));
 
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();

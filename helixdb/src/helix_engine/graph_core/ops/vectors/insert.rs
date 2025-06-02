@@ -4,12 +4,15 @@ use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        types::GraphError,
+        types::{GraphError, VectorError},
         vector_core::{hnsw::HNSW, vector::HVector},
     },
     protocol::value::Value,
 };
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    iter::once,
+};
 
 pub struct InsertVIterator {
     inner: std::iter::Once<Result<TraversalVal, GraphError>>,
@@ -54,19 +57,16 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
     where
         F: Fn(&HVector, &RoTxn) -> bool,
     {
-        let vector = self
+        let iter = match self
             .storage
             .vectors
-            .insert::<F>(self.txn, &query, fields);
-
-        let result = match vector {
-            Ok(vector) => Ok(TraversalVal::Vector(vector)),
-            Err(e) => Err(GraphError::from(e)),
-        };
-
+            .insert::<F>(self.txn, &query, fields) {
+                Ok(vector) => once(Ok(TraversalVal::Vector(vector))),
+                Err(e) => once(Err(GraphError::from(e)))
+            };
 
         RwTraversalIterator {
-            inner: std::iter::once(result),
+            inner: iter,
             storage: self.storage,
             txn: self.txn,
         }
