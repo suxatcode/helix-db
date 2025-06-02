@@ -9,6 +9,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, collections::HashMap};
 
+
+// TODO: make this generic over the type of encoding (f32, f64, etc)
+// TODO: use const param to set dimension
+// TODO: set level as u8
 #[repr(C, align(16))]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct HVector {
@@ -17,7 +21,6 @@ pub struct HVector {
     pub level: usize,
     pub distance: Option<f64>,
     data: Vec<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub properties: Option<HashMap<String, Value>>,
 }
 
@@ -100,6 +103,7 @@ impl HVector {
         bytes
     }
 
+    // will make to use const param for type of encoding (f32, f64, etc)
     /// Converts a byte array into a HVector by chunking the bytes into f64 values
     pub fn from_bytes(id: u128, level: usize, bytes: &[u8]) -> Result<Self, VectorError> {
         if bytes.len() % std::mem::size_of::<f64>() != 0 {

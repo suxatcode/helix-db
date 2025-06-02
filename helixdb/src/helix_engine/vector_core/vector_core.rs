@@ -230,7 +230,7 @@ impl VectorCore {
             arr[..len].copy_from_slice(&ep_id[..len]);
 
             let ep = self
-                .get_vector(txn, u128::from_be_bytes(arr), 0, false)
+                .get_vector(txn, u128::from_be_bytes(arr), 0, true)
                 .map_err(|_| VectorError::EntryPointNotFound)?;
             Ok(ep)
         } else {
@@ -292,7 +292,7 @@ impl VectorCore {
                 let neighbor_id = u128::from_be_bytes(arr);
 
                 if neighbor_id != id {
-                    if let Ok(vector) = self.get_vector(txn, neighbor_id, level, false) {
+                    if let Ok(vector) = self.get_vector(txn, neighbor_id, level, true) {
                         // TODO: look at implementing a macro that actually just runs each function rather than iterating through
                         if filter.is_none() || filter.unwrap().iter().all(|f| f(&vector, txn)) {
                             neighbors.push(vector);
@@ -472,13 +472,6 @@ impl HNSW for VectorCore {
             None if level > 0 => self.get_vector(txn, id, 0, with_data),
             None => Err(VectorError::VectorNotFound(id.to_string())),
         }?;
-
-        if with_data {
-            vector.properties = match self.vector_data_db.get(txn, &id.to_be_bytes())? {
-                Some(bytes) => Some(bincode::deserialize(&bytes).map_err(VectorError::from)?),
-                None => None, // Maybe should be an error?
-            };
-        }
 
         Ok(vector)
     }
