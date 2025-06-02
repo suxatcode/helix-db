@@ -55,6 +55,7 @@ evaluates_to_anything = {
   | AddV
   | BatchAddV
   | search_vector
+  | bm25_search
   | AddE
   | exists
   | none
@@ -157,7 +158,7 @@ drop = { "DROP" ~ (traversal | id_traversal | identifier)? }
 // Vector steps
 // ---------------------------------------------------------------------
 search_vector = { "SearchV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ vector_data ~ "," ~ (integer | identifier) ~ ")" }// ~ ("::" ~ pre_filter)? }
-bm25_search = { "BM25" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ (string_literal | identifier) ~ "," ~ (integer | identifier) ~ ")" }
+bm25_search = { "SearchBM25" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ (string_literal | identifier) ~ "," ~ (integer | identifier) ~ ")" }
 pre_filter = { "PREFILTER" ~ "(" ~ (evaluates_to_bool | anonymous_traversal) ~ ")" }
 BatchAddV = { "BatchAddV" ~ "<" ~ identifier_upper ~ ">" ~ "(" ~ identifier ~ ")" }
 

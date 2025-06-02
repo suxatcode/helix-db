@@ -21,6 +21,7 @@ pub enum SourceStep {
     EFromID(EFromID),
     EFromType(EFromType),
     SearchVector(SearchVector),
+    SearchBM25(SearchBM25),
     Anonymous,
     Empty,
 }
@@ -148,6 +149,19 @@ impl Display for EFromType {
     }
 }
 
+#[derive(Clone)]
+pub struct SearchBM25 {
+    pub type_arg: GenRef<String>,
+    pub query: GeneratedValue,
+    pub k: GeneratedValue,
+}
+
+impl Display for SearchBM25 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "search_bm25({}, {}, {})", self.type_arg, self.query, self.k)
+    }
+}
+
 impl Display for SourceStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -162,6 +176,7 @@ impl Display for SourceStep {
             SourceStep::EFromID(e_from_id) => write!(f, "{}", e_from_id),
             SourceStep::EFromType(e_from_type) => write!(f, "{}", e_from_type),
             SourceStep::SearchVector(search_vector) => write!(f, "{}", search_vector),
+            SourceStep::SearchBM25(search_bm25) => write!(f, "{}", search_bm25),
             SourceStep::Anonymous => write!(f, ""),
             SourceStep::Empty => panic!("Should not be empty"),
         }
