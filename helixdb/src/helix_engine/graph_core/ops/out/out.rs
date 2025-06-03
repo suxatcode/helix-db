@@ -12,19 +12,19 @@ use crate::{
     },
     protocol::label_hash::hash_label,
 };
-use heed3::{types::Bytes, RoTxn};
+use heed3::{types::Bytes, RoTxn, WithTls};
 use std::sync::Arc;
 
 pub struct OutNodesIterator<'a, T> {
-    iter: heed3::RoIter<
+    pub iter: heed3::RoIter<
         'a,
         Bytes,
         heed3::types::LazyDecode<Bytes>,
         heed3::iteration_method::MoveOnCurrentKeyDuplicates,
     >,
-    storage: Arc<HelixGraphStorage>,
-    edge_type: &'a EdgeType,
-    txn: &'a T,
+    pub storage: Arc<HelixGraphStorage>,
+    pub edge_type: &'a EdgeType,
+    pub txn: &'a T,
 }
 
 impl<'a> Iterator for OutNodesIterator<'a, RoTxn<'a>> {

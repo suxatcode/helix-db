@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use heed3::{RoTxn, RwTxn};
+use heed3::{RoTxn, RwTxn, WithTls};
 
 use super::ops::tr_val::TraversalVal;
-use crate::helix_engine::{
-    storage_core::storage_core::HelixGraphStorage,
-    types::GraphError,
-};
+use crate::helix_engine::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
 use itertools::Itertools;
 
 pub struct RoTraversalIterator<'a, I> {
