@@ -138,14 +138,10 @@ where
                 properties
             }
             FilterableType::Vector => {
-                let mut properties = match item.properties_ref() {
-                    Some(properties) => properties.clone(),
-                    None => HashMap::new(),
-                };
                 let data = item.vector_data();
                 let score = item.score();
 
-                let mut return_value = HashMap::new();
+                let mut return_value = HashMap::with_capacity(2 + length);
                 return_value.insert("data".to_string(), ReturnValue::from(data));
                 return_value.insert("score".to_string(), ReturnValue::from(score));
                 return_value
@@ -230,6 +226,28 @@ impl ReturnValue {
                     TraversalVal::Count(count) => ReturnValue::from(count),
                     TraversalVal::Empty => ReturnValue::Empty,
                     TraversalVal::Value(value) => ReturnValue::from(value),
+                    TraversalVal::Path((nodes, edges)) => {
+                        let mut properties = HashMap::with_capacity(2);
+                        properties.insert(
+                            "nodes".to_string(),
+                            ReturnValue::Array(
+                                nodes
+                                    .into_iter()
+                                    .map(|node| ReturnValue::from(node))
+                                    .collect(),
+                            ),
+                        );
+                        properties.insert(
+                            "edges".to_string(),
+                            ReturnValue::Array(
+                                edges
+                                    .into_iter()
+                                    .map(|edge| ReturnValue::from(edge))
+                                    .collect(),
+                            ),
+                        );
+                        ReturnValue::Object(properties)
+                    }
                     _ => unreachable!(),
                 })
                 .collect(),
