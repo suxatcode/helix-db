@@ -45,7 +45,7 @@ use super::ops::{
     in_::in_::InAdapter,
     out::out_e::OutEdgesAdapter,
     source::add_e::{AddEAdapter, EdgeType},
-    util::filter_ref::FilterRefAdapter,
+    util::{filter_ref::FilterRefAdapter, update::UpdateAdapter},
 };
 
 fn setup_test_db() -> (Arc<HelixGraphStorage>, TempDir) {
@@ -1246,17 +1246,99 @@ fn test_drop_node() {
     let traversal = G::new(Arc::clone(&storage), &txn)
         .n_from_id(&node.id())
         .collect_to_obj();
-    
+
     let edges = G::new(Arc::clone(&storage), &txn)
-    .n_from_id(&node2.id())
-    .in_e("knows")
-    .collect_to::<Vec<_>>();
+        .n_from_id(&node2.id())
+        .in_e("knows")
+        .collect_to::<Vec<_>>();
 
     assert_eq!(traversal, None);
     assert_eq!(edges.len(), 0);
-
 }
 
+#[test]
+fn test_drop_edge() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!()), None)
+        .collect_to_val();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!()), None)
+        .collect_to_val();
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            Some(props!()),
+            node1.id(),
+            node2.id(),
+            false,
+            EdgeType::Node,
+        )
+        .collect_to_val();
+
+    txn.commit().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .e_from_id(&edge.id())
+        .collect::<Vec<_>>();
+    Drop::<Vec<_>>::drop_traversal(traversal, Arc::clone(&storage), &mut txn).unwrap();
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .e_from_id(&edge.id())
+        .collect_to_obj();
+    assert_eq!(traversal, None);
+
+    let edges = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node1.id())
+        .out_e("knows")
+        .collect_to::<Vec<_>>();
+
+    assert_eq!(edges.len(), 0);
+
+    let edges = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node2.id())
+        .in_e("knows")
+        .collect_to::<Vec<_>>();
+
+    assert_eq!(edges.len(), 0);
+}
+
+#[test]
+fn test_update_node() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "test")), None)
+        .collect_to_val();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "test2")), None)
+        .collect_to_val();
+
+    txn.commit().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let updatedUsers = {
+        let update_tr = G::new(Arc::clone(&storage), &txn)
+            .n_from_id(&node.id())
+            .collect_to::<Vec<_>>();
+        G::new_mut_from(Arc::clone(&storage), &mut txn, update_tr)
+            .update(Some(props! { "name" => "john"}))
+            .collect_to::<Vec<_>>()
+    };
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let updatedUsers = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node.id())
+        .collect_to::<Vec<_>>();
+    assert_eq!(updatedUsers.len(), 1);
+    assert_eq!(
+        updatedUsers[0].check_property("name").unwrap().to_string(),
+        "john"
+    );
+}
 // #[test]
 // fn test_shortest_mutual_path() {
 //     let (storage, _temp_dir) = setup_test_db();
