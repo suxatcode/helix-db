@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
@@ -24,7 +26,7 @@ where
     }
 }
 
-pub trait UpdateAdapter<'scope, 'env>: Iterator  {
+pub trait UpdateAdapter<'scope, 'env>: Iterator {
     fn update(
         self,
         props: Option<Vec<(String, Value)>>,
@@ -61,11 +63,8 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
                                 if let Some(db) = storage.secondary_indices.get(key) {
                                     match bincode::serialize(v) {
                                         Ok(serialized) => {
-                                            if let Err(e) = db.put(
-                                                self.txn,
-                                                &serialized,
-                                                &node.id,
-                                            ) {
+                                            if let Err(e) = db.put(self.txn, &serialized, &node.id)
+                                            {
                                                 vec.push(Err(GraphError::from(e)));
                                             }
                                         }
@@ -74,8 +73,33 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
                                 }
                             }
                             old_node.properties = Some(properties);
+                        } else {
+                            let mut properties = HashMap::new();
+                            if let Some(ref props) = props {
+                                for (k, v) in props.iter() {
+                                    properties.insert(k.clone(), v.clone());
+                                }
+                            }
+                            for (key, v) in properties.iter() {
+                                if let Some(db) = storage.secondary_indices.get(key) {
+                                    match bincode::serialize(v) {
+                                        Ok(serialized) => {
+                                            if let Err(e) = db.put(self.txn, &serialized, &node.id)
+                                            {
+                                                vec.push(Err(GraphError::from(e)));
+                                            }
+                                        }
+                                        Err(e) => vec.push(Err(GraphError::from(e))),
+                                    }
+                                }
+                            }
+                            if properties.len() > 0 {
+                                old_node.properties = Some(properties);
+                            } else {
+                                old_node.properties = None;
+                            }
                         }
-                        match bincode::serialize(&node) {
+                        match old_node.encode_node() {
                             Ok(serialized) => {
                                 match storage.nodes_db.put(
                                     self.txn,
@@ -102,7 +126,7 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
                                 old_edge.properties = Some(properties);
                             }
                         }
-                        match bincode::serialize(&edge) {
+                        match old_edge.encode_edge() {
                             Ok(serialized) => {
                                 match storage.nodes_db.put(
                                     self.txn,

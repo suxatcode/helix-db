@@ -2663,7 +2663,7 @@ impl<'a> Ctx<'a> {
                         }
                     }
                     None => {
-                        unreachable!()
+                        unreachable!() // throw error
                     }
                 };
                 traversal

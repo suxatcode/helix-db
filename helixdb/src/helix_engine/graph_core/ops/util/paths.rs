@@ -65,6 +65,9 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
 
                     nodes.push(self.storage.get_node(self.txn, start_id)?);
 
+                    nodes.reverse();
+                    edges.reverse();
+
                     Ok(TraversalVal::Path((nodes, edges)))
                 };
 
@@ -85,7 +88,7 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
 
                     for result in iter {
                         let (_, value) = result.unwrap(); // TODO: handle error
-                        let (edge_id, to_node) =
+                        let (to_node, edge_id) =
                             HelixGraphStorage::unpack_adj_edge_data(value).unwrap(); // TODO: handle error
 
                         if !visited.contains(&to_node) {
