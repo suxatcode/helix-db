@@ -2,12 +2,6 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     helix_engine::graph_core::ops::source::{
-        bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter,
-    },
-    props,
-};
-use crate::{
-    helix_engine::graph_core::ops::source::{
         n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter,
     },
     protocol::{
@@ -17,6 +11,13 @@ use crate::{
         traversal_value::TraversalValue,
         value::Value,
     },
+};
+use crate::{
+    helix_engine::graph_core::ops::{
+        source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter},
+        util::drop::Drop,
+    },
+    props,
 };
 use crate::{
     helix_engine::{
@@ -1212,6 +1213,50 @@ fn test_edge_properties() {
     }
 }
 
+#[test]
+fn test_drop_node() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "test")), None)
+        .collect_to_val();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "test2")), None)
+        .collect_to_val();
+    let edge = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            Some(props!()),
+            node.id(),
+            node2.id(),
+            false,
+            EdgeType::Node,
+        )
+        .collect_to_val();
+    txn.commit().unwrap();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node.id())
+        .collect::<Vec<_>>();
+
+    Drop::<Vec<_>>::drop_traversal(traversal, Arc::clone(&storage), &mut txn).unwrap();
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let traversal = G::new(Arc::clone(&storage), &txn)
+        .n_from_id(&node.id())
+        .collect_to_obj();
+    
+    let edges = G::new(Arc::clone(&storage), &txn)
+    .n_from_id(&node2.id())
+    .in_e("knows")
+    .collect_to::<Vec<_>>();
+
+    assert_eq!(traversal, None);
+    assert_eq!(edges.len(), 0);
+
+}
+
 // #[test]
 // fn test_shortest_mutual_path() {
 //     let (storage, _temp_dir) = setup_test_db();
@@ -1279,11 +1324,9 @@ fn huge_traversal() {
     let mut start = Instant::now();
     let mut nodes = Vec::with_capacity(1000_000);
     for i in 0..1000_000 {
-        let id = G::new_mut(Arc::clone(&storage), &mut txn).add_n(
-            "user",
-            None,
-            None,
-        ).collect_to_val();
+        let id = G::new_mut(Arc::clone(&storage), &mut txn)
+            .add_n("user", None, None)
+            .collect_to_val();
         nodes.push(id.id());
     }
     txn.commit().unwrap();
@@ -1298,14 +1341,16 @@ fn huge_traversal() {
     for _ in 0..1000_000 {
         let random_node1 = nodes[rand::rng().random_range(0..nodes.len())];
         let random_node2 = nodes[rand::rng().random_range(0..nodes.len())];
-        G::new_mut(Arc::clone(&storage), &mut txn).add_e(
-            "knows",
-            None,
-            random_node1,
-            random_node2,
-            false,
-            EdgeType::Node,
-        ).count();
+        G::new_mut(Arc::clone(&storage), &mut txn)
+            .add_e(
+                "knows",
+                None,
+                random_node1,
+                random_node2,
+                false,
+                EdgeType::Node,
+            )
+            .count();
     }
     println!("time taken to create edges: {:?}", start.elapsed());
 

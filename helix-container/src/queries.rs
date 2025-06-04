@@ -44,38 +44,64 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct File8 {
+pub struct File15 {
     pub name: String,
     pub age: i32,
 }
 
-pub struct EdgeFile8 {
-    pub from: File8,
-    pub to: File8,
-}
-
-pub struct File8Vec {
-    pub content: String,
+pub struct Follows {
+    pub from: File15,
+    pub to: File15,
 }
 
 #[handler]
-pub fn file8(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+pub fn file15(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
     let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
         RefCell::new(HashMap::new());
     let db = Arc::clone(&input.graph.storage);
-    let txn = db.graph_env.read_txn().unwrap();
-    let res = G::new(Arc::clone(&db), &txn)
-        .search_bm25("File8Vec", "John", 10)
-        .collect_to::<Vec<_>>();
+    let mut txn = db.graph_env.write_txn().unwrap();
+    Drop::<Vec<_>>::drop_traversal(
+        G::new(Arc::clone(&db), &txn)
+            .n_from_type("File15")
+            .collect::<Vec<_>>(),
+        Arc::clone(&db),
+        &mut txn,
+    )?;
     let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     return_vals.insert(
-        "res".to_string(),
-        ReturnValue::from_traversal_value_array_with_mixin(
-            res.clone(),
-            remapping_vals.borrow_mut(),
-        ),
+        "success".to_string(),
+        ReturnValue::from(Value::from("success")),
     );
 
+    txn.commit().unwrap();
+    response.body = sonic_rs::to_vec(&return_vals).unwrap();
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct file15_2Input {
+    pub userID: ID,
+}
+#[handler]
+pub fn file15_2(input: &HandlerInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: file15_2Input = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let mut remapping_vals: RefCell<HashMap<u128, ResponseRemapping>> =
+        RefCell::new(HashMap::new());
+    let db = Arc::clone(&input.graph.storage);
+    let mut txn = db.graph_env.write_txn().unwrap();
+    Drop::<Vec<_>>::drop_traversal(
+        G::new(Arc::clone(&db), &txn)
+            .n_from_id(&data.userID)
+            .out("Follows", &EdgeType::Node)
+            .collect::<Vec<_>>(),
+        Arc::clone(&db),
+        &mut txn,
+    )?;
+    let mut return_vals: HashMap<String, ReturnValue> = HashMap::new();
     txn.commit().unwrap();
     response.body = sonic_rs::to_vec(&return_vals).unwrap();
     Ok(())
