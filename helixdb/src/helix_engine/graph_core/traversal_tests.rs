@@ -1,8 +1,16 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    helix_engine::graph_core::ops::source::{
-        n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter,
+    helix_engine::graph_core::ops::{
+        source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter},
+        util::drop::Drop,
+    },
+    props,
+};
+use crate::{
+    helix_engine::graph_core::ops::{
+        source::{n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter},
+        util::paths::ShortestPathAdapter,
     },
     protocol::{
         filterable::Filterable,
@@ -11,13 +19,6 @@ use crate::{
         traversal_value::TraversalValue,
         value::Value,
     },
-};
-use crate::{
-    helix_engine::graph_core::ops::{
-        source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter},
-        util::drop::Drop,
-    },
-    props,
 };
 use crate::{
     helix_engine::{
@@ -1338,6 +1339,87 @@ fn test_update_node() {
         updatedUsers[0].check_property("name").unwrap().to_string(),
         "john"
     );
+}
+
+#[test]
+fn test_shortest_path() {
+    let (storage, _temp_dir) = setup_test_db();
+    let mut txn = storage.graph_env.write_txn().unwrap();
+
+    let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "node1")), None)
+        .collect_to_val();
+    let node2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "node2")), None)
+        .collect_to_val();
+    let node3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "node3")), None)
+        .collect_to_val();
+    let node4 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_n("person", Some(props!("name" => "node4")), None)
+        .collect_to_val();
+
+    let edge1 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            Some(props!("name" => "edge1")),
+            node1.id(),
+            node2.id(),
+            false,
+            EdgeType::Node,
+        )
+        .collect_to_val();
+    let edge2 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            Some(props!("name" => "edge2")),
+            node2.id(),
+            node3.id(),
+            false,
+            EdgeType::Node,
+        )
+        .collect_to_val();
+    let edge3 = G::new_mut(Arc::clone(&storage), &mut txn)
+        .add_e(
+            "knows",
+            Some(props!("name" => "edge3")),
+            node3.id(),
+            node4.id(),
+            false,
+            EdgeType::Node,
+        )
+        .collect_to_val();
+
+    txn.commit().unwrap();
+    let txn = storage.graph_env.read_txn().unwrap();
+    let path = G::new_from(Arc::clone(&storage), &txn, vec![node1.clone()])
+        .shortest_path(Some("knows"), None, Some(&node4.id()))
+        .collect_to::<Vec<_>>();
+    assert_eq!(path.len(), 1);
+
+    match path.first() {
+        Some(TraversalVal::Path((nodes, edges))) => {
+            assert_eq!(nodes.len(), 4);
+            assert_eq!(edges.len(), 3);
+            assert_eq!(*nodes[0].check_property("name").unwrap(), "node1");
+            assert_eq!(*nodes[1].check_property("name").unwrap(), "node2");
+            assert_eq!(*nodes[2].check_property("name").unwrap(), "node3");
+            assert_eq!(*nodes[3].check_property("name").unwrap(), "node4");
+            assert_eq!(*edges[0].check_property("name").unwrap(), "edge1");
+            assert_eq!(*edges[1].check_property("name").unwrap(), "edge2");
+            assert_eq!(*edges[2].check_property("name").unwrap(), "edge3");
+            assert_eq!(*nodes[0].id(), node1.id());
+            assert_eq!(*nodes[1].id(), node2.id());
+            assert_eq!(*nodes[2].id(), node3.id());
+            assert_eq!(*nodes[3].id(), node4.id());
+            assert_eq!(*edges[0].id(), edge1.id());
+            assert_eq!(*edges[1].id(), edge2.id());
+            assert_eq!(*edges[2].id(), edge3.id());
+        }
+        _ => {
+            panic!("Expected Path value");
+        }
+    }
 }
 // #[test]
 // fn test_shortest_mutual_path() {
