@@ -1,0 +1,284 @@
+use crate::helix_engine::graph_core::ops::in_::in_::InNodesIterator;
+use crate::helix_engine::graph_core::ops::in_::in_e::InEdgesIterator;
+use crate::helix_engine::graph_core::ops::out::out::OutNodesIterator;
+use crate::helix_engine::graph_core::ops::out::out_e::OutEdgesIterator;
+use crate::helix_engine::graph_core::ops::source::add_e::EdgeType;
+use crate::helix_engine::graph_core::ops::source::n_from_type::NFromType;
+use crate::helix_engine::graph_core::ops::tr_val::{Traversable, TraversalVal};
+use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
+use crate::helix_engine::types::GraphError;
+use crate::helix_gateway::mcp::mcp::{MCPConnection, McpBackend};
+use crate::protocol::label_hash::hash_label;
+use heed3::RoTxn;
+use std::sync::Arc;
+
+pub enum ToolArgs {
+    OutStep {
+        edge_label: String,
+        edge_type: EdgeType,
+    },
+    OutEStep {
+        edge_label: String,
+    },
+    InStep {
+        edge_label: String,
+        edge_type: EdgeType,
+    },
+    InEStep {
+        edge_label: String,
+    },
+    NFromType {
+        node_type: String,
+    },
+}
+
+
+pub(crate) trait ToolCalls<'a> {
+    fn call(&'a mut self, txn: &'a RoTxn, connection_id: &'a str, tool_name: &'a str, args: ToolArgs) -> Result<(), GraphError>;
+}
+
+impl<'a> ToolCalls<'a> for McpBackend<'a> {
+    fn call(&'a mut self, txn: &'a RoTxn, connection_id: &'a str, tool_name: &'a str, args: ToolArgs) -> Result<(), GraphError> {
+        let connection = self.get_connection(connection_id).unwrap();
+        let result = match (tool_name, args) {
+            ("out_step", ToolArgs::OutStep { edge_label, edge_type }) => self.out_step(connection, &edge_label, &edge_type, txn),
+            ("out_e_step", ToolArgs::OutEStep { edge_label }) => self.out_e_step(connection, &edge_label, txn),
+            ("in_step", ToolArgs::InStep { edge_label, edge_type }) => self.in_step(connection, &edge_label, &edge_type, txn),
+            ("in_e_step", ToolArgs::InEStep { edge_label }) => self.in_e_step(connection, &edge_label, txn),
+            ("n_from_type", ToolArgs::NFromType { node_type }) => self.n_from_type(&node_type, txn),
+            _ => return Err(GraphError::New(format!("Tool {} not found", tool_name))),
+        }?;
+
+        let connection = self.get_connection_mut(connection_id).unwrap();
+        connection.iter = result.into_iter();
+
+        Ok(())
+    }
+}
+
+trait McpTools<'a> {
+    fn out_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        edge_type: &'a EdgeType,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    fn out_e_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    fn in_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        edge_type: &'a EdgeType,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    fn in_e_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    fn n_from_type(
+        &'a self,
+        node_type: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+}
+
+impl<'a> McpTools<'a> for McpBackend<'a> {
+    fn out_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        edge_type: &'a EdgeType,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = connection
+            .iter
+            .clone()
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::out_edge_key(&item.id(), &edge_label_hash);
+                match db
+                    .out_edges_db
+                    .lazily_decode_data()
+                    .get_duplicates(&txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(OutNodesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        edge_type,
+                        txn,
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("{} Error getting out edges: {:?}", line!(), e);
+                        // return Err(e);
+                        None
+                    }
+                }
+            })
+            .flatten();
+
+        match edge_type {
+            EdgeType::Node => {}
+            EdgeType::Vec => {}
+        }
+
+        let result = iter.take(100).collect();
+        println!("result: {:?}", result);
+        result
+    }
+
+    fn out_e_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = connection
+            .iter
+            .clone()
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::out_edge_key(&item.id(), &edge_label_hash);
+                match db
+                    .out_edges_db
+                    .lazily_decode_data()
+                    .get_duplicates(&txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(OutEdgesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        txn,
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("{} Error getting out edges: {:?}", line!(), e);
+                        // return Err(e);
+                        None
+                    }
+                }
+            })
+            .flatten();
+
+        let result = iter.take(100).collect();
+        println!("result: {:?}", result);
+        result
+    }
+
+    fn in_step(
+        &'a self,
+        connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        edge_type: &'a EdgeType,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = connection
+            .iter
+            .clone()
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::in_edge_key(&item.id(), &edge_label_hash);
+                match db
+                    .in_edges_db
+                    .lazily_decode_data()
+                    .get_duplicates(&txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(InNodesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        edge_type,
+                        txn,
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("{} Error getting out edges: {:?}", line!(), e);
+                        // return Err(e);
+                        None
+                    }
+                }
+            })
+            .flatten();
+
+        match edge_type {
+            EdgeType::Node => {}
+            EdgeType::Vec => {}
+        }
+
+        let result = iter.take(100).collect();
+        println!("result: {:?}", result);
+        result
+    }
+
+    fn in_e_step(
+        &'a self,
+                    connection: &'a MCPConnection<'a>,
+        edge_label: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = connection
+            .iter
+            .clone()
+            .filter_map(move |item| {
+                let edge_label_hash = hash_label(edge_label, None);
+                let prefix = HelixGraphStorage::in_edge_key(&item.id(), &edge_label_hash);
+                match db
+                    .in_edges_db
+                    .lazily_decode_data()
+                    .get_duplicates(&txn, &prefix)
+                {
+                    Ok(Some(iter)) => Some(InEdgesIterator {
+                        iter,
+                        storage: Arc::clone(&db),
+                        txn,
+                    }),
+                    Ok(None) => None,
+                    Err(e) => {
+                        println!("{} Error getting out edges: {:?}", line!(), e);
+                        // return Err(e);
+                        None
+                    }
+                }
+            })
+            .flatten();
+
+        let result = iter.take(100).collect();
+        println!("result: {:?}", result);
+        result
+    }
+
+    fn n_from_type(
+        &'a self,
+        node_type: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = NFromType {
+            iter: db.nodes_db.lazily_decode_data().iter(txn).unwrap(),
+            label: node_type,
+        };
+
+        let result = iter.take(100).collect::<Result<Vec<_>, _>>();
+        println!("result: {:?}", result);
+        result
+    }
+}
