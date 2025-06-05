@@ -114,7 +114,7 @@ Our current focus areas include:
 
 - Expanding vector data type capabilities for RAG applications
 - Implementing a test suite to enable end-to-end testing of queries before deployment
-- Building a Deterministic Simulation Testing engine enabling us to robustly iterate faster
+- [Building a Deterministic Simulation Testing engine](docs/simulation-testing.md) enabling us to robustly iterate faster
 - Binary quantisation for even better performance
 
 Long term projects:
@@ -122,7 +122,7 @@ Long term projects:
 - In-house network protocol & serdes libraries (similar to protobufs/gRPC)
 
 ## License
-HelixDB is licensed under the The AGPL (Affero General Public License).
+HelixDB is licensed under the AGPL (Affero General Public License).
 
 ## Commercial Support
 HelixDB is available as a managed service for selected users, if you're interested in using Helix's managed service or want enterprise support, [contact](mailto:founders@helix-db.com) us for more information and deployment options.
