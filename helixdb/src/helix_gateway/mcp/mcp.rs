@@ -24,36 +24,30 @@ use crate::{
         storage_core::storage_core::HelixGraphStorage,
         types::GraphError,
     },
-    helix_gateway::{mcp::tools::ToolArgs, router::router::HandlerInput},
-    protocol::{label_hash::hash_label, request::Request, response::Response},
+    helix_gateway::{
+        mcp::tools::{ToolArgs, ToolCalls},
+        router::router::HandlerInput,
+    },
+    protocol::{
+        label_hash::hash_label, request::Request, response::Response, return_values::ReturnValue,
+    },
 };
 
-pub(crate) struct McpBackend<'a> {
+pub struct McpConnections<'a> {
     pub connections: HashMap<&'a str, MCPConnection<'a>>,
-    pub db: Arc<HelixGraphStorage>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ToolCallRequest {
-    pub connection_id: String,
-    pub tool: ToolArgs,
-}
-
-impl<'a> McpBackend<'a> {
-    pub fn new(db: Arc<HelixGraphStorage>) -> Self {
+impl<'a> McpConnections<'a> {
+    pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
-            db,
         }
     }
-    pub fn new_with_max_connections(db: Arc<HelixGraphStorage>, max_connections: usize) -> Self {
+    pub fn new_with_max_connections(max_connections: usize) -> Self {
         Self {
             connections: HashMap::with_capacity(max_connections),
-            db,
         }
     }
-
     pub fn add_connection(&'a mut self, connection: MCPConnection<'a>) {
         self.connections
             .insert(connection.connection_id, connection);
@@ -69,13 +63,29 @@ impl<'a> McpBackend<'a> {
 
     pub fn get_connection_mut(
         &'a mut self,
-        connection_id: &'a str,
+        connection_id: &str,
     ) -> Option<&'a mut MCPConnection<'a>> {
         self.connections.get_mut(connection_id)
     }
 }
+pub struct McpBackend {
+    pub db: Arc<HelixGraphStorage>,
+}
 
-pub(crate) struct MCPConnection<'a> {
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ToolCallRequest {
+    pub connection_id: String,
+    pub tool: ToolArgs,
+}
+
+impl McpBackend {
+    pub fn new(db: Arc<HelixGraphStorage>) -> Self {
+        Self { db }
+    }
+}
+
+pub struct MCPConnection<'a> {
     pub connection_id: &'a str,
     pub connection_addr: &'a str,
     pub connection_port: u16,
@@ -102,13 +112,16 @@ impl<'a> MCPConnection<'a> {
     }
 }
 
-pub struct MCPToolInput {
+pub struct MCPToolInput<'a> {
     pub request: Request,
-    pub graph: Arc<HelixGraphEngine>,
+    // pub graph: Arc<HelixGraphEngine>,
+    pub mcp_backend: Arc<McpBackend>,
+    pub mcp_connections: McpConnections<'a>,
 }
 
 // basic type for function pointer
-pub type BasicMCPHandlerFn = fn(&MCPToolInput, &mut Response) -> Result<(), GraphError>;
+pub type BasicMCPHandlerFn =
+    for<'a> fn(&'a mut MCPToolInput<'a>, &mut Response) -> Result<(), GraphError>;
 
 // thread safe type for multi threaded use
 pub type MCPHandlerFn =
@@ -132,10 +145,33 @@ impl MCPHandler {
 inventory::collect!(MCPHandlerSubmission);
 
 #[mcp_handler]
-pub fn call_tool(input: &MCPToolInput, response: &mut Response) -> Result<(), GraphError> {
+pub fn call_tool<'a>(
+    input: &'a mut MCPToolInput<'a>,
+    response: &mut Response,
+) -> Result<(), GraphError> {
     let data: ToolCallRequest = match sonic_rs::from_slice(&input.request.body) {
         Ok(data) => data,
         Err(err) => return Err(GraphError::from(err)),
     };
+
+    let connection = match input.mcp_connections.get_connection(&data.connection_id) {
+        Some(conn) => conn,
+        None => return Err(GraphError::Default),
+    };
+    let txn = input.mcp_backend.db.graph_env.read_txn()?;
+
+    let result = input.mcp_backend.call(&txn, &connection, data.tool)?;
+
+    let connection = input
+        .mcp_connections
+        .get_connection_mut(&data.connection_id)
+        .unwrap();
+
+    let first = result.first().unwrap_or(&TraversalVal::Empty).clone();
+
+    connection.iter = result.into_iter();
+
+    response.body = sonic_rs::to_vec(&ReturnValue::from(first)).unwrap();
+    
     Ok(())
 }

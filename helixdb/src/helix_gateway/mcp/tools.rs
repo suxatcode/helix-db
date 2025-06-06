@@ -16,8 +16,6 @@ use heed3::RoTxn;
 use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 
-
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "tool_name", content = "args")]
@@ -43,52 +41,36 @@ pub enum ToolArgs {
 
 pub(crate) trait ToolCalls<'a> {
     fn call(
-        &'a mut self,
+        &'a self,
         txn: &'a RoTxn,
-        connection_id: &'a str,
-        tool_name: &'a str,
+        connection_id: &'a MCPConnection<'a>,
         args: ToolArgs,
-    ) -> Result<(), GraphError>;
+    ) -> Result<Vec<TraversalVal>, GraphError>;
 }
 
-impl<'a> ToolCalls<'a> for McpBackend<'a> {
+impl<'a> ToolCalls<'a> for McpBackend {
     fn call(
-        &'a mut self,
+        &'a self,
         txn: &'a RoTxn,
-        connection_id: &'a str,
-        tool_name: &'a str,
+        connection: &'a MCPConnection<'a>,
         args: ToolArgs,
-    ) -> Result<(), GraphError> {
-        let connection = self.get_connection(connection_id).unwrap();
-        let result = match (tool_name, args) {
-            (
-                "out_step",
-                ToolArgs::OutStep {
-                    edge_label,
-                    edge_type,
-                },
-            ) => self.out_step(connection, &edge_label, &edge_type, txn),
-            ("out_e_step", ToolArgs::OutEStep { edge_label }) => {
-                self.out_e_step(connection, &edge_label, txn)
-            }
-            (
-                "in_step",
-                ToolArgs::InStep {
-                    edge_label,
-                    edge_type,
-                },
-            ) => self.in_step(connection, &edge_label, &edge_type, txn),
-            ("in_e_step", ToolArgs::InEStep { edge_label }) => {
-                self.in_e_step(connection, &edge_label, txn)
-            }
-            ("n_from_type", ToolArgs::NFromType { node_type }) => self.n_from_type(&node_type, txn),
-            _ => return Err(GraphError::New(format!("Tool {} not found", tool_name))),
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let result = match args {
+            ToolArgs::OutStep {
+                edge_label,
+                edge_type,
+            } => self.out_step(connection, &edge_label, &edge_type, txn),
+            ToolArgs::OutEStep { edge_label } => self.out_e_step(connection, &edge_label, txn),
+            ToolArgs::InStep {
+                edge_label,
+                edge_type,
+            } => self.in_step(connection, &edge_label, &edge_type, txn),
+            ToolArgs::InEStep { edge_label } => self.in_e_step(connection, &edge_label, txn),
+            ToolArgs::NFromType { node_type } => self.n_from_type(&node_type, txn),
+            _ => return Err(GraphError::New(format!("Tool {:?} not found", args))),
         }?;
 
-        let connection = self.get_connection_mut(connection_id).unwrap();
-        connection.iter = result.into_iter();
-
-        Ok(())
+        Ok(result)
     }
 }
 
@@ -130,7 +112,7 @@ trait McpTools<'a> {
     ) -> Result<Vec<TraversalVal>, GraphError>;
 }
 
-impl<'a> McpTools<'a> for McpBackend<'a> {
+impl<'a> McpTools<'a> for McpBackend {
     fn out_step(
         &'a self,
         connection: &'a MCPConnection<'a>,
