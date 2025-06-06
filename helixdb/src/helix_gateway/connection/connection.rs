@@ -7,17 +7,21 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use tokio::{
-    net::TcpListener,
-    task::JoinHandle,
-};
+use crate::helix_runtime::AsyncRuntime;
+use crate::helix_transport::Transport;
 
 use crate::helix_gateway::{router::router::HelixRouter, thread_pool::thread_pool::ThreadPool};
 
-pub struct ConnectionHandler {
+pub struct ConnectionHandler<R, T>
+where
+    R: AsyncRuntime + Clone + Send + Sync + 'static,
+    T: Transport,
+{
     pub address: String,
     pub active_connections: Arc<Mutex<HashMap<String, ClientConnection>>>,
-    pub thread_pool: ThreadPool,
+    pub thread_pool: ThreadPool<R, T::Stream>,
+    pub runtime: R,
+    pub transport: T,
 }
 
 pub struct ClientConnection {
@@ -26,44 +30,50 @@ pub struct ClientConnection {
     pub addr: SocketAddr,
 }
 
-impl ConnectionHandler {
+impl<R, T> ConnectionHandler<R, T>
+where
+    R: AsyncRuntime + Clone + Send + Sync + 'static,
+    T: Transport,
+{
     pub fn new(
         address: &str,
         graph: Arc<HelixGraphEngine>,
         size: usize,
         router: HelixRouter,
+        runtime: R,
+        transport: T,
     ) -> Result<Self, GraphError> {
         Ok(Self {
             address: address.to_string(),
             active_connections: Arc::new(Mutex::new(HashMap::new())),
-            thread_pool: ThreadPool::new(size, graph, Arc::new(router))?,
+            thread_pool: ThreadPool::new(size, graph, Arc::new(router), runtime.clone())?,
+            runtime,
+            transport,
         })
     }
 
-    pub async fn accept_conns(&self) -> Result<JoinHandle<()>, GraphError> {
-        // Create a new TcpListener for each accept_conns call
-        let listener = TcpListener::bind(&self.address).await.map_err(|e| {
-            eprintln!("Failed to bind to address {}: {}", self.address, e);
-            GraphError::GraphConnectionError("Failed to bind to address".to_string(), e)
-        })?;
+    pub async fn accept_conns(&self) -> Result<<R as AsyncRuntime>::JoinHandle<()>, GraphError> {
+        let listener = self
+            .transport
+            .bind(&self.address)
+            .await
+            .map_err(|e| {
+                eprintln!("Failed to bind to address {}: {}", self.address, e);
+                GraphError::GraphConnectionError("Failed to bind to address".to_string(), e)
+            })?;
 
         // Log binding success to stderr since stdout might be buffered
 
         let active_connections = Arc::clone(&self.active_connections);
         let thread_pool_sender = self.thread_pool.sender.clone();
-        let address = self.address.clone();
+        let runtime = self.runtime.clone();
+        let transport = self.transport.clone();
 
-
-        let handle = tokio::spawn(async move {
-
+        let handle = runtime.spawn(async move {
+            let listener = listener;
             loop {
-                match listener.accept().await {
+                match transport.accept(&listener).await {
                     Ok((stream, addr)) => {
-
-                        // Configure TCP stream
-                        if let Err(e) = stream.set_nodelay(true) {
-                            eprintln!("Failed to set TCP_NODELAY: {}", e);
-                        }
 
                         // Create a client connection record
                         let client_id = Uuid::new_v4().to_string();

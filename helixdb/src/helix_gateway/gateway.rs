@@ -1,6 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::connection::connection::ConnectionHandler;
+use crate::helix_runtime::AsyncRuntime;
+use crate::helix_transport::Transport;
 use crate::helix_engine::graph_core::graph_core::HelixGraphEngine;
 use super::router::router::{HandlerFn, HelixRouter};
 
@@ -10,21 +12,33 @@ impl GatewayOpts {
     pub const DEFAULT_POOL_SIZE: usize = 1024;
 }
 
-pub struct HelixGateway {
-    pub connection_handler: ConnectionHandler,
+pub struct HelixGateway<R, T>
+where
+    R: AsyncRuntime + Clone + Send + Sync + 'static,
+    T: Transport,
+{
+    pub connection_handler: ConnectionHandler<R, T>,
+    pub runtime: R,
+    pub transport: T,
 }
 
-impl HelixGateway {
+impl<R, T> HelixGateway<R, T>
+where
+    R: AsyncRuntime + Clone + Send + Sync + 'static,
+    T: Transport,
+{
     pub async fn new(
         address: &str,
         graph: Arc<HelixGraphEngine>,
         size: usize,
         routes: Option<HashMap<(String, String), HandlerFn>>,
-    ) -> HelixGateway {
+        runtime: R,
+        transport: T,
+    ) -> HelixGateway<R, T> {
         let router = HelixRouter::new(routes);
-        let connection_handler = ConnectionHandler::new(address, graph, size, router).unwrap();
+        let connection_handler = ConnectionHandler::new(address, graph, size, router, runtime.clone(), transport.clone()).unwrap();
         println!("Gateway created");
-        HelixGateway { connection_handler }
+        HelixGateway { connection_handler, runtime, transport }
     }
 }
 
