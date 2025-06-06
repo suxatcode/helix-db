@@ -1,9 +1,11 @@
-use crate::helix_engine::graph_core::ops::in_::in_::InNodesIterator;
-use crate::helix_engine::graph_core::ops::in_::in_e::InEdgesIterator;
-use crate::helix_engine::graph_core::ops::out::out::OutNodesIterator;
-use crate::helix_engine::graph_core::ops::out::out_e::OutEdgesIterator;
+use crate::helix_engine::graph_core::ops::g::G;
+use crate::helix_engine::graph_core::ops::in_::in_::{InAdapter, InNodesIterator};
+use crate::helix_engine::graph_core::ops::in_::in_e::{InEdgesAdapter, InEdgesIterator};
+use crate::helix_engine::graph_core::ops::out::out::{OutAdapter, OutNodesIterator};
+use crate::helix_engine::graph_core::ops::out::out_e::{OutEdgesAdapter, OutEdgesIterator};
 use crate::helix_engine::graph_core::ops::source::add_e::EdgeType;
-use crate::helix_engine::graph_core::ops::source::n_from_type::NFromType;
+use crate::helix_engine::graph_core::ops::source::e_from_type::{EFromType, EFromTypeAdapter};
+use crate::helix_engine::graph_core::ops::source::n_from_type::{NFromType, NFromTypeAdapter};
 use crate::helix_engine::graph_core::ops::tr_val::{Traversable, TraversalVal};
 use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::helix_engine::types::GraphError;
@@ -14,6 +16,7 @@ use crate::protocol::response::Response;
 use get_routes::local_handler;
 use heed3::RoTxn;
 use serde::{Deserialize, Deserializer};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +39,9 @@ pub enum ToolArgs {
     },
     NFromType {
         node_type: String,
+    },
+    EFromType {
+        edge_type: String,
     },
 }
 
@@ -67,6 +73,7 @@ impl<'a> ToolCalls<'a> for McpBackend {
             } => self.in_step(connection, &edge_label, &edge_type, txn),
             ToolArgs::InEStep { edge_label } => self.in_e_step(connection, &edge_label, txn),
             ToolArgs::NFromType { node_type } => self.n_from_type(&node_type, txn),
+            ToolArgs::EFromType { edge_type } => self.e_from_type(&edge_type, txn),
             _ => return Err(GraphError::New(format!("Tool {:?} not found", args))),
         }?;
 
@@ -109,6 +116,21 @@ trait McpTools<'a> {
         &'a self,
         node_type: &'a str,
         txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    fn e_from_type(
+        &'a self,
+        edge_type: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError>;
+
+    /// filters items based on properies and traversal existence
+    fn filter_items(
+        &'a self,
+        txn: &'a RoTxn,
+        connection: &'a MCPConnection,
+        properties: Option<Vec<(String, String)>>,
+        filter_traversals: Option<Vec<ToolArgs>>,
     ) -> Result<Vec<TraversalVal>, GraphError>;
 }
 
@@ -298,5 +320,83 @@ impl<'a> McpTools<'a> for McpBackend {
         let result = iter.take(100).collect::<Result<Vec<_>, _>>();
         println!("result: {:?}", result);
         result
+    }
+
+    fn e_from_type(
+        &'a self,
+        edge_type: &'a str,
+        txn: &'a RoTxn,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = EFromType {
+            iter: db.edges_db.lazily_decode_data().iter(txn).unwrap(),
+            label: edge_type,
+        };
+
+        let result = iter.take(100).collect::<Result<Vec<_>, _>>();
+        println!("result: {:?}", result);
+        result
+    }
+
+    fn filter_items(
+        &'a self,
+        txn: &'a RoTxn,
+        connection: &'a MCPConnection,
+        properties: Option<Vec<(String, String)>>,
+        filter_traversals: Option<Vec<ToolArgs>>,
+    ) -> Result<Vec<TraversalVal>, GraphError> {
+        let db = Arc::clone(&self.db);
+
+        let iter = match properties {
+            Some(properties) => {
+                let iter = connection
+                    .iter
+                    .clone()
+                    .filter(move |item| {
+                        properties.iter().all(|(key, value)| {
+                            item.check_property(key.as_str())
+                                .map_or(false, |v| *v == *value)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                iter
+            }
+            None => connection.iter.clone().collect::<Vec<_>>(),
+        };
+
+        let result = iter
+            .clone()
+            .into_iter()
+            .filter_map(move |item| match &filter_traversals {
+                Some(filter_traversals) => {
+                    filter_traversals.iter().any(|filter| {
+                        let result = G::new_from(Arc::clone(&db), txn, vec![item.clone()]);
+                        match filter {
+                            ToolArgs::OutStep {
+                                edge_label,
+                                edge_type,
+                            } => result.out(edge_label, edge_type).next().is_some(),
+                            ToolArgs::OutEStep { edge_label } => {
+                                result.out_e(edge_label).next().is_some()
+                            }
+                            ToolArgs::InStep {
+                                edge_label,
+                                edge_type,
+                            } => result.in_(edge_label, edge_type).next().is_some(),
+                            ToolArgs::InEStep { edge_label } => {
+                                result.in_e(edge_label).next().is_some()
+                            }
+                            _ => return false,
+                        }
+                    });
+
+                    Some(item)
+                }
+                None => None,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(result)
     }
 }

@@ -25,6 +25,13 @@ where
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterator<'a, I> {
+    pub fn take_and_collect_to<B: FromIterator<TraversalVal>>(self, n: usize) -> B {
+        self.inner
+            .filter_map(|item| item.ok())
+            .take(n)
+            .collect::<B>()
+    }
+
     pub fn collect_to<B: FromIterator<TraversalVal>>(self) -> B {
         self.inner.filter_map(|item| item.ok()).collect::<B>()
     }
