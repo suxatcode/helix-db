@@ -8,7 +8,9 @@ use std::pin::Pin;
 /// Production code uses a Tokio-backed implementation while tests can
 /// provide deterministic schedulers by implementing this trait.
 pub trait AsyncRuntime {
-    type JoinHandle<T>: Future<Output = T> + Send + 'static;
+    type JoinHandle<T>: Future<Output = T> + Send + 'static
+    where
+        T: Send + 'static;
 
     /// Spawn a future onto the runtime.
     fn spawn<F, T>(&self, fut: F) -> Self::JoinHandle<T>
