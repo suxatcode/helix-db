@@ -1966,6 +1966,7 @@ dependencies = [
  "colored",
  "dirs 6.0.0",
  "flume",
+ "get_routes",
  "heed3",
  "inventory",
  "itertools 0.14.0",

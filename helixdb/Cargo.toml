@@ -24,6 +24,7 @@ flume = "0.11.1"
 rayon = "1.8.0"
 itertools = "0.14.0"
 colored = "2.1.0"
+get_routes = { version = "0.1.0", path = "../get_routes" }
 
 # Compiler
 pest = { version = "2.7", optional = true }

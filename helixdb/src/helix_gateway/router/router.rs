@@ -7,8 +7,11 @@
 
 // returns response
 
+use crate::{
+    helix_engine::{graph_core::graph_core::HelixGraphEngine, types::GraphError},
+    helix_gateway::mcp::mcp::MCPHandlerFn,
+};
 use core::fmt;
-use crate::helix_engine::{graph_core::graph_core::HelixGraphEngine, types::GraphError};
 use std::{collections::HashMap, sync::Arc};
 
 use crate::protocol::{request::Request, response::Response};
@@ -45,16 +48,27 @@ inventory::collect!(HandlerSubmission);
 pub struct HelixRouter {
     /// Method+Path => Function
     pub routes: HashMap<(String, String), HandlerFn>,
+    pub mcp_routes: HashMap<(String, String), MCPHandlerFn>,
 }
 
 impl HelixRouter {
     /// Create a new router with a set of routes
-    pub fn new(routes: Option<HashMap<(String, String), HandlerFn>>) -> Self {
+    pub fn new(
+        routes: Option<HashMap<(String, String), HandlerFn>>,
+        mcp_routes: Option<HashMap<(String, String), MCPHandlerFn>>,
+    ) -> Self {
         let rts = match routes {
             Some(routes) => routes,
             None => HashMap::new(),
         };
-        Self { routes: rts }
+        let mcp_rts = match mcp_routes {
+            Some(routes) => routes,
+            None => HashMap::new(),
+        };
+        Self {
+            routes: rts,
+            mcp_routes: mcp_rts,
+        }
     }
 
     /// Add a route to the router

@@ -8,10 +8,19 @@ use crate::helix_engine::graph_core::ops::tr_val::{Traversable, TraversalVal};
 use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::helix_engine::types::GraphError;
 use crate::helix_gateway::mcp::mcp::{MCPConnection, McpBackend};
+use crate::helix_gateway::router::router::HandlerInput;
 use crate::protocol::label_hash::hash_label;
+use crate::protocol::response::Response;
+use get_routes::local_handler;
 use heed3::RoTxn;
+use serde::{Deserialize, Deserializer};
 use std::sync::Arc;
 
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "tool_name", content = "args")]
 pub enum ToolArgs {
     OutStep {
         edge_label: String,
@@ -32,19 +41,46 @@ pub enum ToolArgs {
     },
 }
 
-
 pub(crate) trait ToolCalls<'a> {
-    fn call(&'a mut self, txn: &'a RoTxn, connection_id: &'a str, tool_name: &'a str, args: ToolArgs) -> Result<(), GraphError>;
+    fn call(
+        &'a mut self,
+        txn: &'a RoTxn,
+        connection_id: &'a str,
+        tool_name: &'a str,
+        args: ToolArgs,
+    ) -> Result<(), GraphError>;
 }
 
 impl<'a> ToolCalls<'a> for McpBackend<'a> {
-    fn call(&'a mut self, txn: &'a RoTxn, connection_id: &'a str, tool_name: &'a str, args: ToolArgs) -> Result<(), GraphError> {
+    fn call(
+        &'a mut self,
+        txn: &'a RoTxn,
+        connection_id: &'a str,
+        tool_name: &'a str,
+        args: ToolArgs,
+    ) -> Result<(), GraphError> {
         let connection = self.get_connection(connection_id).unwrap();
         let result = match (tool_name, args) {
-            ("out_step", ToolArgs::OutStep { edge_label, edge_type }) => self.out_step(connection, &edge_label, &edge_type, txn),
-            ("out_e_step", ToolArgs::OutEStep { edge_label }) => self.out_e_step(connection, &edge_label, txn),
-            ("in_step", ToolArgs::InStep { edge_label, edge_type }) => self.in_step(connection, &edge_label, &edge_type, txn),
-            ("in_e_step", ToolArgs::InEStep { edge_label }) => self.in_e_step(connection, &edge_label, txn),
+            (
+                "out_step",
+                ToolArgs::OutStep {
+                    edge_label,
+                    edge_type,
+                },
+            ) => self.out_step(connection, &edge_label, &edge_type, txn),
+            ("out_e_step", ToolArgs::OutEStep { edge_label }) => {
+                self.out_e_step(connection, &edge_label, txn)
+            }
+            (
+                "in_step",
+                ToolArgs::InStep {
+                    edge_label,
+                    edge_type,
+                },
+            ) => self.in_step(connection, &edge_label, &edge_type, txn),
+            ("in_e_step", ToolArgs::InEStep { edge_label }) => {
+                self.in_e_step(connection, &edge_label, txn)
+            }
             ("n_from_type", ToolArgs::NFromType { node_type }) => self.n_from_type(&node_type, txn),
             _ => return Err(GraphError::New(format!("Tool {} not found", tool_name))),
         }?;
@@ -228,7 +264,7 @@ impl<'a> McpTools<'a> for McpBackend<'a> {
 
     fn in_e_step(
         &'a self,
-                    connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection<'a>,
         edge_label: &'a str,
         txn: &'a RoTxn,
     ) -> Result<Vec<TraversalVal>, GraphError> {
