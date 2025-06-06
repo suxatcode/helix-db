@@ -124,8 +124,9 @@ pub type BasicMCPHandlerFn =
     for<'a> fn(&'a mut MCPToolInput<'a>, &mut Response) -> Result<(), GraphError>;
 
 // thread safe type for multi threaded use
-pub type MCPHandlerFn =
-    Arc<dyn Fn(&MCPToolInput, &mut Response) -> Result<(), GraphError> + Send + Sync>;
+pub type MCPHandlerFn = Arc<
+    dyn for<'a> Fn(&'a mut MCPToolInput<'a>, &mut Response) -> Result<(), GraphError> + Send + Sync,
+>;
 
 #[derive(Clone, Debug)]
 pub struct MCPHandlerSubmission(pub MCPHandler);
@@ -172,6 +173,6 @@ pub fn call_tool<'a>(
     connection.iter = result.into_iter();
 
     response.body = sonic_rs::to_vec(&ReturnValue::from(first)).unwrap();
-    
+
     Ok(())
 }
