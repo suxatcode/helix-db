@@ -43,7 +43,7 @@ pub(crate) trait ToolCalls<'a> {
     fn call(
         &'a self,
         txn: &'a RoTxn,
-        connection_id: &'a MCPConnection<'a>,
+        connection_id: &'a MCPConnection,
         args: ToolArgs,
     ) -> Result<Vec<TraversalVal>, GraphError>;
 }
@@ -52,7 +52,7 @@ impl<'a> ToolCalls<'a> for McpBackend {
     fn call(
         &'a self,
         txn: &'a RoTxn,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         args: ToolArgs,
     ) -> Result<Vec<TraversalVal>, GraphError> {
         let result = match args {
@@ -77,7 +77,7 @@ impl<'a> ToolCalls<'a> for McpBackend {
 trait McpTools<'a> {
     fn out_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         edge_type: &'a EdgeType,
         txn: &'a RoTxn,
@@ -85,14 +85,14 @@ trait McpTools<'a> {
 
     fn out_e_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         txn: &'a RoTxn,
     ) -> Result<Vec<TraversalVal>, GraphError>;
 
     fn in_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         edge_type: &'a EdgeType,
         txn: &'a RoTxn,
@@ -100,7 +100,7 @@ trait McpTools<'a> {
 
     fn in_e_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         txn: &'a RoTxn,
     ) -> Result<Vec<TraversalVal>, GraphError>;
@@ -115,7 +115,7 @@ trait McpTools<'a> {
 impl<'a> McpTools<'a> for McpBackend {
     fn out_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         edge_type: &'a EdgeType,
         txn: &'a RoTxn,
@@ -161,7 +161,7 @@ impl<'a> McpTools<'a> for McpBackend {
 
     fn out_e_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         txn: &'a RoTxn,
     ) -> Result<Vec<TraversalVal>, GraphError> {
@@ -200,7 +200,7 @@ impl<'a> McpTools<'a> for McpBackend {
 
     fn in_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         edge_type: &'a EdgeType,
         txn: &'a RoTxn,
@@ -246,7 +246,7 @@ impl<'a> McpTools<'a> for McpBackend {
 
     fn in_e_step(
         &'a self,
-        connection: &'a MCPConnection<'a>,
+        connection: &'a MCPConnection,
         edge_label: &'a str,
         txn: &'a RoTxn,
     ) -> Result<Vec<TraversalVal>, GraphError> {

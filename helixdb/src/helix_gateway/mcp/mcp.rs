@@ -29,15 +29,16 @@ use crate::{
         router::router::HandlerInput,
     },
     protocol::{
-        label_hash::hash_label, request::Request, response::Response, return_values::ReturnValue,
+        items::v6_uuid, label_hash::hash_label, request::Request, response::Response,
+        return_values::ReturnValue,
     },
 };
 
-pub struct McpConnections<'a> {
-    pub connections: HashMap<&'a str, MCPConnection<'a>>,
+pub struct McpConnections {
+    pub connections: HashMap<String, MCPConnection>,
 }
 
-impl<'a> McpConnections<'a> {
+impl McpConnections {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
@@ -48,23 +49,20 @@ impl<'a> McpConnections<'a> {
             connections: HashMap::with_capacity(max_connections),
         }
     }
-    pub fn add_connection(&'a mut self, connection: MCPConnection<'a>) {
+    pub fn add_connection(&mut self, connection: MCPConnection) {
         self.connections
-            .insert(connection.connection_id, connection);
+            .insert(connection.connection_id.clone(), connection);
     }
 
-    pub fn remove_connection(&mut self, connection_id: &'a str) -> Option<MCPConnection<'a>> {
+    pub fn remove_connection(&mut self, connection_id: &str) -> Option<MCPConnection> {
         self.connections.remove(connection_id)
     }
 
-    pub fn get_connection(&'a self, connection_id: &'a str) -> Option<&'a MCPConnection<'a>> {
+    pub fn get_connection(&self, connection_id: &str) -> Option<&MCPConnection> {
         self.connections.get(connection_id)
     }
 
-    pub fn get_connection_mut(
-        &'a mut self,
-        connection_id: &str,
-    ) -> Option<&'a mut MCPConnection<'a>> {
+    pub fn get_connection_mut(&mut self, connection_id: &str) -> Option<&mut MCPConnection> {
         self.connections.get_mut(connection_id)
     }
 }
@@ -85,9 +83,9 @@ impl McpBackend {
     }
 }
 
-pub struct MCPConnection<'a> {
-    pub connection_id: &'a str,
-    pub connection_addr: &'a str,
+pub struct MCPConnection {
+    pub connection_id: String,
+    pub connection_addr: String,
     pub connection_port: u16,
     pub iter: IntoIter<TraversalVal>,
 }
@@ -96,10 +94,10 @@ pub struct MCPConnection<'a> {
 //     pub iter: I,
 // }
 
-impl<'a> MCPConnection<'a> {
+impl MCPConnection {
     pub fn new(
-        connection_id: &'a str,
-        connection_addr: &'a str,
+        connection_id: String,
+        connection_addr: String,
         connection_port: u16,
         iter: IntoIter<TraversalVal>,
     ) -> Self {
@@ -112,20 +110,20 @@ impl<'a> MCPConnection<'a> {
     }
 }
 
-pub struct MCPToolInput<'a> {
+pub struct MCPToolInput {
     pub request: Request,
     // pub graph: Arc<HelixGraphEngine>,
     pub mcp_backend: Arc<McpBackend>,
-    pub mcp_connections: McpConnections<'a>,
+    pub mcp_connections: McpConnections,
 }
 
 // basic type for function pointer
 pub type BasicMCPHandlerFn =
-    for<'a> fn(&'a mut MCPToolInput<'a>, &mut Response) -> Result<(), GraphError>;
+    for<'a> fn(&'a mut MCPToolInput, &mut Response) -> Result<(), GraphError>;
 
 // thread safe type for multi threaded use
 pub type MCPHandlerFn = Arc<
-    dyn for<'a> Fn(&'a mut MCPToolInput<'a>, &mut Response) -> Result<(), GraphError> + Send + Sync,
+    dyn for<'a> Fn(&'a mut MCPToolInput, &mut Response) -> Result<(), GraphError> + Send + Sync,
 >;
 
 #[derive(Clone, Debug)]
@@ -147,7 +145,7 @@ inventory::collect!(MCPHandlerSubmission);
 
 #[mcp_handler]
 pub fn call_tool<'a>(
-    input: &'a mut MCPToolInput<'a>,
+    input: &'a mut MCPToolInput,
     response: &mut Response,
 ) -> Result<(), GraphError> {
     let data: ToolCallRequest = match sonic_rs::from_slice(&input.request.body) {
@@ -174,5 +172,56 @@ pub fn call_tool<'a>(
 
     response.body = sonic_rs::to_vec(&ReturnValue::from(first)).unwrap();
 
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct InitRequest {
+    pub connection_addr: String,
+    pub connection_port: u16,
+}
+
+#[mcp_handler]
+pub fn init<'a>(input: &'a mut MCPToolInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: InitRequest = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let connection_id = uuid::Uuid::from_u128(v6_uuid()).to_string();
+    input.mcp_connections.add_connection(MCPConnection::new(
+        connection_id.clone(),
+        data.connection_addr,
+        data.connection_port,
+        vec![].into_iter(),
+    ));
+
+    response.body = sonic_rs::to_vec(&ReturnValue::from(connection_id)).unwrap();
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct NextRequest {
+    pub connection_id: String,
+}
+
+#[mcp_handler]
+pub fn next<'a>(input: &'a mut MCPToolInput, response: &mut Response) -> Result<(), GraphError> {
+    let data: NextRequest = match sonic_rs::from_slice(&input.request.body) {
+        Ok(data) => data,
+        Err(err) => return Err(GraphError::from(err)),
+    };
+
+    let connection = input
+        .mcp_connections
+        .get_connection_mut(&data.connection_id)
+        .unwrap();
+    let next = connection
+        .iter
+        .next()
+        .unwrap_or(TraversalVal::Empty)
+        .clone();
+    response.body = sonic_rs::to_vec(&ReturnValue::from(next)).unwrap();
     Ok(())
 }
