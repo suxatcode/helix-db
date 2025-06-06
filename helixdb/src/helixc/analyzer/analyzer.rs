@@ -1938,7 +1938,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1954,7 +1954,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1970,7 +1970,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1986,7 +1986,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -2004,11 +2004,11 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::StringLiteral(s) => {
-                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                    GeneratedValue::Primitive(GenRef::Literal(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 other => {
                                     println!("ID {:?}", other);
@@ -2029,11 +2029,11 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::StringLiteral(s) => {
-                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                    GeneratedValue::Primitive(GenRef::Literal(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -2164,10 +2164,7 @@ impl<'a> Ctx<'a> {
                                                 field.value.loc.clone(),
                                                 i.as_str(),
                                             );
-                                            GeneratedValue::Identifier(GenRef::Std(format!(
-                                                "data.{}",
-                                                i.clone()
-                                            )))
+                                            self.gen_identifier_or_param(q, i.as_str())
                                         }
                                         FieldValueType::Literal(l) => match l {
                                             Value::String(s) => {
@@ -2184,10 +2181,7 @@ impl<'a> Ctx<'a> {
                                                     e.loc.clone(),
                                                     i.as_str(),
                                                 );
-                                                GeneratedValue::Identifier(GenRef::Std(format!(
-                                                    "data.{}",
-                                                    i.clone()
-                                                )))
+                                                self.gen_identifier_or_param(q, i.as_str())
                                             }
                                             ExpressionType::StringLiteral(i) => {
                                                 GeneratedValue::Primitive(GenRef::Std(
@@ -4184,6 +4178,20 @@ impl<'a> Ctx<'a> {
                 false
             }
             _ => true,
+        }
+    }
+
+    fn is_param(&self, q: &Query, name: &str) -> bool {
+        q.parameters.iter().find(|p| p.name.1 == *name).is_some()
+    }
+
+    fn gen_identifier_or_param(&self, q: &Query, name: &str) -> GeneratedValue {
+        println!("{:?}", name);
+        if self.is_param(q, name) {
+            println!("{:?}", name);
+            GeneratedValue::Identifier(GenRef::Std(format!("data.{}", name)))
+        } else {
+            GeneratedValue::Identifier(GenRef::Std(name.to_string()))
         }
     }
 }
