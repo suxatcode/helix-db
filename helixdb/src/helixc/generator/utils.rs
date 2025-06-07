@@ -162,6 +162,7 @@ pub enum GeneratedValue {
     Literal(GenRef<String>),
     Identifier(GenRef<String>),
     Primitive(GenRef<String>),
+    Parameter(GenRef<String>),
     Unknown,
 }
 
@@ -171,6 +172,7 @@ impl Display for GeneratedValue {
             GeneratedValue::Literal(value) => write!(f, "{}", value),
             GeneratedValue::Primitive(value) => write!(f, "{}", value),
             GeneratedValue::Identifier(value) => write!(f, "{}", value),
+            GeneratedValue::Parameter(value) => write!(f, "{}", value),
             GeneratedValue::Unknown => write!(f, ""),
         }
     }
@@ -181,6 +183,7 @@ impl Debug for GeneratedValue {
             GeneratedValue::Literal(value) => write!(f, "Literal({})", value),
             GeneratedValue::Primitive(value) => write!(f, "Primitive({})", value),
             GeneratedValue::Identifier(value) => write!(f, "Identifier({})", value),
+            GeneratedValue::Parameter(value) => write!(f, "Parameter({})", value),
             GeneratedValue::Unknown => write!(f, "Unknown"),
         }
     }

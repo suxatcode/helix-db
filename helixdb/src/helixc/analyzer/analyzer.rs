@@ -836,9 +836,11 @@ impl<'a> Ctx<'a> {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("data.{}", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -848,16 +850,18 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a to id".to_string(),
                                 "add a to id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let from = match &add.connection.from_id {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("data.{}.clone()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -867,7 +871,7 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a from id".to_string(),
                                 "add a from id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let add_e = AddE {
@@ -3729,9 +3733,11 @@ impl<'a> Ctx<'a> {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("{}.id()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -3741,16 +3747,18 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a to id".to_string(),
                                 "add a to id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let from = match &add.connection.from_id {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("{}.id()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -3760,7 +3768,7 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a from id".to_string(),
                                 "add a from id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let add_e = AddE {
@@ -4344,9 +4352,17 @@ impl<'a> Ctx<'a> {
         println!("{:?}", name);
         if self.is_param(q, name) {
             println!("{:?}", name);
-            GeneratedValue::Identifier(GenRef::Std(format!("data.{}", name)))
+            GeneratedValue::Parameter(GenRef::Ref(format!("data.{}", name)))
         } else {
             GeneratedValue::Identifier(GenRef::Std(name.to_string()))
+        }
+    }
+
+    fn gen_id_access_or_param(&self, q: &Query, name: &str) -> GeneratedValue {
+        if self.is_param(q, name) {
+            GeneratedValue::Parameter(GenRef::DeRef(format!("data.{}", name)))
+        } else {
+            GeneratedValue::Identifier(GenRef::Std(format!("{}.id()", name.to_string())))
         }
     }
 }
