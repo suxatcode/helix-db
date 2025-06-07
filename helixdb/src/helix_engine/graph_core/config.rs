@@ -34,6 +34,9 @@ pub struct Config {
 
     // // Port to run the server on
     // pub port: usize,
+
+    // should use mcp
+    pub mcp: bool,
 }
 
 impl Config {
@@ -48,6 +51,7 @@ impl Config {
                 secondary_indices: None,
             },
             db_max_size_gb: Some(db_max_size_gb),
+            mcp: true,
         }
     }
 
@@ -92,6 +96,7 @@ impl Default for Config {
                 secondary_indices: None,
             },
             db_max_size_gb: Some(10),
+            mcp: true,
         }
     }
 }

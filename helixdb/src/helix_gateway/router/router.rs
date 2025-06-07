@@ -9,7 +9,7 @@
 
 use crate::{
     helix_engine::{graph_core::graph_core::HelixGraphEngine, types::GraphError},
-    helix_gateway::mcp::mcp::MCPHandlerFn,
+    helix_gateway::mcp::mcp::{MCPHandlerFn, MCPToolInput, McpConnections},
 };
 use core::fmt;
 use std::{collections::HashMap, sync::Arc};
@@ -96,20 +96,27 @@ impl HelixRouter {
         response: &mut Response,
     ) -> Result<(), GraphError> {
         let route_key = (request.method.clone(), request.path.clone());
-        let handler = match self.routes.get(&route_key) {
-            Some(handle) => handle,
-            None => {
-                response.status = 404;
-                response.body = b"404 - Not Found".to_vec();
-                return Ok(());
-            }
+
+        if let Some(handler) = self.routes.get(&route_key) {
+            let input = HandlerInput {
+                request,
+                graph: Arc::clone(&graph_access),
+            };
+            return handler(&input, response);
+        }
+
+        if let Some(mcp_handler) = self.mcp_routes.get(&route_key) {
+            let mut mcp_input = MCPToolInput {
+                request,
+                mcp_backend: Arc::clone(&graph_access.mcp_backend.as_ref().unwrap()),
+                mcp_connections: Arc::clone(&graph_access.mcp_connections.as_ref().unwrap()),
+            };
+            return mcp_handler(&mut mcp_input, response);
         };
 
-        let input = HandlerInput {
-            request,
-            graph: Arc::clone(&graph_access),
-        };
-        handler(&input, response)
+        response.status = 404;
+        response.body = b"404 - Not Found".to_vec();
+        return Ok(());
     }
 }
 

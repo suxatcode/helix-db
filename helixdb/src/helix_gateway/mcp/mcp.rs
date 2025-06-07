@@ -3,7 +3,11 @@
 
 // wraps iter in new tools
 
-use std::{collections::HashMap, sync::Arc, vec::IntoIter};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    vec::IntoIter,
+};
 
 use get_routes::{local_handler, mcp_handler};
 use heed3::{AnyTls, RoTxn};
@@ -114,7 +118,7 @@ pub struct MCPToolInput {
     pub request: Request,
     // pub graph: Arc<HelixGraphEngine>,
     pub mcp_backend: Arc<McpBackend>,
-    pub mcp_connections: McpConnections,
+    pub mcp_connections: Arc<Mutex<McpConnections>>,
 }
 
 // basic type for function pointer
@@ -153,22 +157,22 @@ pub fn call_tool<'a>(
         Err(err) => return Err(GraphError::from(err)),
     };
 
-    let connection = match input.mcp_connections.get_connection(&data.connection_id) {
+    let mut connections = input.mcp_connections.lock().unwrap();
+    let mut connection = match connections.remove_connection(&data.connection_id) {
         Some(conn) => conn,
         None => return Err(GraphError::Default),
     };
+    drop(connections);
     let txn = input.mcp_backend.db.graph_env.read_txn()?;
 
     let result = input.mcp_backend.call(&txn, &connection, data.tool)?;
 
-    let connection = input
-        .mcp_connections
-        .get_connection_mut(&data.connection_id)
-        .unwrap();
-
     let first = result.first().unwrap_or(&TraversalVal::Empty).clone();
 
     connection.iter = result.into_iter();
+    let mut connections = input.mcp_connections.lock().unwrap();
+    connections.add_connection(connection);
+    drop(connections);
 
     response.body = sonic_rs::to_vec(&ReturnValue::from(first)).unwrap();
 
@@ -189,13 +193,14 @@ pub fn init<'a>(input: &'a mut MCPToolInput, response: &mut Response) -> Result<
     };
 
     let connection_id = uuid::Uuid::from_u128(v6_uuid()).to_string();
-    input.mcp_connections.add_connection(MCPConnection::new(
+    let mut connections = input.mcp_connections.lock().unwrap();
+    connections.add_connection(MCPConnection::new(
         connection_id.clone(),
         data.connection_addr,
         data.connection_port,
         vec![].into_iter(),
     ));
-
+    drop(connections);
     response.body = sonic_rs::to_vec(&ReturnValue::from(connection_id)).unwrap();
 
     Ok(())
@@ -213,15 +218,14 @@ pub fn next<'a>(input: &'a mut MCPToolInput, response: &mut Response) -> Result<
         Err(err) => return Err(GraphError::from(err)),
     };
 
-    let connection = input
-        .mcp_connections
-        .get_connection_mut(&data.connection_id)
-        .unwrap();
+    let mut connections = input.mcp_connections.lock().unwrap();
+    let connection = connections.get_connection_mut(&data.connection_id).unwrap();
     let next = connection
         .iter
         .next()
         .unwrap_or(TraversalVal::Empty)
         .clone();
+    drop(connections);
     response.body = sonic_rs::to_vec(&ReturnValue::from(next)).unwrap();
     Ok(())
 }
