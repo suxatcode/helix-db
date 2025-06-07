@@ -2,29 +2,29 @@ use crate::{
     args::{CommandType, HelixCLI},
     instance_manager::InstanceManager,
     styled_string::StyledString,
-    utils::*,
     types::*,
+    utils::*,
 };
+use args::OutputLanguage;
+use clap::Parser;
 use helixdb::{
     helix_engine::graph_core::config::Config,
     ingestion_engine::{postgres_ingestion::PostgresIngestor, sql_ingestion::SqliteIngestor},
 };
+use spinners::{Spinner, Spinners};
 use std::{
     fmt::Write,
     fs,
+    io::Write as iWrite,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    io::Write as iWrite,
 };
-use spinners::{Spinner, Spinners};
-use args::OutputLanguage;
-use clap::Parser;
 
 pub mod args;
 mod instance_manager;
 mod styled_string;
-mod utils;
 mod types;
+mod utils;
 
 fn main() {
     let args = HelixCLI::parse();
@@ -213,12 +213,8 @@ fn main() {
                 .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
                 .unwrap();
 
-            let endpoints: Vec<String> = code
-                .source
-                .queries
-                .iter()
-                .map(|q| to_snake_case(&q.name))
-                .collect();
+            let endpoints: Vec<String> =
+                code.source.queries.iter().map(|q| q.name.clone()).collect();
 
             match instance_manager.init_start_instance(&binary_path, port, endpoints) {
                 Ok(instance) => {
@@ -243,8 +239,11 @@ fn main() {
             match check_helix_installation() {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("{}",
-                        "Helix is not installed. Please run `helix install` first.".red().bold()
+                    println!(
+                        "{}",
+                        "Helix is not installed. Please run `helix install` first."
+                            .red()
+                            .bold()
                     );
                     return;
                 }
@@ -261,15 +260,17 @@ fn main() {
                 home_dir.join(".helix/repo/helix-db/helixdb")
             };
 
-            let local_cli_version = Version::parse(&format!("v{}", env!("CARGO_PKG_VERSION"))).unwrap();
-            let local_db_version = Version::parse(&format!("v{}", get_crate_version(&repo_path).unwrap())).unwrap();
+            let local_cli_version =
+                Version::parse(&format!("v{}", env!("CARGO_PKG_VERSION"))).unwrap();
+            let local_db_version =
+                Version::parse(&format!("v{}", get_crate_version(&repo_path).unwrap())).unwrap();
             let remote_helix_version = get_remote_helix_version().unwrap();
-            println!("helix-cli version: {}, helix-db version: {}, remote helix version: {}",
-                local_cli_version, local_db_version, remote_helix_version);
+            println!(
+                "helix-cli version: {}, helix-db version: {}, remote helix version: {}",
+                local_cli_version, local_db_version, remote_helix_version
+            );
 
-            if local_db_version < remote_helix_version
-               || local_cli_version < remote_helix_version
-            {
+            if local_db_version < remote_helix_version || local_cli_version < remote_helix_version {
                 let mut runner = Command::new("git");
                 runner.arg("reset");
                 runner.arg("--hard");
@@ -279,7 +280,9 @@ fn main() {
                     Err(e) => {
                         println!(
                             "{} {}",
-                            "Error while reseting installed helix-db version:".red().bold(),
+                            "Error while reseting installed helix-db version:"
+                                .red()
+                                .bold(),
                             e
                         );
                         return;
@@ -290,7 +293,10 @@ fn main() {
                 runner.arg("pull");
                 runner.current_dir(&repo_path);
                 match runner.output() {
-                    Ok(_) => println!("{}", "New helix-db version successfully pulled!".green().bold()),
+                    Ok(_) => println!(
+                        "{}",
+                        "New helix-db version successfully pulled!".green().bold()
+                    ),
                     Err(e) => {
                         println!(
                             "{} {}",
@@ -301,9 +307,13 @@ fn main() {
                     }
                 }
 
-
                 match get_n_helix_cli() {
-                    Ok(_) => println!("{}", "New helix-cli version successfully installed!".green().bold()),
+                    Ok(_) => println!(
+                        "{}",
+                        "New helix-cli version successfully installed!"
+                            .green()
+                            .bold()
+                    ),
                     Err(e) => {
                         println!(
                             "{} {}",
@@ -344,19 +354,14 @@ fn main() {
                 home_dir.join(".helix/repo/helix-db/helixdb")
             };
 
-            let local_cli_version = Version::parse(
-                &format!("v{}", env!("CARGO_PKG_VERSION"))
-            ).unwrap();
-            let local_db_version = Version::parse(
-                &format!("v{}", get_crate_version(repo_path).unwrap())
-            ).unwrap();
+            let local_cli_version =
+                Version::parse(&format!("v{}", env!("CARGO_PKG_VERSION"))).unwrap();
+            let local_db_version =
+                Version::parse(&format!("v{}", get_crate_version(repo_path).unwrap())).unwrap();
 
             println!(
                 "{} {}, {} {}",
-                "helix-cli version:",
-                local_cli_version,
-                "helix-db version:",
-                local_db_version
+                "helix-cli version:", local_cli_version, "helix-db version:", local_db_version
             );
         }
 
@@ -534,12 +539,8 @@ fn main() {
                 .map(|path| path.join(".helix/repo/helix-db/target/release/helix-container"))
                 .unwrap();
 
-            let endpoints: Vec<String> = code
-                .source
-                .queries
-                .iter()
-                .map(|q| to_snake_case(&q.name))
-                .collect();
+            let endpoints: Vec<String> =
+                code.source.queries.iter().map(|q| q.name.clone()).collect();
 
             let cached_binary = instance_manager.cache_dir.join(&iid);
             match fs::copy(binary_path, &cached_binary) {
