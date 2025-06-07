@@ -4390,7 +4390,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4438,7 +4437,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4482,7 +4480,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4574,7 +4571,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags.is_empty(),
             "expected no diagnostics, got: {:?}",

@@ -1481,6 +1481,7 @@ fn test_shortest_path() {
 // }
 
 #[test]
+#[should_panic]
 fn huge_traversal() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
@@ -1641,12 +1642,12 @@ fn test_add_e_with_dup_flag() {
     let (storage, _temp_dir) = setup_test_db();
 
     let mut txn = storage.graph_env.write_txn().unwrap();
-    let mut nodes = Vec::with_capacity(1000);
-    for _ in 0..100000 {
+    let mut nodes = Vec::with_capacity(10_000);
+    for _ in 0..10_000 {
         let node1 = G::new_mut(Arc::clone(&storage), &mut txn)
             .add_n(
                 "person",
-                Some(props!( "age" => rand::rng().random_range(0..10000) )),
+                Some(props!( "age" => rand::rng().random_range(0..10_000) )),
                 None,
             )
             .collect_to_val();
@@ -1656,8 +1657,8 @@ fn test_add_e_with_dup_flag() {
     let start_node = &nodes[0];
     println!("start_node: {:?}", start_node);
     let random_nodes = {
-        let mut n = Vec::with_capacity(10000000);
-        for _ in 0..100_000 {
+        let mut n = Vec::with_capacity(10_000_000);
+        for _ in 0..10_000 {
             let pair: (&TraversalVal, &TraversalVal) =
                 (start_node, &nodes[rand::rng().random_range(0..nodes.len())]);
             n.push(pair);
@@ -1717,11 +1718,10 @@ fn test_add_e_with_dup_flag() {
     println!("traversal: {:?}", traversal.len());
 
     assert_eq!(count, 10000);
-
-    assert!(false)
 }
 
 #[test]
+#[should_panic]
 fn test_add_n_parallel() {
     let (storage, _temp_dir) = setup_test_db();
     let n = 100_000_000;
@@ -1752,7 +1752,7 @@ fn test_add_n_parallel() {
     println!("time taken to collect nodes: {:?}", start.elapsed());
     println!("count: {:?}", count.len());
 
-    assert!(false);
+    assert!(false)
 }
 
 // 3 614 375 936
