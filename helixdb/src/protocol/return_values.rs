@@ -196,11 +196,9 @@ impl ReturnValue {
             if m.should_spread {
                 ReturnValue::from(item).mixin_remapping(&mut m.remappings)
             } else {
-                println!("default mixin");
                 ReturnValue::default().mixin_remapping(&mut m.remappings)
             }
         } else {
-            println!("no mixin found for item: {:?}", id);
             ReturnValue::from(item)
         }
     }

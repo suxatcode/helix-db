@@ -16,15 +16,15 @@ use heed3::{types::Bytes, RoTxn};
 use std::sync::Arc;
 
 pub struct InNodesIterator<'a, T> {
-    iter: heed3::RoIter<
+    pub iter: heed3::RoIter<
         'a,
         Bytes,
         heed3::types::LazyDecode<Bytes>,
         heed3::iteration_method::MoveOnCurrentKeyDuplicates,
     >,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a T,
-    edge_type: &'a EdgeType,
+    pub storage: Arc<HelixGraphStorage>,
+    pub txn: &'a T,
+    pub edge_type: &'a EdgeType,
 }
 
 impl<'a> Iterator for InNodesIterator<'a, RoTxn<'a>> {

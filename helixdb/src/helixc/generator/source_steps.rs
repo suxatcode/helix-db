@@ -48,8 +48,8 @@ impl Display for AddN {
 pub struct AddE {
     pub label: GenRef<String>,
     pub properties: Option<Vec<(String, GeneratedValue)>>,
-    pub from: GenRef<String>,
-    pub to: GenRef<String>,
+    pub from: GeneratedValue,
+    pub to: GeneratedValue,
     // pub secondary_indices: Option<Vec<String>>,
 }
 impl Display for AddE {

@@ -13,9 +13,14 @@ use crate::{
     },
 };
 use heed3::PutFlags;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum EdgeType {
+    #[serde(rename = "vec")]
     Vec,
+    #[serde(rename = "node")]
     Node,
 }
 impl Display for EdgeType {
@@ -54,7 +59,7 @@ pub trait AddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>>
 
 impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddEAdapter<'a, 'b>
     for RwTraversalIterator<'a, 'b, I>
-{   
+{
     #[inline(always)]
     fn add_e(
         self,
