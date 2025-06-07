@@ -1,4 +1,7 @@
-use std::{fmt::{self, Debug, Display}, io::{self, Write}};
+use std::{
+    fmt::{self, Debug, Display},
+    io::{self, Write},
+};
 
 use crate::helixc::parser::helix_parser::IdType;
 
@@ -244,21 +247,21 @@ impl Display for RustType {
 impl RustType {
     pub fn to_ts(&self) -> String {
         let s = match self {
-            RustType::String =>  "string",
-            RustType::I8 =>  "number",
-            RustType::I16 =>  "number",
-            RustType::I32 =>  "number",
-            RustType::I64 =>  "number",
-            RustType::U8 =>  "number",
-            RustType::U16 =>  "number",
-            RustType::U32 =>  "number",
-            RustType::U64 =>  "number",
-            RustType::U128 =>  "number",
-            RustType::F32 =>  "number",
-            RustType::F64 =>  "number",
-            RustType::Bool =>  "boolean",
-            RustType::Uuid =>  "string", // do thee
-            RustType::Date =>  "Date",   // do thee
+            RustType::String => "string",
+            RustType::I8 => "number",
+            RustType::I16 => "number",
+            RustType::I32 => "number",
+            RustType::I64 => "number",
+            RustType::U8 => "number",
+            RustType::U16 => "number",
+            RustType::U32 => "number",
+            RustType::U64 => "number",
+            RustType::U128 => "number",
+            RustType::F32 => "number",
+            RustType::F64 => "number",
+            RustType::Bool => "boolean",
+            RustType::Uuid => "string", // do thee
+            RustType::Date => "Date",   // do thee
         };
         s.to_string()
     }
@@ -321,8 +324,9 @@ use helixdb::{
             filter_ref::FilterRefAdapter, range::RangeAdapter, update::UpdateAdapter,
             map::MapAdapter, paths::ShortestPathAdapter, props::PropsAdapter, drop::Drop,
         },
-        vectors::{insert::InsertVAdapter, search::SearchVAdapter},
+        vectors::{insert::InsertVAdapter, search::SearchVAdapter, brute_force_search::BruteForceSearchVAdapter},
         bm25::search_bm25::SearchBM25Adapter,
+        
     },
     helix_engine::types::GraphError,
     helix_gateway::router::router::HandlerInput,

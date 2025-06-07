@@ -131,6 +131,7 @@ graph_step = {
   | out
   | in_nodes
   | shortest_path
+  | search_vector
 }
 out_e ={  "OutE" ~ ("<" ~ type_args ~ ">")?}
 in_e ={ "InE" ~ ("<" ~ type_args ~ ">")?}
