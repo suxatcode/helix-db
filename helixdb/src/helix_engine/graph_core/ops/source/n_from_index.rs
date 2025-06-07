@@ -4,44 +4,38 @@ use crate::{
         storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
-    protocol::value::Value,
+    protocol::{items::Node, value::Value},
 };
-use heed3::RoTxn;
+use heed3::{byteorder::BE, types::Bytes, RoTxn};
 use serde::Serialize;
 use std::{iter::Once, sync::Arc};
 
-pub struct NFromIndex<'a, T, K: Into<Value> + Serialize> {
-    iter: Once<Result<TraversalVal, GraphError>>,
+pub struct NFromIndex<'a> {
+    iter:
+        heed3::RoPrefix<'a, heed3::types::Bytes, heed3::types::LazyDecode<heed3::types::U128<BE>>>,
+    txn: &'a RoTxn<'a>,
     storage: Arc<HelixGraphStorage>,
-    txn: &'a T,
-    index: &'a str,
-    key: &'a K,
 }
 
-impl<'a, K> Iterator for NFromIndex<'a, RoTxn<'a>, K>
-where
-    K: Into<Value> + Serialize,
-{
+impl<'a> Iterator for NFromIndex<'a> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|_| {
-            let db = self
-                .storage
-                .secondary_indices
-                .get(self.index)
-                .ok_or(GraphError::New(format!(
-                    "Secondary Index {} not found",
-                    self.index
-                )))?;
-            let node_id = db
-                .get(self.txn, &bincode::serialize(self.key)?)?
-                .ok_or(GraphError::NodeNotFound)?;
+        while let Some(value) = self.iter.next() {
+            let (key_, value) = value.unwrap();
+            match value.decode() {
+                Ok(value) => match self.storage.get_node(self.txn, &value) {
+                    Ok(node) => return Some(Ok(TraversalVal::Node(node))),
+                    Err(e) => {
+                        println!("{} Error getting node: {:?}", line!(), e);
+                        return Some(Err(GraphError::ConversionError(e.to_string())));
+                    }
+                },
 
-            self.storage
-                .get_node(self.txn, &node_id)
-                .map(TraversalVal::Node)
-        })
+                Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
+            }
+        }
+        None
     }
 }
 
@@ -61,25 +55,38 @@ pub trait NFromIndexAdapter<'a, K: Into<Value> + Serialize>:
     /// The index must be a valid and existing secondary index and the key should match the type of the index.
     fn n_from_index(self, index: &'a str, key: &'a K) -> Self::OutputIter
     where
-        K: Into<Value> + Serialize;
+        K: Into<Value> + Serialize + Clone;
 }
 
 impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, K: Into<Value> + Serialize + 'a>
     NFromIndexAdapter<'a, K> for RoTraversalIterator<'a, I>
 {
-    type OutputIter = RoTraversalIterator<'a, NFromIndex<'a, RoTxn<'a>, K>>;
+    type OutputIter = RoTraversalIterator<'a, NFromIndex<'a>>;
 
     #[inline]
     fn n_from_index(self, index: &'a str, key: &'a K) -> Self::OutputIter
     where
-        K: Into<Value> + Serialize,
+        K: Into<Value> + Serialize + Clone,
     {
+        let db = self
+            .storage
+            .secondary_indices
+            .get(index)
+            .ok_or(GraphError::New(format!(
+                "Secondary Index {} not found",
+                index
+            )))
+            .unwrap();
+        println!("DB: {:?}", self.storage.secondary_indices);
+        let res = db
+            .lazily_decode_data()
+            .prefix_iter(self.txn, &bincode::serialize(&Value::from(key)).unwrap())
+            .unwrap();
+
         let n_from_index = NFromIndex {
-            iter: std::iter::once(Ok(TraversalVal::Empty)),
-            storage: Arc::clone(&self.storage),
+            iter: res,
             txn: self.txn,
-            index,
-            key,
+            storage: Arc::clone(&self.storage),
         };
 
         RoTraversalIterator {
