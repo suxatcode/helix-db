@@ -92,7 +92,7 @@ impl<R: AsyncRuntime + Clone + Send + Sync + 'static> ThreadPool<R> {
             size
         );
 
-        let (tx, rx) = flume::unbounded::<TcpStream>();
+        let (tx, rx) = flume::bounded::<TcpStream>(1000);
         let mut workers = Vec::with_capacity(size);
         for id in 0..size {
             workers.push(Worker::new(id, Arc::clone(&graph), Arc::clone(&router), rx.clone(), runtime.clone()));

@@ -95,7 +95,13 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> OutAdapter<'a, Ro
             .inner
             .filter_map(move |item| {
                 let edge_label_hash = hash_label(edge_label, None);
-                let prefix = HelixGraphStorage::out_edge_key(&item.unwrap().id(), &edge_label_hash);
+                let prefix = HelixGraphStorage::out_edge_key(
+                    &match item {
+                        Ok(item) => item.id(),
+                        Err(_) => return None,
+                    },
+                    &edge_label_hash,
+                );
                 match db
                     .out_edges_db
                     .lazily_decode_data()
