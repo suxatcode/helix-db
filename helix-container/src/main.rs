@@ -81,8 +81,8 @@ async fn main() {
     ).await;
     // start server
     println!("Starting server...");
-    let a = gateway.connection_handler.accept_conns().await.unwrap();
-    let b = a.await.unwrap();
+    let handle = gateway.connection_handler.accept_conns().await.unwrap();
+    handle.await;
 
 }
 
