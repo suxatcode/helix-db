@@ -659,6 +659,16 @@ impl From<ID> for Value {
     }
 }
 
+impl<'a, K> From<&'a K> for Value
+where
+    K: Into<Value> + Serialize + Clone,
+{
+    #[inline]
+    fn from(k: &'a K) -> Self {
+        Value::from(k.clone().into())
+    }
+}
+
 pub trait Encodings {
     fn decode_properties(bytes: &[u8]) -> Result<HashMap<String, Value>, GraphError>;
     fn encode_properties(&self) -> Result<Vec<u8>, GraphError>;

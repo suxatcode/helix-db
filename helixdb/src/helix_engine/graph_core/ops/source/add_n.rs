@@ -80,7 +80,9 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> AddNAdapter<'
                     match bincode::serialize(&key) {
                         Ok(serialized) => {
                             // possibly append dup
+
                             if let Err(e) = db.put(self.txn, &serialized, &node.id) {
+                                println!("{} Error adding node to secondary index: {:?}", line!(), e);
                                 result = Err(GraphError::from(e));
                             }
                         }

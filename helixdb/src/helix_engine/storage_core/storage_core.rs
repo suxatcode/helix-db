@@ -100,7 +100,12 @@ impl HelixGraphStorage {
             for index in indexes {
                 secondary_indices.insert(
                     index.clone(),
-                    graph_env.create_database(&mut wtxn, Some(&index))?,
+                    graph_env
+                        .database_options()
+                        .types::<Bytes, U128<BE>>()
+                        .flags(DatabaseFlags::DUP_SORT)
+                        .name(&index)
+                        .create(&mut wtxn)?,
                 );
             }
         }
