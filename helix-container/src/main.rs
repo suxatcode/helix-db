@@ -6,6 +6,7 @@ use helixdb::helix_gateway::{
     router::router::{HandlerFn, HandlerSubmission},
 };
 use helixdb::helix_runtime::tokio_runtime::TokioRuntime;
+use helixdb::helix_transport::tokio_transport::TokioTransport;
 use inventory;
 use std::{collections::HashMap, sync::Arc};
 
@@ -102,6 +103,7 @@ async fn main() {
         Some(routes),
         Some(mcp_routes),
         TokioRuntime::default(),
+        TokioTransport,
     )
     .await;
 
