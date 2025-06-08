@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
+    helix_storage::Storage,
     protocol::value::Value,
 };
 
@@ -26,20 +26,22 @@ where
     }
 }
 
-pub trait UpdateAdapter<'scope, 'env>: Iterator {
+pub trait UpdateAdapter<'scope, 'env, S: Storage + ?Sized>: Iterator {
     fn update(
         self,
         props: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateAdapter<'scope, 'env>
-    for RwTraversalIterator<'scope, 'env, I>
+impl<'scope, 'env, I, S> UpdateAdapter<'scope, 'env, S> for RwTraversalIterator<'scope, 'env, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     fn update(
-        self,
+        mut self,
         props: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    ) -> RwTraversalIterator<'scope, 'env, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     {
         let storage = self.storage.clone();
 
@@ -51,98 +53,19 @@ impl<'scope, 'env, I: Iterator<Item = Result<TraversalVal, GraphError>>> UpdateA
 
         for item in self.inner {
             match item {
-                Ok(TraversalVal::Node(node)) => match storage.get_node(self.txn, &node.id) {
-                    Ok(mut old_node) => {
-                        if let Some(mut properties) = old_node.properties {
-                            if let Some(ref props) = props {
-                                for (k, v) in props.iter() {
-                                    properties.insert(k.clone(), v.clone());
-                                }
-                            }
-                            for (key, v) in properties.iter() {
-                                if let Some(db) = storage.secondary_indices.get(key) {
-                                    match bincode::serialize(v) {
-                                        Ok(serialized) => {
-                                            if let Err(e) = db.put(self.txn, &serialized, &node.id)
-                                            {
-                                                vec.push(Err(GraphError::from(e)));
-                                            }
-                                        }
-                                        Err(e) => vec.push(Err(GraphError::from(e))),
-                                    }
-                                }
-                            }
-                            old_node.properties = Some(properties);
-                        } else {
-                            let mut properties = HashMap::new();
-                            if let Some(ref props) = props {
-                                for (k, v) in props.iter() {
-                                    properties.insert(k.clone(), v.clone());
-                                }
-                            }
-                            for (key, v) in properties.iter() {
-                                if let Some(db) = storage.secondary_indices.get(key) {
-                                    match bincode::serialize(v) {
-                                        Ok(serialized) => {
-                                            if let Err(e) = db.put(self.txn, &serialized, &node.id)
-                                            {
-                                                vec.push(Err(GraphError::from(e)));
-                                            }
-                                        }
-                                        Err(e) => vec.push(Err(GraphError::from(e))),
-                                    }
-                                }
-                            }
-                            if properties.len() > 0 {
-                                old_node.properties = Some(properties);
-                            } else {
-                                old_node.properties = None;
-                            }
-                        }
-                        match old_node.encode_node() {
-                            Ok(serialized) => {
-                                match storage.nodes_db.put(
-                                    self.txn,
-                                    &HelixGraphStorage::node_key(&node.id),
-                                    &serialized,
-                                ) {
-                                    Ok(_) => vec.push(Ok(TraversalVal::Node(old_node))),
-                                    Err(e) => vec.push(Err(GraphError::from(e))),
-                                }
-                            }
-                            Err(e) => vec.push(Err(GraphError::from(e))),
-                        }
+                Ok(TraversalVal::Node(node)) => {
+                    match storage.update_node(self.txn, &node.id, props.as_ref()) {
+                        Ok(updated_node) => vec.push(Ok(TraversalVal::Node(updated_node))),
+                        Err(e) => vec.push(Err(e)),
                     }
-                    Err(e) => vec.push(Err(e)),
-                },
-                Ok(TraversalVal::Edge(edge)) => match storage.get_edge(self.txn, &edge.id) {
-                    Ok(old_edge) => {
-                        let mut old_edge = old_edge.clone();
-                        if let Some(mut properties) = old_edge.properties.clone() {
-                            if let Some(ref props) = props {
-                                for (k, v) in props.iter() {
-                                    properties.insert(k.clone(), v.clone());
-                                }
-                                old_edge.properties = Some(properties);
-                            }
-                        }
-                        match old_edge.encode_edge() {
-                            Ok(serialized) => {
-                                match storage.nodes_db.put(
-                                    self.txn,
-                                    &HelixGraphStorage::edge_key(&edge.id),
-                                    &serialized,
-                                ) {
-                                    Ok(_) => vec.push(Ok(TraversalVal::Edge(old_edge))),
-                                    Err(e) => vec.push(Err(GraphError::from(e))),
-                                }
-                            }
-                            Err(e) => vec.push(Err(GraphError::from(e))),
-                        }
+                }
+                Ok(TraversalVal::Edge(edge)) => {
+                    match storage.update_edge(self.txn, &edge.id, props.as_ref()) {
+                        Ok(updated_edge) => vec.push(Ok(TraversalVal::Edge(updated_edge))),
+                        Err(e) => vec.push(Err(e)),
                     }
-                    Err(e) => vec.push(Err(e)),
-                },
-                _ => vec.push(Err(GraphError::New("Unsupported value type".to_string()))),
+                }
+                _ => vec.push(Err(GraphError::new("Unsupported value type".to_string()))),
             }
         }
         RwTraversalIterator {

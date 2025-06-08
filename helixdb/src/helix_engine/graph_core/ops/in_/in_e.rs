@@ -1,57 +1,35 @@
+use std::sync::Arc;
+
 use crate::{
     helix_engine::{
         graph_core::{
             ops::tr_val::{Traversable, TraversalVal},
             traversal_iter::RoTraversalIterator,
         },
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
-    protocol::label_hash::hash_label,
+    helix_storage::Storage,
+    protocol::{items::Edge, label_hash::hash_label},
 };
-use heed3::{types::Bytes, RoTxn};
-use std::sync::Arc;
 
-pub struct InEdgesIterator<'a, T> {
-    pub iter: heed3::RoIter<
-        'a,
-        Bytes,
-        heed3::types::LazyDecode<Bytes>,
-        heed3::iteration_method::MoveOnCurrentKeyDuplicates,
-    >,
-    pub storage: Arc<HelixGraphStorage>,
-    pub txn: &'a T,
+pub struct InEdgesIterator<S: Storage + ?Sized> {
+    pub edges: Vec<Edge>,
+    pub storage: Arc<S>,
 }
 
-impl<'a> Iterator for InEdgesIterator<'a, RoTxn<'a>> {
+impl<S: Storage + ?Sized> Iterator for InEdgesIterator<S> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(Ok((_, data))) = self.iter.next() {
-            match data.decode() {
-                Ok(data) => {
-                    let (_, edge_id) = match HelixGraphStorage::unpack_adj_edge_data(&data) {
-                        Ok(data) => data,
-                        Err(e) => {
-                            println!("Error unpacking edge data: {:?}", e);
-                            return Some(Err(e));
-                        }
-                    };
-                    if let Ok(edge) = self.storage.get_edge(self.txn, &edge_id) {
-                        return Some(Ok(TraversalVal::Edge(edge)));
-                    }
-                }
-                Err(e) => {
-                    println!("Error decoding edge data: {:?}", e);
-                    return Some(Err(GraphError::DecodeError(e.to_string())));
-                }
-            }
-        }
-        None
+        self.edges
+            .pop()
+            .map(|edge| Ok(TraversalVal::Edge(edge)))
     }
 }
 
-pub trait InEdgesAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> {
+pub trait InEdgesAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     /// Returns an iterator containing the edges that have an incoming edge with the given label.
     ///
     /// Note that the `edge_label` cannot be empty and must be a valid, existing edge label.
@@ -61,51 +39,31 @@ pub trait InEdgesAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError
     fn in_e(
         self,
         edge_label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> InEdgesAdapter<'a, RoTxn<'a>>
-    for RoTraversalIterator<'a, I>
+impl<'a, I, S> InEdgesAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     #[inline]
     fn in_e(
         self,
         edge_label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let db = Arc::clone(&self.storage);
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
         let storage = Arc::clone(&self.storage);
         let txn = self.txn;
         let iter = self
             .inner
-            .filter_map(move |item| {
-                let edge_label_hash = hash_label(edge_label, None);
-
-                let prefix = HelixGraphStorage::in_edge_key(
-                    &match item {
-                        Ok(item) => item.id(),
-                        Err(_) => return None,
-                    },
-                    &edge_label_hash,
-                );
-                match db
-                    .in_edges_db
-                    .lazily_decode_data()
-                    .get_duplicates(txn, &prefix)
-                {
-                    Ok(Some(iter)) => Some(InEdgesIterator {
-                        iter,
-                        storage: Arc::clone(&db),
-                        txn,
-                    }),
-                    Ok(None) => None,
-                    Err(e) => {
-                        println!("Error getting in edges: {:?}", e);
-                        // return Err(e);
-                        None
-                    }
-                }
+            .filter_map(move |item| match item {
+                Ok(item) => Some(item.id()),
+                Err(_) => None,
             })
-            .flatten();
+            .map(move |id| self.storage.get_in_edges(txn, edge_label, &id))
+            .filter_map(|res| res.ok())
+            .flatten()
+            .map(|edge| Ok(TraversalVal::Edge(edge)));
 
         RoTraversalIterator {
             inner: iter,

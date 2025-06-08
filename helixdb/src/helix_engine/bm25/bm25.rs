@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use crate::{
     helix_engine::{
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        // storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
         vector_core::{hnsw::HNSW, vector::HVector},
     },
@@ -319,31 +319,10 @@ impl BM25 for HBM25Config {
         let k1 = 1.2;
         let b = 0.75;
 
-        // Ensure we don't have division by zero
-        let df = df.max(1);
-        let total_docs = total_docs.max(1);
-
-        // Calculate IDF: log((N - df + 0.5) / (df + 0.5))
-        // This can be negative when df is high relative to N, which is mathematically correct
-        let idf = ((total_docs as f64 - df as f64 + 0.5) / (df as f64 + 0.5)).ln();
-
-        // Ensure avgdl is not zero
-        let avgdl = if avgdl > 0.0 {
-            avgdl
-        } else {
-            doc_length as f64
-        };
-
-        // Calculate BM25 score
-        let tf_component = (tf as f64 * (k1 as f64 + 1.0))
-            / (tf as f64 + k1 as f64 * (1.0 - b as f64 + b as f64 * (doc_length as f64 / avgdl)));
-
-        let score = (idf * tf_component) as f32;
-
-        // The score can be negative when IDF is negative (term appears in most documents)
-        // This is mathematically correct - such terms have low discriminative power
-        // But documents with higher tf should still score higher than those with lower tf
-        score
+        let idf = ((total_docs as f64 - df as f64 + 0.5) / (df as f64 + 0.5)).ln_1p();
+        let numerator = tf as f64 * (k1 as f64 + 1.0);
+        let denominator = tf as f64 + k1 as f64 * (1.0 - b as f64 + b as f64 * (doc_length as f64 / avgdl));
+        (idf * numerator / denominator) as f32
     }
 }
 
@@ -359,52 +338,52 @@ pub trait HybridSearch {
     ) -> Result<Vec<(u128, f32)>, GraphError>;
 }
 
-impl HybridSearch for HelixGraphStorage {
-    fn hybrid_search(
-        &self,
-        txn: &RoTxn,
-        query: &str,
-        query_vector: &[f64],
-        vector_query: Option<&[f32]>,
-        alpha: f32,
-        limit: usize,
-    ) -> Result<Vec<(u128, f32)>, GraphError> {
-        // Get BM25 scores
-        let bm25_results = self.bm25.search(txn, query, limit * 2)?; // Get more results for better fusion
-        let mut combined_scores: HashMap<u128, f32> = HashMap::new();
+// impl HybridSearch for HelixGraphStorage {
+//     fn hybrid_search(
+//         &self,
+//         txn: &RoTxn,
+//         query: &str,
+//         query_vector: &[f64],
+//         vector_query: Option<&[f32]>,
+//         alpha: f32,
+//         limit: usize,
+//     ) -> Result<Vec<(u128, f32)>, GraphError> {
+//         // Get BM25 scores
+//         let bm25_results = self.bm25.search(txn, query, limit * 2)?; // Get more results for better fusion
+//         let mut combined_scores: HashMap<u128, f32> = HashMap::new();
 
-        // Add BM25 scores (weighted by alpha)
-        for (doc_id, score) in bm25_results {
-            combined_scores.insert(doc_id, alpha * score);
-        }
+//         // Add BM25 scores (weighted by alpha)
+//         for (doc_id, score) in bm25_results {
+//             combined_scores.insert(doc_id, alpha * score);
+//         }
 
-        // Add vector similarity scores if provided (weighted by 1-alpha)
-        if let Some(_query_vector) = vector_query {
-            // This would integrate with your existing vector search
-            // For now, we'll just use BM25 scores
-            // You would call your vector similarity search here and combine scores
-            let vector_results = self.vectors.search::<fn(&HVector, &RoTxn) -> bool>(
-                txn,
-                query_vector,
-                limit * 2,
-                None,
-                false,
-            )?;
-            for doc in vector_results {
-                let doc_id = doc.id;
-                let score = doc.distance.unwrap_or(0.0);
-                combined_scores.insert(doc_id, (1.0 - alpha) * score as f32);
-            }
-        }
+//         // Add vector similarity scores if provided (weighted by 1-alpha)
+//         if let Some(_query_vector) = vector_query {
+//             // This would integrate with your existing vector search
+//             // For now, we'll just use BM25 scores
+//             // You would call your vector similarity search here and combine scores
+//             let vector_results = self.vectors.search::<fn(&HVector, &RoTxn) -> bool>(
+//                 txn,
+//                 query_vector,
+//                 limit * 2,
+//                 None,
+//                 false,
+//             )?;
+//             for doc in vector_results {
+//                 let doc_id = doc.id;
+//                 let score = doc.distance.unwrap_or(0.0);
+//                 combined_scores.insert(doc_id, (1.0 - alpha) * score as f32);
+//             }
+//         }
 
-        // Sort by combined score and return top results
-        let mut results: Vec<(u128, f32)> = combined_scores.into_iter().collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        results.truncate(limit);
+//         // Sort by combined score and return top results
+//         let mut results: Vec<(u128, f32)> = combined_scores.into_iter().collect();
+//         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+//         results.truncate(limit);
 
-        Ok(results)
-    }
-}
+//         Ok(results)
+//     }
+// }
 
 pub trait BM25Flatten {
     fn flatten_bm25(&self) -> String;

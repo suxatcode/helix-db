@@ -38,14 +38,12 @@ pub trait HNSW
     /// # Returns
     ///
     /// An HVector of the data inserted
-    fn insert<F>(
+    fn insert(
         &self,
         txn: &mut RwTxn,
         data: &[f64],
         fields: Option<Vec<(String, Value)>>,
-    ) -> Result<HVector, VectorError>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool;
+    ) -> Result<HVector, VectorError>;
 
     /// Get all vectors from the index at a specific level
     ///

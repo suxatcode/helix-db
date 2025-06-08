@@ -1,64 +1,63 @@
-use heed3::RoTxn;
-
 use super::super::tr_val::TraversalVal;
 use crate::helix_engine::{
-    bm25::bm25::BM25,
-    graph_core::traversal_iter::RoTraversalIterator,
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
-    types::{GraphError, VectorError},
-    vector_core::{hnsw::HNSW, vector::HVector},
+    bm25::bm25::BM25, graph_core::traversal_iter::RoTraversalIterator, types::GraphError,
 };
-use std::{iter::once, sync::Arc};
+use crate::helix_storage::lmdb_storage::LmdbStorage;
+use crate::helix_storage::Storage;
+use std::sync::Arc;
 
-pub struct SearchBM25<'scope, 'inner> {
-    txn: &'scope RoTxn<'scope>,
+pub struct SearchBM25<'scope, 'inner, S: Storage + ?Sized> {
+    txn: &'scope S::RoTxn<'scope>,
     iter: std::vec::IntoIter<(u128, f32)>,
-    storage: Arc<HelixGraphStorage>,
+    storage: Arc<S>,
     label: &'inner str,
 }
 
-// implementing iterator for OutIterator
-impl<'scope, 'inner> Iterator for SearchBM25<'scope, 'inner> {
+impl<'scope, 'inner, S: Storage + ?Sized> Iterator for SearchBM25<'scope, 'inner, S> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.iter.next()?;
-        match self.storage.get_node(self.txn, &next.0) {
-            Ok(node) => {
-                if node.label == self.label {
-                    Some(Ok(TraversalVal::Node(node)))
-                } else {
-                    return None;
-                }
-            }
+        let next_item = self.iter.next()?;
+        match self.storage.get_node(self.txn, &next_item.0) {
+            Ok(node) if node.label == self.label => Some(Ok(TraversalVal::Node(node))),
+            Ok(_) => self.next(), // Continue searching if label doesn't match
             Err(e) => Some(Err(e)),
         }
     }
 }
 
-pub trait SearchBM25Adapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
-    fn search_bm25(
-        self,
-        label: &str,
-        query: &str,
-        k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
-}
-
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> SearchBM25Adapter<'a>
-    for RoTraversalIterator<'a, I>
+pub trait SearchBM25Adapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
 {
     fn search_bm25(
         self,
         label: &str,
         query: &str,
         k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let results = self
-            .storage
-            .bm25
-            .search(self.txn, query, k)
-            .unwrap_or_default();
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
+}
+
+impl<'a, I, S> SearchBM25Adapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage<RoTxn<'a> = crate::helix_storage::lmdb_storage::LmdbRoTxn<'a>> + 'static,
+{
+    fn search_bm25(
+        self,
+        label: &str,
+        query: &str,
+        k: usize,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let results = if let Some(lmdb_storage) =
+            (self.storage.as_ref() as &dyn std::any::Any).downcast_ref::<LmdbStorage>()
+        {
+            lmdb_storage
+                .bm25
+                .search(&self.txn, query, k)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         let iter = SearchBM25 {
             txn: self.txn,
@@ -66,7 +65,6 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> SearchBM25Adapter
             storage: Arc::clone(&self.storage),
             label,
         };
-        // Wrap it with the RoTraversalIterator adapter
         RoTraversalIterator {
             inner: iter,
             storage: self.storage,

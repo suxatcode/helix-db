@@ -215,13 +215,13 @@ impl VectorCore {
         // TODO: look at using the XOR shift algorithm for random number generation
         // Storing global rng will not be threadsafe or possible as thread rng needs to be mutable
         // Should instead using an atomic mutable seed and the XOR shift algorithm
-        let mut rng = rand::rng();
-        let r: f64 = rng.random::<f64>();
+        let mut rng = rand::thread_rng();
+        let r: f64 = rng.gen::<f64>();
         let level = (-r.ln() * self.config.m_l).floor() as usize;
         level
     }
 
-    #[inline]
+    #[inline(always)]
     fn get_entry_point(&self, txn: &RoTxn) -> Result<HVector, VectorError> {
         let ep_id = self.vectors_db.get(txn, ENTRY_POINT_KEY.as_bytes())?;
         if let Some(ep_id) = ep_id {
@@ -238,7 +238,7 @@ impl VectorCore {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn set_entry_point(&self, txn: &mut RwTxn, entry: &HVector) -> Result<(), VectorError> {
         let entry_key = ENTRY_POINT_KEY.as_bytes().to_vec();
         self.vectors_db
@@ -487,7 +487,7 @@ impl HNSW for VectorCore {
     where
         F: Fn(&HVector, &RoTxn) -> bool,
     {
-        let query = HVector::from_slice(0, query.to_vec());
+        let mut query = HVector::from_slice(0, query.to_vec());
 
         let mut entry_point = self.get_entry_point(txn)?;
 
@@ -497,7 +497,7 @@ impl HNSW for VectorCore {
         for level in (1..=curr_level).rev() {
             let mut nearest = self.search_level(
                 txn,
-                &query,
+                &mut query,
                 &mut entry_point,
                 1,
                 level,
@@ -513,7 +513,7 @@ impl HNSW for VectorCore {
 
         let mut candidates = self.search_level(
             txn,
-            &query,
+            &mut query,
             &mut entry_point,
             ef,
             0,
@@ -538,17 +538,13 @@ impl HNSW for VectorCore {
         Ok(results)
     }
 
-    fn insert<F>(
+    fn insert(
         &self,
         txn: &mut RwTxn,
         data: &[f64],
         fields: Option<Vec<(String, Value)>>,
-    ) -> Result<HVector, VectorError>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool,
-    {
+    ) -> Result<HVector, VectorError> {
         let new_level = self.get_new_level();
-
         let mut query = HVector::from_slice(0, data.to_vec());
         self.put_vector(txn, &query)?;
 
@@ -569,39 +565,39 @@ impl HNSW for VectorCore {
         let l = entry_point.get_level();
         let mut curr_ep = entry_point;
         for level in (new_level + 1..=l).rev() {
-            let nearest = self.search_level::<F>(txn, &query, &mut curr_ep, 1, level, None)?;
-            curr_ep = nearest.peek().unwrap().clone();
+            let mut nearest = self.search_level(txn, &mut query, &mut curr_ep, 1, level, Option::<&[fn(&HVector, &RoTxn) -> bool]>::None)?;
+            curr_ep = nearest.pop().unwrap().clone();
         }
 
         for level in (0..=l.min(new_level)).rev() {
-            let nearest = self.search_level::<F>(
+            let mut nearest = self.search_level(
                 txn,
-                &query,
+                &mut query,
                 &mut curr_ep,
                 self.config.ef_construct,
                 level,
-                None,
+                Option::<&[fn(&HVector, &RoTxn) -> bool]>::None,
             )?;
 
-            curr_ep = nearest.peek().unwrap().clone();
+            curr_ep = nearest.pop().unwrap().clone();
 
-            let neighbors = self.select_neighbors::<F>(txn, &query, nearest, level, true, None)?;
+            let neighbors = self.select_neighbors(txn, &query, nearest, level, true, Option::<&[fn(&HVector, &RoTxn) -> bool]>::None)?;
 
             self.set_neighbours(txn, query.get_id(), &neighbors, level)?;
 
             for e in neighbors {
                 let id = e.get_id();
-                let e_conns = self.get_neighbors::<F>(txn, id, level, None)?;
+                let e_conns = self.get_neighbors(txn, id, level, Option::<&[fn(&HVector, &RoTxn) -> bool]>::None)?;
                 if e_conns.len()
                     > if level == 0 {
                         self.config.m_max_0
                     } else {
-                        self.config.m_max_0
+                        self.config.m
                     }
                 {
                     let e_conns = BinaryHeap::from(e_conns);
                     let e_new_conn =
-                        self.select_neighbors::<F>(txn, &query, e_conns, level, true, None)?;
+                        self.select_neighbors(txn, &query, e_conns, level, true, Option::<&[fn(&HVector, &RoTxn) -> bool]>::None)?;
                     self.set_neighbours(txn, id, &e_new_conn, level)?;
                 }
             }

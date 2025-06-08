@@ -10,6 +10,7 @@ use crate::helix_engine::{
     },
 };
 use std::{collections::BinaryHeap, iter::once};
+use crate::helix_storage::Storage;
 
 pub struct BruteForceSearchV<I: Iterator<Item = Result<TraversalVal, GraphError>>> {
     iter: I,
@@ -24,36 +25,42 @@ impl<I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator for BruteFor
     }
 }
 
-pub trait BruteForceSearchVAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
-    fn brute_force_search_v(
-        self,
-        query: &Vec<f64>,
-        k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
-}
-
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> BruteForceSearchVAdapter<'a>
-    for RoTraversalIterator<'a, I>
+pub trait BruteForceSearchVAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
 {
     fn brute_force_search_v(
         self,
         query: &Vec<f64>,
         k: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let mut iter = self.inner.collect::<Vec<_>>();
-        iter.sort_by(|v1, v2| match (v1, v2) {
-            (Ok(TraversalVal::Vector(v1)), Ok(TraversalVal::Vector(v2))) => {
-                let d1 = cosine_similarity(&v1.get_data(), query).unwrap();
-                let d2 = cosine_similarity(&v2.get_data(), query).unwrap();
-                d1.partial_cmp(&d2).unwrap()
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
+}
+
+impl<'a, I, S> BruteForceSearchVAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
+    S: Storage + ?Sized,
+{
+    fn brute_force_search_v(
+        self,
+        query: &Vec<f64>,
+        k: usize,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let mut iter_vec: Vec<_> = self.inner.collect();
+
+        iter_vec.sort_by(|v1, v2| {
+            if let (Ok(TraversalVal::Vector(v1)), Ok(TraversalVal::Vector(v2))) = (v1, v2) {
+                let d1 = cosine_similarity(v1.get_data(), query).unwrap_or(0.0);
+                let d2 = cosine_similarity(v2.get_data(), query).unwrap_or(0.0);
+                d2.partial_cmp(&d1).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                std::cmp::Ordering::Equal
             }
-            _ => panic!("expected vector traversal values"),
         });
 
-        let iter = iter.into_iter().take(k);
+        let iter = iter_vec.into_iter().take(k);
 
         RoTraversalIterator {
-            inner: iter.into_iter(),
+            inner: iter,
             storage: self.storage,
             txn: self.txn,
         }

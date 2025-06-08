@@ -12,6 +12,8 @@ use std::{
 use get_routes::{local_handler, mcp_handler};
 use heed3::{AnyTls, RoTxn};
 use serde::Deserialize;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::{
     helix_engine::{
@@ -25,13 +27,13 @@ use crate::{
             },
             traversal_iter::RoTraversalIterator,
         },
-        storage_core::storage_core::HelixGraphStorage,
         types::GraphError,
     },
     helix_gateway::{
         mcp::tools::{ToolArgs, ToolCalls},
         router::router::HandlerInput,
     },
+    helix_storage::lmdb_storage::LmdbStorage,
     protocol::{
         items::v6_uuid, label_hash::hash_label, request::Request, response::Response,
         return_values::ReturnValue,
@@ -71,7 +73,7 @@ impl McpConnections {
     }
 }
 pub struct McpBackend {
-    pub db: Arc<HelixGraphStorage>,
+    pub db: Arc<LmdbStorage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,7 +84,7 @@ pub struct ToolCallRequest {
 }
 
 impl McpBackend {
-    pub fn new(db: Arc<HelixGraphStorage>) -> Self {
+    pub fn new(db: Arc<LmdbStorage>) -> Self {
         Self { db }
     }
 }
@@ -91,24 +93,26 @@ pub struct MCPConnection {
     pub connection_id: String,
     pub connection_addr: String,
     pub connection_port: u16,
+    pub sender: Sender<Request>,
+    pub receiver: Receiver<Request>,
     pub iter: IntoIter<TraversalVal>,
 }
 
-// pub struct McpIter<I> {
-//     pub iter: I,
-// }
-
 impl MCPConnection {
-    pub fn new(
+    pub async fn new(
         connection_id: String,
         connection_addr: String,
         connection_port: u16,
         iter: IntoIter<TraversalVal>,
     ) -> Self {
+        let (tx, rx) = mpsc::channel::<Request>(100);
+
         Self {
             connection_id,
             connection_addr,
             connection_port,
+            sender: tx,
+            receiver: rx,
             iter,
         }
     }
@@ -163,7 +167,7 @@ pub fn call_tool<'a>(
         None => return Err(GraphError::Default),
     };
     drop(connections);
-    let txn = input.mcp_backend.db.graph_env.read_txn()?;
+    let txn = input.mcp_backend.db.ro_txn()?;
 
     let result = input.mcp_backend.call(&txn, &connection, data.tool)?;
 
@@ -194,12 +198,20 @@ pub fn init<'a>(input: &'a mut MCPToolInput, response: &mut Response) -> Result<
 
     let connection_id = uuid::Uuid::from_u128(v6_uuid()).to_string();
     let mut connections = input.mcp_connections.lock().unwrap();
-    connections.add_connection(MCPConnection::new(
-        connection_id.clone(),
-        data.connection_addr,
-        data.connection_port,
-        vec![].into_iter(),
-    ));
+    
+    // This is now an async function, but we are in a sync context.
+    // For the temporary fix, I will block on the future.
+    // This will be properly handled in the full async refactor of McpBackend.
+    let connection = tokio::runtime::Runtime::new().unwrap().block_on(
+        MCPConnection::new(
+            connection_id.clone(),
+            data.connection_addr,
+            data.connection_port,
+            vec![].into_iter(),
+        )
+    );
+    connections.add_connection(connection);
+
     drop(connections);
     response.body = sonic_rs::to_vec(&ReturnValue::from(connection_id)).unwrap();
 

@@ -7,6 +7,7 @@ use crate::helix_gateway::router::router::{HelixRouter, RouterError};
 use crate::protocol::request::Request;
 use crate::protocol::response::Response;
 
+use crate::helix_storage::lmdb_storage::LmdbStorage;
 use crate::helix_transport::Stream;
 
 pub struct Worker<R: AsyncRuntime, S: Stream> {
@@ -19,7 +20,7 @@ pub struct Worker<R: AsyncRuntime, S: Stream> {
 impl<R: AsyncRuntime + Clone + Send + Sync + 'static, S: Stream + 'static> Worker<R, S> {
     fn new(
         id: usize,
-        graph_access: Arc<HelixGraphEngine>,
+        graph_access: Arc<HelixGraphEngine<LmdbStorage>>,
         router: Arc<HelixRouter>,
         rx: Receiver<S>,
         runtime: R,
@@ -85,7 +86,7 @@ pub struct ThreadPool<R: AsyncRuntime, S: Stream> {
 impl<R: AsyncRuntime + Clone + Send + Sync + 'static, S: Stream + 'static> ThreadPool<R, S> {
     pub fn new(
         size: usize,
-        graph: Arc<HelixGraphEngine>,
+        graph: Arc<HelixGraphEngine<LmdbStorage>>,
         router: Arc<HelixRouter>,
         runtime: R,
     ) -> Result<ThreadPool<R, S>, RouterError> {

@@ -1,56 +1,51 @@
 use crate::helix_engine::{
     graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
-    storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
     types::GraphError,
 };
-use heed3::RoTxn;
+use crate::helix_storage::Storage;
 use std::sync::Arc;
 
-pub struct FromNIterator<'a, I, T> {
+pub struct FromNIterator<'a, I, T, S: Storage + ?Sized> {
     iter: I,
-    storage: Arc<HelixGraphStorage>,
+    storage: Arc<S>,
     txn: &'a T,
 }
 
-impl<'a, I> Iterator for FromNIterator<'a, I, RoTxn<'a>>
+impl<'a, I, S: Storage + ?Sized> Iterator for FromNIterator<'a, I, S::RoTxn<'a>, S>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            Some(item) => match item {
-                Ok(TraversalVal::Edge(item)) => Some(Ok(TraversalVal::Node(
-                    match self.storage.get_node(self.txn, &item.from_node) {
-                        Ok(node) => node,
-                        Err(e) => {
-                            println!("Error getting node: {:?}", e);
-                            return Some(Err(e));
-                        }
-                    },
-                ))),
-                _ => return None,
-            },
-            None => None,
-        }
+        self.iter.next().and_then(|item| match item {
+            Ok(TraversalVal::Edge(edge)) => Some(
+                self.storage
+                    .get_node(self.txn, &edge.from_node)
+                    .map(TraversalVal::Node),
+            ),
+            _ => None,
+        })
     }
 }
 
-pub trait FromNAdapter<'a, T>: Iterator<Item = Result<TraversalVal, GraphError>> {
-    /// Returns an iterator containing the nodes that the edges in `self.inner` originate from.
+pub trait FromNAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     fn from_n(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> FromNAdapter<'a, RoTxn<'a>>
-    for RoTraversalIterator<'a, I>
+impl<'a, I, S> FromNAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
+    S: Storage + ?Sized,
 {
     #[inline(always)]
     fn from_n(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
         let iter = FromNIterator {
             iter: self.inner,
             storage: Arc::clone(&self.storage),

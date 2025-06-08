@@ -1,69 +1,54 @@
-use heed3::RoTxn;
-
 use super::super::tr_val::TraversalVal;
 use crate::{
     helix_engine::{
         graph_core::traversal_iter::RwTraversalIterator,
-        types::GraphError,
+        types::{GraphError, VectorError},
         vector_core::{hnsw::HNSW, vector::HVector},
     },
+    helix_storage::{lmdb_storage::LmdbStorage, Storage},
     protocol::value::Value,
 };
 use std::sync::Arc;
 
-pub struct InsertVIterator {
-    inner: std::iter::Once<Result<TraversalVal, GraphError>>,
-}
-
-impl Iterator for InsertVIterator {
-    type Item = Result<TraversalVal, GraphError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-pub trait InsertVAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphError>> {
-    fn insert_v<F>(
+pub trait InsertVAdapter<'a, 'b, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
+    fn insert_v(
         self,
         vec: &Vec<f64>,
-        label: &str,
         fields: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool;
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 
-    fn insert_vs<F>(
+    fn insert_vs(
         self,
         vecs: &Vec<Vec<f64>>,
         fields: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool;
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapter<'a, 'b>
-    for RwTraversalIterator<'a, 'b, I>
+impl<'a, 'b, I, S> InsertVAdapter<'a, 'b, S> for RwTraversalIterator<'a, 'b, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage<RwTxn<'b> = crate::helix_storage::lmdb_storage::LmdbRwTxn<'b>> + 'static,
 {
-    fn insert_v<F>(
-        self,
+    fn insert_v(
+        mut self,
         query: &Vec<f64>,
-        label: &str,
         fields: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool,
-    {
-        let vector = self
-            .storage
-            .vectors
-            .insert::<F>(self.txn, &query, fields);
-
-        let result = match vector {
-            Ok(vector) => Ok(TraversalVal::Vector(vector)),
-            Err(e) => Err(GraphError::from(e)),
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let result = if let Some(lmdb_storage) =
+            (self.storage.as_ref() as &dyn std::any::Any).downcast_ref::<LmdbStorage>()
+        {
+            lmdb_storage
+                .vectors
+                .insert(self.txn, &query, fields)
+                .map(TraversalVal::Vector)
+                .map_err(GraphError::from)
+        } else {
+            Err(GraphError::from(VectorError::VectorCoreError(
+                "Vector insert is only supported on LmdbStorage".to_string(),
+            )))
         };
-
 
         RwTraversalIterator {
             inner: std::iter::once(result),
@@ -72,31 +57,34 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> InsertVAdapte
         }
     }
 
-    fn insert_vs<F>(
-        self,
+    fn insert_vs(
+        mut self,
         vecs: &Vec<Vec<f64>>,
         fields: Option<Vec<(String, Value)>>,
-    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
-    where
-        F: Fn(&HVector, &RoTxn) -> bool,
-    {
-        let txn = self.txn;
-        let storage = Arc::clone(&self.storage);
-        let iter = vecs
-            .iter()
-            .map(|vec| {
-                let vector = storage.vectors.insert::<F>(txn, &vec, fields.clone()); // TODO: remove clone
-                match vector {
-                    Ok(vector) => Ok(TraversalVal::Vector(vector)),
-                    Err(e) => Err(GraphError::from(e)),
-                }
-            })
-            .collect::<Vec<_>>();
+    ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let mut results = Vec::with_capacity(vecs.len());
+
+        if let Some(lmdb_storage) =
+            (self.storage.as_ref() as &dyn std::any::Any).downcast_ref::<LmdbStorage>()
+        {
+            for vec in vecs {
+                let result = lmdb_storage
+                    .vectors
+                    .insert(self.txn, vec, fields.clone())
+                    .map(TraversalVal::Vector)
+                    .map_err(GraphError::from);
+                results.push(result);
+            }
+        } else {
+            results.push(Err(GraphError::from(VectorError::VectorCoreError(
+                "Vector insert is only supported on LmdbStorage".to_string(),
+            ))));
+        }
 
         RwTraversalIterator {
-            inner: iter.into_iter(),
+            inner: results.into_iter(),
             storage: self.storage,
-            txn,
+            txn: self.txn,
         }
     }
 }

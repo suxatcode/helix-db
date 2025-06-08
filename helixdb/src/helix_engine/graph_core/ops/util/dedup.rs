@@ -7,6 +7,7 @@ use crate::helix_engine::{
     },
     types::GraphError,
 };
+use crate::helix_storage::Storage;
 
 pub struct Dedup<I> {
     iter: I,
@@ -36,19 +37,21 @@ where
     }
 }
 
-pub trait DedupAdapter<'a>: Iterator {
+pub trait DedupAdapter<'a, S: Storage + ?Sized>: Iterator {
     /// Dedup returns an iterator that will return unique items when collected
     fn dedup(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> DedupAdapter<'a>
-    for RoTraversalIterator<'a, I>
+impl<'a, I, S> DedupAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     fn dedup(
         self,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
         {
             let upper_bound = match self.inner.size_hint() {
                 (_, Some(upper_bound)) => upper_bound,

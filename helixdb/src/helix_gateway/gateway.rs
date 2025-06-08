@@ -5,6 +5,7 @@ use crate::helix_runtime::AsyncRuntime;
 use super::router::router::{HandlerFn, HelixRouter};
 use crate::{
     helix_engine::graph_core::graph_core::HelixGraphEngine, helix_gateway::mcp::mcp::MCPHandlerFn,
+    helix_storage::lmdb_storage::LmdbStorage,
 };
 use crate::helix_transport::Transport;
 
@@ -31,7 +32,7 @@ where
 {
     pub async fn new(
         address: &str,
-        graph: Arc<HelixGraphEngine>,
+        graph: Arc<HelixGraphEngine<LmdbStorage>>,
         size: usize,
         routes: Option<HashMap<(String, String), HandlerFn>>,
         mcp_routes: Option<HashMap<(String, String), MCPHandlerFn>>,

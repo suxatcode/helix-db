@@ -1,145 +1,71 @@
 use crate::{
     helix_engine::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
-    protocol::{items::Edge, label_hash::hash_label},
+    helix_storage::Storage,
 };
-use heed3::RoTxn;
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub enum PathType {
-    From(u128),
-    To(u128),
+pub enum PathType<'a> {
+    From(&'a u128),
+    To(&'a u128),
 }
 
-pub struct ShortestPathIterator<'a, I> {
+pub struct ShortestPathIterator<'a, I, S: Storage + ?Sized> {
     iter: I,
-    path_type: PathType,
+    path_type: PathType<'a>,
     edge_label: Option<&'a str>,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a RoTxn<'a>,
+    storage: Arc<S>,
+    txn: &'a S::RoTxn<'a>,
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> Iterator
-    for ShortestPathIterator<'a, I>
+impl<'a, I, S> Iterator for ShortestPathIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     type Item = Result<TraversalVal, GraphError>;
 
-    /// Returns the next outgoing node by decoding the edge id and then getting the edge and node
     fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next() {
-            Some(Ok(TraversalVal::Node(node))) => {
-                let (from, to) = match self.path_type {
-                    PathType::From(from) => (from, node.id),
-                    PathType::To(to) => (node.id, to),
-                };
+        self.iter.next().map(|item| {
+            let start_node = item?;
+            let (from_id, to_id) = match (self.path_type, start_node) {
+                (PathType::From(from_id), TraversalVal::Node(to_node)) => (from_id, &to_node.id),
+                (PathType::To(to_id), TraversalVal::Node(from_node)) => (&from_node.id, to_id),
+                _ => return Err(GraphError::WrongTraversalValue),
+            };
 
-                let mut queue = VecDeque::with_capacity(32);
-                let mut visited = HashSet::with_capacity(64);
-                let mut parent: HashMap<u128, (u128, Edge)> = HashMap::with_capacity(32);
-                queue.push_back(from);
-                visited.insert(from);
-
-                let reconstruct_path = |parent: &HashMap<u128, (u128, Edge)>,
-                                        start_id: &u128,
-                                        end_id: &u128|
-                 -> Result<TraversalVal, GraphError> {
-                    let mut nodes = Vec::with_capacity(parent.len());
-                    let mut edges = Vec::with_capacity(parent.len() - 1);
-
-                    let mut current = end_id;
-
-                    while current != start_id {
-                        nodes.push(self.storage.get_node(self.txn, current)?);
-
-                        let (prev_node, edge) = &parent[current];
-                        edges.push(edge.clone());
-                        current = prev_node;
-                    }
-
-                    nodes.push(self.storage.get_node(self.txn, start_id)?);
-
-                    nodes.reverse();
-                    edges.reverse();
-
-                    Ok(TraversalVal::Path((nodes, edges)))
-                };
-
-                while let Some(current_id) = queue.pop_front() {
-                    let out_prefix = self.edge_label.map_or_else(
-                        || current_id.to_be_bytes().to_vec(),
-                        |label| {
-                            HelixGraphStorage::out_edge_key(&current_id, &hash_label(label, None))
-                                .to_vec()
-                        },
-                    );
-
-                    let iter = self
-                        .storage
-                        .out_edges_db
-                        .prefix_iter(self.txn, &out_prefix)
-                        .unwrap();
-
-                    for result in iter {
-                        let (_, value) = result.unwrap(); // TODO: handle error
-                        let (to_node, edge_id) =
-                            HelixGraphStorage::unpack_adj_edge_data(value).unwrap(); // TODO: handle error
-
-                        if !visited.contains(&to_node) {
-                            visited.insert(to_node);
-                            let edge = self.storage.get_edge(self.txn, &edge_id).unwrap(); // TODO: handle error
-                            parent.insert(to_node, (current_id, edge));
-
-                            if to_node == to {
-                                return Some(reconstruct_path(&parent, &from, &to));
-                            }
-
-                            queue.push_back(to_node);
-                        }
-                    }
-                }
-                Some(Err(GraphError::ShortestPathNotFound))
-            }
-            Some(other) => Some(other),
-            None => None,
-        }
+            self.storage
+                .shortest_path(
+                    self.txn,
+                    self.edge_label.unwrap_or(""),
+                    from_id,
+                    to_id,
+                )
+                .map(TraversalVal::Path)
+        })
     }
 }
 
-pub trait ShortestPathAdapter<'a, I>: Iterator<Item = Result<TraversalVal, GraphError>> {
-    /// ShortestPath finds the shortest path between two nodes
-    ///
-    /// # Arguments
-    ///
-    /// * `edge_label` - The label of the edge to use
-    /// * `from` - The starting node
-    /// * `to` - The ending node
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// let node1 = Node { id: 1, label: "Person".to_string(), properties: None };
-    /// let node2 = Node { id: 2, label: "Person".to_string(), properties: None };
-    /// let traversal = G::new(storage, &txn).shortest_path(Some("knows"), Some(&node1.id), Some(&node2.id));
-    /// ```
+pub trait ShortestPathAdapter<'a, S: Storage + ?Sized, I: Iterator<Item = Result<TraversalVal, GraphError>>>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     fn shortest_path(
         self,
         edge_label: Option<&'a str>,
         from: Option<&'a u128>,
         to: Option<&'a u128>,
-    ) -> RoTraversalIterator<'a, ShortestPathIterator<'a, I>>
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
         I: 'a;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPathAdapter<'a, I>
-    for RoTraversalIterator<'a, I>
+impl<'a, I, S> ShortestPathAdapter<'a, S, I> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
+    S: Storage + ?Sized,
 {
     #[inline]
     fn shortest_path(
@@ -147,26 +73,23 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> ShortestPath
         edge_label: Option<&'a str>,
         from: Option<&'a u128>,
         to: Option<&'a u128>,
-    ) -> RoTraversalIterator<'a, ShortestPathIterator<'a, I>>
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
         I: 'a,
     {
-        let storage = Arc::clone(&self.storage);
-        let txn = self.txn;
-
         RoTraversalIterator {
             inner: ShortestPathIterator {
                 iter: self.inner,
                 path_type: match (from, to) {
-                    (Some(from), None) => PathType::From(*from),
-                    (None, Some(to)) => PathType::To(*to),
-                    _ => panic!("Invalid shortest path"),
+                    (Some(from), None) => PathType::From(from),
+                    (None, Some(to)) => PathType::To(to),
+                    _ => panic!("Invalid shortest path: must provide either from or to"),
                 },
                 edge_label,
-                storage,
-                txn,
+                storage: self.storage.clone(),
+                txn: self.txn,
             },
-            storage: Arc::clone(&self.storage),
+            storage: self.storage,
             txn: self.txn,
         }
     }

@@ -5,6 +5,7 @@ use crate::helix_engine::{
     },
     types::GraphError,
 };
+use crate::helix_storage::Storage;
 
 pub struct PropsIterator<'a, I> {
     iter: I,
@@ -54,22 +55,25 @@ where
         }
     }
 }
-pub trait PropsAdapter<'a, I>: Iterator<Item = Result<TraversalVal, GraphError>> {
+pub trait PropsAdapter<'a, I, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     fn check_property(
         self,
         prop: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, I> PropsAdapter<'a, I> for RoTraversalIterator<'a, I>
+impl<'a, I, S> PropsAdapter<'a, I, S> for RoTraversalIterator<'a, I, S>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     #[inline]
     fn check_property(
         self,
         prop: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
         RoTraversalIterator {
             inner: PropsIterator {
                 iter: self.inner,
@@ -81,23 +85,24 @@ where
     }
 }
 
-impl<'a, 'b, I> PropsAdapter<'a, I> for RwTraversalIterator<'a, 'b, I>
+impl<'a, 'b, I, S> PropsAdapter<'a, I, S> for RwTraversalIterator<'a, 'b, I, S>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
     'b: 'a,
 {
     #[inline]
     fn check_property(
         self,
         prop: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
         RoTraversalIterator {
             inner: PropsIterator {
                 iter: self.inner,
                 prop,
             },
             storage: self.storage,
-            txn: self.txn,
+            txn: &*self.txn,
         }
     }
 }

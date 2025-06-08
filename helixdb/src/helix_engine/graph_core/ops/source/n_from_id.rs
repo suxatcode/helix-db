@@ -1,36 +1,36 @@
+use std::sync::Arc;
+use std::iter::Once;
+
 use crate::{
     helix_engine::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
+    helix_storage::Storage,
     protocol::items::Node,
 };
-use heed3::RoTxn;
-use std::{iter::Once, sync::Arc};
 
-pub struct NFromId<'a, T> {
+pub struct NFromId<'a, T, S: Storage + ?Sized> {
     iter: Once<Result<TraversalVal, GraphError>>,
-    storage: Arc<HelixGraphStorage>,
+    storage: Arc<S>,
     txn: &'a T,
     id: u128,
 }
 
-impl<'a> Iterator for NFromId<'a, RoTxn<'a>> {
+impl<'a, S: Storage + ?Sized> Iterator for NFromId<'a, S::RoTxn<'a>, S> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|_| {
-            let node: Node = match self.storage.get_node(self.txn, &self.id) {
-                Ok(node) => node,
-                Err(e) => return Err(e),
-            };
+            let node: Node = self.storage.get_node(self.txn, &self.id)?;
             Ok(TraversalVal::Node(node))
         })
     }
 }
 
-pub trait NFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
+pub trait NFromIdAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     type OutputIter: Iterator<Item = Result<TraversalVal, GraphError>>;
 
     /// Returns an iterator containing the node with the given id.
@@ -39,10 +39,10 @@ pub trait NFromIdAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> 
     fn n_from_id(self, id: &u128) -> Self::OutputIter;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromIdAdapter<'a>
-    for RoTraversalIterator<'a, I>
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, S: Storage + ?Sized>
+    NFromIdAdapter<'a, S> for RoTraversalIterator<'a, I, S>
 {
-    type OutputIter = RoTraversalIterator<'a, NFromId<'a, RoTxn<'a>>>;
+    type OutputIter = RoTraversalIterator<'a, NFromId<'a, S::RoTxn<'a>, S>, S>;
 
     #[inline]
     fn n_from_id(self, id: &u128) -> Self::OutputIter {

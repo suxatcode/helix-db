@@ -13,6 +13,8 @@ use std::hash::Hash;
 pub enum TraversalVal {
     Node(Node),
     Edge(Edge),
+    NodeArray(Vec<Node>),
+    EdgeArray(Vec<Edge>),
     Vector(HVector),
     Count(Count),
     Path((Vec<Node>, Vec<Edge>)),
