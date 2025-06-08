@@ -1,5 +1,6 @@
 use helixdb::helix_engine::graph_core::config::Config;
 use helixdb::helix_engine::graph_core::graph_core::{HelixGraphEngine, HelixGraphEngineOpts};
+use helixdb::helix_gateway::mcp::mcp::{MCPHandlerFn, MCPHandlerSubmission};
 use helixdb::helix_gateway::{
     gateway::{GatewayOpts, HelixGateway},
     router::router::{HandlerFn, HandlerSubmission},
@@ -70,6 +71,28 @@ async fn main() {
             .collect::<Vec<((String, String), HandlerFn)>>(),
     );
 
+    let mcp_submissions: Vec<_> = inventory::iter::<MCPHandlerSubmission>
+        .into_iter()
+        .collect();
+    let mcp_routes = HashMap::from_iter(
+        mcp_submissions
+            .into_iter()
+            .map(|submission| {
+                println!("Processing submission for handler: {}", submission.0.name);
+                let handler = &submission.0;
+                let func: MCPHandlerFn =
+                    Arc::new(move |input, response| (handler.func)(input, response));
+                (
+                    (
+                        "post".to_ascii_uppercase().to_string(),
+                        format!("/mcp/{}", handler.name.to_string()),
+                    ),
+                    func,
+                )
+            })
+            .collect::<Vec<((String, String), MCPHandlerFn)>>(),
+    );
+
     println!("Routes: {:?}", routes.keys());
     // create gateway
     let gateway = HelixGateway::new(
@@ -77,12 +100,13 @@ async fn main() {
         graph,
         GatewayOpts::DEFAULT_POOL_SIZE,
         Some(routes),
+        Some(mcp_routes),
         TokioRuntime::default(),
-    ).await;
+    )
+    .await;
+
     // start server
     println!("Starting server...");
     let handle = gateway.connection_handler.accept_conns().await.unwrap();
     handle.await;
-
 }
-

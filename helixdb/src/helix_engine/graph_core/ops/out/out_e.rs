@@ -13,14 +13,14 @@ use heed3::{types::Bytes, RoTxn};
 use std::sync::Arc;
 
 pub struct OutEdgesIterator<'a, T> {
-    iter: heed3::RoIter<
+    pub iter: heed3::RoIter<
         'a,
         Bytes,
         heed3::types::LazyDecode<Bytes>,
         heed3::iteration_method::MoveOnCurrentKeyDuplicates,
     >,
-    storage: Arc<HelixGraphStorage>,
-    txn: &'a T,
+    pub storage: Arc<HelixGraphStorage>,
+    pub txn: &'a T,
 }
 
 impl<'a> Iterator for OutEdgesIterator<'a, RoTxn<'a>> {

@@ -5,18 +5,14 @@ use helixdb::ingestion_engine::sql_ingestion::IngestSqlRequest;
 use helixdb::protocol::{request::Request, response::Response};
 use sonic_rs::{Deserialize, JsonValueTrait, Serialize, Value};
 use std::io::Write;
-use std::{
-    net::SocketAddr,
-    process::Command,
-    time::Duration,
-};
+use std::{net::SocketAddr, process::Command, time::Duration};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 // Constants for timeouts
 //const SOCKET_TIMEOUT: Duration = Duration::from_secs(30);
 const S3_OPERATION_TIMEOUT: Duration = Duration::from_secs(60);
-
+const HOME_DIR: &str = "~";
 async fn process_query_files(
     client: &Client,
     bucket: &str,
@@ -33,8 +29,9 @@ async fn process_query_files(
             .list_objects_v2()
             .bucket(bucket)
             .prefix(&prefix)
-            .send()
-    ).await??;
+            .send(),
+    )
+    .await??;
 
     // Create the output file
     let output_path = format!("{}/queries.hx", local_path);
@@ -57,8 +54,9 @@ async fn process_query_files(
                 println!("Key: {:?}", key);
                 let get_obj = timeout(
                     S3_OPERATION_TIMEOUT,
-                    client.get_object().bucket(bucket).key(key).send()
-                ).await??;
+                    client.get_object().bucket(bucket).key(key).send(),
+                )
+                .await??;
                 println!("Get object: {:?}", get_obj);
                 let data = timeout(S3_OPERATION_TIMEOUT, get_obj.body.collect()).await??;
                 let json_str = String::from_utf8(data.to_vec())?;
@@ -163,12 +161,12 @@ async fn main() -> Result<(), AdminError> {
                                 // Run helix compile command
                                 println!("Compiling queries at {}", local_path);
                                 let compile_result = Command::new("sudo")
-                                    .arg("/root/.local/bin/helix")
+                                    .arg(format!("{}/local/bin/helix", HOME_DIR))
                                     .arg("compile")
                                     .arg("--path")
                                     .arg(local_path)
                                     .arg("--output")
-                                    .arg("/root/.helix/repo/helix-db/helix-container/src")
+                                    .arg(format!("{}/helix/repo/helix-db/helix-container/src", HOME_DIR))
                                     .output();
                                 println!("Compile result: {:?}", compile_result);
                                 match compile_result {
@@ -176,12 +174,12 @@ async fn main() -> Result<(), AdminError> {
                                         // recompile binary
                                         println!("Recompiling binary");
                                         let recompile_result = Command::new("sudo")
-                                            .arg("/root/.cargo/bin/cargo")
+                                            .arg(format!("{}/cargo/bin/cargo", HOME_DIR))
                                             .arg("build")
                                             .arg("--release")
                                             .arg("--target-dir")
-                                            .arg("/root/.helix/bin")
-                                            .current_dir("/root/.helix/repo/helix-db/helix-container")
+                                                .arg(format!("{}/helix/bin", HOME_DIR))
+                                            .current_dir(format!("{}/helix/repo/helix-db/helix-container", HOME_DIR))
                                             .output();
                                         println!("Recompile result: {:?}", recompile_result);
 
@@ -318,7 +316,10 @@ async fn download_ingestion_data(
     output_path: &str,
     job_id: &str,
 ) -> Result<()> {
-    let key = format!("{}/bulk_upload/{}/{}/ingestion.jsonl", user_id, instance_id, job_id);
+    let key = format!(
+        "{}/bulk_upload/{}/{}/ingestion.jsonl",
+        user_id, instance_id, job_id
+    );
 
     // Create output file
     let output_path = format!("{}/ingestion.jsonl", output_path);

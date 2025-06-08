@@ -414,7 +414,6 @@ pub enum StepType {
     Closure(Closure),
     Range((Expression, Expression)),
     AddEdge(AddEdge),
-    SearchVector(String),
 }
 impl PartialEq<StepType> for StepType {
     fn eq(&self, other: &StepType) -> bool {
@@ -430,7 +429,6 @@ impl PartialEq<StepType> for StepType {
             (&StepType::Closure(_), &StepType::Closure(_)) => true,
             (&StepType::Range(_), &StepType::Range(_)) => true,
             (&StepType::AddEdge(_), &StepType::AddEdge(_)) => true,
-            (&StepType::SearchVector(_), &StepType::SearchVector(_)) => true,
             _ => false,
         }
     }
@@ -476,6 +474,7 @@ pub enum GraphStepType {
     InE(String),
 
     ShortestPath(ShortestPath),
+    SearchVector(SearchVector),
 }
 impl GraphStep {
     pub fn get_item_type(&self) -> Option<String> {
@@ -484,6 +483,7 @@ impl GraphStep {
             GraphStepType::In(s) => Some(s.clone()),
             GraphStepType::OutE(s) => Some(s.clone()),
             GraphStepType::InE(s) => Some(s.clone()),
+            GraphStepType::SearchVector(s) => Some(s.vector_type.clone().unwrap()),
             _ => None,
         }
     }
@@ -1157,24 +1157,22 @@ impl HelixParser {
         let mut pairs = pair.clone().into_inner();
         let vector_type = pairs.next().unwrap().as_str().to_string();
         let query = match pairs.next() {
-            Some(pair) => {
-                match pair.as_rule() {
-                    Rule::identifier => ValueType::Identifier {
-                        value: pair.as_str().to_string(),
-                        loc: pair.loc(),
-                    },
-                    Rule::string_literal => ValueType::Literal {
-                        value: Value::String(pair.as_str().to_string()),
-                        loc: pair.loc(),
-                    },
-                    _ => {
-                        return Err(ParserError::from(format!(
-                            "Unexpected rule in BM25Search: {:?}",
-                            pair.as_rule()
-                        )));
-                    }
+            Some(pair) => match pair.as_rule() {
+                Rule::identifier => ValueType::Identifier {
+                    value: pair.as_str().to_string(),
+                    loc: pair.loc(),
+                },
+                Rule::string_literal => ValueType::Literal {
+                    value: Value::String(pair.as_str().to_string()),
+                    loc: pair.loc(),
+                },
+                _ => {
+                    return Err(ParserError::from(format!(
+                        "Unexpected rule in BM25Search: {:?}",
+                        pair.as_rule()
+                    )));
                 }
-            }
+            },
             None => {
                 return Err(ParserError::from(format!(
                     "Unexpected rule in BM25Search: {:?}",
@@ -2138,6 +2136,10 @@ impl HelixParser {
                     }),
                 }
             }
+            Rule::search_vector => GraphStep {
+                loc: pair.loc(),
+                step: GraphStepType::SearchVector(self.parse_search_vector(pair).unwrap()),
+            },
             _ => {
                 println!("rule_str: {:?}", pair.as_str());
                 unreachable!()

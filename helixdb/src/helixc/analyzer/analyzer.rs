@@ -23,8 +23,9 @@ use crate::{
             },
             traversal_steps::{
                 In as GeneratedIn, InE as GeneratedInE, Out as GeneratedOut, OutE as GeneratedOutE,
-                ShortestPath as GeneratedShortestPath, ShouldCollect, Step as GeneratedStep,
-                Traversal as GeneratedTraversal, TraversalType, Where, WhereExists, WhereRef,
+                SearchVectorStep, ShortestPath as GeneratedShortestPath, ShouldCollect,
+                Step as GeneratedStep, Traversal as GeneratedTraversal, TraversalType, Where,
+                WhereExists, WhereRef,
             },
             utils::{
                 GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
@@ -835,9 +836,11 @@ impl<'a> Ctx<'a> {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("data.{}", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -847,16 +850,18 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a to id".to_string(),
                                 "add a to id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let from = match &add.connection.from_id {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("data.{}.clone()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -866,7 +871,7 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a from id".to_string(),
                                 "add a from id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let add_e = AddE {
@@ -1682,7 +1687,7 @@ impl<'a> Ctx<'a> {
             let step = &graph_step.step;
             match step {
                 StepType::Node(gs) | StepType::Edge(gs) => {
-                    match self.apply_graph_step(&gs, &cur_ty, q, gen_traversal) {
+                    match self.apply_graph_step(&gs, &cur_ty, q, gen_traversal, scope) {
                         Some(new_ty) => cur_ty = new_ty,
                         None => { /* error already recorded */ }
                     }
@@ -1938,7 +1943,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1954,7 +1959,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1970,7 +1975,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -1986,7 +1991,7 @@ impl<'a> Ctx<'a> {
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -2004,11 +2009,11 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::StringLiteral(s) => {
-                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                    GeneratedValue::Primitive(GenRef::Literal(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 other => {
                                     println!("ID {:?}", other);
@@ -2029,11 +2034,11 @@ impl<'a> Ctx<'a> {
                                     GeneratedValue::Primitive(GenRef::Std(f.to_string()))
                                 }
                                 ExpressionType::StringLiteral(s) => {
-                                    GeneratedValue::Primitive(GenRef::Std(s.to_string()))
+                                    GeneratedValue::Primitive(GenRef::Literal(s.to_string()))
                                 }
                                 ExpressionType::Identifier(i) => {
                                     self.is_valid_identifier(q, expr.loc.clone(), i.as_str());
-                                    GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                                    self.gen_identifier_or_param(q, i.as_str())
                                 }
                                 _ => unreachable!("Cannot reach here"),
                             };
@@ -2164,10 +2169,7 @@ impl<'a> Ctx<'a> {
                                                 field.value.loc.clone(),
                                                 i.as_str(),
                                             );
-                                            GeneratedValue::Identifier(GenRef::Std(format!(
-                                                "data.{}",
-                                                i.clone()
-                                            )))
+                                            self.gen_identifier_or_param(q, i.as_str())
                                         }
                                         FieldValueType::Literal(l) => match l {
                                             Value::String(s) => {
@@ -2184,10 +2186,7 @@ impl<'a> Ctx<'a> {
                                                     e.loc.clone(),
                                                     i.as_str(),
                                                 );
-                                                GeneratedValue::Identifier(GenRef::Std(format!(
-                                                    "data.{}",
-                                                    i.clone()
-                                                )))
+                                                self.gen_identifier_or_param(q, i.as_str())
                                             }
                                             ExpressionType::StringLiteral(i) => {
                                                 GeneratedValue::Primitive(GenRef::Std(
@@ -2276,11 +2275,6 @@ impl<'a> Ctx<'a> {
                     //     TraversalType::Nested(GenRef::Std(var));
                 }
 
-                // StepType::SearchVector(_) => {
-                //     // SearchV on a traversal returns nodes again
-                //     cur_ty = Type::Nodes(None);
-                //     excluded.clear();
-                // }
                 _ => {
                     unreachable!()
                 }
@@ -2583,6 +2577,7 @@ impl<'a> Ctx<'a> {
         cur_ty: &Type,
         q: &'a Query,
         traversal: &mut GeneratedTraversal,
+        scope: &mut HashMap<&'a str, Type>,
     ) -> Option<Type> {
         use GraphStepType::*;
         match (&gs.step, cur_ty.base()) {
@@ -2684,7 +2679,15 @@ impl<'a> Ctx<'a> {
                     return None;
                 }
                 match edge.unwrap().from.1 == node_label.clone() {
-                    true => Some(Type::Nodes(Some(edge.unwrap().to.1.clone()))),
+                    true => {
+                        if EdgeType::Node == edge_type {
+                            Some(Type::Nodes(Some(edge.unwrap().to.1.clone())))
+                        } else if EdgeType::Vec == edge_type {
+                            Some(Type::Vector(Some(edge.unwrap().to.1.clone())))
+                        } else {
+                            None
+                        }
+                    }
                     false => {
                         self.push_query_err(
                             q,
@@ -2735,7 +2738,15 @@ impl<'a> Ctx<'a> {
                 }
 
                 match edge.unwrap().to.1 == node_label.clone() {
-                    true => Some(Type::Nodes(Some(edge.unwrap().from.1.clone()))),
+                    true => {
+                        if EdgeType::Node == edge_type {
+                            Some(Type::Nodes(Some(edge.unwrap().to.1.clone())))
+                        } else if EdgeType::Vec == edge_type {
+                            Some(Type::Vector(Some(edge.unwrap().to.1.clone())))
+                        } else {
+                            None
+                        }
+                    }
                     false => {
                         self.push_query_err(
                             q,
@@ -2803,6 +2814,148 @@ impl<'a> Ctx<'a> {
                         },
                     )));
                 Some(Type::Unknown)
+            }
+            (SearchVector(sv), Type::Vector(Some(vector_ty))) => {
+                println!("SV {:?}", sv);
+                if !matches!(cur_ty, Type::Vector(_)) {
+                    self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            format!(
+                                "`SearchVector` must be used on a vector type, got `{}`, which is of type `{}`",
+                                cur_ty.get_type_name(), cur_ty.kind_str()
+                            ),
+                            "ensure the result of the previous step is a vector type",
+                        );
+                }
+                if let Some(ref ty) = sv.vector_type {
+                    if !self.vector_set.contains(ty.as_str()) {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            format!("vector type `{}` has not been declared", ty),
+                            format!("add a `V::{}` schema first", ty),
+                        );
+                    }
+                }
+                let vec = match &sv.data {
+                    Some(VectorData::Vector(v)) => GeneratedValue::Literal(GenRef::Ref(format!(
+                        "[{}]",
+                        v.iter()
+                            .map(|f| f.to_string())
+                            .collect::<Vec<String>>()
+                            .join(",")
+                    ))),
+                    Some(VectorData::Identifier(i)) => {
+                        self.is_valid_identifier(q, sv.loc.clone(), i.as_str());
+                        // if is in params then use data.
+                        if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                            GeneratedValue::Identifier(GenRef::Ref(format!(
+                                "data.{}",
+                                i.to_string()
+                            )))
+                        } else if let Some(_) = scope.get(i.as_str()) {
+                            GeneratedValue::Identifier(GenRef::Ref(i.to_string()))
+                        } else {
+                            self.push_query_err(
+                                q,
+                                sv.loc.clone(),
+                                format!("variable named `{}` is not in scope", i),
+                                "declare {} in the current scope or fix the typo",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    }
+                    _ => {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            "`SearchVector` must have a vector data".to_string(),
+                            "add a vector data",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+                let k = match &sv.k {
+                    Some(k) => match &k.value {
+                        EvaluatesToNumberType::I8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::I64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U8(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U16(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U32(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U64(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::U128(i) => {
+                            GeneratedValue::Primitive(GenRef::Std(i.to_string()))
+                        }
+                        EvaluatesToNumberType::Identifier(i) => {
+                            self.is_valid_identifier(q, sv.loc.clone(), i.as_str());
+                            // is param
+                            if let Some(_) = q.parameters.iter().find(|p| p.name.1 == *i) {
+                                GeneratedValue::Identifier(GenRef::Std(format!(
+                                    "data.{} as usize",
+                                    i
+                                )))
+                            } else {
+                                GeneratedValue::Identifier(GenRef::Std(i.to_string()))
+                            }
+                        }
+                        _ => {
+                            self.push_query_err(
+                                q,
+                                sv.loc.clone(),
+                                "`SearchVector` must have a limit of vectors to return".to_string(),
+                                "add a limit",
+                            );
+                            GeneratedValue::Unknown
+                        }
+                    },
+                    None => {
+                        self.push_query_err(
+                            q,
+                            sv.loc.clone(),
+                            "`SearchV` must have a limit of vectors to return".to_string(),
+                            "add a limit",
+                        );
+                        GeneratedValue::Unknown
+                    }
+                };
+
+                // Search returns nodes that contain the vectors
+
+                // Some(GeneratedStatement::Traversal(GeneratedTraversal {
+                //     traversal_type: TraversalType::Ref,
+                //     steps: vec![],
+                //     should_collect: ShouldCollect::ToVec,
+                //     source_step: Separator::Period(SourceStep::SearchVector(
+                //         GeneratedSearchVector { vec, k, pre_filter },
+                //     )),
+                // }))
+                traversal
+                    .steps
+                    .push(Separator::Period(GeneratedStep::SearchVector(
+                        SearchVectorStep { vec, k },
+                    )));
+                traversal.traversal_type = TraversalType::Ref;
+                traversal.should_collect = ShouldCollect::ToVec;
+                Some(Type::Vector(Some(vector_ty.clone())))
             }
             // Anything else is illegal
             _ => {
@@ -3580,9 +3733,11 @@ impl<'a> Ctx<'a> {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("{}.id()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -3592,16 +3747,18 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a to id".to_string(),
                                 "add a to id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let from = match &add.connection.from_id {
                         Some(id) => match id {
                             IdType::Identifier { value, loc } => {
                                 self.is_valid_identifier(q, loc.clone(), value.as_str());
-                                GenRef::Std(format!("{}.id()", value.clone()))
+                                self.gen_id_access_or_param(q, value.as_str())
                             }
-                            IdType::Literal { value, loc } => GenRef::Literal(value.clone()),
+                            IdType::Literal { value, loc } => {
+                                GeneratedValue::Literal(GenRef::Literal(value.clone()))
+                            }
                             _ => unreachable!(),
                         },
                         _ => {
@@ -3611,7 +3768,7 @@ impl<'a> Ctx<'a> {
                                 "`AddE` must have a from id".to_string(),
                                 "add a from id",
                             );
-                            GenRef::Unknown
+                            GeneratedValue::Unknown
                         }
                     };
                     let add_e = AddE {
@@ -4186,6 +4343,28 @@ impl<'a> Ctx<'a> {
             _ => true,
         }
     }
+
+    fn is_param(&self, q: &Query, name: &str) -> bool {
+        q.parameters.iter().find(|p| p.name.1 == *name).is_some()
+    }
+
+    fn gen_identifier_or_param(&self, q: &Query, name: &str) -> GeneratedValue {
+        println!("{:?}", name);
+        if self.is_param(q, name) {
+            println!("{:?}", name);
+            GeneratedValue::Parameter(GenRef::Ref(format!("data.{}", name)))
+        } else {
+            GeneratedValue::Identifier(GenRef::Std(name.to_string()))
+        }
+    }
+
+    fn gen_id_access_or_param(&self, q: &Query, name: &str) -> GeneratedValue {
+        if self.is_param(q, name) {
+            GeneratedValue::Parameter(GenRef::DeRef(format!("data.{}", name)))
+        } else {
+            GeneratedValue::Identifier(GenRef::Std(format!("{}.id()", name.to_string())))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -4209,6 +4388,19 @@ impl Type {
             Type::Boolean => "boolean",
             Type::Unknown => "unknown",
             Type::Anonymous(ty) => ty.kind_str(),
+        }
+    }
+
+    fn get_type_name(&self) -> String {
+        match self {
+            Type::Nodes(Some(name)) => name.clone(),
+            Type::Edges(Some(name)) => name.clone(),
+            Type::Vector(Some(name)) => name.clone(),
+            Type::Scalar(ft) => ft.to_string(),
+            Type::Anonymous(ty) => ty.get_type_name(),
+            Type::Boolean => "boolean".to_string(),
+            Type::Unknown => "unknown".to_string(),
+            _ => unreachable!(),
         }
     }
 
@@ -4382,7 +4574,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4430,7 +4621,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4474,7 +4664,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags
                 .iter()
@@ -4566,7 +4755,6 @@ mod analyzer_tests {
         for d in diags.iter() {
             println!("{}", d.render(hx, "query.hx"));
         }
-        assert!(false);
         assert!(
             diags.is_empty(),
             "expected no diagnostics, got: {:?}",

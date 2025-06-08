@@ -1,13 +1,14 @@
 use crate::helix_engine::storage_core::storage_core::HelixGraphStorage;
 use crate::helix_engine::storage_core::storage_methods::StorageMethods;
 use crate::helix_engine::types::GraphError;
+use crate::helix_gateway::mcp::mcp::{McpBackend, McpConnections};
 use crate::props;
 use crate::protocol::filterable::{Filterable, FilterableType};
 use crate::protocol::remapping::{Remapping, ResponseRemapping};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::str;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use super::config::VectorConfig;
 use crate::helixc::parser::helix_parser::{
@@ -31,8 +32,11 @@ pub enum QueryInput {
     BooleanValue { value: bool },
 }
 
-pub struct HelixGraphEngine { // TODO: is there a reason for this?
+pub struct HelixGraphEngine {
+    // TODO: is there a reason for this?
     pub storage: Arc<HelixGraphStorage>,
+    pub mcp_backend: Option<Arc<McpBackend>>,
+    pub mcp_connections: Option<Arc<Mutex<McpConnections>>>,
 }
 
 pub struct HelixGraphEngineOpts {
@@ -57,14 +61,23 @@ impl HelixGraphEngineOpts {
 
 impl HelixGraphEngine {
     pub fn new(opts: HelixGraphEngineOpts) -> Result<HelixGraphEngine, GraphError> {
-        let storage = match HelixGraphStorage::new(
-            opts.path.as_str(),
-            opts.config,
-        ) {
+        let should_use_mcp = opts.config.mcp;
+        let storage = match HelixGraphStorage::new(opts.path.as_str(), opts.config) {
             Ok(db) => Arc::new(db),
             Err(err) => return Err(err),
         };
-        Ok(Self { storage })
+        let (mcp_backend, mcp_connections) = if should_use_mcp {
+            let mcp_backend = Arc::new(McpBackend::new(storage.clone()));
+            let mcp_connections = Arc::new(Mutex::new(McpConnections::new()));
+            (Some(mcp_backend), Some(mcp_connections))
+        } else {
+            (None, None)
+        };
+        Ok(Self {
+            storage,
+            mcp_backend,
+            mcp_connections,
+        })
     }
 
     // pub fn print_result_as_json(&self, traversal: &TraversalBuilder<dyn Transaction>) {

@@ -11,8 +11,8 @@ use heed3::{
 };
 
 pub struct EFromType<'a> {
-    iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
-    label: &'a str,
+    pub iter: heed3::RoIter<'a, U128<BE>, heed3::types::LazyDecode<Bytes>>,
+    pub label: &'a str,
 }
 
 impl<'a> Iterator for EFromType<'a> {

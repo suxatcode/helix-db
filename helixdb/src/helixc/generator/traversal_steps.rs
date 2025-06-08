@@ -181,6 +181,9 @@ pub enum Step {
 
     // shortest path
     ShortestPath(ShortestPath),
+
+    // search vector
+    SearchVector(SearchVectorStep),
 }
 impl Display for Step {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -201,6 +204,7 @@ impl Display for Step {
             Step::BoolOp(bool_op) => write!(f, "{}", bool_op),
             Step::Remapping(remapping) => write!(f, "{}", remapping),
             Step::ShortestPath(shortest_path) => write!(f, "{}", shortest_path),
+            Step::SearchVector(search_vector) => write!(f, "{}", search_vector),
         }
     }
 }
@@ -223,6 +227,7 @@ impl Debug for Step {
             Step::BoolOp(bool_op) => write!(f, "Bool"),
             Step::Remapping(remapping) => write!(f, "Remapping"),
             Step::ShortestPath(shortest_path) => write!(f, "ShortestPath"),
+            Step::SearchVector(search_vector) => write!(f, "SearchVector"),
         }
     }
 }
@@ -376,6 +381,21 @@ impl Display for ShortestPath {
             self.to
                 .clone()
                 .map_or("None".to_string(), |to| format!("Some(&{})", to))
+        )
+    }
+}
+
+#[derive(Clone)]
+pub struct SearchVectorStep {
+    pub vec: GeneratedValue,
+    pub k: GeneratedValue,
+}
+impl Display for SearchVectorStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "brute_force_search_v({}, {})",
+            self.vec, self.k
         )
     }
 }
