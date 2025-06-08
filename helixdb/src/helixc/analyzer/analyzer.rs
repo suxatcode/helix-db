@@ -9,12 +9,12 @@ use crate::{
             bool_op::{BoolOp, Eq, Gt, Gte, Lt, Lte, Neq},
             generator_types::{
                 Assignment as GeneratedAssignment, BoExp, Drop as GeneratedDrop,
-                ForEach as GeneratedForEach, ForLoopInVariable, ForVariable, IdentifierType,
+                ForEach as GeneratedForEach, ForLoopInVariable, ForVariable,
                 Parameter as GeneratedParameter, Query as GeneratedQuery, ReturnValue,
                 ReturnValueExpr, Source as GeneratedSource, Statement as GeneratedStatement,
             },
             object_remapping_generation::{
-                ExcludeField, FieldRemapping, IdentifierRemapping, ObjectRemapping, Remapping,
+                ExcludeField, IdentifierRemapping, ObjectRemapping, Remapping,
                 RemappingType, TraversalRemapping, ValueRemapping,
             },
             source_steps::{
@@ -27,21 +27,18 @@ use crate::{
                 Traversal as GeneratedTraversal, TraversalType, Where, WhereExists, WhereRef,
             },
             utils::{
-                GenRef, GeneratedType, GeneratedValue, RustType as GeneratedRustType, Separator,
+                GenRef, GeneratedValue, Separator,
             },
         },
         parser::{
-            helix_parser::{ShortestPath, *},
+            helix_parser::*,
             location::Loc,
         },
     },
     protocol::{date::Date, value::Value},
 };
 
-use std::{
-    collections::{HashMap, HashSet},
-    ops::{ControlFlow, Deref},
-};
+use std::collections::{HashMap, HashSet};
 
 use super::{fix::Fix, pretty};
 
@@ -3007,7 +3004,7 @@ impl<'a> Ctx<'a> {
                                     new_value: inner_traversal,
                                 })
                             }
-                            ExpressionType::Exists(exists) => {
+                            ExpressionType::Exists(_exists) => {
                                 todo!()
                             }
                             ExpressionType::BooleanLiteral(bo_lit) => {

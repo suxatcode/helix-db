@@ -1,6 +1,6 @@
 use crate::{
     helix_engine::{
-        bm25::bm25::{HBM25Config, BM25},
+        bm25::bm25::HBM25Config,
         graph_core::config::Config,
         storage_core::storage_methods::StorageMethods,
         types::GraphError,
@@ -14,7 +14,6 @@ use crate::{
         filterable::Filterable,
         items::{Edge, Node},
         label_hash::hash_label,
-        value::Value,
     },
 };
 

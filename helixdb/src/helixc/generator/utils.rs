@@ -1,8 +1,7 @@
-use std::{fmt::{self, Debug, Display}, io::{self, Write}};
+use std::{fmt::{self, Debug, Display}, io::Write};
 
 use crate::helixc::parser::helix_parser::IdType;
 
-use super::tsdisplay::ToTypeScript;
 
 #[derive(Clone)]
 pub enum GenRef<T>
@@ -62,7 +61,7 @@ where
             GenRef::RefLiteral(t) => t,
             GenRef::Unknown => panic!("Cannot get inner of unknown"),
             GenRef::Std(t) => t,
-            GenRef::Id(t) => panic!("Cannot get inner of unknown"),
+            GenRef::Id(_t) => panic!("Cannot get inner of unknown"),
         }
     }
 }

@@ -1,8 +1,5 @@
 use std::hash::Hasher;
 
-use rand::Rng;
-use twox_hash::XxHash32;
-use uuid::timestamp;
 
 #[inline(always)]
 pub fn hash_label(label: &str, seed: Option<u32>) -> [u8; 4] {
