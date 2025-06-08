@@ -2,7 +2,7 @@ use core::fmt;
 use std::ops::Deref;
 
 use serde::{
-    de::{DeserializeSeed, VariantAccess, Visitor},
+    de::Visitor,
     ser::Error,
     Deserializer, Serializer,
 };
