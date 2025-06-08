@@ -3,6 +3,7 @@ use crate::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
         types::GraphError,
     },
+    helix_storage::Storage,
     protocol::items::Edge,
 };
 use heed3::{
@@ -35,26 +36,25 @@ impl<'a> Iterator for EFromType<'a> {
         None
     }
 }
-pub trait EFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
+pub trait EFromTypeAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     fn e_from_type(
         self,
         label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> EFromTypeAdapter<'a>
-    for RoTraversalIterator<'a, I>
+impl<'a, I, S> EFromTypeAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
 {
     #[inline]
     fn e_from_type(
         self,
         label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let iter = self
-            .storage
-            .edges_db
-            .lazily_decode_data()
-            .iter(self.txn)
-            .unwrap();
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let iter = self.storage.get_all_edges(self.txn).unwrap();
         RoTraversalIterator {
             inner: EFromType { iter, label },
             storage: self.storage,

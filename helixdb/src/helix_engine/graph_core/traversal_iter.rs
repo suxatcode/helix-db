@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
-use heed3::{RoTxn, RwTxn, WithTls};
-
 use super::ops::tr_val::TraversalVal;
-use crate::helix_engine::{storage_core::storage_core::HelixGraphStorage, types::GraphError};
+use crate::helix_storage::{lmdb_storage::LmdbStorage, DbRoTxn, DbRwTxn, Storage};
+use crate::helix_engine::types::GraphError;
 use itertools::Itertools;
 
-pub struct RoTraversalIterator<'a, I> {
+pub struct RoTraversalIterator<'a, I, S: Storage + ?Sized> {
     pub inner: I,
-    pub storage: Arc<HelixGraphStorage>,
-    pub txn: &'a RoTxn<'a>,
+    pub storage: Arc<S>,
+    pub txn: &'a S::RoTxn<'a>,
 }
 
 // implementing iterator for TraversalIterator
-impl<'a, I> Iterator for RoTraversalIterator<'a, I>
+impl<'a, I, S: Storage + ?Sized> Iterator for RoTraversalIterator<'a, I, S>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -24,7 +23,9 @@ where
     }
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterator<'a, I> {
+impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, S: Storage + ?Sized>
+    RoTraversalIterator<'a, I, S>
+{
     pub fn take_and_collect_to<B: FromIterator<TraversalVal>>(self, n: usize) -> B {
         self.inner
             .filter_map(|item| item.ok())
@@ -47,14 +48,14 @@ impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> RoTraversalIterat
         self.inner.filter_map(|item| item.ok()).take(1).next()
     }
 }
-pub struct RwTraversalIterator<'scope, 'env, I> {
+pub struct RwTraversalIterator<'scope, 'env, I, S: Storage + ?Sized> {
     pub inner: I,
-    pub storage: Arc<HelixGraphStorage>,
-    pub txn: &'scope mut RwTxn<'env>,
+    pub storage: Arc<S>,
+    pub txn: &'scope mut S::RwTxn<'env>,
 }
 
 // implementing iterator for TraversalIterator
-impl<'scope, 'env, I> Iterator for RwTraversalIterator<'scope, 'env, I>
+impl<'scope, 'env, I, S: Storage + ?Sized> Iterator for RwTraversalIterator<'scope, 'env, I, S>
 where
     I: Iterator<Item = Result<TraversalVal, GraphError>>,
 {
@@ -64,8 +65,8 @@ where
         self.inner.next()
     }
 }
-impl<'scope, 'env, I: Iterator> RwTraversalIterator<'scope, 'env, I> {
-    pub fn new(storage: Arc<HelixGraphStorage>, txn: &'scope mut RwTxn<'env>, inner: I) -> Self {
+impl<'scope, 'env, I: Iterator, S: Storage + ?Sized> RwTraversalIterator<'scope, 'env, I, S> {
+    pub fn new(storage: Arc<S>, txn: &'scope mut S::RwTxn<'env>, inner: I) -> Self {
         Self {
             inner,
             storage,

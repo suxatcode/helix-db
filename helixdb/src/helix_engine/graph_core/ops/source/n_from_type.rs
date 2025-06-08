@@ -3,6 +3,7 @@ use crate::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
         types::GraphError,
     },
+    helix_storage::Storage,
     protocol::items::Node,
 };
 use heed3::{
@@ -38,29 +39,28 @@ impl<'a> Iterator for NFromType<'a> {
         None
     }
 }
-pub trait NFromTypeAdapter<'a>: Iterator<Item = Result<TraversalVal, GraphError>> {
+pub trait NFromTypeAdapter<'a, S: Storage + ?Sized>:
+    Iterator<Item = Result<TraversalVal, GraphError>>
+{
     /// Returns an iterator containing the nodes with the given label.
     ///
     /// Note that the `label` cannot be empty and must be a valid, existing node label.
     fn n_from_type(
         self,
         label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>> NFromTypeAdapter<'a>
-    for RoTraversalIterator<'a, I>
-{   
+impl<'a, I, S> NFromTypeAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    S: Storage + ?Sized,
+{
     #[inline]
     fn n_from_type(
         self,
         label: &'a str,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>> {
-        let iter = self
-            .storage
-            .nodes_db
-            .lazily_decode_data()
-            .iter(self.txn)
-            .unwrap();
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let iter = self.storage.get_all_nodes(self.txn).unwrap();
         RoTraversalIterator {
             inner: NFromType { iter, label },
             storage: self.storage,

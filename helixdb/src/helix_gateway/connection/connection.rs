@@ -2,6 +2,7 @@ use crate::helix_engine::graph_core::graph_core::HelixGraphEngine;
 use crate::helix_engine::types::GraphError;
 use crate::helix_gateway::{router::router::HelixRouter, thread_pool::thread_pool::ThreadPool};
 use crate::helix_runtime::AsyncRuntime;
+use crate::helix_storage::lmdb_storage::LmdbStorage;
 use crate::helix_transport::{Listener, Transport};
 use chrono::{DateTime, Utc};
 use std::{
@@ -38,7 +39,7 @@ where
 {
     pub fn new(
         address: &str,
-        graph: Arc<HelixGraphEngine>,
+        graph: Arc<HelixGraphEngine<LmdbStorage>>,
         size: usize,
         router: HelixRouter,
         runtime: R,

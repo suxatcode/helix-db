@@ -4,6 +4,7 @@ use crate::helix_engine::{
     graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
     types::GraphError,
 };
+use crate::helix_storage::Storage;
 
 pub struct Range<I> {
     iter: I,
@@ -44,7 +45,7 @@ where
     }
 }
 
-pub trait RangeAdapter<'a>: Iterator {
+pub trait RangeAdapter<'a, S: Storage + ?Sized>: Iterator {
     /// Range returns a slice of the current step between two points
     ///
     /// # Arguments
@@ -61,21 +62,23 @@ pub trait RangeAdapter<'a>: Iterator {
         self,
         start: usize,
         end: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
         Self: Sized + Iterator,
         Self::Item: Send;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a> RangeAdapter<'a>
-    for RoTraversalIterator<'a, I>
-{   
+impl<'a, I, S> RangeAdapter<'a, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>> + 'a,
+    S: Storage + ?Sized,
+{
     #[inline(always)]
     fn range(
         self,
         start: usize,
         end: usize,
-    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>>
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
         Self: Sized + Iterator,
         Self::Item: Send,

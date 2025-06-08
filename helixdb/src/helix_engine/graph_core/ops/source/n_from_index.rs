@@ -1,98 +1,66 @@
 use crate::{
     helix_engine::{
         graph_core::{ops::tr_val::TraversalVal, traversal_iter::RoTraversalIterator},
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
         types::GraphError,
     },
+    helix_storage::Storage,
     protocol::{items::Node, value::Value},
 };
-use heed3::{byteorder::BE, types::Bytes, RoTxn};
 use serde::Serialize;
-use std::{iter::Once, sync::Arc};
+use std::sync::Arc;
 
-pub struct NFromIndex<'a> {
-    iter:
-        heed3::RoPrefix<'a, heed3::types::Bytes, heed3::types::LazyDecode<heed3::types::U128<BE>>>,
-    txn: &'a RoTxn<'a>,
-    storage: Arc<HelixGraphStorage>,
+pub struct NFromIndex<S: Storage + ?Sized> {
+    nodes: Vec<Node>,
+    storage: Arc<S>,
 }
 
-impl<'a> Iterator for NFromIndex<'a> {
+impl<S: Storage + ?Sized> Iterator for NFromIndex<S> {
     type Item = Result<TraversalVal, GraphError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(value) = self.iter.next() {
-            let (key_, value) = value.unwrap();
-            match value.decode() {
-                Ok(value) => match self.storage.get_node(self.txn, &value) {
-                    Ok(node) => return Some(Ok(TraversalVal::Node(node))),
-                    Err(e) => {
-                        println!("{} Error getting node: {:?}", line!(), e);
-                        return Some(Err(GraphError::ConversionError(e.to_string())));
-                    }
-                },
-
-                Err(e) => return Some(Err(GraphError::ConversionError(e.to_string()))),
-            }
-        }
-        None
+        self.nodes.pop().map(|n| Ok(TraversalVal::Node(n)))
     }
 }
 
-pub trait NFromIndexAdapter<'a, K: Into<Value> + Serialize>:
-    Iterator<Item = Result<TraversalVal, GraphError>>
+pub trait NFromIndexAdapter<'a, K, S>: Iterator<Item = Result<TraversalVal, GraphError>>
+where
+    K: Into<Value> + Serialize,
+    S: Storage + ?Sized,
 {
-    type OutputIter: Iterator<Item = Result<TraversalVal, GraphError>>;
-
-    /// Returns a new iterator that will return the node from the secondary index.
-    ///
-    /// # Arguments
-    ///
-    /// * `index` - The name of the secondary index.
-    /// * `key` - The key to search for in the secondary index.
-    ///
-    /// Note that both the `index` and `key` must be provided.
-    /// The index must be a valid and existing secondary index and the key should match the type of the index.
-    fn n_from_index(self, index: &'a str, key: &'a K) -> Self::OutputIter
-    where
-        K: Into<Value> + Serialize + Clone;
+    fn n_from_index(
+        self,
+        index: &'a str,
+        key: &'a K,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>;
 }
 
-impl<'a, I: Iterator<Item = Result<TraversalVal, GraphError>>, K: Into<Value> + Serialize + 'a>
-    NFromIndexAdapter<'a, K> for RoTraversalIterator<'a, I>
+impl<'a, I, K, S> NFromIndexAdapter<'a, K, S> for RoTraversalIterator<'a, I, S>
+where
+    I: Iterator<Item = Result<TraversalVal, GraphError>>,
+    K: Into<Value> + Serialize + 'a,
+    S: Storage + ?Sized,
 {
-    type OutputIter = RoTraversalIterator<'a, NFromIndex<'a>>;
-
     #[inline]
-    fn n_from_index(self, index: &'a str, key: &'a K) -> Self::OutputIter
-    where
-        K: Into<Value> + Serialize + Clone,
-    {
-        let db = self
-            .storage
-            .secondary_indices
-            .get(index)
-            .ok_or(GraphError::New(format!(
-                "Secondary Index {} not found",
-                index
-            )))
-            .unwrap();
-        println!("DB: {:?}", self.storage.secondary_indices);
-        let res = db
-            .lazily_decode_data()
-            .prefix_iter(self.txn, &bincode::serialize(&Value::from(key)).unwrap())
-            .unwrap();
+    fn n_from_index(
+        self,
+        index: &'a str,
+        key: &'a K,
+    ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S> {
+        let storage = self.storage.clone();
+        let txn = self.txn;
+        let nodes = storage
+            .node_from_index(txn, index, key)
+            .unwrap_or_default();
 
-        let n_from_index = NFromIndex {
-            iter: res,
-            txn: self.txn,
-            storage: Arc::clone(&self.storage),
+        let iter = NFromIndex {
+            nodes,
+            storage: Arc::clone(&storage),
         };
 
         RoTraversalIterator {
-            inner: n_from_index,
-            storage: self.storage,
-            txn: self.txn,
+            inner: iter,
+            storage,
+            txn,
         }
     }
 }

@@ -10,28 +10,51 @@ use std::{
     str::Utf8Error,
     string::FromUtf8Error
 };
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum GraphError {
-    Io(std::io::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Graph connection error: {0} {1}")]
     GraphConnectionError(String, std::io::Error),
+    #[error("Storage connection error: {0} {1}")]
     StorageConnectionError(String, std::io::Error),
+    #[error("Storage error: {0}")]
     StorageError(String),
+    #[error("Traversal error: {0}")]
     TraversalError(String),
+    #[error("Conversion error: {0}")]
     ConversionError(String),
+    #[error("Decode error: {0}")]
     DecodeError(String),
-    EdgeNotFound,
-    NodeNotFound,
+    #[error("Edge not found")]
+    EdgeNotFound(u128),
+    #[error("Node not found")]
+    NodeNotFound(u128),
+    #[error("Label not found")]
     LabelNotFound,
+    #[error("Wrong traversal value")]
+    WrongTraversalValue,
+    #[error("Vector error: {0}")]
     VectorError(String),
+    #[error("Default graph error")]
     Default,
+    #[error("Graph error: {0}")]
     New(String),
+    #[error("No error")]
     Empty,
+    #[error("Multiple nodes with same id")]
     MultipleNodesWithSameId,
+    #[error("Multiple edges with same id")]
     MultipleEdgesWithSameId,
+    #[error("Invalid node")]
     InvalidNode,
+    #[error("Config file not found")]
     ConfigFileNotFound,
+    #[error("Slice length error")]
     SliceLengthError,
+    #[error("Shortest path not found")]
     ShortestPathNotFound
 }
 
@@ -47,11 +70,12 @@ impl fmt::Display for GraphError {
             },
             GraphError::TraversalError(msg) => write!(f, "Traversal error: {}", msg),
             GraphError::StorageError(msg) => write!(f, "Storage error: {}", msg),
-            GraphError::ConversionError(msg ) => write!(f, "Conversion error: {}", msg),
+            GraphError::ConversionError(msg) => write!(f, "Conversion error: {}", msg),
             GraphError::DecodeError(msg) => write!(f, "Decode error: {}", msg),
             GraphError::EdgeNotFound => write!(f, "Edge not found"),
             GraphError::NodeNotFound => write!(f, "Node not found"),
             GraphError::LabelNotFound => write!(f, "Label not found"),
+            GraphError::WrongTraversalValue => write!(f, "Wrong traversal value"),
             GraphError::New(msg) => write!(f, "Graph error: {}", msg),
             GraphError::Default => write!(f, "Graph error"),
             GraphError::Empty => write!(f, "No Error"),
@@ -154,13 +178,19 @@ impl From<VectorError> for GraphError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum VectorError {
+    #[error("Vector not found: {0}")]
     VectorNotFound(String),
+    #[error("Invalid vector length")]
     InvalidVectorLength,
+    #[error("Invalid vector data")]
     InvalidVectorData,
+    #[error("Entry point not found")]
     EntryPointNotFound,
+    #[error("Conversion error: {0}")]
     ConversionError(String),
+    #[error("Vector core error: {0}")]
     VectorCoreError(String),
 }
 
