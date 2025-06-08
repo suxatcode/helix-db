@@ -151,7 +151,7 @@ impl HVector {
     pub fn get_distance(&self) -> f64 {
         match self.distance {
             Some(distance) => distance,
-            None => panic!("Distance is not set for vector: {}", self.get_id()),
+            None => 0.0,
         }
     }
 }
