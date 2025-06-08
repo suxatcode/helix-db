@@ -2,42 +2,37 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     helix_engine::graph_core::ops::{
-        source::{bulk_add_e::BulkAddEAdapter, e_from_type::EFromTypeAdapter},
+        source::e_from_type::EFromTypeAdapter,
         util::drop::Drop,
     },
     props,
 };
 use crate::{
     helix_engine::graph_core::ops::{
-        source::{n_from_index::NFromIndexAdapter, n_from_type::NFromTypeAdapter},
+        source::n_from_type::NFromTypeAdapter,
         util::paths::ShortestPathAdapter,
     },
     protocol::{
         filterable::Filterable,
         id::ID,
-        items::{Edge, Node},
-        traversal_value::TraversalValue,
         value::Value,
     },
 };
-use crate::{
-    helix_engine::{
+use crate::helix_engine::{
         graph_core::ops::{
             g::G,
             in_::{in_e::InEdgesAdapter, to_n::ToNAdapter},
             out::{from_n::FromNAdapter, out::OutAdapter},
             source::{
-                add_n::AddNAdapter, bulk_add_n::BulkAddNAdapter, e_from_id::EFromIdAdapter,
+                add_n::AddNAdapter, e_from_id::EFromIdAdapter,
                 n_from_id::NFromIdAdapter,
             },
             tr_val::{Traversable, TraversalVal},
             util::{dedup::DedupAdapter, range::RangeAdapter},
         },
-        storage_core::{storage_core::HelixGraphStorage, storage_methods::StorageMethods},
+        storage_core::storage_core::HelixGraphStorage,
         types::GraphError,
-    },
-    protocol::items::v6_uuid,
-};
+    };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
@@ -169,7 +164,7 @@ fn test_out() {
         .collect_to::<Vec<_>>();
 
     txn.commit().unwrap();
-    let mut txn = storage.graph_env.write_txn().unwrap();
+    let txn = storage.graph_env.write_txn().unwrap();
 
     // let nodes = VFromId::new(&storage, &txn, person1.id.as_str())
     //     .out("knows")
@@ -1485,7 +1480,7 @@ fn huge_traversal() {
     let (storage, _temp_dir) = setup_test_db();
     let mut txn = storage.graph_env.write_txn().unwrap();
 
-    let mut start = Instant::now();
+    let start = Instant::now();
     let mut nodes = Vec::with_capacity(1000_000);
     for i in 0..1000_000 {
         let id = G::new_mut(Arc::clone(&storage), &mut txn)

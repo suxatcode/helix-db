@@ -40,7 +40,7 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddNAdapt
         let mut result: Result<TraversalVal, GraphError> = Ok(TraversalVal::Empty);
         nodes.sort_unstable_by_key(|node| *node);
         let chunks = nodes.chunks_mut(chunk_size);
-        let secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
+        let _secondary_indices = secondary_indices.unwrap_or(&[]).to_vec();
         let mut count = 0;
         for chunk in chunks {
             for node in chunk {

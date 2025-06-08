@@ -52,7 +52,7 @@ impl<R: AsyncRuntime + Clone + Send + Sync + 'static> ConnectionHandler<R> {
 
         let active_connections = Arc::clone(&self.active_connections);
         let thread_pool_sender = self.thread_pool.sender.clone();
-        let address = self.address.clone();
+        let _address = self.address.clone();
 
 
         let runtime = self.runtime.clone();

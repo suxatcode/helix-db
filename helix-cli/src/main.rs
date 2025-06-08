@@ -1020,12 +1020,11 @@ fn main() {
                 Err(e) => println!("{} {}", "Error while stopping instance".red().bold(), e),
             }
 
-            let mut del_prompt: bool = false;
             print!("Are you sure you want to delete the instance and its data? (y/n): ");
             std::io::stdout().flush().unwrap();
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
-            del_prompt = input.trim().to_lowercase() == "y";
+            let del_prompt = input.trim().to_lowercase() == "y";
 
             if del_prompt {
                 match instance_manager.delete_instance(iid) {
@@ -1176,7 +1175,7 @@ fn main() {
 
                                         #[cfg(not(target_os = "macos"))]
                                         {
-                                            if let Err(e) = open::that("https://helix-db.com/dashboard") {
+                                            if let Err(_e) = open::that("https://helix-db.com/dashboard") {
                                                 println!("Failed to open url");
                                                 println!("Please visit https://helix-db.com/dashboard");
                                             }

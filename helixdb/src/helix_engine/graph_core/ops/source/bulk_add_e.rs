@@ -27,7 +27,7 @@ pub trait BulkAddEAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphErr
         self,
         edges: Vec<(u128, u128, u128)>,
         should_check_nodes: bool,
-        chunk_size: usize,
+        _chunk_size: usize,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>;
 }
 
@@ -100,11 +100,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         // OUT EDGES
         let mut prev_out = None;
 
-        edges.sort_unstable_by(|(from, to, id), (from_, to_, id_)| {
-            if from == from_ {
+        edges.sort_unstable_by(|(_from, _to, id), (_from_, _to_, id_)| {
+            if _from == _from_ {
                 id.cmp(id_)
             } else {
-                from.cmp(from_)
+                _from.cmp(_from_)
             }
         });
 
@@ -140,11 +140,11 @@ impl<'a, 'b, I: Iterator<Item = Result<TraversalVal, GraphError>>> BulkAddEAdapt
         println!("Adding in edges");
         // IN EDGES
         edges.sort_unstable_by(
-            |(from, to, id), (from_, to_, id_)| {
-                if to == to_ {
+            |(_from, _to, id), (_from_, _to_, id_)| {
+                if _to == _to_ {
                     id.cmp(id_)
                 } else {
-                    to.cmp(to_)
+                    _to.cmp(_to_)
                 }
             },
         );

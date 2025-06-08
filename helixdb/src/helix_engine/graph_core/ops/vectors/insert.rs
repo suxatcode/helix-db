@@ -27,7 +27,7 @@ pub trait InsertVAdapter<'a, 'b>: Iterator<Item = Result<TraversalVal, GraphErro
     fn insert_v<F>(
         self,
         vec: &Vec<f64>,
-        label: &str,
+        _label: &str,
         fields: Option<Vec<(String, Value)>>,
     ) -> RwTraversalIterator<'a, 'b, impl Iterator<Item = Result<TraversalVal, GraphError>>>
     where
