@@ -1,5 +1,3 @@
-use heed3::RoTxn;
-
 use super::super::tr_val::TraversalVal;
 use crate::helix_engine::{
     graph_core::traversal_iter::RoTraversalIterator,
@@ -9,8 +7,8 @@ use crate::helix_engine::{
         vector::{cosine_similarity, HVector},
     },
 };
+use crate::helix_storage::{lmdb_storage::LmdbStorage, Storage};
 use std::{collections::BinaryHeap, iter::once};
-use crate::helix_storage::Storage;
 
 pub struct BruteForceSearchV<I: Iterator<Item = Result<TraversalVal, GraphError>>> {
     iter: I,

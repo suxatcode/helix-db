@@ -1,6 +1,7 @@
 pub mod lmdb_storage;
 
-use crate::helix_engine::types::GraphError;
+use crate::helix_engine::types::{GraphError, VectorError};
+use crate::helix_engine::vector_core::vector::HVector;
 use crate::protocol::items::{Edge, Node};
 use crate::protocol::value::Value;
 use serde::Serialize;
@@ -128,4 +129,64 @@ pub trait Storage: Send + Sync + 'static {
     ) -> Result<(), GraphError>
     where
         K: Into<Value> + Serialize;
+
+    // Vector operations
+    fn search_vectors<'a, F>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        query: &[f64],
+        k: usize,
+        filter: Option<&[F]>,
+    ) -> Result<Vec<HVector>, VectorError>
+    where
+        F: Fn(&HVector, &Self::RoTxn<'a>) -> bool;
+
+    fn insert_vector<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        data: &[f64],
+        fields: Option<Vec<(String, Value)>>,
+    ) -> Result<HVector, VectorError>;
+
+    fn get_vector<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        id: u128,
+        level: usize,
+        with_data: bool,
+    ) -> Result<HVector, VectorError>;
+
+    fn get_all_vectors<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        level: Option<usize>,
+    ) -> Result<Vec<HVector>, VectorError>;
+
+    // BM25 operations
+    fn insert_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+        doc: &str,
+    ) -> Result<(), GraphError>;
+
+    fn update_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+        doc: &str,
+    ) -> Result<(), GraphError>;
+
+    fn delete_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+    ) -> Result<(), GraphError>;
+
+    fn search_bm25<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<(u128, f32)>, GraphError>;
 } 

@@ -10,7 +10,6 @@ use std::{
 };
 
 use get_routes::{local_handler, mcp_handler};
-use heed3::{AnyTls, RoTxn};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -33,7 +32,7 @@ use crate::{
         mcp::tools::{ToolArgs, ToolCalls},
         router::router::HandlerInput,
     },
-    helix_storage::lmdb_storage::LmdbStorage,
+    helix_storage::{lmdb_storage::LmdbStorage, Storage},
     protocol::{
         items::v6_uuid, label_hash::hash_label, request::Request, response::Response,
         return_values::ReturnValue,

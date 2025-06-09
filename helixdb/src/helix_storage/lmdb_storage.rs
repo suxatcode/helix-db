@@ -16,6 +16,7 @@ use crate::helix_engine::types::GraphError;
 use crate::helix_engine::vector_core::hnsw::HNSW;
 use crate::helix_engine::vector_core::vector::HVector;
 use crate::helix_engine::vector_core::vector_core::{HNSWConfig, VectorCore};
+use crate::helix_engine::types::VectorError;
 use crate::protocol::items::{Edge, Node, v6_uuid};
 use crate::protocol::label_hash::hash_label;
 use crate::protocol::value::Value;
@@ -103,7 +104,7 @@ impl<'a> DerefMut for LmdbRwTxn<'a> {
 
 impl<'a, 'b> From<&'a mut LmdbRwTxn<'b>> for LmdbRoTxn<'a> {
     fn from(txn: &'a mut LmdbRwTxn<'b>) -> Self {
-        LmdbRoTxn(txn.0.deref())
+        LmdbRoTxn(&txn.0)
     }
 }
 // endregion
@@ -251,6 +252,14 @@ impl LmdbStorage {
         );
         Ok((node_id, edge_id))
     }
+
+    /// Get a reference to the secondary index database by name
+    #[inline(always)]
+    pub fn get_node_index_db(&self, index: &str) -> Result<&Database<Bytes, U128<BE>>, GraphError> {
+        self.secondary_indices
+            .get(index)
+            .ok_or_else(|| GraphError::New(format!("Secondary Index {} not found", index)))
+    }
 }
 // endregion
 
@@ -260,11 +269,11 @@ impl Storage for LmdbStorage {
     type RwTxn<'a> = LmdbRwTxn<'a>;
 
     fn ro_txn(&self) -> Result<Self::RoTxn<'_>, GraphError> {
-        self.graph_env.read_txn().map(LmdbRoTxn).map_err(Into::into)
+        self.graph_env.read_txn().map(|txn| LmdbRoTxn(txn)).map_err(Into::into)
     }
 
     fn rw_txn(&self) -> Result<Self::RwTxn<'_>, GraphError> {
-        self.graph_env.write_txn().map(LmdbRwTxn).map_err(Into::into)
+        self.graph_env.write_txn().map(|txn| LmdbRwTxn(txn)).map_err(Into::into)
     }
 
     fn create_secondary_index(&mut self, name: &str) -> Result<(), GraphError> {
@@ -355,11 +364,11 @@ impl Storage for LmdbStorage {
     }
 
     fn drop_edge<'a>(&self, txn: &mut Self::RwTxn<'a>, edge_id: &u128) -> Result<(), GraphError> {
-        let edge_data = self
+        let mut edge = self
             .edges_db
             .get(txn, Self::edge_key(edge_id))?
-            .ok_or(GraphError::EdgeNotFound)?;
-        let edge: Edge = bincode::deserialize(edge_data)?;
+            .ok_or_else(|| GraphError::EdgeNotFound(*edge_id))?;
+        edge.id = *edge_id;
         let label_hash = hash_label(&edge.label, None);
         
         self.edges_db.delete(txn, Self::edge_key(edge_id))?;
@@ -377,7 +386,7 @@ impl Storage for LmdbStorage {
         id: &u128,
         properties: &Value,
     ) -> Result<Node, GraphError> {
-        let mut old_node = self.get_node(&*txn, id)?;
+        let mut old_node = self.get_node(&LmdbRoTxn::from(txn), id)?;
         if let Value::Object(props) = properties {
             old_node.properties = Some(props.clone());
         }
@@ -391,7 +400,7 @@ impl Storage for LmdbStorage {
         id: &u128,
         properties: &Value,
     ) -> Result<Edge, GraphError> {
-        let mut old_edge = self.get_edge(&*txn, id)?;
+        let mut old_edge = self.get_edge(&LmdbRoTxn::from(txn), id)?;
         if let Value::Object(props) = properties {
             old_edge.properties = Some(props.clone());
         }
@@ -417,9 +426,8 @@ impl Storage for LmdbStorage {
             to_node,
         };
 
-        let bytes = edge.encode_edge()?;
         self.edges_db
-            .put(txn, &Self::edge_key(&edge.id), &bytes)?;
+            .put(txn, &Self::edge_key(&edge.id), &edge)?;
 
         let label_hash = hash_label(edge.label.as_str(), None);
 
@@ -588,10 +596,7 @@ impl Storage for LmdbStorage {
 
         let result = db.get(txn, &key_bytes)?;
 
-        if let Some(node_id_bytes) = result {
-            let node_id = u128::from_be_bytes(node_id_bytes.try_into().map_err(|_| {
-                GraphError::ConversionError("Invalid node ID length in index".to_string())
-            })?);
+        if let Some(node_id) = result {
             return self.get_node(txn, &node_id).map(Some);
         }
 
@@ -627,8 +632,7 @@ impl Storage for LmdbStorage {
             properties: properties.map(|props| props.into_iter().collect()),
         };
 
-        let bytes = node.encode_node()?;
-        self.nodes_db.put(txn, &node.id, &bytes)?;
+        self.nodes_db.put(txn, &node.id, &node)?;
 
         if let Some(indices) = secondary_indices {
             for index_name in indices {
@@ -638,7 +642,7 @@ impl Storage for LmdbStorage {
 
                 if let Some(value) = node.properties.as_ref().and_then(|p| p.get(*index_name)) {
                     let key_bytes = bincode::serialize(value)?;
-                    db.put(txn, &key_bytes, &node.id.to_be_bytes())?;
+                    db.put(txn, &key_bytes, &node.id)?;
                 }
             }
         }
@@ -677,6 +681,91 @@ impl Storage for LmdbStorage {
             })
             .map_err(GraphError::from)
         })))
+    }
+
+    // Vector operations implementation
+    fn search_vectors<'a, F>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        query: &[f64],
+        k: usize,
+        filter: Option<&[F]>,
+    ) -> Result<Vec<HVector>, VectorError>
+    where
+        F: Fn(&HVector, &Self::RoTxn<'a>) -> bool,
+    {
+        // Convert our transaction to the HEED transaction that HNSW expects
+        self.vectors.search(&txn.0, query, k, filter, false)
+    }
+
+    fn insert_vector<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        data: &[f64],
+        fields: Option<Vec<(String, Value)>>,
+    ) -> Result<HVector, VectorError> {
+        // Convert our transaction to the HEED transaction that HNSW expects
+        self.vectors.insert(&mut txn.0, data, fields)
+    }
+
+    fn get_vector<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        id: u128,
+        level: usize,
+        with_data: bool,
+    ) -> Result<HVector, VectorError> {
+        // Convert our transaction to the HEED transaction that HNSW expects
+        self.vectors.get_vector(&txn.0, id, level, with_data)
+    }
+
+    fn get_all_vectors<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        level: Option<usize>,
+    ) -> Result<Vec<HVector>, VectorError> {
+        // Convert our transaction to the HEED transaction that HNSW expects
+        self.vectors.get_all_vectors(&txn.0, level)
+    }
+
+    // BM25 operations implementation
+    fn insert_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+        doc: &str,
+    ) -> Result<(), GraphError> {
+        // Convert our transaction to the HEED transaction that BM25 expects
+        self.bm25.insert_doc(&mut txn.0, doc_id, doc)
+    }
+
+    fn update_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+        doc: &str,
+    ) -> Result<(), GraphError> {
+        // Convert our transaction to the HEED transaction that BM25 expects
+        self.bm25.update_doc(&mut txn.0, doc_id, doc)
+    }
+
+    fn delete_bm25_doc<'a>(
+        &self,
+        txn: &mut Self::RwTxn<'a>,
+        doc_id: u128,
+    ) -> Result<(), GraphError> {
+        // Convert our transaction to the HEED transaction that BM25 expects
+        self.bm25.delete_doc(&mut txn.0, doc_id)
+    }
+
+    fn search_bm25<'a>(
+        &self,
+        txn: &Self::RoTxn<'a>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<(u128, f32)>, GraphError> {
+        // Convert our transaction to the HEED transaction that BM25 expects
+        self.bm25.search(&txn.0, query, limit)
     }
 }
 // endregion 

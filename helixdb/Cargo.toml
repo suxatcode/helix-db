@@ -12,7 +12,7 @@ tokio = { version = "1.44.2", features = ["full"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.110"
 bincode = "1.3.3"                                                         # TODO: Figure out bincode 2 impl with current serde impl
-sonic-rs = { version = "0.3.1", features = ["base64-simd"] }
+sonic-rs = { version = "0.3.1" }
 inventory = "0.3.16"
 twox-hash = "2.1.0"
 heed3 = "0.22.0"

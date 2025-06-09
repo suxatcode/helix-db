@@ -8,7 +8,6 @@ use crate::{
     },
     helix_storage::Storage,
 };
-use heed3::{types::Bytes, RoTxn};
 use std::sync::Arc;
 
 pub struct InNodesIterator<'a, I, S: Storage + ?Sized> {

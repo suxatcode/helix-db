@@ -5,7 +5,6 @@ use crate::helix_engine::{
     vector_core::{hnsw::HNSW, vector::HVector},
 };
 use crate::helix_storage::{lmdb_storage::LmdbStorage, Storage};
-use heed3::RoTxn;
 use std::iter::once;
 
 pub struct SearchV<I: Iterator<Item = Result<TraversalVal, GraphError>>> {
@@ -30,7 +29,7 @@ pub trait SearchVAdapter<'a, S: Storage + ?Sized>:
         filter: Option<&[F]>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
-        F: Fn(&HVector, &heed3::RoTxn<'a>) -> bool;
+        F: Fn(&HVector, &S::RoTxn<'a>) -> bool;
 }
 
 impl<'a, I, S> SearchVAdapter<'a, S> for RoTraversalIterator<'a, I, S>
@@ -45,7 +44,7 @@ where
         filter: Option<&[F]>,
     ) -> RoTraversalIterator<'a, impl Iterator<Item = Result<TraversalVal, GraphError>>, S>
     where
-        F: Fn(&HVector, &heed3::RoTxn<'a>) -> bool,
+        F: Fn(&HVector, &S::RoTxn<'a>) -> bool,
     {
         let vectors = if let Some(lmdb_storage) =
             (self.storage.as_ref() as &dyn std::any::Any).downcast_ref::<LmdbStorage>()

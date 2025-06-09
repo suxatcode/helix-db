@@ -11,7 +11,6 @@ use crate::{
     },
     helix_storage::Storage,
 };
-use heed3::{types::Bytes, RoTxn, WithTls};
 use std::sync::Arc;
 
 pub struct OutNodesIterator<'a, I, S: Storage + ?Sized> {
